@@ -5,7 +5,8 @@ import DoctorCard from './components/DoctorCard';
 import DoctorRegistrationModal from './components/DoctorRegistrationModal';
 import LoginModal from '../doctor-detail/components/LoginModal';
 import { useDoctors } from '../../hooks/useDirectory';
-import { getCurrentUser, clearCurrentUser } from '../../utils/auth';
+import { getCurrentAuthUser, signOut, onAuthStateChange } from '../../services/auth.service';
+import type { AuthUser } from '../../services/auth.service';
 import { DoctorGridSkeleton } from '../../components/skeletons/DirectorySkeletons';
 import type { DirectoryFilters } from '../../types/directory.types';
 
@@ -13,13 +14,15 @@ export default function Home() {
   const navigate = useNavigate();
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
   const [onlineBookingOnly, setOnlineBookingOnly] = useState(false);
+
+  const isAuthenticated = !!currentUser;
 
   // ─── DATOS REALES desde Supabase ───
   const filters: DirectoryFilters = {
@@ -36,27 +39,29 @@ export default function Home() {
     ? doctors.filter((d) => d.bookingEnabled)
     : doctors;
 
-  // Verificar autenticación al cargar
+  // ─── AUTH REAL con Supabase ───
   useEffect(() => {
-    const user = getCurrentUser();
-    setIsAuthenticated(!!user);
+    // Verificar sesión actual al cargar
+    getCurrentAuthUser().then(setCurrentUser);
+
+    // Escuchar cambios de sesión (login, logout)
+    const { data: { subscription } } = onAuthStateChange(setCurrentUser);
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
     setShowLoginModal(false);
+    // El usuario se actualiza automáticamente via onAuthStateChange
   };
 
-  const handleLogout = () => {
-    clearCurrentUser();
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    await signOut();
+    setCurrentUser(null);
   };
 
   const handleDoctorSelect = (doctorId: string) => {
     navigate(`/doctor/${doctorId}`);
   };
-
-  const currentUser = getCurrentUser();
 
   return (
     <div className="min-h-screen bg-white">
@@ -73,7 +78,7 @@ export default function Home() {
             {isAuthenticated && currentUser ? (
               <>
                 <span className="text-sm text-gray-700 hidden sm:inline">
-                  {currentUser.name}
+                  {currentUser.name || currentUser.phone}
                 </span>
                 <button
                   onClick={handleLogout}
