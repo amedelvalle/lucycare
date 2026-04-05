@@ -1,46 +1,51 @@
-
 import { useNavigate } from 'react-router-dom';
-import { Doctor } from '../../../mocks/doctors';
-import { getMunicipalityName, getDepartmentName } from '../../../data/svLocations';
+import type { DoctorCard as DoctorCardData } from '../../../types/directory.types';
 import { formatNextSlot } from '../../../utils/date';
 
 interface DoctorCardProps {
-  doctor: Doctor;
+  doctor: DoctorCardData;
 }
 
 export default function DoctorCard({ doctor }: DoctorCardProps) {
   // Defensa: si no hay doctor, no renderizar nada
   if (!doctor) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.warn('DoctorCard: doctor prop is undefined');
     }
     return null;
   }
 
-  // Defensa: si no hay location, no renderizar
-  if (!doctor.location) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('DoctorCard: doctor.location is undefined for doctor:', doctor.id);
-    }
-    return null;
-  }
-
   const navigate = useNavigate();
-  
-  const { id, name, specialty, location, image, rating, reviews, consultationFee, lucyStatus, bookingEnabled, nextAvailableSlot, phone } = doctor;
-  
-  const municipalityName = getMunicipalityName(location.municipalityId);
-  const departmentName = getDepartmentName(location.departmentId);
-  const locationDisplay = `${municipalityName}, ${departmentName}`;
 
+  // Mapear datos de Supabase a variables locales
+  const id = doctor.id;
+  const name = doctor.fullName;
+  const specialty = doctor.specialty || 'Medicina General';
+  const locationDisplay = [doctor.municipality, doctor.department]
+    .filter(Boolean)
+    .join(', ') || 'Sin ubicación';
+  const image = doctor.avatarUrl || 'https://readdy.ai/api/search-image?query=Professional%20doctor%20silhouette%20placeholder%20avatar%20medical%20professional%20neutral%20gray%20background%20clean%20minimal&width=400&height=400&seq=placeholder&orientation=squarish';
+  const consultationFee = doctor.consultationFee || doctor.startingPrice || 0;
+  const bookingEnabled = doctor.bookingEnabled;
+  const isVerified = doctor.isVerified;
+
+  // Mapear lucyStatus de DB a formato display
+  const lucyStatus = doctor.lucyStatus?.toUpperCase() || 'LISTED_ONLY';
+
+  // TODO Sprint 2: nextAvailableSlot vendrá del motor de agenda
+  const nextAvailableSlot: string | undefined = undefined;
   const nextSlot = nextAvailableSlot ? formatNextSlot(nextAvailableSlot) : null;
 
+  // Rating y reviews — Fase 2
+  const rating = 0;
+  const reviews = 0;
+
   const handleNavigate = () => {
-    if (!id || isNaN(id)) {
+    if (!id) {
       console.error('ID de médico inválido:', id);
       return;
     }
-    
+
     try {
       navigate(`/doctor/${id}`);
     } catch (error) {
@@ -49,7 +54,7 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
   };
 
   const getStatusBadge = () => {
-    if (lucyStatus === 'VERIFIED') {
+    if (lucyStatus === 'VERIFIED' || isVerified) {
       return (
         <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm">
           <i className="ri-verified-badge-fill"></i>
@@ -57,7 +62,7 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
         </div>
       );
     }
-    if (lucyStatus === 'BOOKING_ENABLED') {
+    if (lucyStatus === 'BOOKING_ENABLED' || bookingEnabled) {
       return (
         <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm">
           <i className="ri-calendar-check-line"></i>
@@ -74,7 +79,7 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
   };
 
   return (
-    <div 
+    <div
       className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border ${
         bookingEnabled ? 'border-emerald-200 hover:border-emerald-400' : 'border-gray-100'
       }`}
@@ -103,7 +108,7 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
                   {getStatusBadge()}
                 </div>
               </div>
-              
+
               {/* En desktop: nombre y badge en la misma línea */}
               <div className="hidden md:flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -117,14 +122,16 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
 
             <p className="text-sm text-gray-600 mb-2">{specialty}</p>
 
-            {/* Rating */}
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex items-center gap-1">
-                <i className="ri-star-fill text-yellow-400 text-sm"></i>
-                <span className="text-sm font-medium text-gray-900">{rating}</span>
+            {/* Rating - Solo mostrar si hay reviews reales */}
+            {reviews > 0 && (
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-1">
+                  <i className="ri-star-fill text-yellow-400 text-sm"></i>
+                  <span className="text-sm font-medium text-gray-900">{rating}</span>
+                </div>
+                <span className="text-xs text-gray-500">({reviews} reseñas)</span>
               </div>
-              <span className="text-xs text-gray-500">({reviews} reseñas)</span>
-            </div>
+            )}
 
             {/* Location */}
             <div className="flex items-center gap-1.5 text-gray-600 mb-3">
@@ -173,12 +180,6 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
                   >
                     Ver perfil
                   </button>
-                  <a
-                    href={`tel:${phone}`}
-                    className="px-4 py-2.5 bg-[#3C2285] text-white font-semibold rounded-lg hover:bg-[#2d1a64] transition-colors cursor-pointer whitespace-nowrap relative z-10 flex items-center justify-center"
-                  >
-                    <i className="ri-phone-line"></i>
-                  </a>
                 </div>
                 <p className="text-xs text-gray-500 text-center">
                   Reserva online disponible solo con agenda activa en Lucy

@@ -4,16 +4,10 @@ import SearchSection from './components/SearchSection';
 import DoctorCard from './components/DoctorCard';
 import DoctorRegistrationModal from './components/DoctorRegistrationModal';
 import LoginModal from '../doctor-detail/components/LoginModal';
-import { doctors } from '../../mocks/doctors';
+import { useDoctors } from '../../hooks/useDirectory';
 import { getCurrentUser, clearCurrentUser } from '../../utils/auth';
-
-// Función para normalizar texto (eliminar tildes y convertir a minúsculas)
-const normalizeText = (text: string): string => {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-};
+import { DoctorGridSkeleton } from '../../components/skeletons/DirectorySkeletons';
+import type { DirectoryFilters } from '../../types/directory.types';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -25,78 +19,28 @@ export default function Home() {
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
-  const [onlineBookingOnly, setOnlineBookingOnly] = useState(true);
+  const [onlineBookingOnly, setOnlineBookingOnly] = useState(false);
 
-  // Estado para doctores con actualizaciones de localStorage
-  const [enhancedDoctors, setEnhancedDoctors] = useState(doctors);
+  // ─── DATOS REALES desde Supabase ───
+  const filters: DirectoryFilters = {
+    search: searchTerm,
+    specialtyId: selectedSpecialty || null,
+    departmentId: selectedDepartment || null,
+    municipalityId: selectedMunicipality || null,
+  };
+
+  const { data: doctors = [], isLoading, error } = useDoctors(filters);
+
+  // Filtro de booking online (client-side, ya que es un toggle simple)
+  const filteredDoctors = onlineBookingOnly
+    ? doctors.filter((d) => d.bookingEnabled)
+    : doctors;
 
   // Verificar autenticación al cargar
   useEffect(() => {
     const user = getCurrentUser();
     setIsAuthenticated(!!user);
   }, []);
-
-  // Verificar doctores activados en localStorage
-  useEffect(() => {
-    const activatedDoctors = JSON.parse(localStorage.getItem('lucyActivatedDoctors') || '[]');
-    
-    if (activatedDoctors.length > 0) {
-      const updated = doctors.map(doctor => {
-        const isActivated = activatedDoctors.includes(doctor.id);
-        
-        if (isActivated && !doctor.bookingEnabled) {
-          // Generar próximo slot si no existe
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          tomorrow.setHours(10, 0, 0, 0);
-          
-          return {
-            ...doctor,
-            bookingEnabled: true,
-            lucyStatus: 'BOOKING_ENABLED' as const,
-            nextAvailableSlot: doctor.nextAvailableSlot || tomorrow.toISOString()
-          };
-        }
-        
-        return doctor;
-      });
-      
-      setEnhancedDoctors(updated);
-    }
-  }, []);
-
-  const filteredDoctors = enhancedDoctors.filter((doctor) => {
-    // Filtro por nombre
-    if (searchTerm) {
-      const normalizedSearch = normalizeText(searchTerm);
-      const normalizedName = normalizeText(doctor.name);
-      if (!normalizedName.includes(normalizedSearch)) {
-        return false;
-      }
-    }
-
-    // Filtro por especialidad
-    if (selectedSpecialty && doctor.specialty !== selectedSpecialty) {
-      return false;
-    }
-
-    // Filtro por departamento (comparar IDs)
-    if (selectedDepartment && doctor.location.departmentId !== selectedDepartment) {
-      return false;
-    }
-
-    // Filtro por municipio (comparar IDs)
-    if (selectedMunicipality && doctor.location.municipalityId !== selectedMunicipality) {
-      return false;
-    }
-
-    // Filtro por agenda online
-    if (onlineBookingOnly && !doctor.bookingEnabled) {
-      return false;
-    }
-
-    return true;
-  });
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
@@ -108,7 +52,7 @@ export default function Home() {
     setIsAuthenticated(false);
   };
 
-  const handleDoctorSelect = (doctorId: number) => {
+  const handleDoctorSelect = (doctorId: string) => {
     navigate(`/doctor/${doctorId}`);
   };
 
@@ -119,9 +63,9 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-gray-200 bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
-          <img 
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png" 
-            alt="Lucy Care" 
+          <img
+            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            alt="Lucy Care"
             className="h-14 sm:h-16 cursor-pointer"
           />
           {/* Navigation */}
@@ -131,7 +75,7 @@ export default function Home() {
                 <span className="text-sm text-gray-700 hidden sm:inline">
                   {currentUser.name}
                 </span>
-                <button 
+                <button
                   onClick={handleLogout}
                   className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
                 >
@@ -139,14 +83,14 @@ export default function Home() {
                 </button>
               </>
             ) : (
-              <button 
+              <button
                 onClick={() => setShowLoginModal(true)}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
               >
                 Iniciar sesión
               </button>
             )}
-            <button 
+            <button
               onClick={() => setShowRegistrationModal(true)}
               className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
             >
@@ -189,18 +133,26 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4">
           <div>
-            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
-              {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda online' : 'disponibles')}
-            </h2>
-            {searchTerm && (
-              <p className="text-sm text-gray-600 mt-1">
-                Resultados ordenados por mejor coincidencia
-              </p>
-            )}
-            {!searchTerm && onlineBookingOnly && (
-              <p className="text-sm text-gray-600 mt-1">
-                Reserva tu cita al instante
-              </p>
+            {isLoading ? (
+              <h2 className="text-xl sm:text-2xl font-semibold text-gray-400">
+                Buscando médicos...
+              </h2>
+            ) : (
+              <>
+                <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
+                  {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda online' : 'disponibles')}
+                </h2>
+                {searchTerm && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Resultados ordenados por mejor coincidencia
+                  </p>
+                )}
+                {!searchTerm && onlineBookingOnly && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Reserva tu cita al instante
+                  </p>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
@@ -213,22 +165,48 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Doctors Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          {filteredDoctors.filter(Boolean).map((doctor) => (
-            <DoctorCard
-              key={doctor.id}
-              doctor={doctor}
-            />
-          ))}
-        </div>
+        {/* Error State */}
+        {error && (
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-4">
+              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Error al cargar médicos</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Hubo un problema al conectar con el servidor. Intenta de nuevo.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
-        {filteredDoctors.length === 0 && (
+        {/* Loading State */}
+        {isLoading && !error && <DoctorGridSkeleton count={8} />}
+
+        {/* Doctors Grid */}
+        {!isLoading && !error && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            {filteredDoctors.map((doctor) => (
+              <DoctorCard
+                key={doctor.id}
+                doctor={doctor}
+              />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && !error && filteredDoctors.length === 0 && (
           <div className="text-center py-16 sm:py-20">
             <i className="ri-search-line text-5xl sm:text-6xl text-gray-300 mb-4"></i>
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">No se encontraron resultados</h3>
             <p className="text-sm sm:text-base text-gray-600 mb-4">
-              {searchTerm 
+              {searchTerm
                 ? `No encontramos médicos que coincidan con "${searchTerm}"`
                 : 'Intenta ajustar tus filtros de búsqueda'
               }
@@ -256,9 +234,9 @@ export default function Home() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-6 sm:mb-8">
             <div>
               <div className="flex items-center mb-4">
-                <img 
-                  src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png" 
-                  alt="Lucy Care" 
+                <img
+                  src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+                  alt="Lucy Care"
                   className="h-14 sm:h-16"
                 />
               </div>

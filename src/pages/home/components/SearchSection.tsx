@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { departments, getMunicipalitiesByDepartment, getMunicipalityName } from '../../../data/svLocations';
-import { doctors } from '../../../mocks/doctors';
+import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory';
 
 interface SearchSectionProps {
   searchTerm: string;
@@ -13,22 +12,8 @@ interface SearchSectionProps {
   setSelectedMunicipality: (value: string) => void;
   onlineBookingOnly: boolean;
   setOnlineBookingOnly: (value: boolean) => void;
-  onDoctorSelect?: (doctorId: number) => void;
+  onDoctorSelect?: (doctorId: string) => void;
 }
-
-const specialties = [
-  'Todas las especialidades',
-  'Cardiología',
-  'Pediatría',
-  'Dermatología',
-  'Neurología',
-  'Oftalmología',
-  'Traumatología',
-  'Ginecología',
-  'Psiquiatría',
-  'Medicina General',
-  'Endocrinología'
-];
 
 // Función para normalizar texto (eliminar tildes y convertir a minúsculas)
 const normalizeText = (text: string): string => {
@@ -49,80 +34,20 @@ export default function SearchSection({
   setSelectedMunicipality,
   onlineBookingOnly,
   setOnlineBookingOnly,
-  onDoctorSelect
 }: SearchSectionProps) {
   const [showSpecialtyDropdown, setShowSpecialtyDropdown] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
   const [showMunicipalityDropdown, setShowMunicipalityDropdown] = useState(false);
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [autocompleteResults, setAutocompleteResults] = useState<typeof doctors>([]);
-  
+
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<HTMLDivElement>(null);
 
-  const municipalities = selectedDepartment 
-    ? getMunicipalitiesByDepartment(selectedDepartment)
-    : [];
+  // ─── DATOS REALES desde Supabase ───
+  const { data: specialties = [] } = useSpecialties();
+  const { data: departments = [] } = useDepartments();
+  const { data: municipalities = [] } = useMunicipalities(selectedDepartment || null);
 
-  // Autocompletado inteligente
-  useEffect(() => {
-    if (searchTerm.trim().length >= 2) {
-      const normalizedSearch = normalizeText(searchTerm);
-      
-      // Filtrar y ordenar resultados
-      const filtered = doctors
-        .filter(doctor => {
-          const normalizedName = normalizeText(doctor.name);
-          return normalizedName.includes(normalizedSearch);
-        })
-        .sort((a, b) => {
-          const normalizedA = normalizeText(a.name);
-          const normalizedB = normalizeText(b.name);
-          const normalizedSearch = normalizeText(searchTerm);
-          
-          // Priorizar coincidencias que empiezan con el término de búsqueda
-          const aStarts = normalizedA.startsWith(normalizedSearch);
-          const bStarts = normalizedB.startsWith(normalizedSearch);
-          
-          if (aStarts && !bStarts) return -1;
-          if (!aStarts && bStarts) return 1;
-          
-          // Luego por bookingEnabled
-          if (a.bookingEnabled && !b.bookingEnabled) return -1;
-          if (!a.bookingEnabled && b.bookingEnabled) return 1;
-          
-          // Finalmente por rating
-          return b.rating - a.rating;
-        })
-        .slice(0, 8); // Máximo 8 sugerencias
-      
-      setAutocompleteResults(filtered);
-      setShowAutocomplete(filtered.length > 0);
-    } else {
-      setShowAutocomplete(false);
-      setAutocompleteResults([]);
-    }
-  }, [searchTerm]);
-
-  // Cerrar autocomplete al hacer clic fuera
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        autocompleteRef.current &&
-        !autocompleteRef.current.contains(event.target as Node) &&
-        searchInputRef.current &&
-        !searchInputRef.current.contains(event.target as Node)
-      ) {
-        setShowAutocomplete(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleSpecialtySelect = (specialty: string) => {
-    setSelectedSpecialty(specialty === 'Todas las especialidades' ? '' : specialty);
+  const handleSpecialtySelect = (specialtyId: string) => {
+    setSelectedSpecialty(specialtyId);
     setShowSpecialtyDropdown(false);
   };
 
@@ -142,11 +67,10 @@ export default function SearchSection({
     setShowMunicipalityDropdown(false);
   };
 
-  const handleDoctorClick = (doctorId: number) => {
-    setShowAutocomplete(false);
-    if (onDoctorSelect) {
-      onDoctorSelect(doctorId);
-    }
+  const getSelectedSpecialtyName = () => {
+    if (!selectedSpecialty) return 'Todas las especialidades';
+    const spec = specialties.find(s => s.id === selectedSpecialty);
+    return spec?.name || 'Todas las especialidades';
   };
 
   const getSelectedDepartmentName = () => {
@@ -161,27 +85,17 @@ export default function SearchSection({
     return muni?.name || 'Todos los municipios';
   };
 
-  const highlightMatch = (text: string, search: string) => {
-    if (!search.trim()) return text;
-    
-    const normalizedText = normalizeText(text);
-    const normalizedSearch = normalizeText(search);
-    const index = normalizedText.indexOf(normalizedSearch);
-    
-    if (index === -1) return text;
-    
-    const before = text.slice(0, index);
-    const match = text.slice(index, index + search.length);
-    const after = text.slice(index + search.length);
-    
-    return (
-      <>
-        {before}
-        <strong className="font-bold text-[#3C2285]">{match}</strong>
-        {after}
-      </>
-    );
-  };
+  // Cerrar dropdowns al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setShowSpecialtyDropdown(false);
+      setShowDepartmentDropdown(false);
+      setShowMunicipalityDropdown(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -220,10 +134,10 @@ export default function SearchSection({
         </div>
       </div>
 
-      {/* Buscador principal con autocompletado */}
+      {/* Buscador principal */}
       <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-1.5 sm:p-2 border border-gray-100">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-1.5 sm:gap-2">
-          {/* Search by Name - PRIORIZADO */}
+          {/* Search by Name */}
           <div className="relative">
             <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b md:border-b-0 md:border-r border-gray-200">
               <i className="ri-search-line text-xl sm:text-2xl text-emerald-600"></i>
@@ -237,11 +151,6 @@ export default function SearchSection({
                   placeholder="Nombre o apellido..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  onFocus={() => {
-                    if (searchTerm.trim().length >= 2 && autocompleteResults.length > 0) {
-                      setShowAutocomplete(true);
-                    }
-                  }}
                   className="w-full text-sm sm:text-base text-gray-700 placeholder-gray-400 outline-none focus:outline-none"
                 />
               </div>
@@ -249,7 +158,6 @@ export default function SearchSection({
                 <button
                   onClick={() => {
                     setSearchTerm('');
-                    setShowAutocomplete(false);
                   }}
                   className="w-6 h-6 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors cursor-pointer flex-shrink-0"
                 >
@@ -257,69 +165,10 @@ export default function SearchSection({
                 </button>
               )}
             </div>
-            
-            {/* Autocompletado */}
-            {showAutocomplete && (
-              <div 
-                ref={autocompleteRef}
-                className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-96 overflow-y-auto z-50"
-              >
-                <div className="p-2">
-                  <div className="text-xs text-gray-500 px-3 py-2 font-medium">
-                    {autocompleteResults.length} resultado{autocompleteResults.length !== 1 ? 's' : ''}
-                  </div>
-                  {autocompleteResults.map((doctor) => {
-                    const municipalityName = getMunicipalityName(doctor.location.municipalityId);
-                    
-                    return (
-                      <button
-                        key={doctor.id}
-                        onClick={() => handleDoctorClick(doctor.id)}
-                        className="w-full px-3 py-3 text-left hover:bg-gray-50 rounded-lg cursor-pointer transition-colors flex items-center gap-3"
-                      >
-                        <img
-                          src={doctor.image}
-                          alt={doctor.name}
-                          className="w-12 h-12 rounded-lg object-cover object-top flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="text-sm font-semibold text-gray-900 truncate">
-                              {highlightMatch(doctor.name, searchTerm)}
-                            </p>
-                            {doctor.bookingEnabled ? (
-                              <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold flex-shrink-0">
-                                <i className="ri-calendar-check-line text-xs"></i>
-                                Agenda
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full text-xs font-medium flex-shrink-0">
-                                Sin agenda
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-600 truncate">{doctor.specialty}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="flex items-center gap-1">
-                              <i className="ri-star-fill text-yellow-400 text-xs"></i>
-                              <span className="text-xs text-gray-600">{doctor.rating}</span>
-                            </div>
-                            <span className="text-xs text-gray-400">•</span>
-                            <span className="text-xs text-gray-600 truncate">
-                              {municipalityName}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Specialty Filter */}
-          <div className="relative">
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => {
                 setShowSpecialtyDropdown(!showSpecialtyDropdown);
@@ -334,21 +183,27 @@ export default function SearchSection({
                   Especialidad
                 </label>
                 <span className="text-sm sm:text-base text-gray-700 truncate block">
-                  {selectedSpecialty || 'Todas las especialidades'}
+                  {getSelectedSpecialtyName()}
                 </span>
               </div>
               <i className={`ri-arrow-down-s-line text-xl sm:text-2xl text-gray-400 transition-transform flex-shrink-0 ${showSpecialtyDropdown ? 'rotate-180' : ''}`}></i>
             </button>
-            
+
             {showSpecialtyDropdown && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
-                {specialties.map((specialty) => (
+                <button
+                  onClick={() => handleSpecialtySelect('')}
+                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                >
+                  Todas las especialidades
+                </button>
+                {specialties.map((spec) => (
                   <button
-                    key={specialty}
-                    onClick={() => handleSpecialtySelect(specialty)}
+                    key={spec.id}
+                    onClick={() => handleSpecialtySelect(spec.id)}
                     className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
                   >
-                    {specialty}
+                    {spec.name}
                   </button>
                 ))}
               </div>
@@ -356,7 +211,7 @@ export default function SearchSection({
           </div>
 
           {/* Department Filter */}
-          <div className="relative">
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => {
                 setShowDepartmentDropdown(!showDepartmentDropdown);
@@ -376,7 +231,7 @@ export default function SearchSection({
               </div>
               <i className={`ri-arrow-down-s-line text-xl sm:text-2xl text-gray-400 transition-transform flex-shrink-0 ${showDepartmentDropdown ? 'rotate-180' : ''}`}></i>
             </button>
-            
+
             {showDepartmentDropdown && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
@@ -399,7 +254,7 @@ export default function SearchSection({
           </div>
 
           {/* Municipality Filter */}
-          <div className="relative">
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => {
                 if (selectedDepartment) {
@@ -410,8 +265,8 @@ export default function SearchSection({
               }}
               disabled={!selectedDepartment}
               className={`w-full flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 cursor-pointer text-left transition-colors ${
-                selectedDepartment 
-                  ? 'hover:bg-gray-50' 
+                selectedDepartment
+                  ? 'hover:bg-gray-50'
                   : 'opacity-50 cursor-not-allowed'
               }`}
             >
@@ -426,7 +281,7 @@ export default function SearchSection({
               </div>
               <i className={`ri-arrow-down-s-line text-xl sm:text-2xl text-gray-400 transition-transform flex-shrink-0 ${showMunicipalityDropdown ? 'rotate-180' : ''}`}></i>
             </button>
-            
+
             {showMunicipalityDropdown && selectedDepartment && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
