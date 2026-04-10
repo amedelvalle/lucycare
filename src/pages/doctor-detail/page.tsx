@@ -169,6 +169,8 @@ export default function DoctorDetail() {
                 lucyStatus={lucyStatus}
                 nextAvailableSlot={undefined}
                 onLucyActivated={() => {}}
+                services={doctor.services}
+                clinicId={doctor.clinicId}
               />
             </div>
 
@@ -303,6 +305,8 @@ export default function DoctorDetail() {
               lucyStatus={lucyStatus}
               nextAvailableSlot={undefined}
               onLucyActivated={() => {}}
+              services={doctor.services}
+              clinicId={doctor.clinicId}
             />
           </div>
         </div>
