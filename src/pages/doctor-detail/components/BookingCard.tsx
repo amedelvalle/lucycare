@@ -118,15 +118,11 @@ export default function BookingCard({
     }
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = async () => {
     setShowLoginModal(false);
-    getCurrentAuthUser().then(user => {
-      setCurrentUser(user);
-      // Continuar con booking automáticamente si ya tenía todo seleccionado
-      if (selectedService && selectedSlotStart) {
-        handleBooking();
-      }
-    });
+    const user = await getCurrentAuthUser();
+    setCurrentUser(user);
+    // No intentar booking automático — dejar que el usuario haga clic en "Reservar ahora"
   };
 
   const handleLogout = async () => {
