@@ -54,7 +54,7 @@ export async function createBooking(data: BookingData): Promise<BookingResult> {
     const { data: cancelledStatuses } = await supabase
       .from('appointment_statuses')
       .select('id')
-      .in('name', ['Cancelada'])
+      .in('name', ['cancelada'])
 
     const cancelledIds = (cancelledStatuses || []).map(s => s.id)
     const activeConflicts = (conflicting || []).filter(
@@ -82,7 +82,7 @@ export async function createBooking(data: BookingData): Promise<BookingResult> {
     const { data: scheduledStatus } = await supabase
       .from('appointment_statuses')
       .select('id')
-      .eq('name', 'Programada')
+      .eq('name', 'programada')
       .single()
 
     if (!scheduledStatus) {
@@ -149,13 +149,13 @@ async function getOrCreatePatient(
     .insert({
       profile_id: profileId,
       clinic_id: clinicId,
-      doctor_id: doctorId,
       full_name: fullName,
       phone: phone,
-      document_type: 'DUI',
+      document_type: 'dui',
       document_number: 'PENDIENTE',
       date_of_birth: '2000-01-01',
       gender: 'otro',
+      patient_type: 'privado',
     })
     .select('id')
     .single()
@@ -203,7 +203,7 @@ export async function cancelBooking(
   const { data: cancelledStatus } = await supabase
     .from('appointment_statuses')
     .select('id')
-    .eq('name', 'Cancelada')
+    .eq('name', 'cancelada')
     .single()
 
   if (!cancelledStatus) {

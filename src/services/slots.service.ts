@@ -98,7 +98,7 @@ export async function getAvailableSlots(
     .from('appointment_statuses')
     .select('id')
     .eq('is_final', true)
-    .in('name', ['Cancelada'])
+    .in('name', ['cancelada'])
 
   const cancelledIds = (cancelledStatuses || []).map(s => s.id)
   const activeAppointments = (appointments || []).filter(
