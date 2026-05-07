@@ -30,3 +30,9 @@ npm-debug.log*
 .supabase/
 out/
 *.sql
+
+# Claude Code harness (worktrees, agent state, transcripts)
+.claude/
+
+# Tool artifacts
+extracted.txt
