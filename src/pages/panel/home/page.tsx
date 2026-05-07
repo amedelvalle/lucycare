@@ -1,28 +1,119 @@
+/**
+ * Dashboard Home — Panel Médico (S3-07)
+ * Página principal: saludo, métricas, citas de hoy, próximas 48h.
+ *
+ * ACCIÓN: REEMPLAZAR el archivo existente
+ * RUTA:   src/pages/panel/home/page.tsx
+ */
+
+import { useDashboard } from '../../../hooks/useDashboard'
+import { StatCard } from './components/StatCard'
+import { TodayAppointments } from './components/TodayAppointments'
+import { UpcomingAppointments } from './components/UpcomingAppointments'
+
 export default function PanelHomePage() {
+  const {
+    todayAppointments,
+    upcomingAppointments,
+    stats,
+    isLoading,
+    isDoctorLoading,
+    error,
+  } = useDashboard()
+
+  // ── Error ──
+  if (error) {
+    return (
+      <div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+          <h3 className="text-red-800 font-medium">Error al cargar el dashboard</h3>
+          <p className="text-red-600 text-sm mt-1">
+            No se pudo obtener la información del médico.
+            Verifica que tu cuenta esté vinculada correctamente.
+          </p>
+          <p className="text-red-400 text-xs mt-2 font-mono">
+            {error instanceof Error ? error.message : 'Error desconocido'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Saludo dinámico ──
+  const hour = new Date().getHours()
+  let greeting = 'Buenos días'
+  if (hour >= 12 && hour < 18) greeting = 'Buenas tardes'
+  else if (hour >= 18) greeting = 'Buenas noches'
+
+  const today = new Date().toLocaleDateString('es-SV', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Panel médico</h1>
-      <p className="text-gray-600 mb-8">Bienvenido a tu panel de gestión. Aquí podrás administrar tu agenda, pacientes y configuración.</p>
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* ── Header ── */}
+      <div>
+        {isDoctorLoading ? (
+          <div className="animate-pulse">
+            <div className="w-48 h-7 bg-gray-200 rounded" />
+            <div className="w-64 h-4 bg-gray-100 rounded mt-2" />
+          </div>
+        ) : (
+          <>
+            <h1 className="text-2xl font-bold text-gray-900">{greeting} 👋</h1>
+            <p className="text-gray-500 text-sm mt-1 capitalize">{today}</p>
+          </>
+        )}
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <a href="/panel/disponibilidad" className="p-6 bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all">
-          <i className="ri-calendar-line text-3xl text-emerald-700 mb-3"></i>
-          <h3 className="font-semibold text-gray-900 mb-1">Disponibilidad</h3>
-          <p className="text-sm text-gray-600">Configura tus días y horarios de atención</p>
-        </a>
+      {/* ── 4 Métricas ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <StatCard
+          label="Citas hoy"
+          value={isLoading ? '—' : stats.citasHoy}
+          icon="ri-calendar-check-line"
+          accentColor="text-blue-600 bg-blue-50"
+        />
+        <StatCard
+          label="Esta semana"
+          value={isLoading ? '—' : stats.citasSemana}
+          icon="ri-bar-chart-line"
+          accentColor="text-indigo-600 bg-indigo-50"
+        />
+        <StatCard
+          label="Pacientes nuevos"
+          value={isLoading ? '—' : stats.pacientesNuevos}
+          subtitle="esta semana"
+          icon="ri-user-add-line"
+          accentColor="text-emerald-700 bg-emerald-50"
+        />
+        <StatCard
+          label="Asistencia"
+          value={isLoading ? '—' : `${stats.tasaAsistencia}%`}
+          subtitle="últimas 4 semanas"
+          icon="ri-check-double-line"
+          accentColor="text-amber-600 bg-amber-50"
+        />
+      </div>
 
-        <a href="/panel/bloqueos" className="p-6 bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all">
-          <i className="ri-calendar-close-line text-3xl text-emerald-700 mb-3"></i>
-          <h3 className="font-semibold text-gray-900 mb-1">Bloqueos</h3>
-          <p className="text-sm text-gray-600">Bloquea días por vacaciones o emergencias</p>
-        </a>
-
-        <a href="/panel/citas" className="p-6 bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all">
-          <i className="ri-list-check-2 text-3xl text-emerald-700 mb-3"></i>
-          <h3 className="font-semibold text-gray-900 mb-1">Citas</h3>
-          <p className="text-sm text-gray-600">Ve tus citas del día y próximas</p>
-        </a>
+      {/* ── Citas hoy + Próximas 48h ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="lg:col-span-2">
+          <TodayAppointments
+            appointments={todayAppointments}
+            isLoading={isLoading}
+          />
+        </div>
+        <div>
+          <UpcomingAppointments
+            appointments={upcomingAppointments}
+            isLoading={isLoading}
+          />
+        </div>
       </div>
     </div>
-  );
+  )
 }

@@ -3,12 +3,13 @@
 // ACCIÓN: NUEVO — crear archivo en carpeta bloqueos
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   useOverrides,
   useCreateOverride,
   useDeleteOverride,
 } from '@/hooks/overrides.hooks';
+import { useClinicContext } from '@/hooks/useClinicContext';
 import type {
   AvailabilityOverride,
   CreateOverrideInput,
@@ -16,7 +17,6 @@ import type {
 import BlockForm from './BlockForm';
 import BlockList from './BlockList';
 import ConfirmDialog from './ConfirmDialog';
-import { supabase } from '@/lib/supabase';
 
 // ─── Iconos ──────────────────────────────────────────────────────────
 const PlusIcon = () => (
@@ -33,39 +33,11 @@ const ShieldIcon = () => (
 );
 
 export default function BloqueosPage() {
-  // ─── Obtener doctor actual ─────────────────────────────────────
-  const [doctorData, setDoctorData] = useState<{
-    doctorId: string;
-    clinicId: string;
-  } | null>(null);
-  const [loadingDoctor, setLoadingDoctor] = useState(true);
-
-  useEffect(() => {
-    async function loadDoctor() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: doctor } = await supabase
-          .from('doctors')
-          .select('id, clinic_id')
-          .eq('profile_id', user.id)
-          .single();
-
-        if (doctor) {
-          setDoctorData({
-            doctorId: doctor.id,
-            clinicId: doctor.clinic_id,
-          });
-        }
-      } catch (err) {
-        console.error('Error loading doctor data:', err);
-      } finally {
-        setLoadingDoctor(false);
-      }
-    }
-    loadDoctor();
-  }, []);
+  // ─── Contexto unificado (doctor o asistente) ───────────────────
+  const { data: ctx, isLoading: loadingDoctor, error: ctxError } = useClinicContext();
+  const doctorData = ctx
+    ? { doctorId: ctx.doctorId, clinicId: ctx.clinicId }
+    : null;
 
   // ─── Estado del UI ─────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
@@ -143,7 +115,9 @@ export default function BloqueosPage() {
       <div className="p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-sm text-red-700">
-            No se encontró perfil de médico asociado a tu cuenta.
+            {ctxError instanceof Error
+              ? ctxError.message
+              : 'No se pudo cargar el contexto de la clínica.'}
           </p>
         </div>
       </div>

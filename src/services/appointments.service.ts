@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { supabase } from '@/lib/supabase';
+import { logAuditEntry } from '@/services/auditLog.service';
 
 // ─── Tipos ───────────────────────────────────────────────────────────
 
@@ -128,22 +129,91 @@ export async function getAppointmentStatuses(): Promise<AppointmentStatus[]> {
   return data ?? [];
 }
 
+// ─── Transiciones válidas por nombre de estado ────────────────────────
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  programada:  ['confirmada', 'cancelada'],
+  confirmada:  ['en_sala', 'cancelada'],
+  en_sala:     ['atendida', 'no_asistio', 'cancelada'],
+};
+
 /**
- * Cambiar el estado de una cita.
- * Validación de transiciones se hará en Sprint 3.
- * Por ahora solo actualiza el status_id.
+ * Valida si una transición de estado es permitida.
+ * Aplica reglas de tiempo solo en casos extremos.
+ */
+export function canTransitionTo(
+  currentStatusName: string,
+  targetStatusName: string,
+  appointmentStartTime: string
+): { allowed: boolean; reason?: string } {
+  const validNext = VALID_TRANSITIONS[currentStatusName] ?? [];
+  if (!validNext.includes(targetStatusName)) {
+    return { allowed: false, reason: 'Transición no permitida desde el estado actual.' };
+  }
+
+  const now = new Date();
+  const startTime = new Date(appointmentStartTime);
+
+  if (targetStatusName === 'atendida') {
+    const hoursUntil = (startTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    if (hoursUntil > 24) {
+      return {
+        allowed: false,
+        reason: 'No se puede marcar como atendida con más de 24 horas de anticipación.',
+      };
+    }
+  }
+
+  if (targetStatusName === 'no_asistio' && now < startTime) {
+    return {
+      allowed: false,
+      reason: 'No se puede marcar como no asistió antes de la hora de la cita.',
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Cambiar el estado de una cita, con soporte opcional de cancelación y audit log.
  */
 export async function updateAppointmentStatus(
   appointmentId: string,
-  statusId: string
+  statusId: string,
+  options?: {
+    cancellationReason?: string;
+    oldStatusName?: string;
+    newStatusName?: string;
+  }
 ): Promise<void> {
+  const updatePayload: Record<string, unknown> = {
+    status_id: statusId,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (options?.cancellationReason) {
+    const { data: { user } } = await supabase.auth.getUser();
+    updatePayload.cancellation_reason = options.cancellationReason;
+    updatePayload.cancelled_at = new Date().toISOString();
+    updatePayload.cancelled_by = user?.id ?? null;
+  }
+
   const { error } = await supabase
     .from('appointments')
-    .update({
-      status_id: statusId,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', appointmentId);
 
   if (error) throw error;
+
+  await logAuditEntry({
+    action: 'update',
+    tableName: 'appointments',
+    recordId: appointmentId,
+    oldData: options?.oldStatusName ? { status: options.oldStatusName } : undefined,
+    newData: {
+      status: options?.newStatusName,
+      ...(options?.cancellationReason
+        ? { cancellation_reason: options.cancellationReason }
+        : {}),
+    },
+  });
 }

@@ -12,6 +12,9 @@ import PanelHomePage from "../pages/panel/home/page";
 import DisponibilidadPage from "../pages/panel/disponibilidad/page";
 import BloqueosPage from "../pages/panel/bloqueos/BloqueosPage";
 import CitasPage from "../pages/panel/citas/CitasPage";
+import PacientesPage from "../pages/panel/pacientes/PacientesPage";
+import PacientePerfilPage from "../pages/panel/pacientes/PacientePerfilPage";
+import PerfilPage from "../pages/panel/perfil/PerfilPage";
 
 const routes: RouteObject[] = [
   {
@@ -41,6 +44,18 @@ const routes: RouteObject[] = [
       {
         path: "citas",
         element: <CitasPage />,
+      },
+      {
+        path: "pacientes",
+        element: <PacientesPage />,
+      },
+      {
+        path: "pacientes/:id",
+        element: <PacientePerfilPage />,
+      },
+      {
+        path: "perfil",
+        element: <PerfilPage />,
       },
     ],
   },

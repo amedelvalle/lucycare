@@ -1,0 +1,119 @@
+# LucyCare — Contexto para Claude Code
+
+## Estado actual del proyecto
+
+- **Sprint activo:** Sprint 3 **CERRADO** ✓ — listo para Sprint 4
+- **Última tarea completada:** S3-01 Header de notificaciones (campana con badge, dropdown, polling cada 60s)
+- **Bug bonus arreglado:** sesión stale en localStorage que rompía el directorio público en `/`
+
+## Decisiones cerradas (NO reabrir)
+
+- Backend: Supabase (Postgres + Auth + Edge Functions + Storage)
+- Frontend: React 19 + TypeScript + Tailwind + Vite
+- Auth: OTP por SMS con Twilio (sin contraseñas)
+- Pagos: Stripe Checkout hosted
+- Hosting: Vercel + Supabase
+- Facturación DTE: diferida (API externa, no se desarrolla internamente)
+- Servicios: cada médico crea sus propios servicios (no catálogo global)
+- Diagnósticos: catálogo propio por médico (NO usar CIE-10)
+- Medicamentos: catálogo propio por médico
+- Rol secretaria: incluido en MVP (agenda sí, ficha clínica no) — IMPLEMENTADO en S3-09
+- Citas: una sola tabla `appointments` con campo `source`
+- Consulta clínica: guardar = borrador, firmar = inmutable
+- Seguridad: RLS en todas las tablas, audit_log inmutable
+
+## Stack técnico verificado
+
+- Imports usan alias `@/` (ej: `@/lib/supabase`)
+- Auth usa `supabase.auth.getSession()` en servicios, `getUser()` en algunos hooks
+- React Query con refetchInterval 30s para citas y 60s para notificaciones
+- Iconos Remix (`ri-*`) en PanelLayout, SVG inline en componentes nuevos
+- Color acento del panel: emerald
+- Bootstrap defensivo en `main.tsx`: valida sesión contra servidor antes de renderizar; si stale → signOut local
+
+## Patrones de infraestructura introducidos en Sprint 3
+
+### useClinicContext (`src/hooks/useClinicContext.ts`)
+Hook unificado que devuelve `{ profileId, role, clinicId, doctorId, doctorName }` para doctor o asistente. Toda página del panel debe usarlo en lugar de hacer lookup inline a `from('doctors')`. Ya está integrado en CitasPage, PacientesPage, BloqueosPage, PerfilPage. Próximas páginas deben seguir el mismo patrón.
+
+### useClinicContext con asistentes
+- Si `role='assistant'`: busca en `clinic_members` y luego el doctor primario de esa clínica (el primero por `created_at`)
+- Multi-doctor por clínica NO está soportado — siempre toma el primer doctor (Sprint 4: agregar selector)
+
+### Audit log
+- `src/services/auditLog.service.ts` con `logAuditEntry()`
+- Se llama desde frontend tras updates relevantes (no bloquea si falla)
+- Schema: `audit_log` tiene action ENUM ('select','insert','update','delete')
+
+### Notificaciones del panel (S3-01)
+- NO usa la tabla `notifications` (que es para SMS/email salientes a pacientes vía Twilio)
+- Se derivan de `appointments` en `src/services/panelNotifications.service.ts`:
+  - `new_booking`: cita creada con `source='lucy_directorio'` en últimas 24h
+  - `cancellation`: cita con `cancelled_at` en últimas 24h
+- Read/unread con un solo timestamp en `localStorage` (`lucycare_panel_notif_seen_at`)
+
+## Schema crítico verificado
+
+- `appointment_statuses`: id, name, display_name, color, is_final, funnel_order
+- `audit_log`: id, user_id, action (ENUM), table_name, record_id, old_data jsonb, new_data jsonb, ip_address, created_at
+- `appointments` tiene campos: cancellation_reason, cancelled_at, cancelled_by, source ('manual'|'lucy_directorio'|'lucy_seguimiento')
+- `patients` tiene campos completos: full_name, phone, email, document_type+document_number, date_of_birth, gender, patient_type, blood_type, allergies, notes, emergency_contact_*, photo_url, is_active, profile_id (nullable)
+- `doctors`: bio, consultation_fee, experience_years, languages[], license_number, specialty_id, is_published, is_verified, booking_enabled, lucy_status, education jsonb
+- `profiles`: full_name, email, phone, avatar_url, role ('patient'|'doctor'|'assistant'|'admin')
+- `clinic_members`: clinic_id, profile_id, role ('owner'|'doctor'|'assistant'), is_active
+- `notifications` (NO usada por el panel): para SMS/email salientes — recipient_id, channel, type, status, scheduled_at
+
+## Estados de cita y transiciones
+
+- programada → confirmada → en_sala → atendida (final)
+- cancelada (final), no_asistio (final)
+- Validaciones extremas implementadas: no marcar 'atendida' con >24h de anticipación; no marcar 'no_asistio' antes de la hora de la cita
+
+## Sprint 3 — completado
+
+| Tarea | Status | Archivos clave |
+|---|---|---|
+| S3-01 Header de notificaciones | ✓ | `components/NotificationBell.tsx`, `services/panelNotifications.service.ts`, `hooks/usePanelNotifications.ts` |
+| S3-02 Calendario visual 3 vistas | ✓ | `pages/panel/citas/components/{Day,Week,Month}View.tsx` |
+| S3-03 Marcar estado + audit log | ✓ | `components/QuickActions.tsx`, `CancelAppointmentModal.tsx`, `services/auditLog.service.ts` |
+| S3-04 Cita walk-in desde calendario | ✓ | `services/walkIn.service.ts` |
+| S3-05 Lista de pacientes con búsqueda | ✓ | `pages/panel/pacientes/PacientesPage.tsx`, `services/patients.service.ts` |
+| S3-06 Perfil de paciente | ✓ | `PacientePerfilPage.tsx`, `EditPatientModal.tsx` |
+| S3-08 Config perfil público desde panel | ✓ | `pages/panel/perfil/PerfilPage.tsx`, `services/doctorProfile.service.ts` |
+| S3-09 Soporte rol asistente | ✓ | `hooks/useClinicContext.ts` (clave) |
+| S3-10 Responsive tablet | ✓ | `PanelLayout.tsx` con sidebar de 3 niveles |
+
+## Backlog Sprint 4 (sugerido)
+
+### Crítico para clínica activa
+- **S4-01** Consulta clínica — formulario de consulta con borrador/firma inmutable (signed=read-only)
+- **S4-02** Catálogo de diagnósticos por médico (no CIE-10) + asignación a consulta
+- **S4-03** Catálogo de medicamentos por médico + receta dentro de consulta
+- **S4-04** Ver historial clínico desde perfil del paciente
+
+### Operacional
+- **S4-05** Mi equipo — UI para invitar asistentes desde panel (hoy se hace por SQL manual)
+- **S4-06** Selector multi-doctor cuando una clínica tiene varios médicos
+- **S4-07** Notificaciones SMS/email reales con la tabla `notifications` + Edge Function (recordatorios 24h, confirmaciones)
+
+### Pulido / nice-to-have
+- **S4-08** Filtros y ordenamiento avanzado en lista de pacientes
+- **S4-09** Galería de imágenes del médico (`doctor_images`) editable desde panel
+- **S4-10** Vista de reportes/estadísticas para el médico (citas por mes, ingresos, no-shows)
+
+## Cómo crear una asistente (manual hasta tener S4-05)
+
+```sql
+-- 1. La asistente se registra como paciente normal vía OTP
+-- 2. Doctor o admin ejecuta:
+UPDATE profiles SET role='assistant' WHERE phone='+503...';
+INSERT INTO clinic_members (clinic_id, profile_id, role, is_active)
+VALUES ('<clinic-uuid>', '<profile-uuid>', 'assistant', true);
+```
+
+## Documentos fuente (en raíz)
+
+- LucyCare_Schema_DB.docx
+- LucyCare_Backlog_Estrategico.docx
+- LucyCare_DocTecnico_Completo.docx
+- Notas_Sprint3.docx
