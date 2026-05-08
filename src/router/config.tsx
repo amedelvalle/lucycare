@@ -15,6 +15,8 @@ import CitasPage from "../pages/panel/citas/CitasPage";
 import PacientesPage from "../pages/panel/pacientes/PacientesPage";
 import PacientePerfilPage from "../pages/panel/pacientes/PacientePerfilPage";
 import PerfilPage from "../pages/panel/perfil/PerfilPage";
+import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
+import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 
 const routes: RouteObject[] = [
   {
@@ -56,6 +58,14 @@ const routes: RouteObject[] = [
       {
         path: "perfil",
         element: <PerfilPage />,
+      },
+      {
+        path: "consulta/:appointmentId",
+        element: <ConsultaPage />,
+      },
+      {
+        path: "catalogos",
+        element: <CatalogosPage />,
       },
     ],
   },

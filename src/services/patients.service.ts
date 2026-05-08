@@ -14,6 +14,7 @@ export interface PatientListItem {
   phone: string | null;
   photo_url: string | null;
   created_at: string;
+  is_active: boolean;
   total_appointments: number;
   last_appointment_at: string | null;
 }
@@ -82,10 +83,12 @@ export interface PatientUpdateInput {
 /**
  * Obtiene la lista de pacientes de una clínica con conteo y fecha de última cita.
  * Si se proporciona search (mín. 2 chars), filtra por nombre o teléfono.
+ * Por default muestra solo activos. Pasá includeInactive=true para verlos todos.
  */
 export async function getPatientsList(
   clinicId: string,
-  search?: string
+  search?: string,
+  includeInactive = false
 ): Promise<PatientListItem[]> {
   let query = supabase
     .from('patients')
@@ -95,9 +98,14 @@ export async function getPatientsList(
       phone,
       photo_url,
       created_at,
+      is_active,
       appointments(start_time)
     `)
     .eq('clinic_id', clinicId);
+
+  if (!includeInactive) {
+    query = query.eq('is_active', true);
+  }
 
   const trimmed = search?.trim() ?? '';
   if (trimmed.length >= 2) {
@@ -117,6 +125,7 @@ export async function getPatientsList(
     phone: string | null;
     photo_url: string | null;
     created_at: string;
+    is_active: boolean;
     appointments: Array<{ start_time: string }> | null;
   }) => {
     const apts = p.appointments ?? [];
@@ -129,10 +138,26 @@ export async function getPatientsList(
       phone: p.phone,
       photo_url: p.photo_url,
       created_at: p.created_at,
+      is_active: p.is_active,
       total_appointments: apts.length,
       last_appointment_at: sortedDesc[0]?.start_time ?? null,
     };
   });
+}
+
+/**
+ * Cambia el estado activo/inactivo del paciente (soft-delete).
+ * No usar hard-delete: hay FK desde consultations, prescriptions, vitals, appointments.
+ */
+export async function setPatientActive(
+  patientId: string,
+  isActive: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from('patients')
+    .update({ is_active: isActive, updated_at: new Date().toISOString() })
+    .eq('id', patientId);
+  if (error) throw error;
 }
 
 /**

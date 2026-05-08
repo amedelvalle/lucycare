@@ -2,9 +2,14 @@
 
 ## Estado actual del proyecto
 
-- **Sprint activo:** Sprint 3 **CERRADO** ✓ — listo para Sprint 4
-- **Última tarea completada:** S3-01 Header de notificaciones (campana con badge, dropdown, polling cada 60s)
-- **Bug bonus arreglado:** sesión stale en localStorage que rompía el directorio público en `/`
+- **Sprint activo:** Sprint 4 **CERRADO** ✓ — listo para Sprint 5
+- **Última tarea completada:** Imprimir receta + auto-transición de estado de cita al firmar consulta
+- **Hitos del sprint:**
+  - MVP de consulta clínica firmable e imprimible end-to-end (3 semanas)
+  - Sistema de diseño documentado y aplicado (`<Button>`, tokens, variants, patrones)
+  - Página de catálogos admin (`/panel/catalogos`)
+  - Regla CRUD soft/hard delete documentada
+  - Sticky sidebar + sticky patient header en consulta (UX clínica crítica)
 
 ## Decisiones cerradas (NO reabrir)
 
@@ -30,6 +35,86 @@
 - Iconos Remix (`ri-*`) en PanelLayout, SVG inline en componentes nuevos
 - Color acento del panel: emerald
 - Bootstrap defensivo en `main.tsx`: valida sesión contra servidor antes de renderizar; si stale → signOut local
+
+## Sistema de diseño (Sprint 4)
+
+Establecido al notar inconsistencias acumuladas. **Toda pantalla nueva debe seguir esto. Página de referencia: `/panel/catalogos`.**
+
+### Colores semánticos
+
+- `emerald` → acción primaria, estado positivo (consulta firmada, paciente atendido)
+- `blue` → información neutra, badges secundarios (asistente, permanente)
+- `amber` → advertencia / borrador / validación inline
+- `red` → destructivo / cancelado / no asistió / errores
+- `gray` → neutro, fondos, texto secundario
+
+### Spacing y radius
+
+- **Cards principales**: `bg-white rounded-2xl border border-gray-200 p-5`
+- **Sub-items dentro de cards** (filas de lista, items en form): `bg-gray-50 rounded-lg p-3`
+- **Inputs y selects**: `border border-gray-200 rounded-lg px-3 py-2 text-sm`
+- **Pills/badges**: `rounded-full px-2.5 py-0.5 text-xs font-medium`
+- **Modales**: `rounded-2xl shadow-xl p-6`
+- Gap consistente: `gap-3` para grupos relacionados, `gap-5` entre secciones
+
+### Botones — usar `<Button>` de `src/components/ui/Button.tsx`
+
+4 variants:
+- `primary` → solid emerald: `bg-emerald-600 hover:bg-emerald-700 text-white`
+- `secondary` → solid gray: `bg-gray-100 hover:bg-gray-200 text-gray-700`
+- `subtle` → soft pill: `bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200`
+- `danger` → solid red: `bg-red-600 hover:bg-red-700 text-white`
+
+3 sizes: `sm` (`px-3 py-1.5 text-xs`), `md` (`px-4 py-2 text-sm`, default), `lg` (`px-5 py-2.5 text-sm font-semibold`).
+
+### Patrones de guardado
+
+| Tipo de flujo | Patrón | Ejemplo |
+|---|---|---|
+| Transaccional / firma | Botón explícito `Guardar` o `Firmar`, sticky bottom | Firmar consulta, registrar paciente walk-in |
+| Edición incremental dentro de un draft | Autosave on blur, sin botón | Notas de un diagnóstico, dosis de un medicamento |
+| Switches / acciones reversibles | Mutación inmediata al click, optimistic UI cuando aplica | Toggle publicar perfil, marcar permanente |
+
+### Patrones de acceso a entidades
+
+- Si la entidad tiene página propia (`/panel/pacientes/:id`) → row clickeable, sin botón explícito
+- Si la entidad NO tiene página propia → botón explícito en la fila
+- Detail panel lateral (slide-in desde derecha) cuando navegar perdería contexto (ej: detalle de cita en calendario)
+- Modal cuando es una acción puntual sin estado persistente (ej: confirmar firma, editar paciente)
+
+### Catálogos por médico
+
+- Patrón establecido: `diagnoses`, `medications` (cada uno con `doctor_id`, `is_active`, `usage_count`)
+- Búsqueda + create-inline desde el flujo de uso (consulta) usando `<Combobox>`
+- Página de admin formal en `/panel/catalogos` con tabs (una por catálogo)
+- Soft-delete vía `is_active=false` — nunca hard-delete porque hay FK desde consultas firmadas (inmutables)
+- Sort por `usage_count desc` para mostrar primero los más usados
+
+### Regla CRUD: hard-delete vs soft-delete (clínica/legal)
+
+**Default: si la entidad puede tener historia clínica o referencias inmutables → soft-delete.**
+
+Razón: en sistemas clínicos hay obligación de trazabilidad. Borrar un paciente, una cita, un diagnóstico de catálogo o un medicamento prescrito previamente rompe el historial clínico-legal. La auditoría debe poder reconstruir qué se hizo, cuándo y por quién — siempre.
+
+| Entidad | Patrón | Razón |
+|---|---|---|
+| `patients` | soft (`is_active`) | Tiene consultas firmadas, recetas, citas históricas |
+| `diagnoses` (catálogo) | soft (`is_active`) | FK desde consultation_diagnoses inmutables |
+| `medications` (catálogo) | soft (`is_active`) | FK desde prescriptions inmutables |
+| `appointments` | soft (estado `cancelada` o `no_asistio`) | Tienen vitals, posibles consultas |
+| `consultations` con contenido | sin delete | Si tiene texto/diagnósticos/recetas/vitales, no hay descarte — el médico la firma o la deja draft |
+| `consultations` SIN contenido | hard-delete OK | Caso "abrí por error y nunca tipeé nada" — acepta delete cascade |
+| `consultation_diagnoses`, `prescriptions` (mientras la consulta sea draft) | hard-delete OK | Edición incremental dentro del borrador |
+| `availability_overrides` | hard-delete OK | No tiene historia clínica |
+| `clinic_members` (asistentes) | soft (`is_active=false`) | Mantiene auditoría de quién accedió cuándo |
+| Items de receta o draft (`prescriptions`, `consultation_diagnoses`) en consulta firmada | sin delete | La consulta ya es inmutable |
+
+**Implementación de soft-delete en UI:**
+- Toggle visible "Activo/Inactivo" en lugar de botón eliminar
+- Lista por default solo activos; checkbox "Mostrar inactivos" para verlos
+- Inactivos no aparecen en autocomplete/buscadores de los flujos de uso
+
+**Audit log siempre captura el snapshot del OLD_DATA en el trigger** — incluso para hard-deletes legítimos, el `audit_log` preserva el JSON completo de lo borrado.
 
 ## Patrones de infraestructura introducidos en Sprint 3
 
@@ -83,25 +168,51 @@ Hook unificado que devuelve `{ profileId, role, clinicId, doctorId, doctorName }
 | S3-09 Soporte rol asistente | ✓ | `hooks/useClinicContext.ts` (clave) |
 | S3-10 Responsive tablet | ✓ | `PanelLayout.tsx` con sidebar de 3 niveles |
 
-## Backlog Sprint 4 (sugerido)
+## Sprint 4 — completado
 
-### Crítico para clínica activa
-- **S4-01** Consulta clínica — formulario de consulta con borrador/firma inmutable (signed=read-only)
-- **S4-02** Catálogo de diagnósticos por médico (no CIE-10) + asignación a consulta
-- **S4-03** Catálogo de medicamentos por médico + receta dentro de consulta
-- **S4-04** Ver historial clínico desde perfil del paciente
+| Tarea | Status | Archivos clave |
+|---|---|---|
+| S4-01..03 Consulta clínica MVP (3 semanas) | ✓ | `pages/panel/consulta/{ConsultaPage,DiagnosesSection,PrescriptionsSection,RecetaPrint}.tsx`, `services/{consultations,vitals,diagnosesCatalog,consultationDiagnoses,medicationsCatalog,prescriptions}.service.ts`, `hooks/useConsultation.ts` |
+| S4-04 Ver historial clínico desde perfil paciente | ✓ | Filas de citas en `PacientePerfilPage` clickeables, navegan a consulta |
+| Sistema de diseño + Button reusable | ✓ | `components/ui/Button.tsx`, sección "Sistema de diseño" en este doc |
+| Página admin de catálogos | ✓ | `pages/panel/catalogos/CatalogosPage.tsx`, `hooks/useCatalogs.ts` |
+| Auto-transición estado cita al firmar | ✓ | `signConsultation` en `consultations.service.ts` |
+| Imprimir receta (CSS print + componente dedicado) | ✓ | `RecetaPrint.tsx`, `@media print` en `index.css` |
+| Sticky sidebar + sticky patient header | ✓ | `PanelLayout.tsx`, `ConsultaHeader` |
+| Soft-delete pacientes con toggle activo/inactivo | ✓ | `setPatientActive` en `patients.service.ts`, UI en perfil + lista |
+| Descartar borrador de consulta vacía | ✓ | `discardEmptyConsultation` (hard-delete solo si sin contenido) |
+| Validadores fisiológicos en signos vitales | ✓ | `validators` en `ConsultaPage.tsx` (detecta libras/metros mal puestos) |
+| Migración SQL `weight_lb` → `weight_kg` | ✓ | `migrations/s4_01_vitals_weight_kg.sql` |
+| Fix triggers audit (`LOWER(TG_OP)`) | ✓ | `migrations/s4_02_fix_audit_triggers.sql` |
+
+## Backlog Sprint 5 (sugerido)
+
+### Crítico (extender consulta clínica al modelo de referencia)
+- **S5-01** Estilo de vida con cálculos: tabaco (IPA), alcohol, actividad física (METs), sueño, alimentación
+- **S5-02** Antecedentes familiares estructurados con catálogo (no solo texto)
+- **S5-03** Estado del diagnóstico expandido (en remisión, descontrolado, etc.) — el enum ya existe
+- **S5-04** Catálogo de antecedentes administrable (`/panel/catalogos` agregar tab "Antecedentes")
+- **S5-05** Plan de seguimiento estructurado: agendar próxima cita inline desde la consulta (ya existe `appointments`, falta UI inline)
 
 ### Operacional
-- **S4-05** Mi equipo — UI para invitar asistentes desde panel (hoy se hace por SQL manual)
-- **S4-06** Selector multi-doctor cuando una clínica tiene varios médicos
-- **S4-07** Notificaciones SMS/email reales con la tabla `notifications` + Edge Function (recordatorios 24h, confirmaciones)
+- **S5-06** Mi equipo — UI para invitar asistentes desde panel (hoy se hace por SQL manual)
+- **S5-07** Selector multi-doctor cuando una clínica tiene varios médicos
+- **S5-08** Notificaciones SMS/email reales con la tabla `notifications` + Edge Function (recordatorios 24h, confirmaciones)
 
 ### Pulido / nice-to-have
-- **S4-08** Filtros y ordenamiento avanzado en lista de pacientes
-- **S4-09** Galería de imágenes del médico (`doctor_images`) editable desde panel
-- **S4-10** Vista de reportes/estadísticas para el médico (citas por mes, ingresos, no-shows)
+- **S5-09** Filtros y ordenamiento avanzado en lista de pacientes
+- **S5-10** Galería de imágenes del médico (`doctor_images`) editable desde panel
+- **S5-11** Reportes/estadísticas para el médico (citas por mes, ingresos, no-shows)
+- **S5-12** Refactor pass de pantallas legacy (PacientesPage, AppointmentDetailPanel) para alinear al sistema de diseño — hacerlo on-demand al tocar cada archivo
 
-## Cómo crear una asistente (manual hasta tener S4-05)
+### Aún más adelante (Sprint 6+)
+- Órdenes de laboratorio con perfiles (catálogo + estructura)
+- Imágenes/gabinete con drill-down de tipos de estudio
+- Vistas históricas: dashboard clínico de laboratorios, historial de archivos del paciente (PDFs, imágenes)
+- Página `/panel/consultas` con lista filtrable de todas las consultas del médico
+- Sección "Borradores pendientes de firmar" en panel home
+
+## Cómo crear una asistente (manual hasta tener S5-06)
 
 ```sql
 -- 1. La asistente se registra como paciente normal vía OTP
@@ -110,6 +221,13 @@ UPDATE profiles SET role='assistant' WHERE phone='+503...';
 INSERT INTO clinic_members (clinic_id, profile_id, role, is_active)
 VALUES ('<clinic-uuid>', '<profile-uuid>', 'assistant', true);
 ```
+
+## Migraciones SQL aplicadas en Sprint 4
+
+Si traes un entorno desde antes de Sprint 4, ejecutá los archivos de `/migrations` en este orden:
+
+1. `s4_01_vitals_weight_kg.sql` — renombra `vitals.weight_lb` → `weight_kg` y convierte valores existentes
+2. `s4_02_fix_audit_triggers.sql` — fix de los triggers `audit_consultations`, `audit_patients`, `audit_prescriptions` (problema con `TG_OP::audit_action` por mismatch de mayúsculas)
 
 ## Documentos fuente (en raíz)
 

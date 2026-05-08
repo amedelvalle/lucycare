@@ -4,6 +4,7 @@ import {
   usePatient,
   usePatientAppointments,
   useUpdatePatient,
+  useSetPatientActive,
 } from '@/hooks/usePatients';
 import type {
   PatientAppointment,
@@ -19,6 +20,8 @@ export default function PacientePerfilPage() {
   const { data: patient, isLoading: loadingPatient } = usePatient(id);
   const { data: appointments = [], isLoading: loadingApts } = usePatientAppointments(id);
   const updateMutation = useUpdatePatient(id ?? '');
+  const setActiveMutation = useSetPatientActive(id ?? '');
+  const [confirmInactivate, setConfirmInactivate] = useState(false);
 
   const stats = useMemo(() => computeStats(appointments), [appointments]);
 
@@ -63,7 +66,7 @@ export default function PacientePerfilPage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => navigate('/panel/pacientes')}
@@ -75,16 +78,46 @@ export default function PacientePerfilPage() {
             </svg>
           </button>
           <h1 className="text-2xl font-bold text-gray-900 truncate">{patient.full_name}</h1>
+          {!patient.is_active && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 flex-shrink-0">
+              Inactivo
+            </span>
+          )}
         </div>
-        <button
-          onClick={() => setEditOpen(true)}
-          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-2 flex-shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          Editar
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {patient.is_active ? (
+            <button
+              onClick={() => setConfirmInactivate(true)}
+              disabled={setActiveMutation.isPending}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18 18m-12.364.364L5.636 5.636" />
+              </svg>
+              Inactivar
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveMutation.mutate(true)}
+              disabled={setActiveMutation.isPending}
+              className="px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Reactivar
+            </button>
+          )}
+          <button
+            onClick={() => setEditOpen(true)}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Editar
+          </button>
+        </div>
       </div>
 
       {/* Card de identidad + stats */}
@@ -206,7 +239,15 @@ export default function PacientePerfilPage() {
       ) : (
         <div className="space-y-2">
           {appointments.map((apt) => (
-            <AppointmentRow key={apt.id} apt={apt} />
+            <AppointmentRow
+              key={apt.id}
+              apt={apt}
+              onClick={() => {
+                const name = apt.status?.name;
+                if (name === 'cancelada' || name === 'no_asistio') return;
+                navigate(`/panel/consulta/${apt.id}`);
+              }}
+            />
           ))}
         </div>
       )}
@@ -219,6 +260,52 @@ export default function PacientePerfilPage() {
         onClose={() => setEditOpen(false)}
         onSubmit={handleSubmitEdit}
       />
+
+      {/* Modal de confirmación de inactivación */}
+      {confirmInactivate && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmInactivate(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Inactivar paciente</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  El paciente quedará oculto en búsquedas y listas, pero su historial
+                  clínico y citas se preservan completos. Podrás reactivarlo después
+                  desde la lista marcando "Mostrar inactivos".
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmInactivate(false)}
+                disabled={setActiveMutation.isPending}
+                className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveMutation.mutate(false, {
+                    onSuccess: () => setConfirmInactivate(false),
+                  });
+                }}
+                disabled={setActiveMutation.isPending}
+                className="px-4 py-2.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-xl disabled:opacity-50"
+              >
+                {setActiveMutation.isPending ? 'Inactivando...' : 'Sí, inactivar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -234,7 +321,13 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
   );
 }
 
-function AppointmentRow({ apt }: { apt: PatientAppointment }) {
+function AppointmentRow({
+  apt,
+  onClick,
+}: {
+  apt: PatientAppointment;
+  onClick: () => void;
+}) {
   const date = new Date(apt.start_time);
   const dateStr = date.toLocaleDateString('es-SV', {
     day: 'numeric',
@@ -247,9 +340,19 @@ function AppointmentRow({ apt }: { apt: PatientAppointment }) {
     hour12: true,
   });
   const color = apt.status?.color ?? '#94a3b8';
+  const name = apt.status?.name;
+  const isClickable = name !== 'cancelada' && name !== 'no_asistio';
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3 flex items-center gap-3">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!isClickable}
+      title={isClickable ? 'Abrir consulta' : 'Sin consulta (cita no atendida)'}
+      className={`w-full text-left bg-white rounded-lg border border-gray-200 p-3 flex items-center gap-3 transition-colors ${
+        isClickable ? 'hover:border-emerald-300 hover:bg-emerald-50/30 cursor-pointer' : 'opacity-70 cursor-not-allowed'
+      }`}
+    >
       <div
         className="w-1 h-10 rounded-full flex-shrink-0"
         style={{ backgroundColor: color }}
@@ -270,7 +373,12 @@ function AppointmentRow({ apt }: { apt: PatientAppointment }) {
       >
         {apt.status?.display_name ?? '—'}
       </span>
-    </div>
+      {isClickable && (
+        <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      )}
+    </button>
   );
 }
 

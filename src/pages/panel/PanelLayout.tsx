@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/panel/bloqueos', label: 'Bloqueos', icon: 'ri-calendar-close-line' },
   { path: '/panel/citas', label: 'Citas', icon: 'ri-list-check-2' },
   { path: '/panel/pacientes', label: 'Pacientes', icon: 'ri-user-3-line' },
+  { path: '/panel/catalogos', label: 'Catálogos', icon: 'ri-book-2-line', doctorOnly: true },
   { path: '/panel/perfil', label: 'Mi perfil público', icon: 'ri-id-card-line', doctorOnly: true },
 ];
 
@@ -109,8 +110,10 @@ export default function PanelLayout() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar persistente (md y lg, con dos niveles de detalle) */}
-      <aside className="hidden md:flex md:flex-col md:w-16 lg:w-64 bg-white border-r border-gray-200">
+      {/* Sidebar persistente (md y lg, con dos niveles de detalle).
+          sticky top-0 h-screen self-start: el sidebar queda anclado al viewport
+          mientras el main scrollea independientemente. */}
+      <aside className="hidden md:flex md:flex-col md:w-16 lg:w-64 bg-white border-r border-gray-200 sticky top-0 h-screen self-start">
         {/* Logo */}
         <div className="p-3 lg:p-6 border-b border-gray-200 flex flex-col items-center lg:items-start">
           <img

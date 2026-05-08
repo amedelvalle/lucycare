@@ -30,6 +30,8 @@ npm-debug.log*
 .supabase/
 out/
 *.sql
+# ...pero sí versionamos migraciones explícitas
+!migrations/*.sql
 
 # Claude Code harness (worktrees, agent state, transcripts)
 .claude/

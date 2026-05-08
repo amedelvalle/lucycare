@@ -14,6 +14,7 @@ export default function PacientesPage() {
   // ─── Búsqueda con debounce ────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
@@ -26,7 +27,7 @@ export default function PacientesPage() {
     isLoading,
     isFetching,
     error,
-  } = usePatientsList(clinicId ?? undefined, debouncedSearch);
+  } = usePatientsList(clinicId ?? undefined, debouncedSearch, includeInactive);
 
   // ─── Loading inicial ──────────────────────────────────────────────
   if (loadingDoctor) {
@@ -109,6 +110,17 @@ export default function PacientesPage() {
         )}
       </div>
 
+      {/* Filtro inactivos */}
+      <label className="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer mb-3">
+        <input
+          type="checkbox"
+          checked={includeInactive}
+          onChange={(e) => setIncludeInactive(e.target.checked)}
+          className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-200"
+        />
+        Mostrar pacientes inactivos
+      </label>
+
       {/* Indicador de refetch en background */}
       {isFetching && !isLoading && (
         <div className="mb-3 flex items-center gap-2 text-xs text-gray-400">
@@ -182,8 +194,11 @@ function PatientRow({
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left bg-white rounded-lg border border-gray-200 p-4
-        hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors"
+      className={`w-full text-left bg-white rounded-lg border p-4 transition-colors ${
+        patient.is_active
+          ? 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/30'
+          : 'border-gray-200 opacity-60 hover:opacity-100'
+      }`}
     >
       <div className="flex items-center gap-3">
         {patient.photo_url ? (
@@ -193,15 +208,24 @@ function PatientRow({
             className="w-10 h-10 rounded-full object-cover flex-shrink-0"
           />
         ) : (
-          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-semibold flex-shrink-0">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${
+            patient.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+          }`}>
             {initials}
           </div>
         )}
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {patient.full_name}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {patient.full_name}
+            </p>
+            {!patient.is_active && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+                Inactivo
+              </span>
+            )}
+          </div>
           <p className="text-xs text-gray-500 truncate">
             {patient.phone || 'Sin teléfono'}
           </p>

@@ -16,3 +16,44 @@
     transform: translateY(0);
   }
 }
+
+/* ───────────────────────────────────────────────────────────
+ * Impresión — receta médica
+ * ───────────────────────────────────────────────────────────
+ * Oculta UI de panel (sidebar, mobile header, sticky bottom bar)
+ * para que solo aparezca el componente RecetaPrint en la hoja.
+ */
+@media print {
+  /* Sidebar persistente (md+) */
+  aside {
+    display: none !important;
+  }
+  /* Mobile fixed header */
+  .md\:hidden.fixed {
+    display: none !important;
+  }
+  /* Sticky bottom bar de la consulta (z-30) */
+  .fixed.bottom-0 {
+    display: none !important;
+  }
+  /* Reset background y padding del main para impresión */
+  main {
+    padding: 0 !important;
+    background: white !important;
+  }
+  /* Body sin scroll y sin background gris */
+  body {
+    background: white !important;
+  }
+  /* Receta usa fuentes serif para look profesional impreso */
+  .print-receta {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    color: #111;
+    padding: 1cm;
+    max-width: 100%;
+  }
+  /* Evitar saltos de página dentro de cada medicamento */
+  .print-receta li {
+    page-break-inside: avoid;
+  }
+}

@@ -1261,7 +1261,7 @@ export type Database = {
           spo2: number | null
           systolic_bp: number | null
           temperature: number | null
-          weight_lb: number | null
+          weight_kg: number | null
         }
         Insert: {
           appointment_id: string
@@ -1277,7 +1277,7 @@ export type Database = {
           spo2?: number | null
           systolic_bp?: number | null
           temperature?: number | null
-          weight_lb?: number | null
+          weight_kg?: number | null
         }
         Update: {
           appointment_id?: string
@@ -1293,7 +1293,7 @@ export type Database = {
           spo2?: number | null
           systolic_bp?: number | null
           temperature?: number | null
-          weight_lb?: number | null
+          weight_kg?: number | null
         }
         Relationships: [
           {

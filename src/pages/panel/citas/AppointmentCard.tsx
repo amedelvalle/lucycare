@@ -3,6 +3,7 @@
 // ACCIÓN: NUEVO — crear archivo en carpeta citas
 // ═══════════════════════════════════════════════════════════
 
+import { useNavigate } from 'react-router-dom';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
 
 interface AppointmentCardProps {
@@ -18,7 +19,11 @@ export default function AppointmentCard({
   onChangeStatus,
   isUpdating,
 }: AppointmentCardProps) {
+  const navigate = useNavigate();
   const { patient, service, status } = appointment;
+  const canOpenConsultation =
+    status?.name !== 'cancelada' && status?.name !== 'no_asistio';
+  const isAttended = status?.name === 'atendida';
 
   const startTime = new Date(appointment.start_time);
   const endTime = new Date(appointment.end_time);
@@ -107,9 +112,26 @@ export default function AppointmentCard({
           )}
         </div>
 
-        {/* Selector de estado (solo si no es final) */}
-        {!status?.is_final && (
-          <div className="flex-shrink-0">
+        {/* Acciones a la derecha */}
+        <div className="flex-shrink-0 flex flex-col items-end gap-2">
+          {/* Botón de consulta clínica (oculto para canceladas/no-show) */}
+          {canOpenConsultation && (
+            <button
+              type="button"
+              onClick={() => navigate(`/panel/consulta/${appointment.id}`)}
+              title={isAttended ? 'Ver consulta clínica' : 'Abrir consulta clínica'}
+              className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              {isAttended ? 'Ver consulta' : 'Consulta'}
+            </button>
+          )}
+
+          {/* Selector de estado (solo si no es final) */}
+          {!status?.is_final && (
             <select
               value={status?.id ?? ''}
               onChange={(e) => onChangeStatus(appointment.id, e.target.value)}
@@ -124,8 +146,8 @@ export default function AppointmentCard({
                 </option>
               ))}
             </select>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

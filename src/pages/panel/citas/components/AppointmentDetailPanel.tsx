@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
 import { formatTime } from '@/utils/calendar';
 import QuickActions from './QuickActions';
@@ -74,6 +75,7 @@ function DetailContent({
   onChangeStatus: (appointmentId: string, statusId: string, cancellationReason?: string) => void;
   isUpdating: boolean;
 }) {
+  const navigate = useNavigate();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [pendingCancelStatusId, setPendingCancelStatusId] = useState<string | null>(null);
   const [transitionError, setTransitionError] = useState<string | null>(null);
@@ -204,6 +206,21 @@ function DetailContent({
           </div>
         ) : null}
 
+        {/* Abrir consulta clínica — disponible salvo en cancelada/no_asistio */}
+        {status?.name !== 'cancelada' && status?.name !== 'no_asistio' && (
+          <button
+            type="button"
+            onClick={() => navigate(`/panel/consulta/${appointment.id}`)}
+            className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            {status?.name === 'atendida' ? 'Ver consulta clínica' : 'Abrir consulta clínica'}
+          </button>
+        )}
+
         {/* Acciones rápidas */}
         {!isFinal ? (
           <>
@@ -233,11 +250,6 @@ function DetailContent({
           </div>
         )}
 
-        <div className="pt-2 border-t border-gray-100">
-          <p className="text-[11px] text-gray-400 italic">
-            Más acciones (iniciar consulta, ficha clínica) se agregarán en próximos sprints.
-          </p>
-        </div>
       </div>
 
       {/* Modal de cancelación — fuera del scroll del panel */}
