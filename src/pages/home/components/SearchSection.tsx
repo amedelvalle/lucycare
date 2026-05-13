@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory';
 
 interface SearchSectionProps {
@@ -40,6 +40,7 @@ export default function SearchSection({
   const [showMunicipalityDropdown, setShowMunicipalityDropdown] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const filtersContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── DATOS REALES desde Supabase ───
   const { data: specialties = [] } = useSpecialties();
@@ -85,14 +86,30 @@ export default function SearchSection({
     return muni?.name || 'Todos los municipios';
   };
 
-  // Cerrar dropdowns al hacer clic fuera
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setShowSpecialtyDropdown(false);
-      setShowDepartmentDropdown(false);
-      setShowMunicipalityDropdown(false);
-    };
+  // Agrupar municipios por district (nuevo municipio agrupador de El Salvador 2024)
+  // para que el dropdown sea navegable con 30+ items por departamento
+  const municipalityGroups = useMemo(() => {
+    const map = new Map<string, typeof municipalities>();
+    for (const m of municipalities) {
+      const key = m.district || 'Otros';
+      const list = map.get(key) ?? [];
+      list.push(m);
+      map.set(key, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'es'));
+  }, [municipalities]);
 
+  // Cerrar dropdowns SOLO si el click es realmente fuera de los filtros.
+  // (Antes el listener cerraba en cualquier mousedown, cancelando los onClick
+  // de las opciones porque el botón se desmontaba antes de recibir el click)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (filtersContainerRef.current && !filtersContainerRef.current.contains(e.target as Node)) {
+        setShowSpecialtyDropdown(false);
+        setShowDepartmentDropdown(false);
+        setShowMunicipalityDropdown(false);
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -135,7 +152,7 @@ export default function SearchSection({
       </div>
 
       {/* Buscador principal */}
-      <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-1.5 sm:p-2 border border-gray-100">
+      <div ref={filtersContainerRef} className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-1.5 sm:p-2 border border-gray-100">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-1.5 sm:gap-2">
           {/* Search by Name */}
           <div className="relative">
@@ -168,7 +185,7 @@ export default function SearchSection({
           </div>
 
           {/* Specialty Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative">
             <button
               onClick={() => {
                 setShowSpecialtyDropdown(!showSpecialtyDropdown);
@@ -211,7 +228,7 @@ export default function SearchSection({
           </div>
 
           {/* Department Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative">
             <button
               onClick={() => {
                 setShowDepartmentDropdown(!showDepartmentDropdown);
@@ -254,7 +271,7 @@ export default function SearchSection({
           </div>
 
           {/* Municipality Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative">
             <button
               onClick={() => {
                 if (selectedDepartment) {
@@ -286,18 +303,25 @@ export default function SearchSection({
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
                   onClick={() => handleMunicipalitySelect('')}
-                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors border-b border-gray-100"
                 >
                   Todos los municipios
                 </button>
-                {municipalities.map((muni) => (
-                  <button
-                    key={muni.id}
-                    onClick={() => handleMunicipalitySelect(muni.id)}
-                    className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
-                  >
-                    {muni.name}
-                  </button>
+                {municipalityGroups.map(([district, items]) => (
+                  <div key={district}>
+                    <p className="px-4 sm:px-6 pt-2 pb-1 text-[10px] sm:text-xs font-bold text-emerald-700 uppercase tracking-wide bg-gray-50/60 sticky top-0">
+                      {district}
+                    </p>
+                    {items.map((muni) => (
+                      <button
+                        key={muni.id}
+                        onClick={() => handleMunicipalitySelect(muni.id)}
+                        className="w-full pl-6 sm:pl-8 pr-4 sm:pr-6 py-2 sm:py-2.5 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                      >
+                        {muni.name}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}
