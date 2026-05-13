@@ -214,12 +214,13 @@ export async function isDraftConsultationEmpty(consultationId: string): Promise<
   );
   if (hasText) return false;
 
-  const [{ count: diagCount }, { count: rxCount }] = await Promise.all([
+  const [{ count: diagCount }, { count: rxCount }, { count: fhCount }] = await Promise.all([
     supabase.from('consultation_diagnoses').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
     supabase.from('prescriptions').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
+    supabase.from('consultation_family_history').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
   ]);
 
-  return (diagCount ?? 0) === 0 && (rxCount ?? 0) === 0;
+  return (diagCount ?? 0) === 0 && (rxCount ?? 0) === 0 && (fhCount ?? 0) === 0;
 }
 
 /**

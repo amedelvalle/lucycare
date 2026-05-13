@@ -21,14 +21,18 @@ interface WeekViewProps {
   dateStr: string;
   appointments: AppointmentListItem[];
   onAppointmentClick: (appointment: AppointmentListItem) => void;
+  startHour?: number;
+  endHour?: number;
 }
 
 export default function WeekView({
   dateStr,
   appointments,
   onAppointmentClick,
+  startHour = 6,
+  endHour = 22,
 }: WeekViewProps) {
-  const hours = getHourLabels();
+  const hours = getHourLabels(startHour, endHour);
   const slotsPerHour = 60 / SLOT_MINUTES;
   const weekDates = getWeekDates(dateStr);
   const today = getToday();
@@ -111,7 +115,7 @@ export default function WeekView({
                   ))}
 
                   {/* Línea de hora actual solo en columna de hoy */}
-                  {isToday && <CurrentTimeLine />}
+                  {isToday && <CurrentTimeLine startHour={startHour} endHour={endHour} />}
 
                   {/* Citas */}
                   {dayApts.map((apt) => (
@@ -120,6 +124,7 @@ export default function WeekView({
                       appointment={apt}
                       onClick={onAppointmentClick}
                       compact
+                      gridStartHour={startHour}
                     />
                   ))}
                 </div>
@@ -134,14 +139,14 @@ export default function WeekView({
 
 // ─── Sub-componentes ─────────────────────────────────────────
 
-function CurrentTimeLine() {
+function CurrentTimeLine({ startHour, endHour }: { startHour: number; endHour: number }) {
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
 
-  if (hours < 6 || hours >= 22) return null;
+  if (hours < startHour || hours >= endHour) return null;
 
-  const minutesFromStart = (hours - 6) * 60 + minutes;
+  const minutesFromStart = (hours - startHour) * 60 + minutes;
   const top = (minutesFromStart / SLOT_MINUTES) * SLOT_HEIGHT_PX;
 
   return (

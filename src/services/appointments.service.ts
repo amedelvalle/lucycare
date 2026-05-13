@@ -173,14 +173,47 @@ export function canTransitionTo(
   return { allowed: true };
 }
 
+// ─── Catálogo de razones de cancelación ──────────────────────────────
+
+export type CancelReasonCategory = 'paciente' | 'medico' | 'sistema';
+
+export interface CancelReason {
+  id: string;
+  name: string;
+  category: CancelReasonCategory;
+  is_active: boolean;
+}
+
 /**
- * Cambiar el estado de una cita, con soporte opcional de cancelación y audit log.
+ * Obtiene las razones de cancelación activas, ordenadas por categoría y nombre.
+ * Usado por el modal de cancelación.
+ */
+export async function getCancelReasons(): Promise<CancelReason[]> {
+  const { data, error } = await supabase
+    .from('cancel_reasons')
+    .select('id, name, category, is_active')
+    .eq('is_active', true)
+    .order('category')
+    .order('name');
+
+  if (error) throw error;
+  return (data ?? []) as CancelReason[];
+}
+
+/**
+ * Cambia el estado de una cita. Si la nueva razón de cancelación se pasa,
+ * también guarda `cancel_reason_id` y opcionalmente `internal_notes`.
+ *
+ * Schema correcto (verificado contra DB):
+ *   - cancel_reason_id (FK a cancel_reasons)
+ *   - internal_notes (texto libre, para detalle adicional del doctor)
  */
 export async function updateAppointmentStatus(
   appointmentId: string,
   statusId: string,
   options?: {
-    cancellationReason?: string;
+    cancelReasonId?: string;
+    internalNotes?: string;
     oldStatusName?: string;
     newStatusName?: string;
   }
@@ -190,11 +223,11 @@ export async function updateAppointmentStatus(
     updated_at: new Date().toISOString(),
   };
 
-  if (options?.cancellationReason) {
-    const { data: { user } } = await supabase.auth.getUser();
-    updatePayload.cancellation_reason = options.cancellationReason;
-    updatePayload.cancelled_at = new Date().toISOString();
-    updatePayload.cancelled_by = user?.id ?? null;
+  if (options?.cancelReasonId) {
+    updatePayload.cancel_reason_id = options.cancelReasonId;
+  }
+  if (options?.internalNotes !== undefined) {
+    updatePayload.internal_notes = options.internalNotes?.trim() || null;
   }
 
   const { error } = await supabase
@@ -211,8 +244,11 @@ export async function updateAppointmentStatus(
     oldData: options?.oldStatusName ? { status: options.oldStatusName } : undefined,
     newData: {
       status: options?.newStatusName,
-      ...(options?.cancellationReason
-        ? { cancellation_reason: options.cancellationReason }
+      ...(options?.cancelReasonId
+        ? { cancel_reason_id: options.cancelReasonId }
+        : {}),
+      ...(options?.internalNotes
+        ? { internal_notes: options.internalNotes }
         : {}),
     },
   });

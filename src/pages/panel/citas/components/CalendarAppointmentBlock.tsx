@@ -10,16 +10,19 @@ interface CalendarAppointmentBlockProps {
   appointment: AppointmentListItem;
   onClick: (appointment: AppointmentListItem) => void;
   compact?: boolean;
+  gridStartHour?: number;
 }
 
 export default function CalendarAppointmentBlock({
   appointment,
   onClick,
   compact = false,
+  gridStartHour = 6,
 }: CalendarAppointmentBlockProps) {
   const { top, height } = getAppointmentPosition(
     appointment.start_time,
-    appointment.end_time
+    appointment.end_time,
+    gridStartHour
   );
 
   const color = appointment.status?.color ?? '#94a3b8';

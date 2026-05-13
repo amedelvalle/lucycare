@@ -8,6 +8,7 @@ import {
   getAppointmentsByDate,
   getAppointmentStatuses,
   updateAppointmentStatus,
+  getCancelReasons,
 } from '@/services/appointments.service';
 
 // ─── Query Keys ──────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ export const appointmentKeys = {
   byDate: (doctorId: string, date: string) =>
     [...appointmentKeys.all, 'by-date', doctorId, date] as const,
   statuses: ['appointment-statuses'] as const,
+  cancelReasons: ['cancel-reasons'] as const,
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────
@@ -47,6 +49,17 @@ export function useAppointmentStatuses() {
 }
 
 /**
+ * Catálogo de razones de cancelación (modal de cancelar cita)
+ */
+export function useCancelReasons() {
+  return useQuery({
+    queryKey: appointmentKeys.cancelReasons,
+    queryFn: getCancelReasons,
+    staleTime: 1000 * 60 * 30, // Cambia poco, cachear 30 min
+  });
+}
+
+/**
  * Cambiar estado de una cita
  */
 export function useUpdateAppointmentStatus(doctorId: string, date: string) {
@@ -56,18 +69,21 @@ export function useUpdateAppointmentStatus(doctorId: string, date: string) {
     mutationFn: ({
       appointmentId,
       statusId,
-      cancellationReason,
+      cancelReasonId,
+      internalNotes,
       oldStatusName,
       newStatusName,
     }: {
       appointmentId: string;
       statusId: string;
-      cancellationReason?: string;
+      cancelReasonId?: string;
+      internalNotes?: string;
       oldStatusName?: string;
       newStatusName?: string;
     }) =>
       updateAppointmentStatus(appointmentId, statusId, {
-        cancellationReason,
+        cancelReasonId,
+        internalNotes,
         oldStatusName,
         newStatusName,
       }),

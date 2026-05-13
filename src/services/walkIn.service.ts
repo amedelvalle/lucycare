@@ -103,6 +103,70 @@ export async function createWalkInPatient(
 }
 
 /**
+ * Próxima cita futura del paciente con este médico (no cancelada / no-show).
+ * Usado para mostrar "ya tiene cita agendada" en el FollowUpScheduler.
+ */
+export interface NextAppointmentInfo {
+  id: string;
+  start_time: string;
+  end_time: string;
+  service_name: string | null;
+  status_name: string;
+}
+
+export async function getNextAppointmentForPatient(
+  patientId: string,
+  doctorId: string,
+  afterDatetime: string
+): Promise<NextAppointmentInfo | null> {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(
+      'id, start_time, end_time, service:services(name), status:appointment_statuses(name, is_final)'
+    )
+    .eq('patient_id', patientId)
+    .eq('doctor_id', doctorId)
+    .gt('start_time', afterDatetime)
+    .order('start_time', { ascending: true })
+    .limit(10);
+
+  if (error) throw error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const valid = (data as any[])?.find(
+    (a) => a.status?.name !== 'cancelada' && a.status?.name !== 'no_asistio'
+  );
+  if (!valid) return null;
+  return {
+    id: valid.id,
+    start_time: valid.start_time,
+    end_time: valid.end_time,
+    service_name: valid.service?.name ?? null,
+    status_name: valid.status?.name ?? '',
+  };
+}
+
+/**
+ * Devuelve los horarios ocupados (no cancelados) del doctor en una fecha,
+ * para que el FollowUpScheduler pueda marcar slots como bloqueados.
+ */
+export async function getDayBusySlots(
+  doctorId: string,
+  dateStr: string // 'YYYY-MM-DD'
+): Promise<Array<{ start: string; end: string }>> {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('start_time, end_time, status:appointment_statuses(name)')
+    .eq('doctor_id', doctorId)
+    .gte('start_time', `${dateStr}T00:00:00`)
+    .lt('start_time', `${dateStr}T23:59:59`);
+  if (error) throw error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data as any[]) ?? [])
+    .filter((a) => a.status?.name !== 'cancelada' && a.status?.name !== 'no_asistio')
+    .map((a) => ({ start: a.start_time, end: a.end_time }));
+}
+
+/**
  * Crea una cita walk-in (source = 'manual').
  * Valida conflicto de horario antes de insertar.
  */

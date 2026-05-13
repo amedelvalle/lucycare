@@ -78,13 +78,33 @@ export async function verifyOtp(
   // Verificar/crear profile en la tabla profiles
   const profile = await ensureProfile(data.user.id, phone)
 
+  // Procesar invitaciones pendientes (si la asistente fue invitada por un doctor)
+  // Esto puede cambiar el role del profile de 'patient' a 'assistant'
+  let finalRole = profile?.role || 'patient'
+  try {
+    const { data: acceptedCount } = await supabase.rpc('accept_clinic_invitations', {
+      user_phone: phone,
+    })
+    if ((acceptedCount as number) > 0) {
+      // Re-leer profile para tener el role actualizado
+      const { data: updated } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      if (updated?.role) finalRole = updated.role
+    }
+  } catch (err) {
+    console.warn('[verifyOtp] error procesando invitaciones (no crítico):', err)
+  }
+
   return {
     success: true,
     user: {
       id: data.user.id,
       phone: phone,
       name: profile?.full_name || null,
-      role: profile?.role || 'patient',
+      role: finalRole,
     },
   }
 }

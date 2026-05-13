@@ -18,14 +18,18 @@ interface DayViewProps {
   dateStr: string;
   appointments: AppointmentListItem[];
   onAppointmentClick: (appointment: AppointmentListItem) => void;
+  startHour?: number;
+  endHour?: number;
 }
 
 export default function DayView({
   dateStr,
   appointments,
   onAppointmentClick,
+  startHour = 6,
+  endHour = 22,
 }: DayViewProps) {
-  const hours = getHourLabels();
+  const hours = getHourLabels(startHour, endHour);
   const slotsPerHour = 60 / SLOT_MINUTES;
 
   // Filtrar solo citas de este día
@@ -36,7 +40,7 @@ export default function DayView({
   const isToday = dateStr === getToday();
 
   // Línea de hora actual (solo si es hoy)
-  const currentTimeLine = isToday ? getCurrentTimePosition() : null;
+  const currentTimeLine = isToday ? getCurrentTimePosition(startHour, endHour) : null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -101,6 +105,7 @@ export default function DayView({
                 key={apt.id}
                 appointment={apt}
                 onClick={onAppointmentClick}
+                gridStartHour={startHour}
               />
             ))}
 
@@ -123,14 +128,14 @@ export default function DayView({
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-function getCurrentTimePosition(): number | null {
+function getCurrentTimePosition(startHour: number, endHour: number): number | null {
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
 
-  if (hours < 6 || hours >= 22) return null;
+  if (hours < startHour || hours >= endHour) return null;
 
-  const minutesFromStart = (hours - 6) * 60 + minutes;
+  const minutesFromStart = (hours - startHour) * 60 + minutes;
   const slotsFromStart = minutesFromStart / SLOT_MINUTES;
   return slotsFromStart * SLOT_HEIGHT_PX;
 }

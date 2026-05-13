@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { getMyAvailabilityRules, saveAvailabilityRules } from '../../../services/availability.service';
 
 const dayLabels = [
@@ -23,6 +24,7 @@ type WeekConfig = Record<number, DayConfig>;
 const defaultDay: DayConfig = { enabled: false, startTime: '09:00', endTime: '17:00', slotDuration: 30 };
 
 export default function DisponibilidadPage() {
+  const queryClient = useQueryClient();
   const [week, setWeek] = useState<WeekConfig>(() => {
     const w: WeekConfig = {};
     dayLabels.forEach(d => { w[d.dayOfWeek] = { ...defaultDay }; });
@@ -90,6 +92,10 @@ export default function DisponibilidadPage() {
     setSaving(false);
     if (result.success) {
       setSaved(true);
+      // Invalidar caches que dependen del horario del doctor
+      queryClient.invalidateQueries({ queryKey: ['doctor-calendar-hours'] });
+      queryClient.invalidateQueries({ queryKey: ['availability'] });
+      queryClient.invalidateQueries({ queryKey: ['slots'] }); // si hay slots cacheados para el booking público
       setTimeout(() => setSaved(false), 3000);
     } else {
       setError(result.error || 'Error al guardar');

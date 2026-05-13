@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
 import { useCalendarAppointments } from '@/hooks/useCalendarAppointments';
+import { useDoctorCalendarHours } from '@/hooks/useDoctorCalendarHours';
 import {
   getToday,
   shiftDate,
@@ -23,7 +24,11 @@ import CreateWalkInModal from './components/CreateWalkInModal';
 interface CalendarViewProps {
   doctorId: string;
   statuses: AppointmentStatus[];
-  onChangeStatus: (appointmentId: string, statusId: string, cancellationReason?: string) => void;
+  onChangeStatus: (
+    appointmentId: string,
+    statusId: string,
+    cancelInfo?: { cancelReasonId?: string; internalNotes?: string }
+  ) => void;
   isUpdatingStatus: boolean;
 }
 
@@ -47,6 +52,11 @@ export default function CalendarView({
     isLoading,
     isFetching,
   } = useCalendarAppointments(doctorId, currentDate, viewMode);
+
+  // Rango horario dinámico según disponibilidad del doctor
+  const { data: calendarHours } = useDoctorCalendarHours(doctorId);
+  const gridStart = calendarHours?.startHour ?? 8;
+  const gridEnd = calendarHours?.endHour ?? 17;
 
   const isToday = currentDate === getToday();
 
@@ -76,8 +86,12 @@ export default function CalendarView({
 
   // Cuando se cambia el estado, actualizar la cita seleccionada con el nuevo status
   const handleStatusChange = useCallback(
-    (appointmentId: string, statusId: string, cancellationReason?: string) => {
-      onChangeStatus(appointmentId, statusId, cancellationReason);
+    (
+      appointmentId: string,
+      statusId: string,
+      cancelInfo?: { cancelReasonId?: string; internalNotes?: string }
+    ) => {
+      onChangeStatus(appointmentId, statusId, cancelInfo);
 
       // Actualizar el snapshot local del panel con el nuevo status
       const newStatus = statuses.find((s) => s.id === statusId);
@@ -100,29 +114,32 @@ export default function CalendarView({
   // ─── Render ──────────────────────────────────────────────
   return (
     <>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1">
-          <CalendarHeader
-            currentDate={currentDate}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            onToday={handleToday}
-            isToday={isToday}
-          />
+      {/* Header sticky — fecha + view toggle + nueva cita siempre visible al scrollear */}
+      <div className="sticky top-16 md:top-0 z-20 -mx-4 px-4 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 py-3 mb-4 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200/60">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <CalendarHeader
+              currentDate={currentDate}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onPrev={handlePrev}
+              onNext={handleNext}
+              onToday={handleToday}
+              isToday={isToday}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsWalkInOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white
+              bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex-shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            <span className="hidden sm:inline">Nueva cita</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsWalkInOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white
-            bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex-shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Nueva cita
-        </button>
       </div>
 
       {/* Indicador de refresco en segundo plano */}
@@ -153,6 +170,8 @@ export default function CalendarView({
               dateStr={currentDate}
               appointments={appointments}
               onAppointmentClick={handleAppointmentClick}
+              startHour={gridStart}
+              endHour={gridEnd}
             />
           )}
           {viewMode === 'week' && (
@@ -160,6 +179,8 @@ export default function CalendarView({
               dateStr={currentDate}
               appointments={appointments}
               onAppointmentClick={handleAppointmentClick}
+              startHour={gridStart}
+              endHour={gridEnd}
             />
           )}
           {viewMode === 'month' && (

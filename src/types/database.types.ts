@@ -399,6 +399,57 @@ export type Database = {
         }
         Relationships: []
       }
+      clinic_invitations: {
+        Row: {
+          accepted_at: string | null
+          cancelled_at: string | null
+          clinic_id: string
+          display_name: string | null
+          id: string
+          invited_at: string
+          invited_by: string
+          phone: string
+          role: Database["public"]["Enums"]["clinic_member_role"]
+        }
+        Insert: {
+          accepted_at?: string | null
+          cancelled_at?: string | null
+          clinic_id: string
+          display_name?: string | null
+          id?: string
+          invited_at?: string
+          invited_by: string
+          phone: string
+          role?: Database["public"]["Enums"]["clinic_member_role"]
+        }
+        Update: {
+          accepted_at?: string | null
+          cancelled_at?: string | null
+          clinic_id?: string
+          display_name?: string | null
+          id?: string
+          invited_at?: string
+          invited_by?: string
+          phone?: string
+          role?: Database["public"]["Enums"]["clinic_member_role"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_invitations_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinic_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinic_members: {
         Row: {
           clinic_id: string
@@ -501,6 +552,80 @@ export type Database = {
             columns: ["municipality_id"]
             isOneToOne: false
             referencedRelation: "municipalities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consultation_family_history: {
+        Row: {
+          consultation_id: string
+          family_history_id: string
+          id: string
+          notes: string | null
+        }
+        Insert: {
+          consultation_id: string
+          family_history_id: string
+          id?: string
+          notes?: string | null
+        }
+        Update: {
+          consultation_id?: string
+          family_history_id?: string
+          id?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultation_family_history_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "consultations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_family_history_family_history_id_fkey"
+            columns: ["family_history_id"]
+            isOneToOne: false
+            referencedRelation: "family_history_catalog"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      family_history_catalog: {
+        Row: {
+          created_at: string
+          description: string | null
+          doctor_id: string
+          id: string
+          is_active: boolean
+          name: string
+          usage_count: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          doctor_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          usage_count?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          doctor_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          usage_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_history_catalog_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
             referencedColumns: ["id"]
           },
         ]
@@ -1324,6 +1449,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_clinic_invitations: {
+        Args: { user_phone: string }
+        Returns: number
+      }
       get_user_clinic_ids: { Args: never; Returns: string[] }
       get_user_doctor_id: { Args: never; Returns: string }
       get_user_role: {
@@ -1361,6 +1490,10 @@ export type Database = {
         | "en_tratamiento"
         | "cronico"
         | "en_observacion"
+        | "en_estudio"
+        | "controlado"
+        | "descontrolado"
+        | "en_remision"
       diagnosis_type: "presuntivo" | "definitivo" | "diferencial"
       document_type:
         | "dui"
@@ -1382,6 +1515,8 @@ export type Database = {
         | "inhalador"
         | "supositorio"
         | "otro"
+        | "sobre"
+        | "gel"
       notification_channel: "sms" | "whatsapp" | "email"
       notification_status: "pending" | "sent" | "failed"
       notification_type:
@@ -1541,6 +1676,10 @@ export const Constants = {
         "en_tratamiento",
         "cronico",
         "en_observacion",
+        "en_estudio",
+        "controlado",
+        "descontrolado",
+        "en_remision",
       ],
       diagnosis_type: ["presuntivo", "definitivo", "diferencial"],
       document_type: [
@@ -1564,6 +1703,8 @@ export const Constants = {
         "inhalador",
         "supositorio",
         "otro",
+        "sobre",
+        "gel",
       ],
       notification_channel: ["sms", "whatsapp", "email"],
       notification_status: ["pending", "sent", "failed"],

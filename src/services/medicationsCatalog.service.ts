@@ -6,7 +6,14 @@ export type MedicationPresentation =
   | 'jarabe'
   | 'inyectable'
   | 'crema'
-  | 'gotas';
+  | 'gotas'
+  | 'suspension'
+  | 'parche'
+  | 'inhalador'
+  | 'supositorio'
+  | 'sobre'
+  | 'gel'
+  | 'otro';
 
 export interface MedicationCatalogItem {
   id: string;
@@ -23,9 +30,16 @@ export const PRESENTATIONS: { value: MedicationPresentation; label: string }[] =
   { value: 'tableta', label: 'Tableta' },
   { value: 'capsula', label: 'Cápsula' },
   { value: 'jarabe', label: 'Jarabe' },
+  { value: 'suspension', label: 'Suspensión' },
+  { value: 'gotas', label: 'Gotas' },
   { value: 'inyectable', label: 'Inyectable' },
   { value: 'crema', label: 'Crema' },
-  { value: 'gotas', label: 'Gotas' },
+  { value: 'gel', label: 'Gel' },
+  { value: 'parche', label: 'Parche' },
+  { value: 'inhalador', label: 'Inhalador' },
+  { value: 'sobre', label: 'Sobre' },
+  { value: 'supositorio', label: 'Supositorio' },
+  { value: 'otro', label: 'Otro' },
 ];
 
 export async function searchMedications(
@@ -95,16 +109,26 @@ export async function createMedication(
   return data;
 }
 
+import type { PaginatedResult } from './diagnosesCatalog.service';
+
 /**
- * Lista todos los medicamentos del catálogo del médico (admin).
+ * Lista paginada de medicamentos del catálogo del médico (admin).
  */
 export async function listAllMedications(
   doctorId: string,
-  options?: { search?: string; includeInactive?: boolean }
-): Promise<MedicationCatalogItem[]> {
+  options?: { search?: string; includeInactive?: boolean; page?: number; pageSize?: number }
+): Promise<PaginatedResult<MedicationCatalogItem>> {
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = options?.pageSize ?? 50;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let q = supabase
     .from('medications')
-    .select('id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count')
+    .select(
+      'id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count',
+      { count: 'exact' }
+    )
     .eq('doctor_id', doctorId);
 
   if (!options?.includeInactive) {
@@ -117,12 +141,13 @@ export async function listAllMedications(
     q = q.or(`commercial_name.ilike.%${escaped}%,active_ingredient.ilike.%${escaped}%`);
   }
 
-  const { data, error } = await q
+  const { data, error, count } = await q
     .order('usage_count', { ascending: false })
-    .order('commercial_name');
+    .order('commercial_name')
+    .range(from, to);
 
   if (error) throw error;
-  return data ?? [];
+  return { items: data ?? [], total: count ?? 0, page, pageSize };
 }
 
 export async function updateMedication(

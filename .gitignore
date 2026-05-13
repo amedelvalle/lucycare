@@ -38,3 +38,7 @@ out/
 
 # Tool artifacts
 extracted.txt
+
+# Datos crudos para sembrar catálogos (Excel/CSV)
+# Solo el SQL seed generado se versiona, no los archivos fuente
+imports/

@@ -17,6 +17,16 @@ import {
   createDiagnosis,
 } from '@/services/diagnosesCatalog.service';
 import {
+  searchFamilyHistory,
+  createFamilyHistory,
+} from '@/services/familyHistoryCatalog.service';
+import {
+  getConsultationFamilyHistory,
+  addConsultationFamilyHistory,
+  updateConsultationFamilyHistory,
+  removeConsultationFamilyHistory,
+} from '@/services/consultationFamilyHistory.service';
+import {
   getConsultationDiagnoses,
   addConsultationDiagnosis,
   updateConsultationDiagnosis,
@@ -49,8 +59,12 @@ export const consultationKeys = {
     ['diagnoses-catalog', doctorId, search] as const,
   medicationsCatalog: (doctorId: string, search: string) =>
     ['medications-catalog', doctorId, search] as const,
+  familyHistoryCatalog: (doctorId: string, search: string) =>
+    ['family-history-catalog', doctorId, search] as const,
   consultationDiagnoses: (consultationId: string) =>
     [...consultationKeys.all, 'cd', consultationId] as const,
+  consultationFamilyHistory: (consultationId: string) =>
+    [...consultationKeys.all, 'cfh', consultationId] as const,
   prescriptions: (consultationId: string) =>
     [...consultationKeys.all, 'rx', consultationId] as const,
   permanentRx: (patientId: string, doctorId: string) =>
@@ -142,11 +156,14 @@ export function useUpsertVitals(appointmentId: string, patientId: string) {
 // ─── Diagnósticos: catálogo ───────────────────────────────────────────
 
 export function useDiagnosesSearch(doctorId: string | undefined, search: string) {
+  // Solo dispara cuando hay al menos 1 carácter — evita queries innecesarias
+  // al abrir la consulta. El Combobox muestra "Empezá a escribir para buscar".
+  const trimmed = search.trim();
   return useQuery({
-    queryKey: consultationKeys.diagnosesCatalog(doctorId ?? '', search),
-    queryFn: () => searchDiagnoses(doctorId!, search),
-    enabled: !!doctorId,
-    staleTime: 1000 * 30,
+    queryKey: consultationKeys.diagnosesCatalog(doctorId ?? '', trimmed),
+    queryFn: () => searchDiagnoses(doctorId!, trimmed),
+    enabled: !!doctorId && trimmed.length >= 1,
+    staleTime: 1000 * 60,
     placeholderData: (prev) => prev,
   });
 }
@@ -225,11 +242,12 @@ export function useRemoveConsultationDiagnosis(consultationId: string) {
 // ─── Medicamentos: catálogo ───────────────────────────────────────────
 
 export function useMedicationsSearch(doctorId: string | undefined, search: string) {
+  const trimmed = search.trim();
   return useQuery({
-    queryKey: consultationKeys.medicationsCatalog(doctorId ?? '', search),
-    queryFn: () => searchMedications(doctorId!, search),
-    enabled: !!doctorId,
-    staleTime: 1000 * 30,
+    queryKey: consultationKeys.medicationsCatalog(doctorId ?? '', trimmed),
+    queryFn: () => searchMedications(doctorId!, trimmed),
+    enabled: !!doctorId && trimmed.length >= 1,
+    staleTime: 1000 * 60,
     placeholderData: (prev) => prev,
   });
 }
@@ -304,6 +322,76 @@ export function useRemovePrescription(consultationId: string) {
     mutationFn: (id: string) => removePrescription(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
+    },
+  });
+}
+
+// ─── Antecedentes familiares: catálogo ────────────────────────────────
+
+export function useFamilyHistorySearch(doctorId: string | undefined, search: string) {
+  const trimmed = search.trim();
+  return useQuery({
+    queryKey: consultationKeys.familyHistoryCatalog(doctorId ?? '', trimmed),
+    queryFn: () => searchFamilyHistory(doctorId!, trimmed),
+    enabled: !!doctorId && trimmed.length >= 1,
+    staleTime: 1000 * 60,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCreateFamilyHistory(doctorId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; description?: string }) =>
+      createFamilyHistory(doctorId, input.name, input.description),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['family-history-catalog', doctorId] });
+      qc.invalidateQueries({ queryKey: ['catalogs', 'family-history', doctorId] });
+    },
+  });
+}
+
+// ─── Antecedentes familiares: asignados a la consulta ────────────────
+
+export function useConsultationFamilyHistory(consultationId: string | undefined) {
+  return useQuery({
+    queryKey: consultationKeys.consultationFamilyHistory(consultationId ?? ''),
+    queryFn: () => getConsultationFamilyHistory(consultationId!),
+    enabled: !!consultationId,
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useAddConsultationFamilyHistory(consultationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { familyHistoryId: string; notes?: string }) =>
+      addConsultationFamilyHistory(consultationId, input.familyHistoryId, input.notes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+    },
+  });
+}
+
+export function useUpdateConsultationFamilyHistory(consultationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; notes?: string | null }) => {
+      const { id, ...updates } = input;
+      return updateConsultationFamilyHistory(id, updates);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+    },
+  });
+}
+
+export function useRemoveConsultationFamilyHistory(consultationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => removeConsultationFamilyHistory(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
     },
   });
 }

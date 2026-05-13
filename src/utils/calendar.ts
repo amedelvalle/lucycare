@@ -146,11 +146,15 @@ export function shiftDate(
 // ─── Helpers del grid horario ────────────────────────────────
 
 /**
- * Array de horas visibles en el grid (ej: [6, 7, 8, ..., 22])
+ * Array de horas visibles en el grid (ej: [6, 7, 8, ..., 22]).
+ * Acepta rango custom — útil para adaptar al horario del doctor.
  */
-export function getHourLabels(): number[] {
+export function getHourLabels(
+  startHour: number = DAY_START_HOUR,
+  endHour: number = DAY_END_HOUR
+): number[] {
   const result: number[] = [];
-  for (let h = DAY_START_HOUR; h <= DAY_END_HOUR; h++) {
+  for (let h = startHour; h <= endHour; h++) {
     result.push(h);
   }
   return result;
@@ -159,9 +163,12 @@ export function getHourLabels(): number[] {
 /**
  * Array de todos los slots del día en formato HH:MM (ej: ['06:00', '06:30', ...])
  */
-export function getSlotLabels(): string[] {
+export function getSlotLabels(
+  startHour: number = DAY_START_HOUR,
+  endHour: number = DAY_END_HOUR
+): string[] {
   const result: string[] = [];
-  for (let h = DAY_START_HOUR; h < DAY_END_HOUR; h++) {
+  for (let h = startHour; h < endHour; h++) {
     for (let m = 0; m < 60; m += SLOT_MINUTES) {
       result.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
     }
@@ -174,14 +181,15 @@ export function getSlotLabels(): string[] {
  */
 export function getAppointmentPosition(
   startTime: string,
-  endTime: string
+  endTime: string,
+  gridStartHour: number = DAY_START_HOUR
 ): { top: number; height: number } {
   const start = new Date(startTime);
   const end = new Date(endTime);
 
   const startMinutes = start.getHours() * 60 + start.getMinutes();
   const endMinutes = end.getHours() * 60 + end.getMinutes();
-  const gridStartMinutes = DAY_START_HOUR * 60;
+  const gridStartMinutes = gridStartHour * 60;
 
   const slotsFromStart = (startMinutes - gridStartMinutes) / SLOT_MINUTES;
   const durationSlots = (endMinutes - startMinutes) / SLOT_MINUTES;
@@ -189,6 +197,38 @@ export function getAppointmentPosition(
   return {
     top: slotsFromStart * SLOT_HEIGHT_PX,
     height: Math.max(durationSlots * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2),
+  };
+}
+
+/**
+ * Calcula el rango horario apropiado para mostrar el grid del calendario
+ * basado en las reglas de availability del doctor.
+ *
+ * - Si no hay reglas: 8am-5pm (default)
+ * - Con reglas: min/max ± 1h de buffer (suelo 6am, techo 22h)
+ */
+export function computeCalendarHours(
+  rules: Array<{ startTime: string; endTime: string; isActive?: boolean }>
+): { startHour: number; endHour: number } {
+  const active = rules.filter((r) => r.isActive !== false);
+  if (active.length === 0) return { startHour: 8, endHour: 17 };
+
+  let minHour = 24;
+  let maxHour = 0;
+  for (const r of active) {
+    const startH = parseInt(r.startTime.split(':')[0], 10);
+    const endH = parseInt(r.endTime.split(':')[0], 10);
+    const endM = parseInt(r.endTime.split(':')[1] ?? '0', 10);
+    // Si termina exactamente en HH:00, end hour es HH; sino redondea hacia arriba
+    const endHourCeil = endM > 0 ? endH + 1 : endH;
+    if (startH < minHour) minHour = startH;
+    if (endHourCeil > maxHour) maxHour = endHourCeil;
+  }
+
+  // Buffer de 1h a cada lado, dentro de límites razonables
+  return {
+    startHour: Math.max(6, minHour - 1),
+    endHour: Math.min(22, maxHour + 1),
   };
 }
 

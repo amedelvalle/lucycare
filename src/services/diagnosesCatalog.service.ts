@@ -76,17 +76,29 @@ export async function createDiagnosis(
   return data;
 }
 
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
- * Lista todos los diagnósticos del catálogo del médico (admin).
- * Incluye inactivos por defecto para gestión.
+ * Lista paginada de diagnósticos del catálogo del médico (admin).
+ * Server-side pagination — trae solo `pageSize` filas por request.
  */
 export async function listAllDiagnoses(
   doctorId: string,
-  options?: { search?: string; includeInactive?: boolean }
-): Promise<DiagnosisCatalogItem[]> {
+  options?: { search?: string; includeInactive?: boolean; page?: number; pageSize?: number }
+): Promise<PaginatedResult<DiagnosisCatalogItem>> {
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = options?.pageSize ?? 50;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let q = supabase
     .from('diagnoses')
-    .select('id, doctor_id, name, description, is_active, usage_count')
+    .select('id, doctor_id, name, description, is_active, usage_count', { count: 'exact' })
     .eq('doctor_id', doctorId);
 
   if (!options?.includeInactive) {
@@ -99,12 +111,13 @@ export async function listAllDiagnoses(
     q = q.ilike('name', `%${escaped}%`);
   }
 
-  const { data, error } = await q
+  const { data, error, count } = await q
     .order('usage_count', { ascending: false })
-    .order('name');
+    .order('name')
+    .range(from, to);
 
   if (error) throw error;
-  return data ?? [];
+  return { items: data ?? [], total: count ?? 0, page, pageSize };
 }
 
 export async function updateDiagnosis(

@@ -87,8 +87,17 @@ export default function CitasPage() {
   }, []);
 
   const handleChangeStatus = useCallback(
-    (appointmentId: string, statusId: string, cancellationReason?: string) => {
-      updateStatusMutation.mutate({ appointmentId, statusId, cancellationReason });
+    (
+      appointmentId: string,
+      statusId: string,
+      cancelInfo?: { cancelReasonId?: string; internalNotes?: string }
+    ) => {
+      updateStatusMutation.mutate({
+        appointmentId,
+        statusId,
+        cancelReasonId: cancelInfo?.cancelReasonId,
+        internalNotes: cancelInfo?.internalNotes,
+      });
     },
     [updateStatusMutation]
   );

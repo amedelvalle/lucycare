@@ -13,13 +13,14 @@ import { computeBmi, type VitalsInput } from '@/services/vitals.service';
 import type { ConsultationUpdate } from '@/services/consultations.service';
 import DiagnosesSection from './DiagnosesSection';
 import PrescriptionsSection from './PrescriptionsSection';
+import AntecedentesSection from './AntecedentesSection';
+import FollowUpScheduler from './FollowUpScheduler';
 import RecetaPrint from './RecetaPrint';
 import { usePrescriptions } from '@/hooks/useConsultation';
 
 interface FormState {
   chief_complaint: string;
   history_present_illness: string;
-  family_history_notes: string;
   physical_exam: string;
   internal_analysis: string;
   plan: string;
@@ -39,7 +40,6 @@ interface VitalsFormState {
 const EMPTY_FORM: FormState = {
   chief_complaint: '',
   history_present_illness: '',
-  family_history_notes: '',
   physical_exam: '',
   internal_analysis: '',
   plan: '',
@@ -85,7 +85,6 @@ export default function ConsultaPage() {
       setForm({
         chief_complaint: ctx.chief_complaint ?? '',
         history_present_illness: ctx.history_present_illness ?? '',
-        family_history_notes: ctx.family_history_notes ?? '',
         physical_exam: ctx.physical_exam ?? '',
         internal_analysis: ctx.internal_analysis ?? '',
         plan: ctx.plan ?? '',
@@ -121,7 +120,6 @@ export default function ConsultaPage() {
     const updates: ConsultationUpdate = {
       chief_complaint: form.chief_complaint || null,
       history_present_illness: form.history_present_illness || null,
-      family_history_notes: form.family_history_notes || null,
       physical_exam: form.physical_exam || null,
       internal_analysis: form.internal_analysis || null,
       plan: form.plan || null,
@@ -227,20 +225,6 @@ export default function ConsultaPage() {
             disabled={readOnly}
             onChange={(e) => setForm({ ...form, history_present_illness: e.target.value })}
             placeholder="Inicio, evolución, factores desencadenantes, síntomas asociados..."
-            className={textareaCls}
-          />
-        </Field>
-
-        <Field
-          label="Antecedentes familiares"
-          hint="En MVP texto libre — el catálogo estructurado viene en S5"
-        >
-          <textarea
-            rows={2}
-            value={form.family_history_notes}
-            disabled={readOnly}
-            onChange={(e) => setForm({ ...form, family_history_notes: e.target.value })}
-            placeholder="Ej: padre con HTA, madre con diabetes tipo 2..."
             className={textareaCls}
           />
         </Field>
@@ -416,6 +400,18 @@ export default function ConsultaPage() {
         })()}
       </Section>
 
+      {/* ─── Sección: Antecedentes familiares ─────────────────── */}
+      <Section
+        title="Antecedentes familiares"
+        subtitle="Busca en tu catálogo o agrega uno nuevo. Por cada antecedente podés escribir detalles específicos (parentesco, edad de aparición, etc.)"
+      >
+        <AntecedentesSection
+          consultationId={ctx.id}
+          doctorId={ctx.doctor_id}
+          readOnly={readOnly}
+        />
+      </Section>
+
       {/* ─── Sección: Diagnósticos ──────────────────────────── */}
       <Section
         title="Diagnósticos"
@@ -459,6 +455,17 @@ export default function ConsultaPage() {
             className={textareaCls}
           />
         </Field>
+
+        {/* Agendar próxima cita inline — sin salir de la consulta */}
+        {ctx.appointment && (
+          <FollowUpScheduler
+            patientId={ctx.patient_id}
+            doctorId={ctx.doctor_id}
+            clinicId={ctx.clinic_id}
+            currentAppointmentStart={ctx.appointment.start_time}
+            patientName={ctx.patient.full_name}
+          />
+        )}
       </Section>
 
       {/* ─── Sticky bottom bar con acciones ──────────────────── */}

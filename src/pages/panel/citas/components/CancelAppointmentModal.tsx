@@ -1,14 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useCancelReasons } from '@/hooks/appointments.hooks';
+
+export interface CancelInfo {
+  cancelReasonId: string;
+  internalNotes: string;
+}
 
 interface CancelAppointmentModalProps {
   isOpen: boolean;
   patientName: string;
   isSubmitting: boolean;
-  onConfirm: (reason: string) => void;
+  onConfirm: (info: CancelInfo) => void;
   onClose: () => void;
 }
 
-const MIN_REASON_LENGTH = 10;
+const CATEGORY_LABELS: Record<string, string> = {
+  paciente: 'Decisión del paciente',
+  medico: 'Lado del médico',
+  sistema: 'Sistema',
+};
 
 export default function CancelAppointmentModal({
   isOpen,
@@ -17,33 +27,50 @@ export default function CancelAppointmentModal({
   onConfirm,
   onClose,
 }: CancelAppointmentModalProps) {
-  const [reason, setReason] = useState('');
+  const [cancelReasonId, setCancelReasonId] = useState('');
+  const [internalNotes, setInternalNotes] = useState('');
+
+  const { data: reasons = [], isLoading } = useCancelReasons();
+
+  // Reset al abrir
+  useEffect(() => {
+    if (isOpen) {
+      setCancelReasonId('');
+      setInternalNotes('');
+    }
+  }, [isOpen]);
+
+  // Agrupar razones por categoría para los optgroups
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof reasons>();
+    for (const r of reasons) {
+      const list = map.get(r.category) ?? [];
+      list.push(r);
+      map.set(r.category, list);
+    }
+    return map;
+  }, [reasons]);
 
   if (!isOpen) return null;
 
-  const isValid = reason.trim().length >= MIN_REASON_LENGTH;
+  const isValid = cancelReasonId.length > 0;
 
   const handleConfirm = () => {
     if (!isValid) return;
-    onConfirm(reason.trim());
+    onConfirm({ cancelReasonId, internalNotes: internalNotes.trim() });
   };
 
   const handleClose = () => {
-    setReason('');
+    setCancelReasonId('');
+    setInternalNotes('');
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      {/* Overlay */}
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={handleClose}
-      />
+      <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
 
-      {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-        {/* Header */}
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,23 +86,48 @@ export default function CancelAppointmentModal({
           </div>
         </div>
 
-        {/* Motivo */}
+        {/* Razón */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Motivo de cancelación
+            Razón de cancelación
             <span className="text-red-500 ml-0.5">*</span>
+          </label>
+          <select
+            value={cancelReasonId}
+            onChange={(e) => setCancelReasonId(e.target.value)}
+            disabled={isLoading || isSubmitting}
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800
+              focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none
+              disabled:bg-gray-50 disabled:cursor-not-allowed cursor-pointer bg-white"
+          >
+            <option value="">Selecciona una razón...</option>
+            {Array.from(grouped.entries()).map(([category, items]) => (
+              <optgroup key={category} label={CATEGORY_LABELS[category] ?? category}>
+                {items.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        {/* Notas internas (opcional) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Detalle adicional <span className="text-gray-400 font-normal">(opcional)</span>
           </label>
           <textarea
             rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Ej: Paciente no puede asistir por viaje de emergencia..."
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            placeholder="Ej: Llamó por teléfono, reprogramará la próxima semana"
+            disabled={isSubmitting}
             className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800
               focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none resize-none
-              placeholder:text-gray-300"
+              placeholder:text-gray-300 disabled:bg-gray-50"
           />
-          <p className={`text-xs mt-1 ${reason.trim().length > 0 && !isValid ? 'text-red-500' : 'text-gray-400'}`}>
-            Mínimo {MIN_REASON_LENGTH} caracteres ({reason.trim().length}/{MIN_REASON_LENGTH})
+          <p className="text-[11px] text-gray-400 mt-1">
+            Nota interna — no visible para el paciente
           </p>
         </div>
 

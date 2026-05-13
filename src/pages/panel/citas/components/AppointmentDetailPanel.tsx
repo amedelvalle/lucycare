@@ -3,14 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
 import { formatTime } from '@/utils/calendar';
 import QuickActions from './QuickActions';
-import CancelAppointmentModal from './CancelAppointmentModal';
+import CancelAppointmentModal, { type CancelInfo } from './CancelAppointmentModal';
+
+export interface ChangeStatusArgs {
+  cancelReasonId?: string;
+  internalNotes?: string;
+}
 
 interface AppointmentDetailPanelProps {
   appointment: AppointmentListItem | null;
   statuses: AppointmentStatus[];
   isOpen: boolean;
   onClose: () => void;
-  onChangeStatus: (appointmentId: string, statusId: string, cancellationReason?: string) => void;
+  onChangeStatus: (appointmentId: string, statusId: string, cancelInfo?: ChangeStatusArgs) => void;
   isUpdating: boolean;
 }
 
@@ -72,7 +77,7 @@ function DetailContent({
 }: {
   appointment: AppointmentListItem;
   statuses: AppointmentStatus[];
-  onChangeStatus: (appointmentId: string, statusId: string, cancellationReason?: string) => void;
+  onChangeStatus: (appointmentId: string, statusId: string, cancelInfo?: ChangeStatusArgs) => void;
   isUpdating: boolean;
 }) {
   const navigate = useNavigate();
@@ -110,9 +115,12 @@ function DetailContent({
     onChangeStatus(appointment.id, statusId, undefined);
   };
 
-  const handleCancelConfirm = (reason: string) => {
+  const handleCancelConfirm = (info: CancelInfo) => {
     if (!pendingCancelStatusId) return;
-    onChangeStatus(appointment.id, pendingCancelStatusId, reason);
+    onChangeStatus(appointment.id, pendingCancelStatusId, {
+      cancelReasonId: info.cancelReasonId,
+      internalNotes: info.internalNotes || undefined,
+    });
     setCancelModalOpen(false);
     setPendingCancelStatusId(null);
   };

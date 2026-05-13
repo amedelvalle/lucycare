@@ -21,10 +21,14 @@ async function assertConsultationIsDraft(consultationId: string): Promise<void> 
 export type DiagnosisType = 'presuntivo' | 'definitivo' | 'diferencial';
 export type DiagnosisStatus =
   | 'activo'
-  | 'resuelto'
+  | 'en_estudio'
   | 'en_tratamiento'
+  | 'controlado'
+  | 'descontrolado'
   | 'cronico'
-  | 'en_observacion';
+  | 'en_remision'
+  | 'en_observacion'
+  | 'resuelto';
 
 export interface ConsultationDiagnosis {
   id: string;
@@ -47,10 +51,16 @@ export const DIAGNOSIS_TYPES: { value: DiagnosisType; label: string }[] = [
   { value: 'diferencial', label: 'Diferencial' },
 ];
 
+// Orden narrativo del flujo clínico:
+// descubrimiento → estudio → tratamiento → control → crónico → remisión → observación → cierre
 export const DIAGNOSIS_STATUSES: { value: DiagnosisStatus; label: string }[] = [
   { value: 'activo', label: 'Activo' },
+  { value: 'en_estudio', label: 'En estudio' },
   { value: 'en_tratamiento', label: 'En tratamiento' },
+  { value: 'controlado', label: 'Controlado' },
+  { value: 'descontrolado', label: 'Descontrolado' },
   { value: 'cronico', label: 'Crónico' },
+  { value: 'en_remision', label: 'En remisión' },
   { value: 'en_observacion', label: 'En observación' },
   { value: 'resuelto', label: 'Resuelto' },
 ];

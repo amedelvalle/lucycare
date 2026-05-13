@@ -17,6 +17,7 @@ import PacientePerfilPage from "../pages/panel/pacientes/PacientePerfilPage";
 import PerfilPage from "../pages/panel/perfil/PerfilPage";
 import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
 import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
+import EquipoPage from "../pages/panel/equipo/EquipoPage";
 
 const routes: RouteObject[] = [
   {
@@ -66,6 +67,10 @@ const routes: RouteObject[] = [
       {
         path: "catalogos",
         element: <CatalogosPage />,
+      },
+      {
+        path: "equipo",
+        element: <EquipoPage />,
       },
     ],
   },

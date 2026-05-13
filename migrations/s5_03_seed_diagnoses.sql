@@ -1,0 +1,156 @@
+-- ═══════════════════════════════════════════════════════════
+-- Migración S5-03: Seed de diagnósticos para todos los doctores
+-- ═══════════════════════════════════════════════════════════
+-- Inserta 127 diagnósticos como base inicial del catálogo
+-- de cada doctor existente en la tabla `doctors`.
+--
+-- Características:
+--   - CROSS JOIN: cada (doctor × diagnóstico) → 1 fila en `diagnoses`
+--   - Dedupe: si un doctor ya tiene un diagnóstico con el mismo nombre
+--     (case-insensitive), no se duplica.
+--   - El `id_normalizado` original (HTA-01, DM-02, etc.) queda en
+--     `description` con el prefijo "Código:" para que el médico lo vea.
+--   - is_active=true, usage_count=0 por default.
+--
+-- Idempotente: se puede correr varias veces sin duplicar datos.
+-- ═══════════════════════════════════════════════════════════
+
+INSERT INTO diagnoses (doctor_id, name, description, is_active, usage_count)
+SELECT d.id, x.name, x.description, true, 0
+FROM doctors d
+CROSS JOIN (VALUES
+  ('Hipertensión Arterial Sistémica', 'Código: HTA-01'),
+  ('Diabetes Mellitus Tipo 2', 'Código: DM-02'),
+  ('Obesidad', 'Código: OB-01'),
+  ('Dislipidemia', 'Código: DLP-01'),
+  ('Dislipidemia Mixta', 'Código: DLP-02'),
+  ('Sobrepeso', 'Código: SP-01'),
+  ('Cardiopatía Crónica', 'Código: CARD-05'),
+  ('Hipotiroidismo', 'Código: TIR-01'),
+  ('Síndrome Metabólico', 'Código: SM-01'),
+  ('Obesidad Grado III (Mórbida)', 'Código: OB-02'),
+  ('ERGE / Gastritis por Reflujo', 'Código: GI-01'),
+  ('Aumento del Automatismo Cardíaco', 'Código: ARR-09'),
+  ('Resistencia a la Insulina', 'Código: DM-05'),
+  ('Examen / Estado Normal', 'Código: NORM-01'),
+  ('Neuropatía Diabética', 'Código: DM-07'),
+  ('Hígado Graso', 'Código: GI-05'),
+  ('Insuficiencia Venosa Crónica', 'Código: IVC-01'),
+  ('Prediabetes / Disglucemia', 'Código: DM-03'),
+  ('Síndrome de Ovario Poliquístico', 'Código: SM-02'),
+  ('Artrosis', 'Código: RHE-02'),
+  ('Síndrome de Colon Irritable', 'Código: GI-03'),
+  ('Bocio', 'Código: TIR-03'),
+  ('Síndrome Disautonómico', 'Código: NEURO-06'),
+  ('Hipertrigliceridemia', 'Código: DLP-03'),
+  ('Enfermedad Renal Crónica', 'Código: ERC-01'),
+  ('Insuficiencia Cardíaca', 'Código: CARD-03'),
+  ('Hipoglucemia', 'Código: DM-04'),
+  ('Síndrome Vertiginoso', 'Código: NEURO-04'),
+  ('Anemia', 'Código: HEM-01'),
+  ('Hiperuricemia', 'Código: DLP-04'),
+  ('Bradicardia Sinusal / Disfunción del Nodo Sinusal', 'Código: ARR-06'),
+  ('Retinopatía Diabética', 'Código: DM-06'),
+  ('Hipotensión Arterial', 'Código: SIN-02'),
+  ('Taquicardia Sinusal', 'Código: ARR-02'),
+  ('Gastritis', 'Código: GI-02'),
+  ('Depresión', 'Código: PSI-03'),
+  ('Síncope', 'Código: ARR-08'),
+  ('Hipertiroidismo', 'Código: TIR-02'),
+  ('Rinitis Alérgica', 'Código: PULM-05'),
+  ('Dolor Torácico en Estudio', 'Código: CARD-07'),
+  ('Neuropatía Periférica', 'Código: NEURO-05'),
+  ('Infección de Vías Urinarias', 'Código: URO-01'),
+  ('Glaucoma', 'Código: OFT-02'),
+  ('Fibrilación Auricular', 'Código: ARR-05'),
+  ('Cefalea Tensional', 'Código: NEURO-03'),
+  ('Pendiente de Revisión Manual', 'Código: PEND-01'),
+  ('Trastorno del Sueño', 'Código: PSI-04'),
+  ('Osteoporosis', 'Código: RHE-03'),
+  ('Fibromialgia', 'Código: RHE-07'),
+  ('Insuficiencia Aórtica', 'Código: VAL-02'),
+  ('Taquicardia Supraventricular', 'Código: ARR-01'),
+  ('Bloqueo de Conducción', 'Código: ARR-07'),
+  ('Migraña', 'Código: NEURO-02'),
+  ('Dispepsia', 'Código: GI-06'),
+  ('Insuficiencia Mitral', 'Código: VAL-03'),
+  ('Cataratas', 'Código: OFT-01'),
+  ('Tromboembolia Pulmonar', 'Código: IVC-02'),
+  ('Xerosis Cutánea', 'Código: DER-02'),
+  ('Artritis Reumatoide', 'Código: RHE-01'),
+  ('Nefropatía Diabética', 'Código: DM-08'),
+  ('Hipertrofia Prostática Benigna', 'Código: URO-02'),
+  ('Desnutrición / Bajo Peso', 'Código: SP-02'),
+  ('Evento Vascular Cerebral', 'Código: EVC-01'),
+  ('Tiroiditis', 'Código: TIR-04'),
+  ('Lumbalgia', 'Código: RHE-06'),
+  ('EPOC', 'Código: PULM-01'),
+  ('Hipertransaminasemia', 'Código: DLP-05'),
+  ('Estenosis Aórtica', 'Código: VAL-01'),
+  ('Deficiencia de Vitamina D', 'Código: GIN-02'),
+  ('Astenia / Fatiga Crónica', 'Código: SIN-01'),
+  ('Colelitiasis', 'Código: GI-07'),
+  ('Dermatitis', 'Código: DER-01'),
+  ('Hiponatremia', 'Código: ELEC-01'),
+  ('Menopausia / Climaterio', 'Código: GIN-01'),
+  ('Palpitaciones en Estudio', 'Código: ARR-10'),
+  ('Asma Bronquial', 'Código: PULM-02'),
+  ('Hipertensión Arterial Pulmonar', 'Código: HTA-02'),
+  ('Cáncer de Tiroides', 'Código: TIR-05'),
+  ('Bronquitis', 'Código: PULM-03'),
+  ('Antecedente: Diabetes Gestacional', 'Código: DM-09'),
+  ('Retención Azoada', 'Código: ERC-02'),
+  ('Trastorno de Ansiedad', 'Código: PSI-02'),
+  ('Trastorno Ansioso-Depresivo Mixto', 'Código: PSI-01'),
+  ('Proteinuria', 'Código: ERC-03'),
+  ('Diabetes Mellitus Tipo 1', 'Código: DM-01'),
+  ('Enfermedad Diverticular', 'Código: GI-04'),
+  ('Angina Estable / Angor', 'Código: ANG-01'),
+  ('Hemorroides', 'Código: GI-08'),
+  ('Pie Diabético', 'Código: DM-09'),
+  ('Hipertrofia Cardíaca', 'Código: CARD-06'),
+  ('Infarto del Miocardio', 'Código: CARD-02'),
+  ('Osteopenia', 'Código: RHE-04'),
+  ('Fibromatosis Uterina', 'Código: GIN-05'),
+  ('Espasmo Cervical', 'Código: SIN-03'),
+  ('Apnea del Sueño', 'Código: PULM-04'),
+  ('Tabaquismo', 'Código: SIN-05'),
+  ('Artralgia', 'Código: RHE-08'),
+  ('Onicomicosis', 'Código: DER-03'),
+  ('Cáncer de Mama', 'Código: ONC-01'),
+  ('Diabetes Mellitus', 'Código: DM-00'),
+  ('Hipoacusia', 'Código: SIN-04'),
+  ('Taquicardia Ventricular', 'Código: ARR-03'),
+  ('Síndrome Coronario Agudo', 'Código: CARD-01'),
+  ('Antecedente: Histerectomía', 'Código: ANT-06'),
+  ('Enfermedad de Parkinson', 'Código: NEURO-07'),
+  ('Gota / Artritis por Cristales', 'Código: RHE-05'),
+  ('Pancreatitis', 'Código: GI-09'),
+  ('Antecedente: ACTP', 'Código: ANT-01'),
+  ('Flutter Auricular', 'Código: ARR-04'),
+  ('Quiste Renal', 'Código: URO-03'),
+  ('Amenorrea', 'Código: GIN-03'),
+  ('Epilepsia', 'Código: NEURO-08'),
+  ('Cardiopatía Congénita', 'Código: CARD-04'),
+  ('Angina Inestable', 'Código: ANG-02'),
+  ('Antecedente: Preeclampsia', 'Código: ANT-05'),
+  ('Endometriosis', 'Código: GIN-04'),
+  ('Enfermedad de Alzheimer', 'Código: NEURO-01'),
+  ('Crisis Hipertensiva', 'Código: HTA-03'),
+  ('Antecedente: Radioterapia', 'Código: ANT-03'),
+  ('Antecedente: Cirugía de Revascularización', 'Código: ANT-02'),
+  ('Disnea en Estudio', 'Código: CARD-08'),
+  ('Antecedente: Colecistectomía', 'Código: ANT-04'),
+  ('Acromegalia', 'Código: ENDO-01'),
+  ('Fibroadenoma de Mama', 'Código: GIN-06'),
+  ('Aorta Bicúspide', 'Código: VAL-04'),
+  ('Insuficiencia Arterial Crónica', 'Código: IAC-01'),
+  ('Infección de Vías Respiratorias', 'Código: INF-01')
+) AS x(name, description)
+WHERE NOT EXISTS (
+  SELECT 1 FROM diagnoses
+  WHERE doctor_id = d.id AND LOWER(name) = LOWER(x.name)
+);
+
+-- Verificación (opcional):
+-- SELECT doctor_id, COUNT(*) FROM diagnoses GROUP BY doctor_id;

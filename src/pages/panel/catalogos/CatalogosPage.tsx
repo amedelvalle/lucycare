@@ -5,15 +5,25 @@ import {
   useUpdateDiagnosis,
   useMedicationsAll,
   useUpdateMedication,
+  useFamilyHistoryAll,
+  useUpdateFamilyHistory,
 } from '@/hooks/useCatalogs';
-import { useCreateDiagnosis, useCreateMedication } from '@/hooks/useConsultation';
+import {
+  useCreateDiagnosis,
+  useCreateMedication,
+  useCreateFamilyHistory,
+} from '@/hooks/useConsultation';
 import type { DiagnosisCatalogItem } from '@/services/diagnosesCatalog.service';
+import type { FamilyHistoryCatalogItem } from '@/services/familyHistoryCatalog.service';
 import {
   PRESENTATIONS,
   type MedicationCatalogItem,
   type MedicationPresentation,
 } from '@/services/medicationsCatalog.service';
 import Button from '@/components/ui/Button';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 const PlusIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -21,7 +31,7 @@ const PlusIcon = () => (
   </svg>
 );
 
-type Tab = 'diagnosticos' | 'medicamentos';
+type Tab = 'diagnosticos' | 'medicamentos' | 'antecedentes';
 
 export default function CatalogosPage() {
   const { data: ctx, isLoading: loadingCtx } = useClinicContext();
@@ -61,20 +71,21 @@ export default function CatalogosPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-5">
+      <div className="flex gap-1 border-b border-gray-200 mb-5 overflow-x-auto">
         <TabButton active={tab === 'diagnosticos'} onClick={() => setTab('diagnosticos')}>
           Diagnósticos
         </TabButton>
         <TabButton active={tab === 'medicamentos'} onClick={() => setTab('medicamentos')}>
           Medicamentos
         </TabButton>
+        <TabButton active={tab === 'antecedentes'} onClick={() => setTab('antecedentes')}>
+          Antecedentes
+        </TabButton>
       </div>
 
-      {tab === 'diagnosticos' ? (
-        <DiagnosesTab doctorId={ctx.doctorId} />
-      ) : (
-        <MedicationsTab doctorId={ctx.doctorId} />
-      )}
+      {tab === 'diagnosticos' && <DiagnosesTab doctorId={ctx.doctorId} />}
+      {tab === 'medicamentos' && <MedicationsTab doctorId={ctx.doctorId} />}
+      {tab === 'antecedentes' && <FamilyHistoryTab doctorId={ctx.doctorId} />}
     </div>
   );
 }
@@ -85,6 +96,7 @@ function DiagnosesTab({ doctorId }: { doctorId: string }) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState(1);
   // null = cerrado · 'new' = creando · obj = editando
   const [modal, setModal] = useState<DiagnosisCatalogItem | 'new' | null>(null);
 
@@ -93,12 +105,16 @@ function DiagnosesTab({ doctorId }: { doctorId: string }) {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: items = [], isLoading } = useDiagnosesAll(doctorId, debouncedSearch, includeInactive);
+  // Reset a página 1 cuando cambian los filtros
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, includeInactive]);
+
+  const { data, isLoading } = useDiagnosesAll(doctorId, debouncedSearch, includeInactive, page, PAGE_SIZE);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
   const updateMutation = useUpdateDiagnosis(doctorId);
   const createMutation = useCreateDiagnosis(doctorId);
-
-  const totalActive = items.filter((d) => d.is_active).length;
-  const totalUsed = items.reduce((acc, d) => acc + (d.usage_count ?? 0), 0);
 
   const handleSubmit = (input: { name: string; description: string | null }) => {
     if (modal === 'new') {
@@ -131,16 +147,9 @@ function DiagnosesTab({ doctorId }: { doctorId: string }) {
         searchPlaceholder="Buscar diagnóstico..."
         includeInactive={includeInactive}
         onIncludeInactiveChange={setIncludeInactive}
-        stats={
-          <>
-            <Stat label="Activos" value={totalActive} />
-            <Stat label="Total mostrado" value={items.length} />
-            <Stat label="Veces usados" value={totalUsed} />
-          </>
-        }
       />
 
-      {isLoading ? (
+      {isLoading && items.length === 0 ? (
         <SkeletonRows />
       ) : items.length === 0 ? (
         <EmptyCatalog
@@ -154,18 +163,27 @@ function DiagnosesTab({ doctorId }: { doctorId: string }) {
           createLabel="Crear primer diagnóstico"
         />
       ) : (
-        <ul className="space-y-2">
-          {items.map((d) => (
-            <DiagnosisRow
-              key={d.id}
-              item={d}
-              onEdit={() => setModal(d)}
-              onToggleActive={() =>
-                updateMutation.mutate({ id: d.id, is_active: !d.is_active })
-              }
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2">
+            {items.map((d) => (
+              <DiagnosisRow
+                key={d.id}
+                item={d}
+                onEdit={() => setModal(d)}
+                onToggleActive={() =>
+                  updateMutation.mutate({ id: d.id, is_active: !d.is_active })
+                }
+              />
+            ))}
+          </ul>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPageChange={setPage}
+            itemLabel={{ singular: 'diagnóstico', plural: 'diagnósticos' }}
+          />
+        </>
       )}
 
       {modal && (
@@ -288,6 +306,7 @@ function MedicationsTab({ doctorId }: { doctorId: string }) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState(1);
   const [modal, setModal] = useState<MedicationCatalogItem | 'new' | null>(null);
 
   useEffect(() => {
@@ -295,12 +314,15 @@ function MedicationsTab({ doctorId }: { doctorId: string }) {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: items = [], isLoading } = useMedicationsAll(doctorId, debouncedSearch, includeInactive);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, includeInactive]);
+
+  const { data, isLoading } = useMedicationsAll(doctorId, debouncedSearch, includeInactive, page, PAGE_SIZE);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
   const updateMutation = useUpdateMedication(doctorId);
   const createMutation = useCreateMedication(doctorId);
-
-  const totalActive = items.filter((m) => m.is_active).length;
-  const totalUsed = items.reduce((acc, m) => acc + (m.usage_count ?? 0), 0);
 
   const handleSubmit = (input: {
     commercial_name: string;
@@ -343,16 +365,9 @@ function MedicationsTab({ doctorId }: { doctorId: string }) {
         searchPlaceholder="Buscar medicamento por nombre o principio activo..."
         includeInactive={includeInactive}
         onIncludeInactiveChange={setIncludeInactive}
-        stats={
-          <>
-            <Stat label="Activos" value={totalActive} />
-            <Stat label="Total mostrado" value={items.length} />
-            <Stat label="Veces usados" value={totalUsed} />
-          </>
-        }
       />
 
-      {isLoading ? (
+      {isLoading && items.length === 0 ? (
         <SkeletonRows />
       ) : items.length === 0 ? (
         <EmptyCatalog
@@ -366,18 +381,27 @@ function MedicationsTab({ doctorId }: { doctorId: string }) {
           createLabel="Crear primer medicamento"
         />
       ) : (
-        <ul className="space-y-2">
-          {items.map((m) => (
-            <MedicationRow
-              key={m.id}
-              item={m}
-              onEdit={() => setModal(m)}
-              onToggleActive={() =>
-                updateMutation.mutate({ id: m.id, is_active: !m.is_active })
-              }
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2">
+            {items.map((m) => (
+              <MedicationRow
+                key={m.id}
+                item={m}
+                onEdit={() => setModal(m)}
+                onToggleActive={() =>
+                  updateMutation.mutate({ id: m.id, is_active: !m.is_active })
+                }
+              />
+            ))}
+          </ul>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPageChange={setPage}
+            itemLabel={{ singular: 'medicamento', plural: 'medicamentos' }}
+          />
+        </>
       )}
 
       {modal && (
@@ -539,6 +563,211 @@ function MedicationFormModal({
   );
 }
 
+// ─── Tab: Antecedentes ────────────────────────────────────────────────
+
+function FamilyHistoryTab({ doctorId }: { doctorId: string }) {
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState<FamilyHistoryCatalogItem | 'new' | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, includeInactive]);
+
+  const { data, isLoading } = useFamilyHistoryAll(doctorId, debouncedSearch, includeInactive, page, PAGE_SIZE);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const updateMutation = useUpdateFamilyHistory(doctorId);
+  const createMutation = useCreateFamilyHistory(doctorId);
+
+  const handleSubmit = (input: { name: string; description: string | null }) => {
+    if (modal === 'new') {
+      createMutation.mutate(
+        { name: input.name, description: input.description ?? undefined },
+        { onSuccess: () => setModal(null) }
+      );
+    } else if (modal) {
+      updateMutation.mutate(
+        { id: modal.id, name: input.name, description: input.description },
+        { onSuccess: () => setModal(null) }
+      );
+    }
+  };
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-900">Antecedentes familiares</h2>
+        <Button variant="primary" size="sm" leftIcon={<PlusIcon />} onClick={() => setModal('new')}>
+          Nuevo antecedente
+        </Button>
+      </div>
+
+      <CatalogControls
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Buscar antecedente..."
+        includeInactive={includeInactive}
+        onIncludeInactiveChange={setIncludeInactive}
+      />
+
+      {isLoading && items.length === 0 ? (
+        <SkeletonRows />
+      ) : items.length === 0 ? (
+        <EmptyCatalog
+          hasSearch={!!debouncedSearch}
+          message={
+            debouncedSearch
+              ? 'Sin resultados para esa búsqueda.'
+              : 'Aún no tenés antecedentes. Crealos desde acá o se crearán automáticamente cuando los uses en una consulta.'
+          }
+          onCreate={!debouncedSearch ? () => setModal('new') : undefined}
+          createLabel="Crear primer antecedente"
+        />
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {items.map((d) => (
+              <FamilyHistoryRow
+                key={d.id}
+                item={d}
+                onEdit={() => setModal(d)}
+                onToggleActive={() =>
+                  updateMutation.mutate({ id: d.id, is_active: !d.is_active })
+                }
+              />
+            ))}
+          </ul>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPageChange={setPage}
+            itemLabel={{ singular: 'antecedente', plural: 'antecedentes' }}
+          />
+        </>
+      )}
+
+      {modal && (
+        <FamilyHistoryFormModal
+          item={modal === 'new' ? null : modal}
+          isSubmitting={isSubmitting}
+          onClose={() => setModal(null)}
+          onSubmit={handleSubmit}
+        />
+      )}
+    </>
+  );
+}
+
+function FamilyHistoryRow({
+  item,
+  onEdit,
+  onToggleActive,
+}: {
+  item: FamilyHistoryCatalogItem;
+  onEdit: () => void;
+  onToggleActive: () => void;
+}) {
+  return (
+    <li
+      className={`bg-white rounded-lg border p-3 flex items-start gap-3 ${
+        item.is_active ? 'border-gray-200' : 'border-gray-200 opacity-60'
+      }`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+          {!item.is_active && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+              Inactivo
+            </span>
+          )}
+        </div>
+        {item.description && (
+          <p className="text-xs text-gray-500 mt-0.5 truncate">{item.description}</p>
+        )}
+        <p className="text-[11px] text-gray-400 mt-1">
+          Usado {item.usage_count ?? 0} {(item.usage_count ?? 0) === 1 ? 'vez' : 'veces'}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Button variant="secondary" size="sm" onClick={onEdit}>
+          Editar
+        </Button>
+        <Toggle enabled={item.is_active} onToggle={onToggleActive} />
+      </div>
+    </li>
+  );
+}
+
+function FamilyHistoryFormModal({
+  item,
+  isSubmitting,
+  onClose,
+  onSubmit,
+}: {
+  item: FamilyHistoryCatalogItem | null;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onSubmit: (updates: { name: string; description: string | null }) => void;
+}) {
+  const isCreate = item === null;
+  const [name, setName] = useState(item?.name ?? '');
+  const [description, setDescription] = useState(item?.description ?? '');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSubmit({ name: name.trim(), description: description.trim() || null });
+  };
+
+  return (
+    <ModalShell onClose={onClose} title={isCreate ? 'Nuevo antecedente' : 'Editar antecedente'}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <FieldLabel label="Nombre" required>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={inputCls}
+            placeholder="Ej: Hipertensión arterial"
+            required
+            autoFocus
+          />
+        </FieldLabel>
+        <FieldLabel label="Descripción (opcional)">
+          <textarea
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Notas sobre este antecedente..."
+            className={`${inputCls} resize-y`}
+          />
+        </FieldLabel>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
+            Cancelar
+          </Button>
+          <Button type="submit" loading={isSubmitting} disabled={!name.trim()}>
+            {isCreate ? 'Crear' : 'Guardar'}
+          </Button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
 // ─── Sub-componentes UI ───────────────────────────────────────────────
 
 function TabButton({
@@ -571,19 +800,15 @@ function CatalogControls({
   searchPlaceholder,
   includeInactive,
   onIncludeInactiveChange,
-  stats,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
   searchPlaceholder: string;
   includeInactive: boolean;
   onIncludeInactiveChange: (v: boolean) => void;
-  stats: React.ReactNode;
 }) {
   return (
     <div className="space-y-3 mb-4">
-      <div className="grid grid-cols-3 gap-2">{stats}</div>
-
       <div className="relative">
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
@@ -611,15 +836,6 @@ function CatalogControls({
         />
         Mostrar inactivos
       </label>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-3 text-center">
-      <p className="text-xl font-bold text-gray-900">{value}</p>
-      <p className="text-[11px] text-gray-500 mt-0.5">{label}</p>
     </div>
   );
 }

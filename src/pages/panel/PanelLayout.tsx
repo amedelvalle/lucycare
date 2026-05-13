@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/panel/citas', label: 'Citas', icon: 'ri-list-check-2' },
   { path: '/panel/pacientes', label: 'Pacientes', icon: 'ri-user-3-line' },
   { path: '/panel/catalogos', label: 'Catálogos', icon: 'ri-book-2-line', doctorOnly: true },
+  { path: '/panel/equipo', label: 'Mi equipo', icon: 'ri-team-line', doctorOnly: true },
   { path: '/panel/perfil', label: 'Mi perfil público', icon: 'ri-id-card-line', doctorOnly: true },
 ];
 
