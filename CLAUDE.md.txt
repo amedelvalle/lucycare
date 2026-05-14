@@ -2,29 +2,25 @@
 
 ## Estado actual del proyecto
 
-- **Sprint activo:** Sprint 4 **CERRADO** ✓ — listo para Sprint 5
-- **Última tarea completada:** Imprimir receta + auto-transición de estado de cita al firmar consulta
-- **Hitos del sprint:**
-  - MVP de consulta clínica firmable e imprimible end-to-end (3 semanas)
-  - Sistema de diseño documentado y aplicado (`<Button>`, tokens, variants, patrones)
-  - Página de catálogos admin (`/panel/catalogos`)
-  - Regla CRUD soft/hard delete documentada
-  - Sticky sidebar + sticky patient header en consulta (UX clínica crítica)
+- **Sprint activo:** Sprint 5 **EN CURSO ~70%**
+- **Último tag estable:** `piloto-v1.1` (commit `83cbeb9`) — desplegado en Vercel
+- **Última tarea completada:** Fix filtros del directorio público + dropdown de municipios agrupado por nueva división territorial (2024)
+- **Deploy:** Vercel auto-deploy desde branch `main`. Repo: github.com/amedelvalle/lucycare
 
 ## Decisiones cerradas (NO reabrir)
 
 - Backend: Supabase (Postgres + Auth + Edge Functions + Storage)
-- Frontend: React 19 + TypeScript + Tailwind + Vite
+- Frontend: React 19 + TypeScript + Tailwind + Vite + React Query
 - Auth: OTP por SMS con Twilio (sin contraseñas)
 - Pagos: Stripe Checkout hosted
 - Hosting: Vercel + Supabase
 - Facturación DTE: diferida (API externa, no se desarrolla internamente)
 - Servicios: cada médico crea sus propios servicios (no catálogo global)
-- Diagnósticos: catálogo propio por médico (NO usar CIE-10)
-- Medicamentos: catálogo propio por médico
+- Diagnósticos: catálogo propio por médico (NO usar CIE-10) — IMPLEMENTADO
+- Medicamentos: catálogo propio por médico — IMPLEMENTADO
 - Rol secretaria: incluido en MVP (agenda sí, ficha clínica no) — IMPLEMENTADO en S3-09
 - Citas: una sola tabla `appointments` con campo `source`
-- Consulta clínica: guardar = borrador, firmar = inmutable
+- Consulta clínica: guardar = borrador, firmar = inmutable — IMPLEMENTADO
 - Seguridad: RLS en todas las tablas, audit_log inmutable
 
 ## Stack técnico verificado
@@ -35,8 +31,9 @@
 - Iconos Remix (`ri-*`) en PanelLayout, SVG inline en componentes nuevos
 - Color acento del panel: emerald
 - Bootstrap defensivo en `main.tsx`: valida sesión contra servidor antes de renderizar; si stale → signOut local
+- División territorial El Salvador 2024 cargada: `municipalities.name` = distrito (antiguo municipio), `municipalities.district` = nuevo municipio agrupador (Ahuachapán Norte, La Libertad Sur, etc.)
 
-## Sistema de diseño (Sprint 4)
+## Sistema de diseño (Sprint 4 — vinculante)
 
 Establecido al notar inconsistencias acumuladas. **Toda pantalla nueva debe seguir esto. Página de referencia: `/panel/catalogos`.**
 
@@ -59,13 +56,8 @@ Establecido al notar inconsistencias acumuladas. **Toda pantalla nueva debe segu
 
 ### Botones — usar `<Button>` de `src/components/ui/Button.tsx`
 
-4 variants:
-- `primary` → solid emerald: `bg-emerald-600 hover:bg-emerald-700 text-white`
-- `secondary` → solid gray: `bg-gray-100 hover:bg-gray-200 text-gray-700`
-- `subtle` → soft pill: `bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200`
-- `danger` → solid red: `bg-red-600 hover:bg-red-700 text-white`
-
-3 sizes: `sm` (`px-3 py-1.5 text-xs`), `md` (`px-4 py-2 text-sm`, default), `lg` (`px-5 py-2.5 text-sm font-semibold`).
+4 variants: `primary` (emerald solid), `secondary` (gray solid), `subtle` (emerald soft pill), `danger` (red solid)
+3 sizes: `sm` (px-3 py-1.5 text-xs), `md` (px-4 py-2 text-sm, default), `lg` (px-5 py-2.5 text-sm font-semibold)
 
 ### Patrones de guardado
 
@@ -73,7 +65,7 @@ Establecido al notar inconsistencias acumuladas. **Toda pantalla nueva debe segu
 |---|---|---|
 | Transaccional / firma | Botón explícito `Guardar` o `Firmar`, sticky bottom | Firmar consulta, registrar paciente walk-in |
 | Edición incremental dentro de un draft | Autosave on blur, sin botón | Notas de un diagnóstico, dosis de un medicamento |
-| Switches / acciones reversibles | Mutación inmediata al click, optimistic UI cuando aplica | Toggle publicar perfil, marcar permanente |
+| Switches / acciones reversibles | Mutación inmediata al click, optimistic UI | Toggle publicar perfil, marcar permanente |
 
 ### Patrones de acceso a entidades
 
@@ -82,152 +74,229 @@ Establecido al notar inconsistencias acumuladas. **Toda pantalla nueva debe segu
 - Detail panel lateral (slide-in desde derecha) cuando navegar perdería contexto (ej: detalle de cita en calendario)
 - Modal cuando es una acción puntual sin estado persistente (ej: confirmar firma, editar paciente)
 
-### Catálogos por médico
-
-- Patrón establecido: `diagnoses`, `medications` (cada uno con `doctor_id`, `is_active`, `usage_count`)
-- Búsqueda + create-inline desde el flujo de uso (consulta) usando `<Combobox>`
-- Página de admin formal en `/panel/catalogos` con tabs (una por catálogo)
-- Soft-delete vía `is_active=false` — nunca hard-delete porque hay FK desde consultas firmadas (inmutables)
-- Sort por `usage_count desc` para mostrar primero los más usados
-
 ### Regla CRUD: hard-delete vs soft-delete (clínica/legal)
 
 **Default: si la entidad puede tener historia clínica o referencias inmutables → soft-delete.**
 
-Razón: en sistemas clínicos hay obligación de trazabilidad. Borrar un paciente, una cita, un diagnóstico de catálogo o un medicamento prescrito previamente rompe el historial clínico-legal. La auditoría debe poder reconstruir qué se hizo, cuándo y por quién — siempre.
+| Entidad | Patrón |
+|---|---|
+| `patients` | soft (`is_active`) |
+| `diagnoses`, `medications`, `family_history_catalog` (catálogos) | soft (`is_active`) |
+| `appointments` | soft (estado `cancelada` o `no_asistio`) |
+| `consultations` con contenido | sin delete (firmar o dejar draft) |
+| `consultations` SIN contenido | hard-delete OK (botón "Descartar borrador") |
+| `consultation_diagnoses`, `prescriptions`, `consultation_family_history` (mientras draft) | hard-delete OK |
+| `clinic_members` (asistentes) | soft (`is_active=false`) |
+| `clinic_invitations` | `cancelled_at` (soft) |
+| `availability_overrides` | hard-delete OK |
 
-| Entidad | Patrón | Razón |
-|---|---|---|
-| `patients` | soft (`is_active`) | Tiene consultas firmadas, recetas, citas históricas |
-| `diagnoses` (catálogo) | soft (`is_active`) | FK desde consultation_diagnoses inmutables |
-| `medications` (catálogo) | soft (`is_active`) | FK desde prescriptions inmutables |
-| `appointments` | soft (estado `cancelada` o `no_asistio`) | Tienen vitals, posibles consultas |
-| `consultations` con contenido | sin delete | Si tiene texto/diagnósticos/recetas/vitales, no hay descarte — el médico la firma o la deja draft |
-| `consultations` SIN contenido | hard-delete OK | Caso "abrí por error y nunca tipeé nada" — acepta delete cascade |
-| `consultation_diagnoses`, `prescriptions` (mientras la consulta sea draft) | hard-delete OK | Edición incremental dentro del borrador |
-| `availability_overrides` | hard-delete OK | No tiene historia clínica |
-| `clinic_members` (asistentes) | soft (`is_active=false`) | Mantiene auditoría de quién accedió cuándo |
-| Items de receta o draft (`prescriptions`, `consultation_diagnoses`) en consulta firmada | sin delete | La consulta ya es inmutable |
+Audit log siempre captura snapshot del OLD_DATA en el trigger.
 
-**Implementación de soft-delete en UI:**
-- Toggle visible "Activo/Inactivo" en lugar de botón eliminar
-- Lista por default solo activos; checkbox "Mostrar inactivos" para verlos
-- Inactivos no aparecen en autocomplete/buscadores de los flujos de uso
+### Patrón de catálogos per-doctor
 
-**Audit log siempre captura el snapshot del OLD_DATA en el trigger** — incluso para hard-deletes legítimos, el `audit_log` preserva el JSON completo de lo borrado.
+- Tablas `diagnoses`, `medications`, `family_history_catalog`: cada una con `doctor_id`, `is_active`, `usage_count`, `name`
+- Búsqueda + create-inline desde el flujo de uso (consulta) usando `<Combobox>` reusable
+- Página de admin formal en `/panel/catalogos` con tabs (una por catálogo)
+- Soft-delete vía toggle de `is_active`
+- Sort por `usage_count desc` (más usados primero)
+- Trigger de audit con `LOWER(TG_OP)` (no usar `TG_OP::audit_action` directo — el enum es minúsculas)
 
-## Patrones de infraestructura introducidos en Sprint 3
+## Patrones de infraestructura (vinculantes)
 
 ### useClinicContext (`src/hooks/useClinicContext.ts`)
-Hook unificado que devuelve `{ profileId, role, clinicId, doctorId, doctorName }` para doctor o asistente. Toda página del panel debe usarlo en lugar de hacer lookup inline a `from('doctors')`. Ya está integrado en CitasPage, PacientesPage, BloqueosPage, PerfilPage. Próximas páginas deben seguir el mismo patrón.
+Hook unificado que devuelve `{ profileId, role, clinicId, doctorId, doctorName }` para doctor o asistente. **Toda página del panel debe usarlo** — NO hacer lookup inline a `from('doctors')`. Integrado en CitasPage, PacientesPage, BloqueosPage, PerfilPage, EquipoPage, ConsultaPage.
 
-### useClinicContext con asistentes
-- Si `role='assistant'`: busca en `clinic_members` y luego el doctor primario de esa clínica (el primero por `created_at`)
-- Multi-doctor por clínica NO está soportado — siempre toma el primer doctor (Sprint 4: agregar selector)
+- Si `role='doctor'`: busca su row en `doctors`
+- Si `role='assistant'`: busca su row activa en `clinic_members`, luego el doctor primario de esa clínica (multi-doctor selector pendiente en S5-07)
 
 ### Audit log
-- `src/services/auditLog.service.ts` con `logAuditEntry()`
-- Se llama desde frontend tras updates relevantes (no bloquea si falla)
-- Schema: `audit_log` tiene action ENUM ('select','insert','update','delete')
+- `src/services/auditLog.service.ts` con `logAuditEntry()` — no bloquea si falla
+- Schema: `audit_log` action ENUM ('select','insert','update','delete') — siempre minúsculas
+- Triggers DB en `audit_consultations`, `audit_patients`, `audit_prescriptions`, `audit_consultation_family_history`, `audit_clinic_invitations` — todos usan `LOWER(TG_OP)::audit_action`
 
 ### Notificaciones del panel (S3-01)
-- NO usa la tabla `notifications` (que es para SMS/email salientes a pacientes vía Twilio)
+- NO usa la tabla `notifications` (esa es para SMS/email salientes vía Twilio, pendiente en S5-08)
 - Se derivan de `appointments` en `src/services/panelNotifications.service.ts`:
-  - `new_booking`: cita creada con `source='lucy_directorio'` en últimas 24h
+  - `new_booking`: cita con `source='lucy_directorio'` en últimas 24h
   - `cancellation`: cita con `cancelled_at` en últimas 24h
-- Read/unread con un solo timestamp en `localStorage` (`lucycare_panel_notif_seen_at`)
+- Read/unread con timestamp en `localStorage` (`lucycare_panel_notif_seen_at`)
+
+### Catálogos: defer autocomplete hasta 1+ carácter
+Los hooks `useDiagnosesSearch`, `useMedicationsSearch`, `useFamilyHistorySearch` solo disparan query con `search.trim().length >= 1` para no malgastar requests al abrir la consulta. Combobox muestra "Empezá a escribir para buscar" hasta que el usuario tipea.
+
+### Cache invalidation al guardar disponibilidad
+`DisponibilidadPage` invalida `['doctor-calendar-hours']`, `['availability']`, `['slots']` para que el calendario y el booking público reflejen los cambios inmediato.
+
+### Performance: índices DB
+`migrations/s5_05_catalog_indexes.sql` agregó btree compuestos + pg_trgm GIN. Queries de catálogo bajaron ~9x (1400ms → 130ms).
 
 ## Schema crítico verificado
 
 - `appointment_statuses`: id, name, display_name, color, is_final, funnel_order
 - `audit_log`: id, user_id, action (ENUM), table_name, record_id, old_data jsonb, new_data jsonb, ip_address, created_at
-- `appointments` tiene campos: cancellation_reason, cancelled_at, cancelled_by, source ('manual'|'lucy_directorio'|'lucy_seguimiento')
-- `patients` tiene campos completos: full_name, phone, email, document_type+document_number, date_of_birth, gender, patient_type, blood_type, allergies, notes, emergency_contact_*, photo_url, is_active, profile_id (nullable)
+- `appointments`: cancel_reason_id (FK a cancel_reasons, NO cancellation_reason texto), internal_notes, source ('manual'|'lucy_directorio'|'lucy_seguimiento')
+- `cancel_reasons`: id, name, category ('paciente'|'medico'|'sistema'), is_active — 10 registros pre-cargados
+- `patients`: full_name, phone, email, document_type+document_number, date_of_birth, gender, patient_type, blood_type, allergies, notes, emergency_contact_*, photo_url, is_active, profile_id (nullable)
 - `doctors`: bio, consultation_fee, experience_years, languages[], license_number, specialty_id, is_published, is_verified, booking_enabled, lucy_status, education jsonb
 - `profiles`: full_name, email, phone, avatar_url, role ('patient'|'doctor'|'assistant'|'admin')
 - `clinic_members`: clinic_id, profile_id, role ('owner'|'doctor'|'assistant'), is_active
-- `notifications` (NO usada por el panel): para SMS/email salientes — recipient_id, channel, type, status, scheduled_at
+- `clinic_invitations` (S5-07): clinic_id, phone, display_name, role, invited_by, invited_at, accepted_at, cancelled_at + RPC `accept_clinic_invitations(user_phone)` SECURITY DEFINER
+- `consultations`: chief_complaint, history_present_illness, family_history_notes (LEGACY, no UI), physical_exam, internal_analysis, plan, status (draft|signed), started_at, signed_at
+- `consultation_diagnoses`: diagnosis_id, diagnosis_type (presuntivo|definitivo|diferencial), diagnosis_status (9 valores: activo|en_estudio|en_tratamiento|controlado|descontrolado|cronico|en_remision|en_observacion|resuelto), notes
+- `diagnoses`, `medications`, `family_history_catalog`: catálogos per-doctor con usage_count
+- `consultation_family_history`: id, consultation_id, family_history_id, notes
+- `prescriptions`: medication_id, dosage, frequency, duration_value, duration_unit (dias|semanas|meses|permanente), instructions, alternatives
+- `medication_presentation` enum (13 valores): tableta, capsula, jarabe, inyectable, crema, gotas, suspension, parche, inhalador, supositorio, otro, sobre, gel
+- `vitals`: vinculado a appointment_id (no consultation_id) → multi-actor implícito; `weight_kg` (migrado desde `weight_lb`)
+- `municipalities`: name (distrito antiguo municipio), district (nuevo municipio agrupador post-2024)
+- `notifications` (NO usada por panel todavía): para SMS/email salientes — recipient_id, channel, type, status, scheduled_at
 
 ## Estados de cita y transiciones
 
 - programada → confirmada → en_sala → atendida (final)
-- cancelada (final), no_asistio (final)
-- Validaciones extremas implementadas: no marcar 'atendida' con >24h de anticipación; no marcar 'no_asistio' antes de la hora de la cita
+- cancelada (final con cancel_reason_id), no_asistio (final)
+- Validaciones extremas: no marcar 'atendida' con >24h de anticipación; no marcar 'no_asistio' antes de la hora
 
-## Sprint 3 — completado
+## Sprints completados
 
-| Tarea | Status | Archivos clave |
-|---|---|---|
-| S3-01 Header de notificaciones | ✓ | `components/NotificationBell.tsx`, `services/panelNotifications.service.ts`, `hooks/usePanelNotifications.ts` |
-| S3-02 Calendario visual 3 vistas | ✓ | `pages/panel/citas/components/{Day,Week,Month}View.tsx` |
-| S3-03 Marcar estado + audit log | ✓ | `components/QuickActions.tsx`, `CancelAppointmentModal.tsx`, `services/auditLog.service.ts` |
-| S3-04 Cita walk-in desde calendario | ✓ | `services/walkIn.service.ts` |
-| S3-05 Lista de pacientes con búsqueda | ✓ | `pages/panel/pacientes/PacientesPage.tsx`, `services/patients.service.ts` |
-| S3-06 Perfil de paciente | ✓ | `PacientePerfilPage.tsx`, `EditPatientModal.tsx` |
-| S3-08 Config perfil público desde panel | ✓ | `pages/panel/perfil/PerfilPage.tsx`, `services/doctorProfile.service.ts` |
-| S3-09 Soporte rol asistente | ✓ | `hooks/useClinicContext.ts` (clave) |
-| S3-10 Responsive tablet | ✓ | `PanelLayout.tsx` con sidebar de 3 niveles |
+### Sprint 1-2 ✅
+Directorio público + booking público con OTP + panel médico básico (disponibilidad, bloqueos)
 
-## Sprint 4 — completado
+### Sprint 3 ✅ (`b56543f`)
+Panel del médico: calendario 3 vistas, marcar estado + audit log, walk-in, pacientes (lista + perfil + edición), perfil público editable, soporte rol asistente (`useClinicContext`), responsive tablet (sidebar 3 niveles), header notificaciones.
 
-| Tarea | Status | Archivos clave |
-|---|---|---|
-| S4-01..03 Consulta clínica MVP (3 semanas) | ✓ | `pages/panel/consulta/{ConsultaPage,DiagnosesSection,PrescriptionsSection,RecetaPrint}.tsx`, `services/{consultations,vitals,diagnosesCatalog,consultationDiagnoses,medicationsCatalog,prescriptions}.service.ts`, `hooks/useConsultation.ts` |
-| S4-04 Ver historial clínico desde perfil paciente | ✓ | Filas de citas en `PacientePerfilPage` clickeables, navegan a consulta |
-| Sistema de diseño + Button reusable | ✓ | `components/ui/Button.tsx`, sección "Sistema de diseño" en este doc |
-| Página admin de catálogos | ✓ | `pages/panel/catalogos/CatalogosPage.tsx`, `hooks/useCatalogs.ts` |
-| Auto-transición estado cita al firmar | ✓ | `signConsultation` en `consultations.service.ts` |
-| Imprimir receta (CSS print + componente dedicado) | ✓ | `RecetaPrint.tsx`, `@media print` en `index.css` |
-| Sticky sidebar + sticky patient header | ✓ | `PanelLayout.tsx`, `ConsultaHeader` |
-| Soft-delete pacientes con toggle activo/inactivo | ✓ | `setPatientActive` en `patients.service.ts`, UI en perfil + lista |
-| Descartar borrador de consulta vacía | ✓ | `discardEmptyConsultation` (hard-delete solo si sin contenido) |
-| Validadores fisiológicos en signos vitales | ✓ | `validators` en `ConsultaPage.tsx` (detecta libras/metros mal puestos) |
-| Migración SQL `weight_lb` → `weight_kg` | ✓ | `migrations/s4_01_vitals_weight_kg.sql` |
-| Fix triggers audit (`LOWER(TG_OP)`) | ✓ | `migrations/s4_02_fix_audit_triggers.sql` |
+### Sprint 4 ✅ (`d2e98ea`)
+MVP de consulta clínica firmable e imprimible. Servicios: consultations, vitals, diagnoses catalog, medications catalog, prescriptions. Página `/panel/consulta/:appointmentId` con auto-create draft, signos vitales con IMC + clasificación OMS + validadores fisiológicos, diagnósticos con catálogo, receta con cargar permanentes, firma inmutable + auto-transición cita a atendida, imprimir receta. Sistema de diseño documentado + Button reusable. Página catálogos admin. Soft-delete pacientes. Migración weight_kg.
 
-## Backlog Sprint 5 (sugerido)
+### Sprint 5 EN CURSO ~70% (último commit `83cbeb9`, tag `piloto-v1.1`)
 
-### Crítico (extender consulta clínica al modelo de referencia)
-- **S5-01** Estilo de vida con cálculos: tabaco (IPA), alcohol, actividad física (METs), sueño, alimentación
-- **S5-02** Antecedentes familiares estructurados con catálogo (no solo texto)
-- **S5-03** Estado del diagnóstico expandido (en remisión, descontrolado, etc.) — el enum ya existe
-- **S5-04** Catálogo de antecedentes administrable (`/panel/catalogos` agregar tab "Antecedentes")
-- **S5-05** Plan de seguimiento estructurado: agendar próxima cita inline desde la consulta (ya existe `appointments`, falta UI inline)
+✅ Hecho:
+| Tarea | Archivos clave |
+|---|---|
+| S5-04+02 Antecedentes familiares | `family_history_catalog`, `consultation_family_history`, `AntecedentesSection.tsx`, tab en CatalogosPage |
+| S5-05 Plan de seguimiento agendable inline | `FollowUpScheduler.tsx`, `useFollowUp.ts`, reutiliza `createWalkInAppointment` |
+| S5-03 Estados de diagnóstico expandidos | enum con 9 valores (4 nuevos: en_estudio, controlado, descontrolado, en_remision) |
+| S5-06 Mi equipo (invitar asistentes) | `clinic_invitations`, RPC `accept_clinic_invitations`, `EquipoPage.tsx`, `team.service.ts` |
+| Datos iniciales | 127 dx + 736 meds cargados para 13 doctores via `scripts/load-catalogs.mjs` |
+| 10 pacientes ficticios + 25 citas mayo 2026 | via `scripts/generate-seeds.mjs` |
+| Paginación admin catálogos | `<Pagination>` reusable, server-side range + count |
+| Optimización queries | índices btree + pg_trgm, defer autocomplete vacío |
+| Calendario respeta disponibilidad doctor | `useDoctorCalendarHours` + buffer 1h, sticky header del calendar |
+| Fix modal cancelación | usaba columnas inexistentes (`cancellation_reason` etc) → ahora `cancel_reason_id` (FK) + `internal_notes` |
+| Fix filtros del directorio | bug del mousedown listener cerrando dropdown antes del onClick |
+| Dropdown municipios agrupado por district | Optgroups visuales con nueva división territorial 2024 |
 
-### Operacional
-- **S5-06** Mi equipo — UI para invitar asistentes desde panel (hoy se hace por SQL manual)
-- **S5-07** Selector multi-doctor cuando una clínica tiene varios médicos
-- **S5-08** Notificaciones SMS/email reales con la tabla `notifications` + Edge Function (recordatorios 24h, confirmaciones)
+⏳ Pendientes S5:
+- **S5-01** Estilo de vida con cálculos (tabaco/IPA, alcohol, METs, sueño, alimentación) — la grande, 1-2 semanas, requiere diseño de schema
+- **S5-07** Selector multi-doctor cuando clínica tiene varios médicos — 4h
+- **S5-08** Notificaciones SMS reales con Edge Function + Twilio — 1 semana
 
-### Pulido / nice-to-have
-- **S5-09** Filtros y ordenamiento avanzado en lista de pacientes
-- **S5-10** Galería de imágenes del médico (`doctor_images`) editable desde panel
-- **S5-11** Reportes/estadísticas para el médico (citas por mes, ingresos, no-shows)
-- **S5-12** Refactor pass de pantallas legacy (PacientesPage, AppointmentDetailPanel) para alinear al sistema de diseño — hacerlo on-demand al tocar cada archivo
+## Sprint 6 — Admin SaaS (no construido, propuesto)
 
-### Aún más adelante (Sprint 6+)
-- Órdenes de laboratorio con perfiles (catálogo + estructura)
-- Imágenes/gabinete con drill-down de tipos de estudio
-- Vistas históricas: dashboard clínico de laboratorios, historial de archivos del paciente (PDFs, imágenes)
-- Página `/panel/consultas` con lista filtrable de todas las consultas del médico
+**Por qué:** módulo aparte para el dueño de la plataforma (no para doctores/asistentes). Necesario para mostrar tracción a inversores y operar el negocio.
+
+**Alcance propuesto:**
+- Ruta `/admin` con guard de rol `admin` (enum ya existe en `user_role`)
+- Aprobar / verificar médicos (toggle `is_verified`, gestionar `lucy_status`)
+- Suspender doctor / paciente / asistente (`is_active=false` global)
+- Dashboard de tracción:
+  - Visitas (necesita integración con analytics — Vercel Analytics / Plausible)
+  - Médicos activos, pacientes activos, asistentes
+  - Citas creadas / atendidas por mes
+  - Consultas firmadas (volumen, no contenido — privacidad)
+  - Ingresos via Stripe webhook (cuando esté)
+- Audit log inspeccionable (filtros por usuario, tabla, fecha)
+- Gestión de catálogos globales (especialidades, departamentos, municipios, cancel_reasons)
+- Onboarding manual de médicos (claim profile, sin OTP)
+
+**Estimación**: 2-3 semanas. Requiere su propio sistema de RLS (admin bypassa muchas cosas).
+
+## Sprint 7+ (más adelante)
+
+- Estructura órdenes de laboratorio con perfiles
+- Imágenes/gabinete con drill-down
+- Vista `/panel/consultas` global con filtros
 - Sección "Borradores pendientes de firmar" en panel home
+- Vistas históricas del paciente (laboratorios, archivos PDF subidos al expediente)
+- Reportes/estadísticas para el médico (citas/mes, ingresos personales, no-shows)
 
-## Cómo crear una asistente (manual hasta tener S5-06)
+## Deudas técnicas conocidas (priorizadas)
 
-```sql
--- 1. La asistente se registra como paciente normal vía OTP
--- 2. Doctor o admin ejecuta:
-UPDATE profiles SET role='assistant' WHERE phone='+503...';
-INSERT INTO clinic_members (clinic_id, profile_id, role, is_active)
-VALUES ('<clinic-uuid>', '<profile-uuid>', 'assistant', true);
+1. **Asistente puede firmar consulta** — clínico-legal, urgente. La firma debería ser solo del doctor
+2. **Sin route guards** en `/panel/perfil`, `/panel/equipo`, `/panel/catalogos` para asistentes (ocultos del sidebar pero URL directa funciona)
+3. **Inconsistencia visual** pantallas legacy (PacientesPage, AppointmentDetailPanel, BloqueosPage) — no usan `<Button>` reusable
+4. **Sin sistema global de toasts** — errores van a console.error sin feedback al usuario
+5. **Print de receta minimalista** — sin logo de clínica, sin QR de verificación
+6. **No hay vista `/panel/consultas`** — solo se accede via cita o paciente
+
+## Datos en DB (real + ficticio)
+
+- 13 doctores publicados: 12 dummy + 1 real ("Pepe Toro" — usuario principal de pruebas)
+- 14 departments, 262 municipalities con `district` (nueva división 2024)
+- 20 especialidades
+- 10 cancel_reasons pre-cargadas (categorías: paciente, medico, sistema)
+- 127 diagnósticos × 13 doctores = ~1651 filas
+- 736 medicamentos × 13 doctores = 9568 filas
+- 10 pacientes ficticios + 25 citas mayo 2026 con todos los estados del funnel (para Pepe Toro)
+
+## Migraciones SQL aplicadas
+
+En `/migrations/`. Ya corridas en Supabase (verificar con `scripts/verify-migrations.mjs`):
+
+- `s4_01_vitals_weight_kg.sql` — rename weight_lb → weight_kg
+- `s4_02_fix_audit_triggers.sql` — fix `LOWER(TG_OP)` en audit triggers
+- `s5_01_family_history_tables.sql` — tablas + RLS + audit trigger
+- `s5_02_extend_medication_presentation.sql` — agrega `sobre`, `gel` al enum
+- `s5_03_seed_diagnoses.sql` — (referencia, uso real via script)
+- `s5_04_seed_medications.sql` — (referencia, uso real via script)
+- `s5_05_catalog_indexes.sql` — btree + pg_trgm GIN (perf 9x)
+- `s5_06_extend_diagnosis_status.sql` — agrega 4 estados al enum
+- `s5_07_clinic_invitations.sql` — tabla + RPC `accept_clinic_invitations` SECURITY DEFINER
+
+## Scripts utilitarios (`/scripts/`)
+
+- `s4-week1-smoke-test.mjs` — smoke test S4
+- `verify-migrations.mjs` — verifica todas las migraciones S5
+- `check-s5_07.mjs` — verifica clinic_invitations específicamente
+- `check-catalogs.mjs` — cuenta diagnósticos/medicamentos por doctor
+- `bench-queries.mjs` — mide latencia de queries clave
+- `load-catalogs.mjs` — carga programática 127 dx + 736 meds para todos los doctores (idempotente)
+- `generate-seeds.mjs` — genera los SQL seeds desde Excel/CSV en `/imports/`
+- `analyze-medicamentos.mjs`, `read-medicamentos.mjs` — exploración
+- `fix-medications-presentation.mjs` — fix de 16 medicamentos que quedaron como 'otro'
+
+**Todos los scripts tienen el `service_role` key hardcoded** — pueden correr con `node scripts/<nombre>.mjs`. Para mover a producción real, mover a variable de entorno.
+
+## Cómo crear una asistente
+
+**Ahora (S5-06):** desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se loguea con OTP y queda activa automáticamente vía RPC `accept_clinic_invitations`.
+
+SMS automático al invitar **no está implementado** (eso es S5-08). Por ahora avisar verbalmente.
+
+## Tags y commits importantes
+
+```
+83cbeb9 fix(home): filtros del directorio + dropdown municipios agrupado  ← piloto-v1.1
+15e43d7 feat(Sprint 5 wip): antecedentes, equipo, plan inline, ...        ← piloto-v1
+d2e98ea feat(Sprint 4): cierre - consulta clínica MVP
+07f09d3 chore: limpieza post-Sprint 3
+b56543f feat(Sprint 3): cierre - notificaciones, pacientes, perfil
 ```
 
-## Migraciones SQL aplicadas en Sprint 4
+Volver a un punto anterior:
+```bash
+git reset --hard piloto-v1
+git push --force-with-lease origin main
+```
 
-Si traes un entorno desde antes de Sprint 4, ejecutá los archivos de `/migrations` en este orden:
+## Cómo arrancar en un nuevo chat de Claude Code
 
-1. `s4_01_vitals_weight_kg.sql` — renombra `vitals.weight_lb` → `weight_kg` y convierte valores existentes
-2. `s4_02_fix_audit_triggers.sql` — fix de los triggers `audit_consultations`, `audit_patients`, `audit_prescriptions` (problema con `TG_OP::audit_action` por mismatch de mayúsculas)
+1. Leer este archivo entero
+2. Verificar el branch: `git log --oneline -5`
+3. Verificar el estado DB: `node scripts/verify-migrations.mjs`
+4. NO asumir nada — leer el código antes de tocarlo
+5. Decisión grande sin consultar = problema. Cuestionar suposiciones
+6. Seguir el sistema de diseño documentado arriba para toda pantalla nueva
 
 ## Documentos fuente (en raíz)
 
