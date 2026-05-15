@@ -218,6 +218,52 @@ export async function updateAppointmentStatus(
     newStatusName?: string;
   }
 ): Promise<void> {
+  // ─── Guarda de integridad (defensa de servicio; el trigger en DB es el backstop) ───
+  // 1. Estado actual + hora de la cita, 2. nombre del estado destino,
+  // 3. ¿hay consulta firmada? Bloquea cancelar/cambiar una cita firmada
+  //    y valida que la transición esté permitida.
+  const { data: aptRow } = await supabase
+    .from('appointments')
+    .select('start_time, status:appointment_statuses(name)')
+    .eq('id', appointmentId)
+    .single();
+
+  const { data: targetStatus } = await supabase
+    .from('appointment_statuses')
+    .select('name')
+    .eq('id', statusId)
+    .single();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentName: string | undefined = (aptRow as any)?.status?.name;
+  const targetName: string | undefined = targetStatus?.name;
+
+  if (currentName && targetName && currentName !== targetName) {
+    const { data: signedCons } = await supabase
+      .from('consultations')
+      .select('id')
+      .eq('appointment_id', appointmentId)
+      .eq('status', 'signed')
+      .limit(1);
+
+    if (signedCons && signedCons.length > 0 && targetName !== 'atendida') {
+      throw new Error(
+        targetName === 'cancelada'
+          ? 'No se puede cancelar una cita con consulta firmada.'
+          : 'No se puede cambiar el estado de una cita con consulta firmada.'
+      );
+    }
+
+    const check = canTransitionTo(
+      currentName,
+      targetName,
+      (aptRow as { start_time: string }).start_time
+    );
+    if (!check.allowed) {
+      throw new Error(check.reason ?? 'Transición de estado no permitida.');
+    }
+  }
+
   const updatePayload: Record<string, unknown> = {
     status_id: statusId,
     updated_at: new Date().toISOString(),
