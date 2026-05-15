@@ -161,6 +161,15 @@ export default function PanelLayout() {
           </div>
 
           <button
+            onClick={() => navigate('/')}
+            title="Buscar médico"
+            className="w-full flex items-center gap-2 px-2 lg:px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer justify-center lg:justify-start"
+          >
+            <i className="ri-search-line"></i>
+            <span className="hidden lg:inline">Buscar médico</span>
+          </button>
+
+          <button
             onClick={handleLogout}
             title="Cerrar sesión"
             className="w-full flex items-center gap-2 px-2 lg:px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer justify-center lg:justify-start"
@@ -223,6 +232,13 @@ export default function PanelLayout() {
                   <p className="text-xs text-gray-500 truncate">{user.phone}</p>
                 </div>
               </div>
+              <button
+                onClick={() => { setSidebarOpen(false); navigate('/'); }}
+                className="w-full flex items-center gap-2 px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"
+              >
+                <i className="ri-search-line"></i>
+                Buscar médico
+              </button>
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"

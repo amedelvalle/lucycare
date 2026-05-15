@@ -80,6 +80,14 @@ export default function Home() {
                 <span className="text-sm text-gray-700 hidden sm:inline">
                   {currentUser.name || currentUser.phone}
                 </span>
+                {(currentUser.role === 'doctor' || currentUser.role === 'assistant') && (
+                  <button
+                    onClick={() => navigate('/panel')}
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                  >
+                    Mi panel
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
