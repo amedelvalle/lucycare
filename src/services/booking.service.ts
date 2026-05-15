@@ -11,6 +11,7 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { isPastStart, PAST_APPOINTMENT_MESSAGE } from './appointments.service'
 
 interface BookingData {
   doctorId: string
@@ -40,6 +41,11 @@ export async function createBooking(data: BookingData): Promise<BookingResult> {
   }
 
   const userId = session.user.id
+
+  // No permitir reservar en el pasado (UI + este servicio + trigger DB)
+  if (isPastStart(data.startTime)) {
+    return { success: false, error: PAST_APPOINTMENT_MESSAGE }
+  }
 
   try {
     // ─── 1. Verificar que el slot sigue libre (prevención doble booking) ───

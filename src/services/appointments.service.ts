@@ -6,6 +6,24 @@
 import { supabase } from '@/lib/supabase';
 import { logAuditEntry } from '@/services/auditLog.service';
 
+// ─── Integridad de agenda: no crear/reprogramar en el pasado ─────────
+
+/** Mensaje único compartido por UI, servicios y trigger de DB. */
+export const PAST_APPOINTMENT_MESSAGE =
+  'No se puede crear una cita en una fecha u hora pasada.';
+
+/**
+ * true si `startTimeIso` ya pasó (con 2 min de gracia, igual que el
+ * trigger de DB, para no romper walk-ins "para ahora").
+ * La comparación es de instantes absolutos → la zona horaria
+ * America/El_Salvador queda contemplada sin lógica extra.
+ */
+export function isPastStart(startTimeIso: string): boolean {
+  const start = new Date(startTimeIso).getTime();
+  if (Number.isNaN(start)) return false; // fecha inválida: que falle otra validación
+  return start < Date.now() - 2 * 60 * 1000;
+}
+
 // ─── Tipos ───────────────────────────────────────────────────────────
 
 export interface AppointmentStatus {
