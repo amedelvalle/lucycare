@@ -1,8 +1,8 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getCurrentAuthUser, signOut } from '../../services/auth.service';
 import type { AuthUser } from '../../services/auth.service';
-import { useClinicContext } from '../../hooks/useClinicContext';
+import { useClinicContext, useSwitchActiveDoctor } from '../../hooks/useClinicContext';
 import NotificationBell from '../../components/NotificationBell';
 
 interface NavItem {
@@ -103,8 +103,16 @@ export default function PanelLayout() {
         <p className="text-[10px] font-semibold uppercase text-blue-600 tracking-wide">
           Asistente
         </p>
-        {ctx?.doctorName && (
-          <p className="text-xs text-blue-800 mt-0.5 truncate">de {ctx.doctorName}</p>
+        {ctx && ctx.availableDoctors.length > 1 ? (
+          <DoctorSwitcher
+            activeId={ctx.doctorId}
+            activeName={ctx.doctorName}
+            doctors={ctx.availableDoctors}
+          />
+        ) : (
+          ctx?.doctorName && (
+            <p className="text-xs text-blue-800 mt-0.5 truncate">de {ctx.doctorName}</p>
+          )
         )}
       </div>
     ) : null;
@@ -151,6 +159,15 @@ export default function PanelLayout() {
               <p className="text-xs text-gray-500 truncate">{user.phone}</p>
             </div>
           </div>
+
+          <button
+            onClick={() => navigate('/')}
+            title="Buscar médico"
+            className="w-full flex items-center gap-2 px-2 lg:px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer justify-center lg:justify-start"
+          >
+            <i className="ri-search-line"></i>
+            <span className="hidden lg:inline">Buscar médico</span>
+          </button>
 
           <button
             onClick={handleLogout}
@@ -216,6 +233,13 @@ export default function PanelLayout() {
                 </div>
               </div>
               <button
+                onClick={() => { setSidebarOpen(false); navigate('/'); }}
+                className="w-full flex items-center gap-2 px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"
+              >
+                <i className="ri-search-line"></i>
+                Buscar médico
+              </button>
+              <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"
               >
@@ -238,6 +262,74 @@ export default function PanelLayout() {
         </div>
         <Outlet />
       </main>
+    </div>
+  );
+}
+
+function DoctorSwitcher({
+  activeId,
+  activeName,
+  doctors,
+}: {
+  activeId: string;
+  activeName: string | null;
+  doctors: Array<{ id: string; full_name: string }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const switchDoctor = useSwitchActiveDoctor();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const handlePick = (id: string) => {
+    if (id !== activeId) {
+      switchDoctor.mutate(id);
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 text-xs text-blue-800 hover:text-blue-900 group"
+        title="Cambiar doctor activo"
+      >
+        <span className="truncate">
+          <span className="text-blue-600">de </span>
+          <span className="font-medium">{activeName ?? '—'}</span>
+        </span>
+        <i
+          className={`ri-arrow-down-s-line text-sm text-blue-600 group-hover:text-blue-800 transition-transform ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
+          {doctors.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => handlePick(d.id)}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2 ${
+                d.id === activeId ? 'text-emerald-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              <span className="truncate">{d.full_name}</span>
+              {d.id === activeId && <i className="ri-check-line text-sm flex-shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

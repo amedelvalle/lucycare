@@ -256,6 +256,21 @@ export async function discardEmptyConsultation(consultationId: string): Promise<
 export async function signConsultation(consultationId: string): Promise<void> {
   const now = new Date().toISOString();
 
+  // Defensa clínico-legal: solo doctores pueden firmar (la firma identifica
+  // responsabilidad médica). Las asistentes nunca pueden firmar aunque tengan
+  // acceso de UI a la consulta.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('No autenticado');
+  const { data: profile, error: profileErr } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profileErr) throw profileErr;
+  if (profile?.role !== 'doctor') {
+    throw new Error('Solo el médico tratante puede firmar una consulta.');
+  }
+
   // 1. Firmar la consulta
   const { error: signErr } = await supabase
     .from('consultations')

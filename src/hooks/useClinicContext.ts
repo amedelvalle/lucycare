@@ -5,17 +5,22 @@
  * un médico o una asistente. Permite que las páginas del panel funcionen
  * para ambos roles sin lógica duplicada.
  *
- * NOTA SOBRE CREACIÓN DE ASISTENTES:
- * Por ahora, agregar una asistente requiere SQL manual:
- *   1. La asistente se registra como paciente normal (OTP)
- *   2. UPDATE profiles SET role='assistant' WHERE phone='...';
- *   3. INSERT INTO clinic_members (clinic_id, profile_id, role, is_active)
- *      VALUES ('<clinic-uuid>', '<profile-uuid>', 'assistant', true);
- * El UI para invitaciones queda para Sprint 4.
+ * Multi-doctor (S5-07):
+ *   - Una clínica puede tener varios doctores. Una asistente ve y opera sobre
+ *     uno por vez ("doctor activo"). La selección persiste en localStorage.
+ *   - `availableDoctors` lista todos los doctores de la clínica (solo asistente).
+ *   - `useSwitchActiveDoctor()` cambia el doctor activo + invalida caches por-doctor.
+ *
+ * Creación de asistentes (S5-06): desde /panel/equipo → invitar por teléfono.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+
+export interface DoctorOption {
+  id: string;
+  full_name: string;
+}
 
 export interface ClinicContext {
   profileId: string;
@@ -23,9 +28,27 @@ export interface ClinicContext {
   clinicId: string;
   doctorId: string;
   doctorName: string | null;
+  availableDoctors: DoctorOption[];
 }
 
 export const clinicContextKey = ['clinic-context'] as const;
+const SELECTED_DOCTOR_KEY = 'lucycare_assistant_selected_doctor';
+
+function getStoredDoctorId(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_DOCTOR_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredDoctorId(doctorId: string): void {
+  try {
+    localStorage.setItem(SELECTED_DOCTOR_KEY, doctorId);
+  } catch {
+    // localStorage no disponible — la selección no persiste pero el flujo sigue
+  }
+}
 
 async function loadClinicContext(): Promise<ClinicContext> {
   const {
@@ -61,6 +84,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
       clinicId: doctor.clinic_id,
       doctorId: doctor.id,
       doctorName: doctorAny.profiles?.full_name ?? null,
+      availableDoctors: [],
     };
   }
 
@@ -77,26 +101,37 @@ async function loadClinicContext(): Promise<ClinicContext> {
     if (memberError) throw memberError;
     if (!member) throw new Error('No estás asociada a ninguna clínica');
 
-    // Doctor primario de la clínica (MVP: el primero — selector multi-doctor en Sprint 4)
-    const { data: doctor, error: doctorError } = await supabase
+    // Todos los doctores de la clínica, ordenados por antigüedad (estable)
+    const { data: doctors, error: doctorsError } = await supabase
       .from('doctors')
       .select('id, profiles!inner(full_name)')
       .eq('clinic_id', member.clinic_id)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .order('created_at', { ascending: true });
 
-    if (doctorError) throw doctorError;
-    if (!doctor) throw new Error('La clínica no tiene médicos asociados');
+    if (doctorsError) throw doctorsError;
+    if (!doctors || doctors.length === 0) {
+      throw new Error('La clínica no tiene médicos asociados');
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const doctorAny = doctor as any;
+    const availableDoctors: DoctorOption[] = (doctors as any[]).map((d) => ({
+      id: d.id,
+      full_name: d.profiles?.full_name ?? '—',
+    }));
+
+    // Doctor activo: el almacenado en localStorage si todavía existe en la clínica,
+    // si no, el primero por created_at (fallback estable).
+    const stored = getStoredDoctorId();
+    const active =
+      (stored && availableDoctors.find((d) => d.id === stored)) ?? availableDoctors[0];
+
     return {
       profileId: user.id,
       role: 'assistant',
       clinicId: member.clinic_id,
-      doctorId: doctor.id,
-      doctorName: doctorAny.profiles?.full_name ?? null,
+      doctorId: active.id,
+      doctorName: active.full_name,
+      availableDoctors,
     };
   }
 
@@ -109,5 +144,30 @@ export function useClinicContext() {
     queryFn: loadClinicContext,
     staleTime: 1000 * 60 * 10, // 10 min — cambia muy poco
     retry: 1,
+  });
+}
+
+/**
+ * Cambia el doctor activo de una asistente. Persiste en localStorage e
+ * invalida las queries dependientes del doctor activo (citas, calendario,
+ * pacientes, dashboard) para que la UI refresque sin recargar la página.
+ */
+export function useSwitchActiveDoctor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (doctorId: string) => {
+      setStoredDoctorId(doctorId);
+      return doctorId;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: clinicContextKey });
+      qc.invalidateQueries({ queryKey: ['appointments'] });
+      qc.invalidateQueries({ queryKey: ['calendar'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-today'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-upcoming'] });
+      qc.invalidateQueries({ queryKey: ['patients'] });
+      qc.invalidateQueries({ queryKey: ['availability'] });
+      qc.invalidateQueries({ queryKey: ['doctor-calendar-hours'] });
+    },
   });
 }

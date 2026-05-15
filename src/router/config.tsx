@@ -18,6 +18,7 @@ import PerfilPage from "../pages/panel/perfil/PerfilPage";
 import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
 import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
+import DoctorOnlyRoute from "./DoctorOnlyRoute";
 
 const routes: RouteObject[] = [
   {
@@ -58,19 +59,19 @@ const routes: RouteObject[] = [
       },
       {
         path: "perfil",
-        element: <PerfilPage />,
+        element: <DoctorOnlyRoute><PerfilPage /></DoctorOnlyRoute>,
       },
       {
         path: "consulta/:appointmentId",
-        element: <ConsultaPage />,
+        element: <DoctorOnlyRoute><ConsultaPage /></DoctorOnlyRoute>,
       },
       {
         path: "catalogos",
-        element: <CatalogosPage />,
+        element: <DoctorOnlyRoute><CatalogosPage /></DoctorOnlyRoute>,
       },
       {
         path: "equipo",
-        element: <EquipoPage />,
+        element: <DoctorOnlyRoute><EquipoPage /></DoctorOnlyRoute>,
       },
     ],
   },
