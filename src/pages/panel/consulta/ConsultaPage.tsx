@@ -73,6 +73,7 @@ export default function ConsultaPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [vitalsForm, setVitalsForm] = useState<VitalsFormState>(EMPTY_VITALS);
   const [confirmSign, setConfirmSign] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -139,10 +140,18 @@ export default function ConsultaPage() {
 
   const handleSign = async () => {
     if (!ctx) return;
-    // Guardar último estado antes de firmar
-    await handleSaveDraft();
-    await sign.mutateAsync();
-    setConfirmSign(false);
+    setSignError(null);
+    try {
+      // Guardar último estado antes de firmar
+      await handleSaveDraft();
+      await sign.mutateAsync();
+      setConfirmSign(false);
+    } catch (err) {
+      // Mostrar el error real (antes fallaba en silencio)
+      setSignError(
+        err instanceof Error ? err.message : 'No se pudo firmar la consulta.'
+      );
+    }
   };
 
   const handleDiscard = async () => {
@@ -527,8 +536,9 @@ export default function ConsultaPage() {
       {confirmSign && (
         <ConfirmSignModal
           onConfirm={handleSign}
-          onCancel={() => setConfirmSign(false)}
+          onCancel={() => { setConfirmSign(false); setSignError(null); }}
           isSubmitting={isSigning || isSaving}
+          errorMessage={signError}
         />
       )}
 
@@ -886,10 +896,12 @@ function ConfirmSignModal({
   onConfirm,
   onCancel,
   isSubmitting,
+  errorMessage,
 }: {
   onConfirm: () => void;
   onCancel: () => void;
   isSubmitting: boolean;
+  errorMessage?: string | null;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -910,6 +922,15 @@ function ConfirmSignModal({
             </p>
           </div>
         </div>
+
+        {errorMessage && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+            <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <p className="text-xs text-red-700">{errorMessage}</p>
+          </div>
+        )}
 
         <div className="flex gap-3 justify-end pt-1">
           <button

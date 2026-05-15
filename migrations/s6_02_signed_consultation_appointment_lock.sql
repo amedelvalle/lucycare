@@ -13,6 +13,42 @@
 --      'atendida' (cancelar, no_asistio, volver a estados previos).
 -- ═══════════════════════════════════════════════════════════
 
+-- ─── 0. FIX s6_01: generate_review_token sin pgcrypto ───────
+-- s6_01 usaba gen_random_bytes() (extensión pgcrypto, NO habilitada
+-- en este Supabase). Eso hacía fallar CUALQUIER transición a 'atendida'
+-- (incluida la firma de consulta) con rollback silencioso.
+-- Se reescribe el token con gen_random_uuid() (nativo en PG15).
+CREATE OR REPLACE FUNCTION generate_review_token()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  atendida_id uuid;
+BEGIN
+  SELECT id INTO atendida_id
+  FROM appointment_statuses
+  WHERE name = 'atendida'
+  LIMIT 1;
+
+  IF atendida_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.status_id = atendida_id
+     AND (OLD.status_id IS DISTINCT FROM NEW.status_id) THEN
+    INSERT INTO review_tokens (appointment_id, token, expires_at)
+    VALUES (
+      NEW.id,
+      replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''),
+      now() + interval '7 days'
+    )
+    ON CONFLICT (appointment_id) DO NOTHING;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 -- ─── 1. Firmar consulta → cita 'atendida' (atómico) ─────────
 CREATE OR REPLACE FUNCTION sync_appointment_on_sign()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
