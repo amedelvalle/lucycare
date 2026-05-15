@@ -18,6 +18,7 @@ import PerfilPage from "../pages/panel/perfil/PerfilPage";
 import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
 import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
+import CalificarPage from "../pages/calificar/CalificarPage";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 
 const routes: RouteObject[] = [
@@ -28,6 +29,10 @@ const routes: RouteObject[] = [
   {
     path: "/doctor/:id",
     element: <DoctorDetail />,
+  },
+  {
+    path: "/calificar/:token",
+    element: <CalificarPage />,
   },
   {
     path: "/panel",
