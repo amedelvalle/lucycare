@@ -15,6 +15,86 @@ export interface AvailabilityRule {
   isActive: boolean
 }
 
+// ─── Validación: cita dentro de disponibilidad del médico ────────────
+
+/** Mensaje único compartido por UI, servicios y trigger de DB. */
+export const OUTSIDE_AVAILABILITY_MESSAGE =
+  'El médico no tiene disponibilidad en ese horario.'
+
+/**
+ * Partes en hora local America/El_Salvador de un instante ISO:
+ * { date 'YYYY-MM-DD', dow 0-6 (0=domingo), time 'HH:MM:SS' }.
+ * Robusto sin importar la TZ del navegador/servidor.
+ */
+function esLocalParts(iso: string): { date: string; dow: number; time: string } {
+  const d = new Date(iso)
+  // en-CA da YYYY-MM-DD; en-GB 24h da HH:MM:SS
+  const date = d.toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' })
+  const time = d.toLocaleTimeString('en-GB', {
+    timeZone: 'America/El_Salvador',
+    hour12: false,
+  })
+  const wd = d.toLocaleDateString('en-US', {
+    timeZone: 'America/El_Salvador',
+    weekday: 'short',
+  })
+  const dowMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  }
+  return { date, dow: dowMap[wd] ?? new Date(iso).getDay(), time }
+}
+
+/**
+ * true si la cita COMPLETA (start..end) cae dentro de una
+ * availability_rule activa del médico y NO está bloqueada por un
+ * override. Misma lógica que slots.service (overrides solo bloquean).
+ */
+export async function isWithinDoctorAvailability(
+  doctorId: string,
+  startIso: string,
+  endIso: string
+): Promise<boolean> {
+  const s = new Date(startIso).getTime()
+  const e = new Date(endIso).getTime()
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return false
+
+  const start = esLocalParts(startIso)
+  const end = esLocalParts(endIso)
+  // Cita que cruza medianoche: fuera de alcance, rechazar
+  if (end.date !== start.date) return false
+
+  // 1. Debe existir una regla activa que contenga start..end
+  const { data: rules } = await supabase
+    .from('availability_rules')
+    .select('start_time, end_time')
+    .eq('doctor_id', doctorId)
+    .eq('day_of_week', start.dow)
+    .eq('is_active', true)
+
+  const insideRule = (rules ?? []).some(
+    (r) => r.start_time <= start.time && r.end_time >= end.time
+  )
+  if (!insideRule) return false
+
+  // 2. No debe estar bloqueada por un override de esa fecha
+  const { data: overrides } = await supabase
+    .from('availability_overrides')
+    .select('time_start, time_end, is_blocked')
+    .eq('doctor_id', doctorId)
+    .lte('date_start', start.date)
+    .gte('date_end', start.date)
+
+  for (const o of overrides ?? []) {
+    if (!o.is_blocked) continue
+    // Bloqueo de día completo
+    if (!o.time_start || !o.time_end) return false
+    // Bloqueo parcial que solapa la cita
+    if (o.time_start < end.time && o.time_end > start.time) return false
+  }
+
+  return true
+}
+
 export interface AvailabilityOverride {
   id: string
   doctorId: string

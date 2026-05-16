@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { logAuditEntry } from '@/services/auditLog.service';
 import { isPastStart, PAST_APPOINTMENT_MESSAGE } from '@/services/appointments.service';
+import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from '@/services/availability.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -177,6 +178,11 @@ export async function createWalkInAppointment(
   // 0. No permitir crear/reprogramar en el pasado (UI + servicio + trigger DB)
   if (isPastStart(data.startTime)) {
     throw new Error(PAST_APPOINTMENT_MESSAGE);
+  }
+
+  // 0.b No permitir fuera de la disponibilidad del médico
+  if (!(await isWithinDoctorAvailability(data.doctorId, data.startTime, data.endTime))) {
+    throw new Error(OUTSIDE_AVAILABILITY_MESSAGE);
   }
 
   // 1. Verificar conflicto de horario (excluyendo canceladas / no-shows)
