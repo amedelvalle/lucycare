@@ -5,6 +5,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
+import ReviewLinkBlock from './components/ReviewLinkBlock';
 
 interface AppointmentCardProps {
   appointment: AppointmentListItem;
@@ -149,6 +150,18 @@ export default function AppointmentCard({
           )}
         </div>
       </div>
+
+      {/* Encuesta de satisfacción — solo en citas atendidas */}
+      {isAttended && (
+        <div className="border-t border-gray-100 bg-emerald-50/40 px-4 py-3 rounded-b-lg">
+          <ReviewLinkBlock
+            appointmentId={appointment.id}
+            patientName={patient?.full_name ?? null}
+            patientPhone={patient?.phone ?? null}
+            compact
+          />
+        </div>
+      )}
     </div>
   );
 }
