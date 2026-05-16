@@ -403,6 +403,7 @@ export default function CreateWalkInModal({
                     <input
                       type="date"
                       value={date}
+                      min={new Date().toLocaleDateString('en-CA')}
                       onChange={(e) => setDate(e.target.value)}
                       required
                       className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2

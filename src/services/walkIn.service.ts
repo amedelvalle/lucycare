@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { logAuditEntry } from '@/services/auditLog.service';
+import { isPastStart, PAST_APPOINTMENT_MESSAGE } from '@/services/appointments.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -173,6 +174,11 @@ export async function getDayBusySlots(
 export async function createWalkInAppointment(
   data: CreateWalkInData
 ): Promise<string> {
+  // 0. No permitir crear/reprogramar en el pasado (UI + servicio + trigger DB)
+  if (isPastStart(data.startTime)) {
+    throw new Error(PAST_APPOINTMENT_MESSAGE);
+  }
+
   // 1. Verificar conflicto de horario (excluyendo canceladas / no-shows)
   const [conflictingResult, cancelledResult] = await Promise.all([
     supabase
