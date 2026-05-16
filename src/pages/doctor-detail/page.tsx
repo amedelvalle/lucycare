@@ -292,6 +292,14 @@ export default function DoctorDetail() {
                 </div>
               </div>
             </div>
+
+            {/* Divider */}
+            <div className="border-t border-gray-200 my-8"></div>
+
+            {/* Calificaciones (data real) */}
+            <div className="mb-8">
+              <ReviewsSection doctorId={doctor.id} />
+            </div>
           </div>
 
           {/* Right Column - Booking Card (Desktop only) */}
