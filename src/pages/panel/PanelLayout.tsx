@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/panel/catalogos', label: 'Catálogos', icon: 'ri-book-2-line', doctorOnly: true },
   { path: '/panel/equipo', label: 'Mi equipo', icon: 'ri-team-line', doctorOnly: true },
   { path: '/panel/perfil', label: 'Mi perfil público', icon: 'ri-id-card-line', doctorOnly: true },
+  { path: '/panel/reputacion', label: 'Mi reputación', icon: 'ri-star-smile-line', doctorOnly: true },
 ];
 
 export default function PanelLayout() {
