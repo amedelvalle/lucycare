@@ -79,6 +79,35 @@ export async function getReviewToken(appointmentId: string): Promise<string | nu
   return (data as string | null) ?? null;
 }
 
+// ─── Vista médica (panel) ─────────────────────────────────────────────
+
+export interface MyReviewComment {
+  rating: number;
+  comment: string;
+  monthsAgo: number;
+}
+
+/** Comentarios anónimos para el médico autenticado (sin nombre/teléfono/
+ *  fecha exacta — solo antigüedad). RPC SECURITY DEFINER. */
+export async function getMyReviewComments(): Promise<MyReviewComment[]> {
+  const { data, error } = await supabase.rpc('get_my_review_comments');
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    rating: Number(r.rating),
+    comment: (r.comment as string) ?? '',
+    monthsAgo: (r.months_ago as number) ?? 0,
+  }));
+}
+
+/** "hace ~X meses" / "este mes" a partir de monthsAgo. */
+export function relativeAgeLabel(monthsAgo: number): string {
+  if (monthsAgo <= 0) return 'este mes';
+  if (monthsAgo === 1) return 'hace ~1 mes';
+  if (monthsAgo < 12) return `hace ~${monthsAgo} meses`;
+  const years = Math.floor(monthsAgo / 12);
+  return years === 1 ? 'hace ~1 año' : `hace ~${years} años`;
+}
+
 /** Construye la URL pública de calificación a partir del token. */
 export function buildReviewUrl(token: string): string {
   return `${window.location.origin}/calificar/${token}`;

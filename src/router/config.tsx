@@ -18,6 +18,7 @@ import PerfilPage from "../pages/panel/perfil/PerfilPage";
 import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
 import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
+import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 
@@ -77,6 +78,10 @@ const routes: RouteObject[] = [
       {
         path: "equipo",
         element: <DoctorOnlyRoute><EquipoPage /></DoctorOnlyRoute>,
+      },
+      {
+        path: "reputacion",
+        element: <DoctorOnlyRoute><ReputacionPage /></DoctorOnlyRoute>,
       },
     ],
   },
