@@ -130,8 +130,8 @@ export default function DoctorCard({
 
             <p className="text-sm text-gray-600 mb-2">{specialty}</p>
 
-            {/* Rating - Solo mostrar si hay reviews reales */}
-            {reviews > 0 && (
+            {/* Rating real, o estado "sin calificaciones" (no dejar vacío) */}
+            {reviews > 0 ? (
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <div className="flex items-center gap-1">
                   <i className="ri-star-fill text-yellow-400 text-sm"></i>
@@ -148,6 +148,11 @@ export default function DoctorCard({
                     Mejor valorado
                   </span>
                 )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 mb-2 text-xs text-gray-400">
+                <i className="ri-star-line text-sm"></i>
+                <span>Sin calificaciones aún</span>
               </div>
             )}
 

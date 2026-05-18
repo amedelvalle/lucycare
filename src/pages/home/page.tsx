@@ -49,17 +49,19 @@ export default function Home() {
     ? doctors.filter((d) => d.bookingEnabled)
     : doctors;
 
-  // Orden: "Mejor valorados" solo muestra médicos con score ≥4.7 y ≥20
-  // reseñas (is_top_rated), ordenados por score desc. Resto: orden base.
+  // Orden "Mejor valorados": ordena TODOS los médicos por score real
+  // (desc). No filtra: un médico con 4.30 y 1 reseña sigue apareciendo,
+  // solo que sin badge. Los médicos sin reseñas quedan al final.
   const filteredDoctors =
     sortBy === 'mejor_valorados'
-      ? baseDoctors
-          .filter((d) => ratingStats[d.id]?.isTopRated)
-          .sort(
-            (a, b) =>
-              (ratingStats[b.id]?.scoreAdjusted ?? 0) -
-              (ratingStats[a.id]?.scoreAdjusted ?? 0)
-          )
+      ? [...baseDoctors].sort((a, b) => {
+          const sa = ratingStats[a.id]?.scoreAdjusted;
+          const sb = ratingStats[b.id]?.scoreAdjusted;
+          if (sa == null && sb == null) return 0;
+          if (sa == null) return 1; // sin reseñas → al final
+          if (sb == null) return -1;
+          return sb - sa;
+        })
       : baseDoctors;
 
   // ─── AUTH REAL con Supabase ───
@@ -252,9 +254,7 @@ export default function Home() {
             <i className="ri-search-line text-5xl sm:text-6xl text-gray-300 mb-4"></i>
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">No se encontraron resultados</h3>
             <p className="text-sm sm:text-base text-gray-600 mb-4">
-              {sortBy === 'mejor_valorados'
-                ? 'Todavía no hay médicos "Mejor valorados" (requiere 20+ valoraciones y promedio ≥ 4.7). Probá otro orden.'
-                : searchTerm
+              {searchTerm
                 ? `No encontramos médicos que coincidan con "${searchTerm}"`
                 : 'Intenta ajustar tus filtros de búsqueda'}
             </p>
