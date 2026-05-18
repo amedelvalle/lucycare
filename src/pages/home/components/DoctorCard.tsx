@@ -4,9 +4,17 @@ import { formatNextSlot } from '../../../utils/date';
 
 interface DoctorCardProps {
   doctor: DoctorCardData;
+  rating?: number | null;
+  reviewCount?: number;
+  topRated?: boolean;
 }
 
-export default function DoctorCard({ doctor }: DoctorCardProps) {
+export default function DoctorCard({
+  doctor,
+  rating: ratingProp = null,
+  reviewCount: reviewCountProp = 0,
+  topRated = false,
+}: DoctorCardProps) {
   // Defensa: si no hay doctor, no renderizar nada
   if (!doctor) {
     if (import.meta.env.DEV) {
@@ -36,9 +44,9 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
   const nextAvailableSlot: string | undefined = undefined;
   const nextSlot = nextAvailableSlot ? formatNextSlot(nextAvailableSlot) : null;
 
-  // Rating y reviews — Fase 2
-  const rating = 0;
-  const reviews = 0;
+  // Rating y reviews — data real (Fase D)
+  const rating = ratingProp ?? 0;
+  const reviews = reviewCountProp;
 
   const handleNavigate = () => {
     if (!id) {
@@ -122,14 +130,29 @@ export default function DoctorCard({ doctor }: DoctorCardProps) {
 
             <p className="text-sm text-gray-600 mb-2">{specialty}</p>
 
-            {/* Rating - Solo mostrar si hay reviews reales */}
-            {reviews > 0 && (
-              <div className="flex items-center gap-2 mb-2">
+            {/* Rating real, o estado "sin calificaciones" (no dejar vacío) */}
+            {reviews > 0 ? (
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <div className="flex items-center gap-1">
                   <i className="ri-star-fill text-yellow-400 text-sm"></i>
-                  <span className="text-sm font-medium text-gray-900">{rating}</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {rating.toFixed(2)}
+                  </span>
                 </div>
-                <span className="text-xs text-gray-500">({reviews} reseñas)</span>
+                <span className="text-xs text-gray-500">
+                  ({reviews} {reviews === 1 ? 'reseña' : 'reseñas'})
+                </span>
+                {topRated && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-semibold">
+                    <i className="ri-award-fill"></i>
+                    Mejor valorado
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 mb-2 text-xs text-gray-400">
+                <i className="ri-star-line text-sm"></i>
+                <span>Sin calificaciones aún</span>
               </div>
             )}
 

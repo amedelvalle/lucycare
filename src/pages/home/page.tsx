@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { getAllDoctorRatingStats } from '../../services/reviews.service';
 import SearchSection from './components/SearchSection';
 import DoctorCard from './components/DoctorCard';
 import DoctorRegistrationModal from './components/DoctorRegistrationModal';
@@ -21,6 +23,7 @@ export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
   const [onlineBookingOnly, setOnlineBookingOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<'default' | 'mejor_valorados' | 'cercanos'>('default');
 
   const isAuthenticated = !!currentUser;
 
@@ -34,10 +37,32 @@ export default function Home() {
 
   const { data: doctors = [], isLoading, error } = useDoctors(filters);
 
+  // Stats de calificación de todos los médicos (estrellas + ranking)
+  const { data: ratingStats = {} } = useQuery({
+    queryKey: ['all-doctor-rating-stats'],
+    queryFn: getAllDoctorRatingStats,
+    staleTime: 1000 * 60 * 5,
+  });
+
   // Filtro de booking online (client-side, ya que es un toggle simple)
-  const filteredDoctors = onlineBookingOnly
+  const baseDoctors = onlineBookingOnly
     ? doctors.filter((d) => d.bookingEnabled)
     : doctors;
+
+  // Orden "Mejor valorados": ordena TODOS los médicos por score real
+  // (desc). No filtra: un médico con 4.30 y 1 reseña sigue apareciendo,
+  // solo que sin badge. Los médicos sin reseñas quedan al final.
+  const filteredDoctors =
+    sortBy === 'mejor_valorados'
+      ? [...baseDoctors].sort((a, b) => {
+          const sa = ratingStats[a.id]?.scoreAdjusted;
+          const sb = ratingStats[b.id]?.scoreAdjusted;
+          if (sa == null && sb == null) return 0;
+          if (sa == null) return 1; // sin reseñas → al final
+          if (sb == null) return -1;
+          return sb - sa;
+        })
+      : baseDoctors;
 
   // ─── AUTH REAL con Supabase ───
   useEffect(() => {
@@ -170,10 +195,14 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
             <span className="text-sm sm:text-base text-gray-600">Ordenar por:</span>
-            <select className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-[#3C2285] focus:outline-none">
-              <option>{searchTerm ? 'Mejor coincidencia' : 'Disponibilidad'}</option>
-              <option>Mejor valorados</option>
-              <option>Más cercanos</option>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-[#3C2285] focus:outline-none"
+            >
+              <option value="default">{searchTerm ? 'Mejor coincidencia' : 'Disponibilidad'}</option>
+              <option value="mejor_valorados">Mejor valorados</option>
+              <option value="cercanos">Más cercanos</option>
             </select>
           </div>
         </div>
@@ -205,12 +234,18 @@ export default function Home() {
         {/* Doctors Grid */}
         {!isLoading && !error && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {filteredDoctors.map((doctor) => (
-              <DoctorCard
-                key={doctor.id}
-                doctor={doctor}
-              />
-            ))}
+            {filteredDoctors.map((doctor) => {
+              const st = ratingStats[doctor.id];
+              return (
+                <DoctorCard
+                  key={doctor.id}
+                  doctor={doctor}
+                  rating={st?.scoreAdjusted ?? null}
+                  reviewCount={st?.nReviews ?? 0}
+                  topRated={st?.isTopRated ?? false}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -221,8 +256,7 @@ export default function Home() {
             <p className="text-sm sm:text-base text-gray-600 mb-4">
               {searchTerm
                 ? `No encontramos médicos que coincidan con "${searchTerm}"`
-                : 'Intenta ajustar tus filtros de búsqueda'
-              }
+                : 'Intenta ajustar tus filtros de búsqueda'}
             </p>
             {(searchTerm || selectedSpecialty || selectedDepartment || selectedMunicipality) && (
               <button

@@ -116,6 +116,34 @@ export async function getDoctorRatingStats(
   };
 }
 
+/** Stats de todos los médicos, indexadas por doctorId.
+ *  Para el directorio (estrellas en tarjeta + ranking "Mejor valorados"). */
+export async function getAllDoctorRatingStats(): Promise<
+  Record<string, DoctorRatingStats>
+> {
+  const { data, error } = await supabase.from('doctor_rating_stats').select('*');
+  if (error) throw new Error(error.message);
+
+  const map: Record<string, DoctorRatingStats> = {};
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const doctorId = row.doctor_id as string;
+    map[doctorId] = {
+      doctorId,
+      specialtyId: (row.specialty_id as string) ?? null,
+      nReviews: (row.n_reviews as number) ?? 0,
+      scoreAdjusted: (row.score_adjusted as number) ?? null,
+      avgPunctuality: (row.avg_punctuality as number) ?? null,
+      avgTreatment: (row.avg_treatment as number) ?? null,
+      avgClarity: (row.avg_clarity as number) ?? null,
+      avgListening: (row.avg_listening as number) ?? null,
+      avgConfidence: (row.avg_confidence as number) ?? null,
+      avgSatisfaction: (row.avg_satisfaction as number) ?? null,
+      isTopRated: (row.is_top_rated as boolean) ?? false,
+    };
+  }
+  return map;
+}
+
 /** Etiquetas públicas derivadas de los promedios por criterio.
  *  Solo si el médico tiene ≥10 reseñas y el criterio promedia ≥4.5. */
 export function deriveReviewTags(stats: DoctorRatingStats): string[] {
