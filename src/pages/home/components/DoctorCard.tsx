@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { DoctorCard as DoctorCardData } from '../../../types/directory.types';
 import { formatNextSlot } from '../../../utils/date';
+import DoctorAvatar from '../../../components/DoctorAvatar';
 
 interface DoctorCardProps {
   doctor: DoctorCardData;
@@ -32,7 +33,6 @@ export default function DoctorCard({
   const locationDisplay = [doctor.municipality, doctor.department]
     .filter(Boolean)
     .join(', ') || 'Sin ubicación';
-  const image = doctor.avatarUrl || 'https://readdy.ai/api/search-image?query=Professional%20doctor%20silhouette%20placeholder%20avatar%20medical%20professional%20neutral%20gray%20background%20clean%20minimal&width=400&height=400&seq=placeholder&orientation=squarish';
   const consultationFee = doctor.consultationFee || doctor.startingPrice || 0;
   const bookingEnabled = doctor.bookingEnabled;
   const isVerified = doctor.isVerified;
@@ -95,11 +95,12 @@ export default function DoctorCard({
       <div className="p-4 sm:p-5">
         <div className="flex gap-4">
           {/* Doctor Image */}
-          <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0">
-            <img
-              src={image}
-              alt={name}
-              className="w-full h-full object-cover object-top rounded-lg"
+          <div className="flex-shrink-0">
+            <DoctorAvatar
+              name={name}
+              photoUrl={doctor.avatarUrl}
+              className="w-20 h-20 sm:w-24 sm:h-24"
+              textClassName="text-2xl"
             />
           </div>
 
