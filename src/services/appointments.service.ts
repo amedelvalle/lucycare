@@ -5,6 +5,10 @@
 
 import { supabase } from '@/lib/supabase';
 import { logAuditEntry } from '@/services/auditLog.service';
+import {
+  isWithinDoctorAvailability,
+  OUTSIDE_AVAILABILITY_MESSAGE,
+} from '@/services/availability.service';
 
 // ─── Integridad de agenda: no crear/reprogramar en el pasado ─────────
 
@@ -36,6 +40,7 @@ export interface AppointmentStatus {
 
 export interface AppointmentListItem {
   id: string;
+  doctor_id: string;
   start_time: string;
   end_time: string;
   source: string;
@@ -79,6 +84,7 @@ export async function getAppointmentsByDate(
     .from('appointments')
     .select(`
       id,
+      doctor_id,
       start_time,
       end_time,
       source,
@@ -114,6 +120,7 @@ export async function getAppointmentsByRange(
     .from('appointments')
     .select(`
       id,
+      doctor_id,
       start_time,
       end_time,
       source,
@@ -316,4 +323,161 @@ export async function updateAppointmentStatus(
         : {}),
     },
   });
+}
+
+// ─── Edición de cita ─────────────────────────────────────────────────
+
+export const APPOINTMENT_LOCKED_MESSAGE =
+  'Esta cita ya no puede modificarse por su estado actual.';
+
+const LOCKED_STATES = ['atendida', 'cancelada', 'no_asistio'];
+
+export interface UpdateAppointmentInput {
+  startTime?: string; // ISO
+  endTime?: string; // ISO (requerido si cambia startTime)
+  serviceId?: string | null;
+  notes?: string | null; // internal_notes
+  price?: number | null;
+  patientId?: string;
+}
+
+/**
+ * Edita una cita existente con todas las guardas de integridad.
+ * Defensa final en DB (triggers s6_03/s6_04/s6_10); esto da mensajes
+ * claros y bloquea antes de pegarle a la base.
+ *
+ * Reglas:
+ * - atendida/cancelada/no_asistio o consulta firmada → no editable.
+ * - en_sala → solo ajustes menores (notas/precio), no reprogramación.
+ * - programada/confirmada → edición completa.
+ * - No pasado, dentro de disponibilidad, sin choque de horario.
+ * - Cambio de paciente solo si no hay consulta (iniciada ni firmada).
+ */
+export async function updateAppointment(
+  appointmentId: string,
+  input: UpdateAppointmentInput
+): Promise<void> {
+  const { data: appt, error: fetchErr } = await supabase
+    .from('appointments')
+    .select(
+      'id, doctor_id, start_time, end_time, patient_id, status:appointment_statuses(name)'
+    )
+    .eq('id', appointmentId)
+    .single();
+  if (fetchErr) throw fetchErr;
+  if (!appt) throw new Error('Cita no encontrada.');
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const statusName: string | undefined = (appt as any).status?.name;
+
+  // ¿Consulta iniciada o firmada?
+  const { data: cons } = await supabase
+    .from('consultations')
+    .select('id, status')
+    .eq('appointment_id', appointmentId);
+  const hasConsultation = (cons ?? []).length > 0;
+  const hasSigned = (cons ?? []).some((c) => c.status === 'signed');
+
+  if (statusName && LOCKED_STATES.includes(statusName)) {
+    throw new Error(APPOINTMENT_LOCKED_MESSAGE);
+  }
+  if (hasSigned) {
+    throw new Error(APPOINTMENT_LOCKED_MESSAGE);
+  }
+
+  const wantsStartChange =
+    input.startTime !== undefined &&
+    input.startTime !== (appt as { start_time: string }).start_time;
+  const wantsServiceChange = input.serviceId !== undefined;
+  const wantsPatientChange =
+    input.patientId !== undefined &&
+    input.patientId !== (appt as { patient_id: string }).patient_id;
+
+  // En sala: solo ajustes administrativos menores (notas/precio)
+  if (statusName === 'en_sala' && (wantsStartChange || wantsServiceChange || wantsPatientChange)) {
+    throw new Error(
+      'La cita está en sala: solo se permiten ajustes menores (notas, precio), no reprogramación.'
+    );
+  }
+
+  // Cambio de paciente solo si no hay consulta
+  if (wantsPatientChange && hasConsultation) {
+    throw new Error(
+      'No se puede cambiar el paciente: la cita ya tiene una consulta.'
+    );
+  }
+
+  // Validaciones de horario si se mueve la cita
+  if (wantsStartChange) {
+    const newStart = input.startTime as string;
+    const newEnd =
+      input.endTime ?? (appt as { end_time: string }).end_time;
+
+    if (isPastStart(newStart)) {
+      throw new Error(PAST_APPOINTMENT_MESSAGE);
+    }
+    const ok = await isWithinDoctorAvailability(
+      (appt as { doctor_id: string }).doctor_id,
+      newStart,
+      newEnd
+    );
+    if (!ok) {
+      throw new Error(OUTSIDE_AVAILABILITY_MESSAGE);
+    }
+
+    // Choque con otra cita activa del mismo médico (excluye esta)
+    const { data: cancelledStatuses } = await supabase
+      .from('appointment_statuses')
+      .select('id')
+      .in('name', ['cancelada', 'no_asistio']);
+    const excluded = (cancelledStatuses ?? []).map((s) => s.id);
+
+    const { data: overlapping } = await supabase
+      .from('appointments')
+      .select('id, status_id')
+      .eq('doctor_id', (appt as { doctor_id: string }).doctor_id)
+      .neq('id', appointmentId)
+      .lt('start_time', newEnd)
+      .gt('end_time', newStart);
+
+    const conflict = (overlapping ?? []).some(
+      (a) => !excluded.includes(a.status_id)
+    );
+    if (conflict) {
+      throw new Error('Ya existe una cita activa en ese horario. Elegí otra hora.');
+    }
+  }
+
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.startTime !== undefined) payload.start_time = input.startTime;
+  if (input.endTime !== undefined) payload.end_time = input.endTime;
+  if (input.serviceId !== undefined) payload.service_id = input.serviceId || null;
+  if (input.notes !== undefined) payload.notes = input.notes?.trim() || null;
+  if (input.price !== undefined) payload.price = input.price;
+  if (input.patientId !== undefined) payload.patient_id = input.patientId;
+
+  const { error } = await supabase
+    .from('appointments')
+    .update(payload)
+    .eq('id', appointmentId);
+  if (error) throw new Error(error.message);
+
+  await logAuditEntry({
+    action: 'update',
+    tableName: 'appointments',
+    recordId: appointmentId,
+    newData: payload,
+  });
+}
+
+/** ¿La cita admite edición desde la UI según su estado? */
+export function isAppointmentEditable(statusName: string | undefined): {
+  editable: boolean;
+  minorOnly: boolean;
+} {
+  if (!statusName) return { editable: false, minorOnly: false };
+  if (statusName === 'en_sala') return { editable: true, minorOnly: true };
+  if (statusName === 'programada' || statusName === 'confirmada')
+    return { editable: true, minorOnly: false };
+  return { editable: false, minorOnly: false };
 }

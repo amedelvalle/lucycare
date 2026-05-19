@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppointmentListItem, AppointmentStatus } from '@/services/appointments.service';
+import { isAppointmentEditable } from '@/services/appointments.service';
 import { formatTime } from '@/utils/calendar';
+import EditAppointmentModal from './EditAppointmentModal';
 import ReviewLinkBlock from './ReviewLinkBlock';
 import QuickActions from './QuickActions';
 import CancelAppointmentModal, { type CancelInfo } from './CancelAppointmentModal';
@@ -85,8 +87,10 @@ function DetailContent({
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [pendingCancelStatusId, setPendingCancelStatusId] = useState<string | null>(null);
   const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const { patient, service, status } = appointment;
+  const { editable: canEdit } = isAppointmentEditable(status?.name);
   const color = status?.color ?? '#94a3b8';
   const isFinal = status?.is_final ?? false;
   const initials = getInitials(patient?.full_name ?? '?');
@@ -230,6 +234,20 @@ function DetailContent({
           </button>
         )}
 
+        {/* Editar cita — solo si el estado lo permite */}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 flex items-center justify-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Editar cita
+          </button>
+        )}
+
         {/* Encuesta de satisfacción — solo en citas atendidas */}
         {status?.name === 'atendida' && (
           <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
@@ -280,6 +298,14 @@ function DetailContent({
         onConfirm={handleCancelConfirm}
         onClose={handleCancelClose}
       />
+
+      {editOpen && (
+        <EditAppointmentModal
+          isOpen={editOpen}
+          onClose={() => setEditOpen(false)}
+          appointment={appointment}
+        />
+      )}
     </>
   );
 }
