@@ -254,6 +254,48 @@ function generateSlots(
   return slots
 }
 
+/**
+ * Slots de inicio realmente seleccionables para una cita de `durationMin`.
+ * Un slot sirve solo si, empezando ahí, hay cobertura contigua y
+ * disponible suficiente para toda la duración (no solo la hora inicial).
+ * Ya viene filtrado por pasado / fuera de disponibilidad / ocupado /
+ * bloqueos (eso lo resolvió getAvailableSlots).
+ */
+export function selectableStartSlots(
+  day: DayAvailability,
+  durationMin: number
+): TimeSlot[] {
+  const slots = day.slots
+  const needMs = durationMin * 60 * 1000
+  const out: TimeSlot[] = []
+
+  for (let i = 0; i < slots.length; i++) {
+    if (!slots[i].available) continue
+    const startMs = new Date(slots[i].startTime).getTime()
+    let j = i
+    let coveredEnd = new Date(slots[i].endTime).getTime()
+
+    while (coveredEnd - startMs < needMs && j + 1 < slots.length) {
+      const next = slots[j + 1]
+      // debe ser contiguo al anterior y estar disponible
+      if (new Date(next.startTime).getTime() !== new Date(slots[j].endTime).getTime()) break
+      if (!next.available) break
+      j++
+      coveredEnd = new Date(next.endTime).getTime()
+    }
+
+    if (coveredEnd - startMs >= needMs) out.push(slots[i])
+  }
+  return out
+}
+
+/** "HH:MM" (24h, hora local del slot) a partir del ISO del slot. */
+export function slotLocalHHMM(iso: string): string {
+  // El ISO de los slots ya viene en la zona del consultorio (ej. -06:00);
+  // tomar el reloj literal evita corrimientos por TZ del navegador.
+  return iso.slice(11, 16)
+}
+
 function pad(n: number): string {
   return n.toString().padStart(2, '0')
 }

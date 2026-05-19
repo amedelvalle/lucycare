@@ -7,13 +7,15 @@ import {
   createWalkInAppointment,
   type PatientSearchResult,
 } from '@/services/walkIn.service';
+import {
+  getAvailableSlots,
+  selectableStartSlots,
+  slotLocalHHMM,
+} from '@/services/slots.service';
 import { calendarKeys } from '@/hooks/useCalendarAppointments';
 import { appointmentKeys } from '@/hooks/appointments.hooks';
 
 // ─── Constantes ───────────────────────────────────────────────────────
-
-const HOURS = Array.from({ length: 16 }, (_, i) => i + 6); // 6–21
-const MINUTES = [0, 30];
 const DURATION_OPTIONS = [
   { label: '15 min', value: 15 },
   { label: '30 min', value: 30 },
@@ -54,8 +56,7 @@ export default function CreateWalkInModal({
   const [newPatientPhone, setNewPatientPhone] = useState('');
 
   const [date, setDate] = useState(defaultDate);
-  const [startHour, setStartHour] = useState(9);
-  const [startMinute, setStartMinute] = useState(0);
+  const [startTimeHHMM, setStartTimeHHMM] = useState('09:00');
   const [durationMinutes, setDurationMinutes] = useState(30);
 
   const [selectedServiceId, setSelectedServiceId] = useState('');
@@ -102,6 +103,29 @@ export default function CreateWalkInModal({
   const clinicId = doctorInfoQuery.data?.clinicId;
   const services = doctorInfoQuery.data?.services ?? [];
 
+  // Disponibilidad real del médico para la fecha (pasado / fuera de
+  // disponibilidad / ocupado / bloqueos ya filtrados). El backend sigue
+  // siendo la defensa final.
+  const slotsQuery = useQuery({
+    queryKey: ['walkin-slots', doctorId, date],
+    queryFn: () => getAvailableSlots(doctorId, date),
+    enabled: isOpen && !!doctorId && !!date,
+  });
+
+  const slotOptions =
+    slotsQuery.data
+      ? selectableStartSlots(slotsQuery.data, durationMinutes)
+      : [];
+
+  // Mantener la hora seleccionada dentro de los slots válidos
+  useEffect(() => {
+    if (slotOptions.length === 0) return;
+    const valid = slotOptions.some(
+      (s) => slotLocalHHMM(s.startTime) === startTimeHHMM
+    );
+    if (!valid) setStartTimeHHMM(slotLocalHHMM(slotOptions[0].startTime));
+  }, [slotOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const patientSearchQuery = useQuery({
     queryKey: ['patient-search', clinicId, debouncedQuery],
     queryFn: () => searchPatients(clinicId!, debouncedQuery),
@@ -124,7 +148,7 @@ export default function CreateWalkInModal({
       }
 
       // Calcular endTime
-      const startDt = new Date(`${date}T${pad(startHour)}:${pad(startMinute)}:00`);
+      const startDt = new Date(`${date}T${startTimeHHMM}:00`);
       const endDt = new Date(startDt.getTime() + durationMinutes * 60 * 1000);
 
       // Precio final
@@ -412,28 +436,26 @@ export default function CreateWalkInModal({
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Hora de inicio</label>
-                    <div className="flex gap-1.5">
+                    {slotsQuery.isLoading ? (
+                      <p className="text-xs text-gray-400 px-1 py-2">Cargando horarios…</p>
+                    ) : slotOptions.length === 0 ? (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                        No hay horarios disponibles para este médico en la fecha seleccionada.
+                      </p>
+                    ) : (
                       <select
-                        value={startHour}
-                        onChange={(e) => setStartHour(Number(e.target.value))}
-                        className="flex-1 text-sm border border-gray-200 rounded-xl px-2 py-2
+                        value={startTimeHHMM}
+                        onChange={(e) => setStartTimeHHMM(e.target.value)}
+                        className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2
                           focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
                       >
-                        {HOURS.map((h) => (
-                          <option key={h} value={h}>{pad(h)}h</option>
+                        {slotOptions.map((s) => (
+                          <option key={s.startTime} value={slotLocalHHMM(s.startTime)}>
+                            {s.displayTime}
+                          </option>
                         ))}
                       </select>
-                      <select
-                        value={startMinute}
-                        onChange={(e) => setStartMinute(Number(e.target.value))}
-                        className="w-16 text-sm border border-gray-200 rounded-xl px-2 py-2
-                          focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
-                      >
-                        {MINUTES.map((m) => (
-                          <option key={m} value={m}>{pad(m)}</option>
-                        ))}
-                      </select>
-                    </div>
+                    )}
                   </div>
                 </div>
               </section>
@@ -529,7 +551,7 @@ export default function CreateWalkInModal({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || slotOptions.length === 0}
                 className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600
                   hover:bg-emerald-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -564,10 +586,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
-
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
 
 function getInitials(name: string): string {
   return name
