@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   useDoctorInfo,
   useNextAppointment,
-  useDayBusySlots,
   useCreateFollowUp,
 } from '@/hooks/useFollowUp';
+import {
+  getAvailableSlots,
+  selectableStartSlots,
+  slotLocalHHMM,
+} from '@/services/slots.service';
 import Button from '@/components/ui/Button';
 
 interface Props {
@@ -146,8 +151,29 @@ function SchedulerForm({
   const [error, setError] = useState<string | null>(null);
 
   const { data: doctorInfo } = useDoctorInfo(doctorId);
-  const { data: busySlots = [] } = useDayBusySlots(doctorId, date);
   const createMutation = useCreateFollowUp(patientId, doctorId);
+
+  const duration =
+    doctorInfo?.services.find((s) => s.id === serviceId)?.duration_minutes ?? 30;
+
+  const { data: dayAvail } = useQuery({
+    queryKey: ['follow-up-slots', doctorId, date],
+    queryFn: () => getAvailableSlots(doctorId, date),
+    enabled: !!doctorId && !!date,
+  });
+
+  // Solo horarios donde entra la cita COMPLETA (no solo la hora inicial)
+  const slotOptions = useMemo(
+    () => (dayAvail ? selectableStartSlots(dayAvail, duration) : []),
+    [dayAvail, duration]
+  );
+
+  // Mantener `time` válido respecto a los slots disponibles
+  useEffect(() => {
+    if (slotOptions.length === 0) return;
+    const valid = slotOptions.some((s) => slotLocalHHMM(s.startTime) === time);
+    if (!valid) setTime(slotLocalHHMM(slotOptions[0].startTime));
+  }, [slotOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-seleccionar primer servicio cuando se cargan
   useEffect(() => {
@@ -164,8 +190,6 @@ function SchedulerForm({
     else if (p === 'three_months') setDate(addDaysFromIso(currentAppointmentStart, 90));
   };
 
-  // Slots de 30 min entre 8AM-6PM, marcando los ocupados
-  const slots = useMemo(() => generateDaySlots(date, busySlots), [date, busySlots]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,14 +281,23 @@ function SchedulerForm({
             />
           </Field>
           <Field label="Hora">
-            <select value={time} onChange={(e) => setTime(e.target.value)} className={inputCls}>
-              {slots.map((s) => (
-                <option key={s.time} value={s.time} disabled={!s.available}>
-                  {s.label}
-                  {!s.available ? ' — ocupado' : ''}
-                </option>
-              ))}
-            </select>
+            {slotOptions.length === 0 ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No hay horarios disponibles para este médico en la fecha seleccionada.
+              </p>
+            ) : (
+              <select
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className={inputCls}
+              >
+                {slotOptions.map((s) => (
+                  <option key={s.startTime} value={slotLocalHHMM(s.startTime)}>
+                    {s.displayTime}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
         </div>
 
@@ -310,7 +343,11 @@ function SchedulerForm({
           >
             Cancelar
           </Button>
-          <Button type="submit" loading={createMutation.isPending} disabled={!serviceId}>
+          <Button
+            type="submit"
+            loading={createMutation.isPending}
+            disabled={!serviceId || slotOptions.length === 0}
+          >
             Agendar cita
           </Button>
         </div>
@@ -375,41 +412,4 @@ function addDaysFromIso(iso: string, days: number): string {
 
 function combineDateTime(dateStr: string, timeStr: string): Date {
   return new Date(`${dateStr}T${timeStr}:00`);
-}
-
-interface SlotOption {
-  time: string; // 'HH:mm'
-  label: string;
-  available: boolean;
-}
-
-function generateDaySlots(
-  dateStr: string,
-  busy: Array<{ start: string; end: string }>
-): SlotOption[] {
-  const slots: SlotOption[] = [];
-  const busyRanges = busy.map((b) => ({
-    start: new Date(b.start).getTime(),
-    end: new Date(b.end).getTime(),
-  }));
-
-  for (let h = 8; h < 18; h++) {
-    for (const m of [0, 30]) {
-      const hh = String(h).padStart(2, '0');
-      const mm = String(m).padStart(2, '0');
-      const time = `${hh}:${mm}`;
-      const startDt = new Date(`${dateStr}T${time}:00`);
-      const endDt = new Date(startDt.getTime() + 30 * 60 * 1000);
-      const startTs = startDt.getTime();
-      const endTs = endDt.getTime();
-      const conflict = busyRanges.some((b) => startTs < b.end && endTs > b.start);
-
-      const labelHour = h % 12 === 0 ? 12 : h % 12;
-      const labelAmPm = h < 12 ? 'AM' : 'PM';
-      const label = `${labelHour}:${mm} ${labelAmPm}`;
-
-      slots.push({ time, label, available: !conflict });
-    }
-  }
-  return slots;
 }

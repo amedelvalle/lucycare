@@ -41,9 +41,10 @@ export default function AppointmentCard({
     }`}
       style={{ borderLeftColor: status?.color ?? '#94a3b8', borderLeftWidth: '4px' }}
     >
-      <div className="flex items-start gap-4 p-4">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 p-4">
+       <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
         {/* Hora */}
-        <div className="flex-shrink-0 text-center min-w-[60px]">
+        <div className="flex-shrink-0 text-center min-w-[52px] sm:min-w-[60px]">
           <p className="text-sm font-bold text-gray-900">{timeStr}</p>
           <p className="text-[11px] text-gray-400">{endTimeStr}</p>
         </div>
@@ -81,7 +82,7 @@ export default function AppointmentCard({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
             {service && (
               <span className="flex items-center gap-1">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,16 +113,17 @@ export default function AppointmentCard({
             </p>
           )}
         </div>
+       </div>
 
-        {/* Acciones a la derecha */}
-        <div className="flex-shrink-0 flex flex-col items-end gap-2">
+        {/* Acciones — en mobile fila completa abajo; en desktop columna a la derecha */}
+        <div className="flex flex-row sm:flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto sm:flex-shrink-0">
           {/* Botón de consulta clínica (oculto para canceladas/no-show) */}
           {canOpenConsultation && (
             <button
               type="button"
               onClick={() => navigate(`/panel/consulta/${appointment.id}`)}
               title={isAttended ? 'Ver consulta clínica' : 'Abrir consulta clínica'}
-              className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1 transition-colors"
+              className="flex-1 sm:flex-none px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center justify-center gap-1 transition-colors whitespace-nowrap"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -137,7 +139,7 @@ export default function AppointmentCard({
               value={status?.id ?? ''}
               onChange={(e) => onChangeStatus(appointment.id, e.target.value)}
               disabled={isUpdating}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700
+              className="flex-1 sm:flex-none text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700
                 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none
                 disabled:opacity-50 cursor-pointer"
             >
