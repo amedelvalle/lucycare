@@ -20,12 +20,31 @@ Objetivo doble: operar el negocio (aprobar/moderar) y mostrar tracción
 
 ## 2. Módulos incluidos / excluidos
 
+### Separación de ejes (decisión 2026-05-19 — NO conflar en `is_verified`)
+
+El admin plataforma controla **3 ejes independientes** del médico:
+
+1. **Operatividad (uso del SaaS)** — NUEVO `doctors.is_operational`
+   (bool, default true). `false` → no puede usar panel / agenda /
+   atender / firmar; perfil y datos se conservan. Login, route guards
+   y booking deben respetarlo. Independiente del directorio.
+2. **Directorio (visibilidad pública)** — `is_published` (visible),
+   `is_verified` (sello confianza), `lucy_status`. Independientes
+   entre sí y de la operatividad.
+3. **Booking online** — `booking_enabled`.
+
+Combinaciones válidas: piloto interno (operativo + no publicado);
+suspensión por moderación (`is_operational=false` aunque publicado);
+despublicado temporal (no publicado pero sigue operativo). Un solo
+flag para todo limitaría el crecimiento del SaaS.
+
 **Incluidos (ahora):**
 - `/admin` con guard rol `admin` (`profiles.role='admin'` ya existe)
-- Gestión de médicos: aprobar/verificar (`is_verified`, `lucy_status`),
-  publicar/despublicar
+- Gestión de médicos — **ejes separados**: aprobar/verificar
+  (`is_verified`), publicar/despublicar (`is_published`),
+  `lucy_status`, y habilitar/suspender operación (`is_operational`)
 - Moderación de usuarios: suspender/reactivar doctor/paciente/asistente
-  (`is_active=false` global)
+  (médico: `is_operational`; paciente/asistente: `is_active`)
 - Dashboard de tracción: activos (médicos/pacientes/asistentes); citas
   creadas/atendidas por mes; consultas firmadas (volumen, sin contenido);
   reseñas (volumen + score promedio plataforma)
@@ -107,8 +126,12 @@ Todo aditivo, sin destructivo:
 - Vistas: `admin_platform_stats` (conteos), `admin_appointments_monthly`;
   reusar `admin_review_traceability`.
 - Políticas `OR is_admin()` SELECT en tablas listadas en §3.
-- Verificar en Fase A existencia de `is_active` en `patients` /
-  `clinic_members` / flags de `doctors` para suspensión.
+- **NUEVO `doctors.is_operational`** (bool, default true) — se agrega
+  en Fase B/C (no en s7_01). Login/route guards/booking deben
+  respetarlo. Eje independiente de `is_published`/`is_verified`.
+- Verificar en Fase B/C existencia de `is_active` en `patients` /
+  `clinic_members` para suspensión de paciente/asistente.
+- s7_01 (Fase A) NO toca los ejes — solo `is_admin()` + stats lectura.
 - **No** se agrega `organization_id` (eso es la migración del futuro
   multi-tenant, fuera de scope).
 
