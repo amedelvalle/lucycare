@@ -197,8 +197,7 @@ export default function CreateWalkInModal({
     setSelectedServiceId('');
     setNotes('');
     setPrice('');
-    setStartHour(9);
-    setStartMinute(0);
+    setStartTimeHHMM('09:00');
     setDurationMinutes(30);
     setError(null);
   }
