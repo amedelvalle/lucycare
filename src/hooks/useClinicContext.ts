@@ -28,6 +28,7 @@ export interface ClinicContext {
   clinicId: string;
   doctorId: string;
   doctorName: string | null;
+  doctorIsOperational: boolean;
   availableDoctors: DoctorOption[];
 }
 
@@ -69,7 +70,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
   if (profile.role === 'doctor') {
     const { data: doctor, error } = await supabase
       .from('doctors')
-      .select('id, clinic_id, profiles!inner(full_name)')
+      .select('id, clinic_id, is_operational, profiles!inner(full_name)')
       .eq('profile_id', user.id)
       .single();
 
@@ -84,6 +85,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
       clinicId: doctor.clinic_id,
       doctorId: doctor.id,
       doctorName: doctorAny.profiles?.full_name ?? null,
+      doctorIsOperational: doctorAny.is_operational !== false,
       availableDoctors: [],
     };
   }
@@ -131,6 +133,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
       clinicId: member.clinic_id,
       doctorId: active.id,
       doctorName: active.full_name,
+      doctorIsOperational: true, // asistente no se ve afectada en el panel
       availableDoctors,
     };
   }

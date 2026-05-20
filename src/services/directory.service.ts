@@ -80,6 +80,7 @@ export async function fetchDoctors(
       )
     `)
     .eq('is_published', true)
+    .eq('is_operational', true)
     .order('is_verified', { ascending: false }) // Verificados primero
     .order('created_at', { ascending: false })
 
@@ -217,6 +218,7 @@ export async function fetchDoctorDetail(
     `)
     .eq('id', doctorId)
     .eq('is_published', true)
+    .eq('is_operational', true)
     .single()
 
   if (error) {

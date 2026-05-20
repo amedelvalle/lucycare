@@ -1,6 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { logAuditEntry } from '@/services/auditLog.service';
-import { isPastStart, PAST_APPOINTMENT_MESSAGE } from '@/services/appointments.service';
+import {
+  isPastStart,
+  PAST_APPOINTMENT_MESSAGE,
+  isDoctorOperational,
+  SUSPENDED_DOCTOR_MESSAGE,
+} from '@/services/appointments.service';
 import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from '@/services/availability.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
@@ -178,6 +183,11 @@ export async function createWalkInAppointment(
   // 0. No permitir crear/reprogramar en el pasado (UI + servicio + trigger DB)
   if (isPastStart(data.startTime)) {
     throw new Error(PAST_APPOINTMENT_MESSAGE);
+  }
+
+  // 0.a Médico suspendido (eje OPERATIVIDAD) no acepta nuevas citas
+  if (!(await isDoctorOperational(data.doctorId))) {
+    throw new Error(SUSPENDED_DOCTOR_MESSAGE);
   }
 
   // 0.b No permitir fuera de la disponibilidad del médico

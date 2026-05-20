@@ -11,7 +11,12 @@
  */
 
 import { supabase } from '../lib/supabase'
-import { isPastStart, PAST_APPOINTMENT_MESSAGE } from './appointments.service'
+import {
+  isPastStart,
+  PAST_APPOINTMENT_MESSAGE,
+  isDoctorOperational,
+  SUSPENDED_DOCTOR_MESSAGE,
+} from './appointments.service'
 import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from './availability.service'
 
 interface BookingData {
@@ -46,6 +51,11 @@ export async function createBooking(data: BookingData): Promise<BookingResult> {
   // No permitir reservar en el pasado (UI + este servicio + trigger DB)
   if (isPastStart(data.startTime)) {
     return { success: false, error: PAST_APPOINTMENT_MESSAGE }
+  }
+
+  // Médico suspendido (eje OPERATIVIDAD) no acepta reservas
+  if (!(await isDoctorOperational(data.doctorId))) {
+    return { success: false, error: SUSPENDED_DOCTOR_MESSAGE }
   }
 
   // No permitir fuera de la disponibilidad del médico

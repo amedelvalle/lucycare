@@ -16,6 +16,22 @@ import {
 export const PAST_APPOINTMENT_MESSAGE =
   'No se puede crear una cita en una fecha u hora pasada.';
 
+export const SUSPENDED_DOCTOR_MESSAGE =
+  'Este médico no está disponible en este momento. Intenta más tarde.';
+
+/** true si el médico tiene is_operational=true (apto para agenda/atender). */
+export async function isDoctorOperational(doctorId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('doctors')
+    .select('is_operational')
+    .eq('id', doctorId)
+    .maybeSingle();
+  // Si la columna no existe (DB sin s7_02 todavía), no bloquear.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = (data as any)?.is_operational;
+  return v === undefined || v === null || v === true;
+}
+
 /**
  * true si `startTimeIso` ya pasó (con 2 min de gracia, igual que el
  * trigger de DB, para no romper walk-ins "para ahora").
