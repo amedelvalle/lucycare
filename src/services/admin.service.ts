@@ -54,8 +54,8 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export const setDoctorVerified = (id: string, value: boolean) =>
-  rpc('admin_set_doctor_verified', { p_doctor_id: id, p_value: value });
+// is_verified ya no es editable manualmente — se deriva de lucy_status='verified'
+// (ver migración s7_03). Para "verificar" un médico, usá setDoctorLucyStatus(id, 'verified').
 export const setDoctorPublished = (id: string, value: boolean) =>
   rpc('admin_set_doctor_published', { p_doctor_id: id, p_value: value });
 export const setDoctorOperational = (id: string, value: boolean) =>

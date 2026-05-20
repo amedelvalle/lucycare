@@ -18,9 +18,10 @@ const colExists = anyDoc && anyDoc[0] && 'is_operational' in anyDoc[0];
 console.log(`1. doctors.is_operational: ${colExists ? '✅ existe' : '❌ NO existe'}`);
 
 // 2. RPCs existen + están gateadas (sin auth → no autorizado/no autenticado)
+// Nota: admin_set_doctor_verified se eliminó en s7_03 — is_verified
+// quedó DERIVADO de lucy_status='verified'. El control único es lucy_status.
 const rpcs = [
   ['admin_list_doctors', {}],
-  ['admin_set_doctor_verified', { p_doctor_id: '00000000-0000-0000-0000-000000000000', p_value: true }],
   ['admin_set_doctor_published', { p_doctor_id: '00000000-0000-0000-0000-000000000000', p_value: true }],
   ['admin_set_doctor_operational', { p_doctor_id: '00000000-0000-0000-0000-000000000000', p_value: true }],
   ['admin_set_lucy_status', { p_doctor_id: '00000000-0000-0000-0000-000000000000', p_value: 'listed_only' }],

@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getAdminDoctors,
-  setDoctorVerified,
   setDoctorPublished,
   setDoctorOperational,
   setDoctorLucyStatus,
@@ -32,10 +31,6 @@ export default function AdminDoctorsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-doctors'] });
 
-  const mVerified = useMutation({
-    mutationFn: ({ id, v }: { id: string; v: boolean }) => setDoctorVerified(id, v),
-    onSuccess: invalidate,
-  });
   const mPublished = useMutation({
     mutationFn: ({ id, v }: { id: string; v: boolean }) => setDoctorPublished(id, v),
     onSuccess: invalidate,
@@ -50,7 +45,7 @@ export default function AdminDoctorsPage() {
   });
 
   const anyError =
-    error ?? mVerified.error ?? mPublished.error ?? mOperational.error ?? mLucy.error;
+    error ?? mPublished.error ?? mOperational.error ?? mLucy.error;
   const errMsg =
     anyError instanceof Error ? anyError.message : anyError ? String(anyError) : null;
 
@@ -59,8 +54,10 @@ export default function AdminDoctorsPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Médicos</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Aprobación y operatividad. Verificar / publicar / habilitar operación son
-          ejes independientes.
+          Ejes independientes — <strong>publicar</strong> (visible en directorio),
+          <strong> operar</strong> (puede usar panel/agenda/atender),
+          y <strong> lucy_status</strong> (etapa comercial; "Verificado" se deriva
+          automáticamente de <code>lucy_status='verified'</code>).
         </p>
       </header>
 
@@ -113,13 +110,6 @@ export default function AdminDoctorsPage() {
                     </select>
                   </td>
                   <td className="px-3 py-3 align-top text-right space-x-1.5 whitespace-nowrap">
-                    <button
-                      onClick={() => mVerified.mutate({ id: d.id, v: !d.isVerified })}
-                      disabled={mVerified.isPending}
-                      className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-                    >
-                      {d.isVerified ? 'Quitar verificación' : 'Verificar'}
-                    </button>
                     <button
                       onClick={() => mPublished.mutate({ id: d.id, v: !d.isPublished })}
                       disabled={mPublished.isPending}
