@@ -27,7 +27,9 @@ const { data: anyDoc } = await a.from('doctors').select('id').limit(1).single();
 let generatedOk = false;
 if (anyDoc?.id) {
   const { error: updErr } = await a.from('doctors').update({ is_verified: true }).eq('id', anyDoc.id);
-  generatedOk = !!updErr && /generated|generada|cannot/i.test(updErr.message);
+  generatedOk =
+    !!updErr &&
+    /generated|generada|cannot|can only be updated to DEFAULT/i.test(updErr.message);
   console.log(`2. UPDATE directo a is_verified rechazado: ${generatedOk ? '✅ OK (columna GENERATED)' : '❌ ' + (updErr?.message ?? 'permitió update')}`);
 }
 
