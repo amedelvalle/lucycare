@@ -20,7 +20,10 @@ import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
 import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
+import AdminLayout from "../pages/admin/AdminLayout";
+import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
+import AdminOnlyRoute from "./AdminOnlyRoute";
 
 const routes: RouteObject[] = [
   {
@@ -34,6 +37,20 @@ const routes: RouteObject[] = [
   {
     path: "/calificar/:token",
     element: <CalificarPage />,
+  },
+  {
+    path: "/admin",
+    element: (
+      <AdminOnlyRoute>
+        <AdminLayout />
+      </AdminOnlyRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <AdminDashboardPage />,
+      },
+    ],
   },
   {
     path: "/panel",
