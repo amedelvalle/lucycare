@@ -31,10 +31,34 @@ export interface AdminDoctorRow {
   createdAt: string;
 }
 
-export async function getAdminDoctors(): Promise<AdminDoctorRow[]> {
-  const { data, error } = await supabase.rpc('admin_list_doctors');
+export interface AdminDoctorsFilters {
+  search?: string;
+  published?: boolean | null;
+  operational?: boolean | null;
+  lucyStatus?: LucyStatus | null;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminDoctorsPage {
+  rows: AdminDoctorRow[];
+  total: number;
+}
+
+export async function getAdminDoctors(
+  filters: AdminDoctorsFilters = {}
+): Promise<AdminDoctorsPage> {
+  const { data, error } = await supabase.rpc('admin_list_doctors', {
+    p_search: filters.search?.trim() || null,
+    p_published: filters.published ?? null,
+    p_operational: filters.operational ?? null,
+    p_lucy_status: filters.lucyStatus ?? null,
+    p_limit: filters.limit ?? 25,
+    p_offset: filters.offset ?? 0,
+  });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+  const arr = (data ?? []) as Array<Record<string, unknown>>;
+  const rows: AdminDoctorRow[] = arr.map((r) => ({
     id: r.id as string,
     fullName: (r.full_name as string) ?? null,
     phone: (r.phone as string) ?? null,
@@ -47,6 +71,8 @@ export async function getAdminDoctors(): Promise<AdminDoctorRow[]> {
     lucyStatus: r.lucy_status as LucyStatus,
     createdAt: r.created_at as string,
   }));
+  const total = arr.length > 0 ? Number(arr[0].total_count ?? 0) : 0;
+  return { rows, total };
 }
 
 async function rpc(fn: string, params: Record<string, unknown>): Promise<void> {
