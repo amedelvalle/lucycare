@@ -8,7 +8,12 @@ import {
   type LucyStatus,
 } from '../../services/admin.service';
 
-const LUCY_OPTIONS: LucyStatus[] = ['listed_only', 'claimed', 'booking_enabled', 'verified'];
+const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
+  { value: 'listed_only', label: 'Solo listado' },
+  { value: 'claimed', label: 'Perfil reclamado' },
+  { value: 'booking_enabled', label: 'Agenda habilitada' },
+  { value: 'verified', label: 'Verificado' },
+];
 
 function Badge({ on, labelOn, labelOff }: { on: boolean; labelOn: string; labelOff: string }) {
   return (
@@ -103,8 +108,8 @@ export default function AdminDoctorsPage() {
                       className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
                     >
                       {LUCY_OPTIONS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
+                        <option key={s.value} value={s.value}>
+                          {s.label}
                         </option>
                       ))}
                     </select>
