@@ -22,6 +22,7 @@ import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
 import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
+import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
 
@@ -49,6 +50,10 @@ const routes: RouteObject[] = [
       {
         index: true,
         element: <AdminDashboardPage />,
+      },
+      {
+        path: "medicos",
+        element: <AdminDoctorsPage />,
       },
     ],
   },

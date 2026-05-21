@@ -54,6 +54,31 @@ export default function PanelLayout() {
     );
   }
 
+  // Médico suspendido por admin → no puede operar el panel
+  if (ctx?.role === 'doctor' && ctx.doctorIsOperational === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
+        <div className="bg-white border border-amber-200 rounded-2xl p-6 max-w-md text-center shadow-sm">
+          <div className="w-12 h-12 mx-auto rounded-full bg-amber-100 flex items-center justify-center mb-3">
+            <i className="ri-pause-circle-line text-2xl text-amber-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900">Cuenta suspendida</h2>
+          <p className="text-sm text-gray-600 mt-2">
+            Tu cuenta está pausada temporalmente por el administrador. No podés
+            atender citas ni firmar consultas hasta que se reactive. Tu data
+            histórica se conserva.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="mt-5 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl"
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isAssistant = user.role === 'assistant';
   const visibleNavItems = NAV_ITEMS.filter((it) => !it.doctorOnly || !isAssistant);
 

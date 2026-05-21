@@ -1,7 +1,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { signOut } from '../../services/auth.service';
 
-const NAV = [{ to: '/admin', label: 'Dashboard', icon: 'ri-dashboard-line', end: true }];
+const NAV = [
+  { to: '/admin', label: 'Dashboard', icon: 'ri-dashboard-line', end: true },
+  { to: '/admin/medicos', label: 'Médicos', icon: 'ri-stethoscope-line', end: false },
+];
 
 export default function AdminLayout() {
   const navigate = useNavigate();
