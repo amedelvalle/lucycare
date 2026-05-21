@@ -80,6 +80,84 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// ─── Detalle / edición (Fase B2-A) ───────────────────────────────────
+
+export interface AdminDoctorDetail {
+  doctorId: string;
+  profileId: string;
+  clinicId: string;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+  specialtyId: string | null;
+  specialtyName: string | null;
+  bio: string | null;
+  clinicName: string;
+  clinicAddress: string | null;
+  clinicPhone: string | null;
+  isPublished: boolean;
+  isOperational: boolean;
+  lucyStatus: LucyStatus;
+}
+
+export async function getDoctorAdminDetail(doctorId: string): Promise<AdminDoctorDetail | null> {
+  const { data, error } = await supabase.rpc('admin_get_doctor_detail', { p_doctor_id: doctorId });
+  if (error) throw new Error(error.message);
+  const row = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    doctorId: row.doctor_id as string,
+    profileId: row.profile_id as string,
+    clinicId: row.clinic_id as string,
+    fullName: (row.full_name as string) ?? '',
+    email: (row.email as string) ?? null,
+    phone: (row.phone as string) ?? null,
+    specialtyId: (row.specialty_id as string) ?? null,
+    specialtyName: (row.specialty_name as string) ?? null,
+    bio: (row.bio as string) ?? null,
+    clinicName: (row.clinic_name as string) ?? '',
+    clinicAddress: (row.clinic_address as string) ?? null,
+    clinicPhone: (row.clinic_phone as string) ?? null,
+    isPublished: !!row.is_published,
+    isOperational: !!row.is_operational,
+    lucyStatus: row.lucy_status as LucyStatus,
+  };
+}
+
+export interface SpecialtyOption { id: string; name: string }
+
+export async function getSpecialtiesForAdmin(): Promise<SpecialtyOption[]> {
+  const { data, error } = await supabase
+    .from('specialties')
+    .select('id, name')
+    .order('name');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SpecialtyOption[];
+}
+
+export const updateDoctorProfile = (id: string, fullName: string, email: string | null, phone: string | null) =>
+  rpc('admin_update_doctor_profile', {
+    p_doctor_id: id,
+    p_full_name: fullName,
+    p_email: email,
+    p_phone: phone,
+  });
+
+export const updateDoctorClinic = (id: string, name: string, address: string | null, phone: string | null) =>
+  rpc('admin_update_doctor_clinic', {
+    p_doctor_id: id,
+    p_name: name,
+    p_address: address,
+    p_phone: phone,
+  });
+
+export const updateDoctorInfo = (id: string, specialtyId: string | null, bio: string | null) =>
+  rpc('admin_update_doctor_info', {
+    p_doctor_id: id,
+    p_specialty_id: specialtyId,
+    p_bio: bio,
+  });
+
 // is_verified ya no es editable manualmente — se deriva de lucy_status='verified'
 // (ver migración s7_03). Para "verificar" un médico, usá setDoctorLucyStatus(id, 'verified').
 export const setDoctorPublished = (id: string, value: boolean) =>
