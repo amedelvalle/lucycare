@@ -113,6 +113,14 @@ export default function Home() {
                     Mi panel
                   </button>
                 )}
+                {currentUser.role === 'admin' && (
+                  <button
+                    onClick={() => navigate('/admin')}
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                  >
+                    Panel Admin
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
