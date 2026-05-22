@@ -1,11 +1,46 @@
 # LucyCare — Contexto para Claude Code
 
+> ⚠️ **Este archivo es una GUÍA RÁPIDA.** La referencia operativa
+> detallada y vigente está en `docs/` (ver abajo). Si algo de este
+> archivo contradice a `docs/`, mandan los `docs/`.
+
+## Cómo retomar el proyecto en una sesión nueva
+
+`origin/main` (GitHub) es la **única fuente de verdad**. Antes de
+trabajar, sincronizá el repo local:
+
+```bash
+git fetch origin
+git checkout main
+git pull --ff-only origin main
+```
+
+Luego leé los documentos oficiales:
+- `docs/HANDOFF_LUCYCARE_SPRINT7.md` — handoff / estado para continuidad
+- `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX
+- `docs/PLAN_SPRINT7_ADMIN.md` — plan oficial Sprint 7/8 Admin SaaS
+
+⚠️ **No mergear branches `claude/*` viejas.** Las fases se integran a
+`main` por **squash-merge**: la rama queda en el remoto pero su
+contenido YA está en `main`. Re-mergearlas genera conflictos. Tras un
+squash-merge, la rama puede borrarse.
+
 ## Estado actual del proyecto
 
-- **Sprint activo:** Sprint 5 **EN CURSO ~70%**
-- **Último tag estable:** `piloto-v1.1` (commit `83cbeb9`) — desplegado en Vercel
-- **Última tarea completada:** Fix filtros del directorio público + dropdown de municipios agrupado por nueva división territorial (2024)
-- **Deploy:** Vercel auto-deploy desde branch `main`. Repo: github.com/amedelvalle/lucycare
+- **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
+- **HEAD esperado:** `fd54c26` o posterior. PRs **#1–#21 mergeados**.
+- **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
+- **Sprint 7/8 — Admin SaaS:** Fase A ✅ (PR #16), Fase B ✅ (PR #18),
+  Fase B2-A ✅ (PR #20). Próximas: B3 servicios, B4 disponibilidad,
+  C suspender pacientes/asistentes, D dashboard, E reputación admin,
+  F audit log, G catálogos.
+- **Importación de médicos:** 100 cargados (hoja `Importar_100`); ~113
+  doctores en DB. Demo operativo único: Dr. Camilo Carrillo (`50378627694`).
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`,
+  `s7_01..s7_05`. Verificables con `scripts/check-*.mjs`.
+- **Pendiente inmediato:** smoke-test de `admin_update_doctor_profile`
+  (ver §4 de `docs/HANDOFF_LUCYCARE_SPRINT7.md`).
+- **Deploy:** Vercel auto-deploy desde `main`. `gh` CLI autenticado.
 
 ## Decisiones cerradas (NO reabrir)
 
