@@ -23,6 +23,7 @@ import CalificarPage from "../pages/calificar/CalificarPage";
 import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
+import AdminDoctorEditPage from "../pages/admin/AdminDoctorEditPage";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
 
@@ -54,6 +55,10 @@ const routes: RouteObject[] = [
       {
         path: "medicos",
         element: <AdminDoctorsPage />,
+      },
+      {
+        path: "medicos/:id",
+        element: <AdminDoctorEditPage />,
       },
     ],
   },

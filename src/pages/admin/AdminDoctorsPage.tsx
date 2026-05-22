@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getAdminDoctors,
@@ -250,6 +251,12 @@ export default function AdminDoctorsPage() {
                     </select>
                   </td>
                   <td className="px-3 py-3 align-top text-right space-x-1.5 whitespace-nowrap">
+                    <Link
+                      to={`/admin/medicos/${d.id}`}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center"
+                    >
+                      Editar
+                    </Link>
                     <button
                       onClick={() => mPublished.mutate({ id: d.id, v: !d.isPublished })}
                       disabled={mPublished.isPending}
