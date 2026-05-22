@@ -27,7 +27,7 @@ export interface PatientDetail {
   email: string | null;
   photo_url: string | null;
   document_type: DocumentType;
-  document_number: string;
+  document_number: string | null;
   date_of_birth: string;
   gender: GenderType;
   patient_type: PatientType;
@@ -66,7 +66,7 @@ export interface PatientUpdateInput {
   phone?: string | null;
   email?: string | null;
   document_type?: DocumentType;
-  document_number?: string;
+  document_number?: string | null;
   date_of_birth?: string;
   gender?: GenderType;
   patient_type?: PatientType;

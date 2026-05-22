@@ -14,6 +14,7 @@ import {
 } from '@/services/slots.service';
 import { calendarKeys } from '@/hooks/useCalendarAppointments';
 import { appointmentKeys } from '@/hooks/appointments.hooks';
+import { friendlyErrorMessage } from '@/lib/errors';
 
 // ─── Constantes ───────────────────────────────────────────────────────
 const DURATION_OPTIONS = [
@@ -172,8 +173,8 @@ export default function CreateWalkInModal({
       resetForm();
       onSuccess();
     },
-    onError: (err: Error) => {
-      setError(err.message);
+    onError: (err) => {
+      setError(friendlyErrorMessage(err));
     },
   });
 
@@ -208,6 +209,7 @@ export default function CreateWalkInModal({
   }
 
   function handleSelectPatient(p: PatientSearchResult) {
+    setError(null);
     setSelectedPatient(p);
     setPatientQuery(p.full_name);
     setShowResults(false);
@@ -294,6 +296,7 @@ export default function CreateWalkInModal({
                         placeholder="Buscar paciente por nombre..."
                         value={patientQuery}
                         onChange={(e) => {
+                          setError(null);
                           setPatientQuery(e.target.value);
                           setSelectedPatient(null);
                           setShowResults(true);
@@ -427,7 +430,7 @@ export default function CreateWalkInModal({
                       type="date"
                       value={date}
                       min={new Date().toLocaleDateString('en-CA')}
-                      onChange={(e) => setDate(e.target.value)}
+                      onChange={(e) => { setError(null); setDate(e.target.value); }}
                       required
                       className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2
                         focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
@@ -467,7 +470,7 @@ export default function CreateWalkInModal({
                     <label className="block text-xs text-gray-500 mb-1">Servicio (opcional)</label>
                     <select
                       value={selectedServiceId}
-                      onChange={(e) => setSelectedServiceId(e.target.value)}
+                      onChange={(e) => { setError(null); setSelectedServiceId(e.target.value); }}
                       className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2
                         focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
                     >

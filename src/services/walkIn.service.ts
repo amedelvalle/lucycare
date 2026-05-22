@@ -97,7 +97,7 @@ export async function createWalkInPatient(
       full_name: fullName.trim(),
       phone: phone?.trim() || null,
       document_type: 'dui',
-      document_number: 'PENDIENTE',
+      document_number: null, // sin documento al crearse; se completa luego
       date_of_birth: '2000-01-01',
       gender: 'otro',
       patient_type: 'privado',
