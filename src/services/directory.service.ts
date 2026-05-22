@@ -76,7 +76,8 @@ export async function fetchDoctors(
         name
       ),
       services (
-        price
+        price,
+        is_active
       )
     `)
     .eq('is_published', true)
@@ -110,8 +111,9 @@ export async function fetchDoctors(
 
   // Mapear datos de Supabase a nuestro tipo DoctorCard
   let doctors: DoctorCard[] = data.map((doc: any) => {
-    // Calcular precio mínimo de servicios
+    // Calcular precio mínimo de servicios (solo activos)
     const prices = (doc.services || [])
+      .filter((s: any) => s.is_active !== false)
       .map((s: any) => s.price)
       .filter((p: any) => p != null)
     const startingPrice = prices.length > 0 ? Math.min(...prices) : null
@@ -208,6 +210,7 @@ export async function fetchDoctorDetail(
         duration_minutes,
         price,
         is_first_visit,
+        is_active,
         sort_order
       ),
       doctor_images (
@@ -234,8 +237,9 @@ export async function fetchDoctorDetail(
 
   const doc = data as any
 
-  // Calcular precio mínimo
+  // Calcular precio mínimo (solo servicios activos)
   const prices = (doc.services || [])
+    .filter((s: any) => s.is_active !== false)
     .map((s: any) => s.price)
     .filter((p: any) => p != null)
   const startingPrice = prices.length > 0 ? Math.min(...prices) : null
