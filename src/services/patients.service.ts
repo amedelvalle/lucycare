@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { normalizePhoneSV } from '@/lib/phone';
 import type { Database } from '@/types/database.types';
 
 type DocumentType = Database['public']['Enums']['document_type'];
@@ -245,7 +246,9 @@ export async function createBasicPatient(
   input: CreateBasicPatientInput
 ): Promise<{ id: string; full_name: string }> {
   const fullName = input.fullName.trim();
-  const phone = input.phone.trim();
+  // Normalizamos a forma canónica '503XXXXXXXX' para que la dedup
+  // detecte '77003001' === '+50377003001' === '+503 7700-3001'.
+  const phone = normalizePhoneSV(input.phone);
   if (!fullName) throw new Error('El nombre del paciente es obligatorio.');
   if (!phone) throw new Error('El teléfono del paciente es obligatorio.');
 
@@ -292,10 +295,15 @@ export async function updatePatient(
   patientId: string,
   updates: PatientUpdateInput
 ): Promise<void> {
-  const payload = {
+  const payload: Record<string, unknown> = {
     ...updates,
     updated_at: new Date().toISOString(),
   };
+  // Si se actualiza el teléfono, normalizamos antes de guardar para
+  // mantener consistencia con el formato canónico (PR robustez pacientes).
+  if (updates.phone !== undefined) {
+    payload.phone = normalizePhoneSV(updates.phone);
+  }
   const { error } = await supabase
     .from('patients')
     .update(payload)
