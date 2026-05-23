@@ -174,7 +174,7 @@ async function getOrCreatePatient(
       full_name: fullName,
       phone: phone,
       document_type: 'dui',
-      document_number: 'PENDIENTE',
+      document_number: null, // sin documento al reservar; se completa luego
       date_of_birth: '2000-01-01',
       gender: 'otro',
       patient_type: 'privado',

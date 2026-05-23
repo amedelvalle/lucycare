@@ -1084,7 +1084,7 @@ export type Database = {
           clinic_id: string
           created_at: string
           date_of_birth: string
-          document_number: string
+          document_number: string | null
           document_type: Database["public"]["Enums"]["document_type"]
           email: string | null
           emergency_contact_name: string | null
@@ -1107,7 +1107,7 @@ export type Database = {
           clinic_id: string
           created_at?: string
           date_of_birth: string
-          document_number: string
+          document_number?: string | null
           document_type?: Database["public"]["Enums"]["document_type"]
           email?: string | null
           emergency_contact_name?: string | null
@@ -1130,7 +1130,7 @@ export type Database = {
           clinic_id?: string
           created_at?: string
           date_of_birth?: string
-          document_number?: string
+          document_number?: string | null
           document_type?: Database["public"]["Enums"]["document_type"]
           email?: string | null
           emergency_contact_name?: string | null

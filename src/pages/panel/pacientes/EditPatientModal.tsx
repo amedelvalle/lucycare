@@ -5,6 +5,7 @@ interface EditPatientModalProps {
   isOpen: boolean;
   patient: PatientDetail;
   isSubmitting: boolean;
+  errorMessage?: string | null;
   onClose: () => void;
   onSubmit: (updates: PatientUpdateInput) => void;
 }
@@ -35,6 +36,7 @@ export default function EditPatientModal({
   isOpen,
   patient,
   isSubmitting,
+  errorMessage,
   onClose,
   onSubmit,
 }: EditPatientModalProps) {
@@ -146,8 +148,9 @@ export default function EditPatientModal({
                 <input
                   type="text"
                   value={form.document_number ?? ''}
-                  onChange={(e) => update('document_number', e.target.value)}
+                  onChange={(e) => update('document_number', e.target.value || null)}
                   className={inputCls}
+                  placeholder="Opcional"
                 />
               </Field>
             </div>
@@ -253,22 +256,32 @@ export default function EditPatientModal({
           </Section>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || !form.full_name?.trim()}
-            className="px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
-          >
-            {isSubmitting ? 'Guardando...' : 'Guardar cambios'}
-          </button>
+        <div className="px-6 py-4 border-t border-gray-200 space-y-3">
+          {errorMessage && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+              <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              <p className="text-sm text-red-700">{errorMessage}</p>
+            </div>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !form.full_name?.trim()}
+              className="px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
+            >
+              {isSubmitting ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </div>
         </div>
       </form>
     </div>
