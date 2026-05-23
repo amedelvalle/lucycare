@@ -167,6 +167,87 @@ export const setDoctorOperational = (id: string, value: boolean) =>
 export const setDoctorLucyStatus = (id: string, value: LucyStatus) =>
   rpc('admin_set_lucy_status', { p_doctor_id: id, p_value: value });
 
+// ─── Servicios del médico (Fase B3-admin) ────────────────────────────
+
+export interface AdminServiceItem {
+  id: string;
+  doctorId: string;
+  name: string;
+  durationMinutes: number;
+  price: number | null;
+  isFirstVisit: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+/** SQLSTATE de violación de foreign key — admin_delete_service lo re-lanza
+ *  con mensaje en español cuando el servicio tiene citas asociadas. */
+export const ADMIN_FK_VIOLATION = '23503';
+
+export async function listAdminDoctorServices(doctorId: string): Promise<AdminServiceItem[]> {
+  const { data, error } = await supabase.rpc('admin_list_doctor_services', { p_doctor_id: doctorId });
+  if (error) throw error;
+  const arr = (data ?? []) as Array<Record<string, unknown>>;
+  return arr.map((r) => ({
+    id: r.id as string,
+    doctorId: r.doctor_id as string,
+    name: r.name as string,
+    durationMinutes: Number(r.duration_minutes),
+    price: r.price == null ? null : Number(r.price),
+    isFirstVisit: !!r.is_first_visit,
+    isActive: !!r.is_active,
+    sortOrder: Number(r.sort_order),
+  }));
+}
+
+export async function createAdminService(input: {
+  doctorId: string;
+  name: string;
+  durationMinutes: number;
+  price: number | null;
+  isFirstVisit: boolean;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('admin_create_service', {
+    p_doctor_id: input.doctorId,
+    p_name: input.name,
+    p_duration_minutes: input.durationMinutes,
+    p_price: input.price,
+    p_is_first_visit: input.isFirstVisit,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function updateAdminService(input: {
+  serviceId: string;
+  name: string;
+  durationMinutes: number;
+  price: number | null;
+  isFirstVisit: boolean;
+}): Promise<void> {
+  const { error } = await supabase.rpc('admin_update_service', {
+    p_service_id: input.serviceId,
+    p_name: input.name,
+    p_duration_minutes: input.durationMinutes,
+    p_price: input.price,
+    p_is_first_visit: input.isFirstVisit,
+  });
+  if (error) throw error;
+}
+
+export async function setAdminServiceActive(serviceId: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_service_active', {
+    p_service_id: serviceId,
+    p_is_active: isActive,
+  });
+  if (error) throw error;
+}
+
+export async function deleteAdminService(serviceId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_delete_service', { p_service_id: serviceId });
+  if (error) throw error;
+}
+
 /** Métricas agregadas de plataforma (RPC gateada por is_admin()).
  *  Sin PII ni contenido clínico — solo conteos/volúmenes. */
 export async function getPlatformStats(): Promise<PlatformStats> {

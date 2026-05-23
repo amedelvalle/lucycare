@@ -8,6 +8,7 @@ import {
   updateDoctorClinic,
   updateDoctorInfo,
 } from '../../services/admin.service';
+import AdminDoctorServicesSection from './components/AdminDoctorServicesSection';
 
 const inputCls =
   'w-full text-sm border border-gray-200 rounded-lg px-3 py-2 ' +
@@ -261,8 +262,11 @@ export default function AdminDoctorEditPage() {
         </div>
       </Section>
 
+      {/* ─── Servicios (B3-admin) ──────────────────────────── */}
+      <AdminDoctorServicesSection doctorId={d.doctorId} />
+
       <p className="text-[11px] text-gray-400 mt-2">
-        Servicios y disponibilidad/horarios se editan en fases posteriores (B3 / B4).
+        Disponibilidad/horarios se editan en una fase posterior (B4).
         Esta pantalla NO toca contenido clínico.
       </p>
     </div>
