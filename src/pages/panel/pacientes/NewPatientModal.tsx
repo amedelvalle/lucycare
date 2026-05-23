@@ -32,7 +32,7 @@ export default function NewPatientModal({
   const [documentNumber, setDocumentNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string } | null>(null);
+  const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string; multiple: boolean } | null>(null);
 
   function reset() {
     setFullName('');
@@ -77,7 +77,7 @@ export default function NewPatientModal({
         },
         onError: (err) => {
           if (err instanceof DuplicatePhoneError) {
-            setDupExisting(err.existing);
+            setDupExisting({ ...err.existing, multiple: err.multiple });
             setError(null);
           } else {
             setDupExisting(null);
@@ -174,21 +174,30 @@ export default function NewPatientModal({
         <div className="px-6 py-4 border-t border-gray-200 space-y-3">
           {dupExisting && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-2">
-              <p className="text-sm text-amber-900">
-                Ya existe un paciente con este teléfono:{' '}
-                <span className="font-medium">{dupExisting.full_name}</span>.
-              </p>
+              {dupExisting.multiple ? (
+                <p className="text-sm text-amber-900">
+                  Hay <span className="font-medium">más de un paciente</span> con este teléfono en la clínica.
+                  Buscalos en la lista y resolvé el duplicado antes de crear uno nuevo.
+                </p>
+              ) : (
+                <p className="text-sm text-amber-900">
+                  Ya existe un paciente con este teléfono:{' '}
+                  <span className="font-medium">{dupExisting.full_name}</span>.
+                </p>
+              )}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleClose();
-                    navigate(`/panel/pacientes/${dupExisting.id}`);
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
-                >
-                  Ver este paciente
-                </button>
+                {!dupExisting.multiple && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClose();
+                      navigate(`/panel/pacientes/${dupExisting.id}`);
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
+                  >
+                    Ver este paciente
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setDupExisting(null)}

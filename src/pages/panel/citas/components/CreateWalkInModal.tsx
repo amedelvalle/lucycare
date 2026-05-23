@@ -69,7 +69,7 @@ export default function CreateWalkInModal({
   // Si el teléfono del "Nuevo paciente" ya existe en la clínica, en lugar
   // del error genérico mostramos un banner con el paciente existente y
   // botón "Usar este paciente".
-  const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string } | null>(null);
+  const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string; multiple: boolean } | null>(null);
 
   const searchRef = useRef<HTMLDivElement>(null);
 
@@ -180,7 +180,7 @@ export default function CreateWalkInModal({
     },
     onError: (err) => {
       if (err instanceof DuplicatePhoneError) {
-        setDupExisting(err.existing);
+        setDupExisting({ ...err.existing, multiple: err.multiple });
         setError(null);
       } else {
         setDupExisting(null);
@@ -554,27 +554,39 @@ export default function CreateWalkInModal({
                 </div>
               </section>
 
-              {/* Teléfono ya existe → ofrecer usar el paciente existente */}
+              {/* Teléfono ya existe → ofrecer usar el paciente existente.
+                  Si hay AMBIGÜEDAD (varios activos con el mismo número),
+                  no sugerimos uno arbitrario — pedimos resolverlo en
+                  /panel/pacientes. */}
               {dupExisting && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-2">
-                  <p className="text-sm text-amber-900">
-                    Ya existe un paciente con este teléfono:{' '}
-                    <span className="font-medium">{dupExisting.full_name}</span>.
-                  </p>
+                  {dupExisting.multiple ? (
+                    <p className="text-sm text-amber-900">
+                      Hay <span className="font-medium">más de un paciente</span> con este teléfono en la clínica.
+                      Resolvé los duplicados desde la lista de pacientes antes de crear uno nuevo.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-amber-900">
+                      Ya existe un paciente con este teléfono:{' '}
+                      <span className="font-medium">{dupExisting.full_name}</span>.
+                    </p>
+                  )}
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSelectPatient({
-                          id: dupExisting.id,
-                          full_name: dupExisting.full_name,
-                          phone: newPatientPhone || null,
-                        })
-                      }
-                      className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
-                    >
-                      Usar este paciente
-                    </button>
+                    {!dupExisting.multiple && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSelectPatient({
+                            id: dupExisting.id,
+                            full_name: dupExisting.full_name,
+                            phone: newPatientPhone || null,
+                          })
+                        }
+                        className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
+                      >
+                        Usar este paciente
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setDupExisting(null)}

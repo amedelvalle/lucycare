@@ -67,13 +67,24 @@ export interface PatientAppointment {
  * activo con el mismo teléfono en la clínica. Es un duplicado de
  * negocio, no un error de Postgres — la UI lo muestra con el nombre
  * del paciente existente y permite reusarlo en vez de crear otro.
+ *
+ * `multiple=true` indica que existen DOS o más pacientes activos con
+ * ese teléfono normalizado (duplicado preexistente que no se fusionó
+ * automáticamente). La UI usa este flag para mostrar un aviso de
+ * ambigüedad y NO sugerir reusar uno arbitrario.
  */
 export class DuplicatePhoneError extends Error {
   existing: { id: string; full_name: string };
-  constructor(existing: { id: string; full_name: string }) {
-    super(`Ya existe un paciente con este teléfono: ${existing.full_name}.`);
+  multiple: boolean;
+  constructor(existing: { id: string; full_name: string }, multiple = false) {
+    super(
+      multiple
+        ? 'Hay más de un paciente con este teléfono en la clínica. Resolvé los duplicados antes de crear uno nuevo.'
+        : `Ya existe un paciente con este teléfono: ${existing.full_name}.`
+    );
     this.name = 'DuplicatePhoneError';
     this.existing = existing;
+    this.multiple = multiple;
   }
 }
 
@@ -252,18 +263,23 @@ export async function createBasicPatient(
   if (!fullName) throw new Error('El nombre del paciente es obligatorio.');
   if (!phone) throw new Error('El teléfono del paciente es obligatorio.');
 
-  // Dedup por teléfono — solo entre activos
-  const { data: existing, error: lookupErr } = await supabase
+  // Dedup por teléfono — solo entre activos. Pedimos hasta 2 para
+  // detectar duplicados preexistentes (mismo teléfono en >1 paciente
+  // activo): en ese caso señalamos ambigüedad para revisión manual.
+  const { data: matches, error: lookupErr } = await supabase
     .from('patients')
     .select('id, full_name')
     .eq('clinic_id', input.clinicId)
     .eq('phone', phone)
     .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(2);
   if (lookupErr) throw lookupErr;
-  if (existing) {
-    throw new DuplicatePhoneError({ id: existing.id, full_name: existing.full_name });
+  if (matches && matches.length > 0) {
+    throw new DuplicatePhoneError(
+      { id: matches[0].id, full_name: matches[0].full_name },
+      matches.length > 1
+    );
   }
 
   const documentNumber = input.documentNumber?.trim() || null;
