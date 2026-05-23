@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { PatientDetail, PatientUpdateInput } from '@/services/patients.service';
+import {
+  validateDocument,
+  sanitizeDuiInput,
+  formatDuiDisplay,
+} from '@/lib/document';
 
 interface EditPatientModalProps {
   isOpen: boolean;
@@ -41,6 +46,7 @@ export default function EditPatientModal({
   onSubmit,
 }: EditPatientModalProps) {
   const [form, setForm] = useState<PatientUpdateInput>({});
+  const [docError, setDocError] = useState<string | null>(null);
 
   // Reset cuando se abre el modal o cambia el paciente
   useEffect(() => {
@@ -70,9 +76,44 @@ export default function EditPatientModal({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  /** Cambia el tipo de documento. Si pasa a DUI, re-sanitiza el valor
+   *  actual descartando letras y excedente para que la máscara aplique. */
+  const handleTypeChange = (newType: PatientUpdateInput['document_type']) => {
+    setDocError(null);
+    if (newType === 'dui') {
+      const digits = sanitizeDuiInput(form.document_number ?? '');
+      setForm((prev) => ({
+        ...prev,
+        document_type: newType,
+        document_number: formatDuiDisplay(digits) || null,
+      }));
+    } else {
+      update('document_type', newType);
+    }
+  };
+
+  /** Cambio del input de número de documento — aplica máscara DUI si corresponde. */
+  const handleNumberChange = (raw: string) => {
+    setDocError(null);
+    if (form.document_type === 'dui') {
+      const digits = sanitizeDuiInput(raw);
+      update('document_number', formatDuiDisplay(digits) || null);
+    } else {
+      update('document_number', raw || null);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name?.trim()) return;
+    // Validación local del documento antes de enviar — evita round-trip
+    // al backend para errores triviales y muestra el mensaje al lado del campo.
+    const docValidation = validateDocument(form.document_type, form.document_number);
+    if (!docValidation.valid) {
+      setDocError(docValidation.error ?? 'Documento inválido.');
+      return;
+    }
+    setDocError(null);
     onSubmit(form);
   };
 
@@ -136,7 +177,7 @@ export default function EditPatientModal({
               <Field label="Tipo de documento">
                 <select
                   value={form.document_type ?? 'dui'}
-                  onChange={(e) => update('document_type', e.target.value as typeof form.document_type)}
+                  onChange={(e) => handleTypeChange(e.target.value as typeof form.document_type)}
                   className={inputCls}
                 >
                   {DOCUMENT_TYPES.map((d) => (
@@ -147,11 +188,19 @@ export default function EditPatientModal({
               <Field label="Número">
                 <input
                   type="text"
+                  inputMode={form.document_type === 'dui' ? 'numeric' : 'text'}
+                  maxLength={form.document_type === 'dui' ? 10 : 40}
                   value={form.document_number ?? ''}
-                  onChange={(e) => update('document_number', e.target.value || null)}
+                  onChange={(e) => handleNumberChange(e.target.value)}
                   className={inputCls}
-                  placeholder="Opcional"
+                  placeholder={form.document_type === 'dui' ? '00000000-0' : 'Opcional'}
                 />
+                {form.document_type === 'dui' && (
+                  <p className="text-[11px] text-gray-500 mt-1">9 dígitos, se formatea como 00000000-0.</p>
+                )}
+                {docError && (
+                  <p className="text-[11px] text-red-600 mt-1">{docError}</p>
+                )}
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

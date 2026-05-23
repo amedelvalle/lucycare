@@ -3,6 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { useCreatePatient } from '@/hooks/usePatients';
 import { DuplicatePhoneError } from '@/services/patients.service';
 import { friendlyErrorMessage } from '@/lib/errors';
+import {
+  validateDocument,
+  sanitizeDuiInput,
+  formatDuiDisplay,
+  type DocumentType,
+} from '@/lib/document';
+
+const DOCUMENT_TYPES: Array<{ value: DocumentType; label: string }> = [
+  { value: 'dui', label: 'DUI' },
+  { value: 'partida_nacimiento', label: 'Partida de nacimiento' },
+  { value: 'pasaporte', label: 'Pasaporte' },
+  { value: 'carnet_residente', label: 'Carnet de residente' },
+];
 
 interface NewPatientModalProps {
   isOpen: boolean;
@@ -29,18 +42,42 @@ export default function NewPatientModal({
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [documentType, setDocumentType] = useState<DocumentType>('dui');
   const [documentNumber, setDocumentNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
   const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string; multiple: boolean } | null>(null);
 
   function reset() {
     setFullName('');
     setPhone('');
+    setDocumentType('dui');
     setDocumentNumber('');
     setDateOfBirth('');
     setError(null);
+    setDocError(null);
     setDupExisting(null);
+  }
+
+  /** Cambia el tipo y re-sanitiza el número si pasa a DUI. */
+  function handleTypeChange(newType: DocumentType) {
+    setDocError(null);
+    setDocumentType(newType);
+    if (newType === 'dui') {
+      const digits = sanitizeDuiInput(documentNumber);
+      setDocumentNumber(formatDuiDisplay(digits));
+    }
+  }
+
+  function handleNumberChange(raw: string) {
+    setDocError(null);
+    if (documentType === 'dui') {
+      const digits = sanitizeDuiInput(raw);
+      setDocumentNumber(formatDuiDisplay(digits));
+    } else {
+      setDocumentNumber(raw);
+    }
   }
 
   function handleClose() {
@@ -51,6 +88,7 @@ export default function NewPatientModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDocError(null);
     setDupExisting(null);
     if (!fullName.trim()) {
       setError('El nombre es obligatorio.');
@@ -60,12 +98,19 @@ export default function NewPatientModal({
       setError('El teléfono es obligatorio (se usa para evitar duplicados).');
       return;
     }
+    // Validación local del documento (DUI exige 9 dígitos; otros tipos son laxos).
+    const docValidation = validateDocument(documentType, documentNumber);
+    if (!docValidation.valid) {
+      setDocError(docValidation.error ?? 'Documento inválido.');
+      return;
+    }
     createMutation.mutate(
       {
         clinicId,
         fullName,
         phone,
-        documentNumber: documentNumber || null,
+        documentType,
+        documentNumber: docValidation.canonical,
         dateOfBirth: dateOfBirth || undefined,
       },
       {
@@ -90,6 +135,7 @@ export default function NewPatientModal({
 
   function clearMessages() {
     setError(null);
+    setDocError(null);
     setDupExisting(null);
   }
 
@@ -150,25 +196,45 @@ export default function NewPatientModal({
           </Field>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Documento" hint="opcional">
+            <Field label="Tipo de documento">
+              <select
+                value={documentType}
+                onChange={(e) => handleTypeChange(e.target.value as DocumentType)}
+                className={inputCls}
+              >
+                {DOCUMENT_TYPES.map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Número" hint="opcional">
               <input
                 type="text"
+                inputMode={documentType === 'dui' ? 'numeric' : 'text'}
+                maxLength={documentType === 'dui' ? 10 : 40}
                 value={documentNumber}
-                onChange={(e) => { clearMessages(); setDocumentNumber(e.target.value); }}
+                onChange={(e) => handleNumberChange(e.target.value)}
                 className={inputCls}
-                placeholder="Sin documento"
+                placeholder={documentType === 'dui' ? '00000000-0' : 'Sin documento'}
               />
-            </Field>
-            <Field label="Fecha de nacimiento" hint="opcional">
-              <input
-                type="date"
-                value={dateOfBirth}
-                onChange={(e) => { clearMessages(); setDateOfBirth(e.target.value); }}
-                className={inputCls}
-                max={new Date().toLocaleDateString('en-CA')}
-              />
+              {documentType === 'dui' && (
+                <p className="text-[11px] text-gray-500 mt-1">9 dígitos, se formatea como 00000000-0.</p>
+              )}
+              {docError && (
+                <p className="text-[11px] text-red-600 mt-1">{docError}</p>
+              )}
             </Field>
           </div>
+
+          <Field label="Fecha de nacimiento" hint="opcional">
+            <input
+              type="date"
+              value={dateOfBirth}
+              onChange={(e) => { clearMessages(); setDateOfBirth(e.target.value); }}
+              className={inputCls}
+              max={new Date().toLocaleDateString('en-CA')}
+            />
+          </Field>
         </div>
 
         <div className="px-6 py-4 border-t border-gray-200 space-y-3">

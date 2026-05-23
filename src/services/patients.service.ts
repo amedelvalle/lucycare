@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneSV } from '@/lib/phone';
+import { validateDocument } from '@/lib/document';
 import type { Database } from '@/types/database.types';
 
 type DocumentType = Database['public']['Enums']['document_type'];
@@ -282,7 +283,11 @@ export async function createBasicPatient(
     );
   }
 
-  const documentNumber = input.documentNumber?.trim() || null;
+  // Validar el documento según su tipo (DUI: 9 dígitos, formato '00000000-0';
+  // otros tipos: trim + cap de longitud). Vacío es válido (queda NULL).
+  const documentType = input.documentType ?? 'dui';
+  const docValidation = validateDocument(documentType, input.documentNumber);
+  if (!docValidation.valid) throw new Error(docValidation.error);
 
   const { data, error } = await supabase
     .from('patients')
@@ -291,8 +296,8 @@ export async function createBasicPatient(
       profile_id: null,
       full_name: fullName,
       phone,
-      document_type: input.documentType ?? 'dui',
-      document_number: documentNumber,
+      document_type: documentType,
+      document_number: docValidation.canonical,
       date_of_birth: input.dateOfBirth || '2000-01-01',
       gender: input.gender ?? 'otro',
       patient_type: input.patientType ?? 'privado',
@@ -319,6 +324,23 @@ export async function updatePatient(
   // mantener consistencia con el formato canónico (PR robustez pacientes).
   if (updates.phone !== undefined) {
     payload.phone = normalizePhoneSV(updates.phone);
+  }
+  // Si se actualiza el documento, validamos según su tipo. Si la UI no
+  // mandó el tipo (raro: solo se cambió el número), lo leemos del row
+  // actual para validar contra el tipo correcto.
+  if (updates.document_number !== undefined) {
+    let docType: string | undefined = updates.document_type;
+    if (!docType) {
+      const { data: current } = await supabase
+        .from('patients')
+        .select('document_type')
+        .eq('id', patientId)
+        .single();
+      docType = current?.document_type;
+    }
+    const validation = validateDocument(docType, updates.document_number);
+    if (!validation.valid) throw new Error(validation.error);
+    payload.document_number = validation.canonical;
   }
   const { error } = await supabase
     .from('patients')
