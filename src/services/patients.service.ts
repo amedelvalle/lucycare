@@ -61,6 +61,32 @@ export interface PatientAppointment {
   } | null;
 }
 
+/**
+ * Error lanzado por createBasicPatient cuando ya existe un paciente
+ * activo con el mismo teléfono en la clínica. Es un duplicado de
+ * negocio, no un error de Postgres — la UI lo muestra con el nombre
+ * del paciente existente y permite reusarlo en vez de crear otro.
+ */
+export class DuplicatePhoneError extends Error {
+  existing: { id: string; full_name: string };
+  constructor(existing: { id: string; full_name: string }) {
+    super(`Ya existe un paciente con este teléfono: ${existing.full_name}.`);
+    this.name = 'DuplicatePhoneError';
+    this.existing = existing;
+  }
+}
+
+export interface CreateBasicPatientInput {
+  clinicId: string;
+  fullName: string;
+  phone: string; // requerido — es la llave de dedup
+  documentType?: DocumentType;
+  documentNumber?: string | null;
+  dateOfBirth?: string; // YYYY-MM-DD
+  gender?: GenderType;
+  patientType?: PatientType;
+}
+
 export interface PatientUpdateInput {
   full_name?: string;
   phone?: string | null;
@@ -199,6 +225,64 @@ export async function getPatientAppointments(
 
   if (error) throw error;
   return (data ?? []) as unknown as PatientAppointment[];
+}
+
+/**
+ * Crea un paciente nuevo con campos mínimos. Fuente única para todos los
+ * flujos del panel (walk-in desde Nueva cita, y "Nuevo paciente" desde
+ * /panel/pacientes). Aplica dedup por teléfono antes del INSERT.
+ *
+ * - Nombre y teléfono son obligatorios.
+ * - Si ya existe un paciente ACTIVO con ese teléfono en la clínica →
+ *   lanza DuplicatePhoneError (no crea duplicado). La UI usa el
+ *   existing para reusar / navegar.
+ * - document_number queda NULL si no se provee (PR #27).
+ * - Defaults seguros para campos NOT NULL aún sin completar
+ *   (date_of_birth, gender, patient_type) — se ajustan luego desde
+ *   EditPatientModal.
+ */
+export async function createBasicPatient(
+  input: CreateBasicPatientInput
+): Promise<{ id: string; full_name: string }> {
+  const fullName = input.fullName.trim();
+  const phone = input.phone.trim();
+  if (!fullName) throw new Error('El nombre del paciente es obligatorio.');
+  if (!phone) throw new Error('El teléfono del paciente es obligatorio.');
+
+  // Dedup por teléfono — solo entre activos
+  const { data: existing, error: lookupErr } = await supabase
+    .from('patients')
+    .select('id, full_name')
+    .eq('clinic_id', input.clinicId)
+    .eq('phone', phone)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
+  if (existing) {
+    throw new DuplicatePhoneError({ id: existing.id, full_name: existing.full_name });
+  }
+
+  const documentNumber = input.documentNumber?.trim() || null;
+
+  const { data, error } = await supabase
+    .from('patients')
+    .insert({
+      clinic_id: input.clinicId,
+      profile_id: null,
+      full_name: fullName,
+      phone,
+      document_type: input.documentType ?? 'dui',
+      document_number: documentNumber,
+      date_of_birth: input.dateOfBirth || '2000-01-01',
+      gender: input.gender ?? 'otro',
+      patient_type: input.patientType ?? 'privado',
+    })
+    .select('id, full_name')
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 /**

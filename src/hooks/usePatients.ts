@@ -5,7 +5,9 @@ import {
   getPatientAppointments,
   updatePatient,
   setPatientActive,
+  createBasicPatient,
   type PatientUpdateInput,
+  type CreateBasicPatientInput,
 } from '@/services/patients.service';
 
 export const patientKeys = {
@@ -57,6 +59,21 @@ export function useUpdatePatient(patientId: string) {
     mutationFn: (updates: PatientUpdateInput) => updatePatient(patientId, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
+      queryClient.invalidateQueries({ queryKey: patientKeys.all });
+    },
+  });
+}
+
+/**
+ * Crea un paciente con dedup por teléfono. Si ya existe → lanza
+ * DuplicatePhoneError (el caller decide si reusarlo o navegar).
+ * Invalida la lista de pacientes al éxito.
+ */
+export function useCreatePatient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateBasicPatientInput) => createBasicPatient(input),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: patientKeys.all });
     },
   });

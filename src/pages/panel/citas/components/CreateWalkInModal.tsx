@@ -15,6 +15,7 @@ import {
 import { calendarKeys } from '@/hooks/useCalendarAppointments';
 import { appointmentKeys } from '@/hooks/appointments.hooks';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { DuplicatePhoneError } from '@/services/patients.service';
 
 // ─── Constantes ───────────────────────────────────────────────────────
 const DURATION_OPTIONS = [
@@ -65,6 +66,10 @@ export default function CreateWalkInModal({
   const [price, setPrice] = useState('');
 
   const [error, setError] = useState<string | null>(null);
+  // Si el teléfono del "Nuevo paciente" ya existe en la clínica, en lugar
+  // del error genérico mostramos un banner con el paciente existente y
+  // botón "Usar este paciente".
+  const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string } | null>(null);
 
   const searchRef = useRef<HTMLDivElement>(null);
 
@@ -174,7 +179,13 @@ export default function CreateWalkInModal({
       onSuccess();
     },
     onError: (err) => {
-      setError(friendlyErrorMessage(err));
+      if (err instanceof DuplicatePhoneError) {
+        setDupExisting(err.existing);
+        setError(null);
+      } else {
+        setDupExisting(null);
+        setError(friendlyErrorMessage(err));
+      }
     },
   });
 
@@ -201,6 +212,7 @@ export default function CreateWalkInModal({
     setStartTimeHHMM('09:00');
     setDurationMinutes(30);
     setError(null);
+    setDupExisting(null);
   }
 
   function handleClose() {
@@ -210,6 +222,7 @@ export default function CreateWalkInModal({
 
   function handleSelectPatient(p: PatientSearchResult) {
     setError(null);
+    setDupExisting(null);
     setSelectedPatient(p);
     setPatientQuery(p.full_name);
     setShowResults(false);
@@ -225,14 +238,21 @@ export default function CreateWalkInModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDupExisting(null);
 
     // Validación básica
-    if (!selectedPatient && !(isNewPatient && newPatientName.trim())) {
-      setError('Debes seleccionar o crear un paciente.');
-      return;
+    if (!selectedPatient) {
+      if (!isNewPatient || !newPatientName.trim()) {
+        setError('Seleccioná o creá un paciente.');
+        return;
+      }
+      if (!newPatientPhone.trim()) {
+        setError('El teléfono del nuevo paciente es obligatorio (se usa para evitar duplicados).');
+        return;
+      }
     }
     if (!date) {
-      setError('Selecciona una fecha.');
+      setError('Seleccioná una fecha.');
       return;
     }
 
@@ -403,19 +423,24 @@ export default function CreateWalkInModal({
                       type="text"
                       placeholder="Nombre completo *"
                       value={newPatientName}
-                      onChange={(e) => setNewPatientName(e.target.value)}
+                      onChange={(e) => { setError(null); setDupExisting(null); setNewPatientName(e.target.value); }}
                       required
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2
                         focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none bg-white"
                     />
                     <input
                       type="tel"
-                      placeholder="Teléfono (opcional)"
+                      placeholder="Teléfono *"
                       value={newPatientPhone}
-                      onChange={(e) => setNewPatientPhone(e.target.value)}
+                      onChange={(e) => { setError(null); setDupExisting(null); setNewPatientPhone(e.target.value); }}
+                      required
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2
                         focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none bg-white"
                     />
+                    <p className="text-[11px] text-gray-500">
+                      Para evitar duplicados, el teléfono es obligatorio. Otros datos
+                      del paciente se pueden completar después desde su perfil.
+                    </p>
                   </div>
                 )}
               </section>
@@ -528,6 +553,38 @@ export default function CreateWalkInModal({
                   </div>
                 </div>
               </section>
+
+              {/* Teléfono ya existe → ofrecer usar el paciente existente */}
+              {dupExisting && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-2">
+                  <p className="text-sm text-amber-900">
+                    Ya existe un paciente con este teléfono:{' '}
+                    <span className="font-medium">{dupExisting.full_name}</span>.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSelectPatient({
+                          id: dupExisting.id,
+                          full_name: dupExisting.full_name,
+                          phone: newPatientPhone || null,
+                        })
+                      }
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
+                    >
+                      Usar este paciente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDupExisting(null)}
+                      className="px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Error */}
               {error && (

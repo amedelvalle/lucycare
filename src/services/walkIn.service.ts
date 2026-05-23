@@ -7,6 +7,7 @@ import {
   SUSPENDED_DOCTOR_MESSAGE,
 } from '@/services/appointments.service';
 import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from '@/services/availability.service';
+import { createBasicPatient } from '@/services/patients.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -89,30 +90,17 @@ export async function searchPatients(
 
 /**
  * Crea un paciente walk-in con datos mínimos (sin cuenta de usuario).
+ * Wrapper sobre createBasicPatient → aplica dedup por teléfono
+ * (DuplicatePhoneError si ya existe uno activo con ese teléfono).
+ * Teléfono ahora es OBLIGATORIO para soportar la dedup.
  */
 export async function createWalkInPatient(
   clinicId: string,
   fullName: string,
-  phone?: string
+  phone: string
 ): Promise<string> {
-  const { data, error } = await supabase
-    .from('patients')
-    .insert({
-      clinic_id: clinicId,
-      profile_id: null,
-      full_name: fullName.trim(),
-      phone: phone?.trim() || null,
-      document_type: 'dui',
-      document_number: null, // sin documento al crearse; se completa luego
-      date_of_birth: '2000-01-01',
-      gender: 'otro',
-      patient_type: 'privado',
-    })
-    .select('id')
-    .single();
-
-  if (error) throw error;
-  return data.id;
+  const patient = await createBasicPatient({ clinicId, fullName, phone });
+  return patient.id;
 }
 
 /**
