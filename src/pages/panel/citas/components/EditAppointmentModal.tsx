@@ -50,7 +50,24 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment }: P
     enabled: isOpen && !!appointment.doctor_id,
     staleTime: 1000 * 60 * 5,
   });
-  const services = doctorInfo?.services ?? [];
+  // getDoctorInfo solo trae servicios activos. Si esta cita ya tiene
+  // asignado un servicio que fue desactivado, igual hay que mostrarlo
+  // para no romper la edición ni perder la asignación. No se ofrecen
+  // OTROS servicios inactivos (los activos son los únicos seleccionables).
+  const activeServices = doctorInfo?.services ?? [];
+  const currentSvc = appointment.service;
+  const services =
+    currentSvc && !activeServices.some((s) => s.id === currentSvc.id)
+      ? [
+          ...activeServices,
+          {
+            id: currentSvc.id,
+            name: currentSvc.name,
+            duration_minutes: currentSvc.duration_minutes,
+            price: null,
+          },
+        ]
+      : activeServices;
 
   // Al cambiar de servicio, ajustar duración a la del servicio
   useEffect(() => {
@@ -182,11 +199,15 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment }: P
                 className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
               >
                 <option value="">Sin servicio ({durationMinutes} min)</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.duration_minutes} min)
-                  </option>
-                ))}
+                {services.map((s) => {
+                  const inactive = !activeServices.some((a) => a.id === s.id);
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.duration_minutes} min)
+                      {inactive ? ' — inactivo' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </>

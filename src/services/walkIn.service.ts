@@ -43,6 +43,11 @@ export interface CreateWalkInData {
 
 /**
  * Obtiene clinic_id y servicios del médico en una sola llamada.
+ * Solo devuelve servicios ACTIVOS (is_active = true): esta función
+ * alimenta los selectores de servicio de walk-in, follow-up y editar
+ * cita — flujos de asignación, donde un servicio desactivado no debe
+ * ofrecerse. Una cita histórica con un servicio ya inactivo se maneja
+ * aparte en EditAppointmentModal.
  */
 export async function getDoctorInfo(doctorId: string): Promise<DoctorInfo> {
   const [doctorResult, servicesResult] = await Promise.all([
@@ -51,6 +56,7 @@ export async function getDoctorInfo(doctorId: string): Promise<DoctorInfo> {
       .from('services')
       .select('id, name, duration_minutes, price')
       .eq('doctor_id', doctorId)
+      .eq('is_active', true)
       .order('name'),
   ]);
 
