@@ -11,6 +11,7 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { normalizePhoneSV } from '../lib/phone'
 import {
   isPastStart,
   PAST_APPOINTMENT_MESSAGE,
@@ -172,7 +173,7 @@ async function getOrCreatePatient(
       profile_id: profileId,
       clinic_id: clinicId,
       full_name: fullName,
-      phone: phone,
+      phone: normalizePhoneSV(phone),
       document_type: 'dui',
       document_number: null, // sin documento al reservar; se completa luego
       date_of_birth: '2000-01-01',

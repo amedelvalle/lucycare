@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePatientsList } from '@/hooks/usePatients';
 import { useClinicContext } from '@/hooks/useClinicContext';
 import type { PatientListItem } from '@/services/patients.service';
+import NewPatientModal from './NewPatientModal';
 
 export default function PacientesPage() {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ export default function PacientesPage() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [newPatientOpen, setNewPatientOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
@@ -62,15 +64,27 @@ export default function PacientesPage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {isLoading
-            ? 'Cargando...'
-            : `${patients.length} ${patients.length === 1 ? 'paciente' : 'pacientes'}${
-                debouncedSearch ? ` para "${debouncedSearch}"` : ''
-              }`}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {isLoading
+              ? 'Cargando...'
+              : `${patients.length} ${patients.length === 1 ? 'paciente' : 'pacientes'}${
+                  debouncedSearch ? ` para "${debouncedSearch}"` : ''
+                }`}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setNewPatientOpen(true)}
+          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-2 flex-shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Nuevo paciente
+        </button>
       </div>
 
       {/* Search bar */}
@@ -172,6 +186,12 @@ export default function PacientesPage() {
           ))}
         </div>
       )}
+
+      <NewPatientModal
+        isOpen={newPatientOpen}
+        clinicId={clinicId}
+        onClose={() => setNewPatientOpen(false)}
+      />
     </div>
   );
 }
