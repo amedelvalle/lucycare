@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useDoctorDetail } from '../../hooks/useDirectory';
 import ImageGallery from './components/ImageGallery';
 import BookingCard from './components/BookingCard';
+import ClaimProfilePromptCard from './components/ClaimProfilePromptCard';
 import ReviewsSection from './components/ReviewsSection';
 import MobileBookingSheet from './components/MobileBookingSheet';
 import { DoctorDetailSkeleton } from '../../components/skeletons/DirectorySkeletons';
@@ -158,6 +159,16 @@ export default function DoctorDetail() {
               </div>
             </div>
 
+            {/* CTA: Reclamar perfil (solo cuando aún está listed_only) */}
+            {lucyStatus === 'LISTED_ONLY' && (
+              <div className="mb-8">
+                <ClaimProfilePromptCard
+                  doctorId={doctor.id}
+                  doctorName={doctor.fullName}
+                />
+              </div>
+            )}
+
             {/* Mobile Booking Card */}
             <div className="lg:hidden mb-8">
               <BookingCard
@@ -168,7 +179,6 @@ export default function DoctorDetail() {
                 canBook={canBook}
                 lucyStatus={lucyStatus}
                 nextAvailableSlot={undefined}
-                onLucyActivated={() => {}}
                 services={doctor.services}
                 clinicId={doctor.clinicId}
               />
@@ -312,7 +322,6 @@ export default function DoctorDetail() {
               canBook={canBook}
               lucyStatus={lucyStatus}
               nextAvailableSlot={undefined}
-              onLucyActivated={() => {}}
               services={doctor.services}
               clinicId={doctor.clinicId}
             />

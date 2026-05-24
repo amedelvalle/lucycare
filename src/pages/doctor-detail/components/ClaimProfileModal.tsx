@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { sendOtp, verifyOtp } from '../../../services/auth.service';
-import { claimDoctorProfile } from '../../../services/claimProfile.service';
+import { claimDoctorProfile, type ClaimErrorCode } from '../../../services/claimProfile.service';
 import { supabase } from '../../../lib/supabase';
 
 interface ClaimProfileModalProps {
@@ -11,336 +11,418 @@ interface ClaimProfileModalProps {
   onActivated?: () => void;
 }
 
-const dayConfig = [
-  { key: 'monday', label: 'Lunes', dayOfWeek: 1 },
-  { key: 'tuesday', label: 'Martes', dayOfWeek: 2 },
-  { key: 'wednesday', label: 'Miércoles', dayOfWeek: 3 },
-  { key: 'thursday', label: 'Jueves', dayOfWeek: 4 },
-  { key: 'friday', label: 'Viernes', dayOfWeek: 5 },
-  { key: 'saturday', label: 'Sábado', dayOfWeek: 6 },
-  { key: 'sunday', label: 'Domingo', dayOfWeek: 0 },
-];
+const TOS_VERSION = 'v1.0';
+
+const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual?: boolean }> = {
+  NOT_AUTHENTICATED: {
+    title: 'Iniciá sesión primero',
+    detail: 'Necesitamos verificar tu teléfono por SMS antes de continuar.',
+  },
+  DOCTOR_NOT_FOUND: {
+    title: 'Perfil no encontrado',
+    detail: 'No pudimos encontrar este perfil de médico. Refrescá la página y volvé a intentar.',
+  },
+  ALREADY_CLAIMED: {
+    title: 'Este perfil ya fue reclamado',
+    detail: 'Si creés que es un error, contactanos para revisión manual.',
+    manual: true,
+  },
+  DOCTOR_NO_PHONE: {
+    title: 'No podemos validarlo automáticamente',
+    detail: 'El perfil no tiene teléfono registrado. Necesitamos hacerlo manualmente.',
+    manual: true,
+  },
+  PHONE_MISMATCH: {
+    title: 'El teléfono no coincide',
+    detail:
+      'El teléfono con el que iniciaste sesión no coincide con el registrado para este perfil. Si sos el profesional, contactanos para revisión manual.',
+    manual: true,
+  },
+  DOCTOR_NO_LICENSE: {
+    title: 'No podemos validarlo automáticamente',
+    detail: 'El perfil no tiene licencia registrada. Necesitamos hacerlo manualmente.',
+    manual: true,
+  },
+  LICENSE_MISMATCH: {
+    title: 'La licencia no coincide',
+    detail:
+      'La licencia/JVPM que ingresaste no coincide con la registrada para este perfil. Verificala y volvé a intentar — si seguís sin poder, contactanos para revisión manual.',
+  },
+  UNKNOWN: {
+    title: 'No pudimos reclamar el perfil',
+    detail: 'Ocurrió un error inesperado. Intentá de nuevo en un momento.',
+  },
+};
+
+type Step = 'otp' | 'license' | 'success';
 
 export default function ClaimProfileModal({
   isOpen,
   onClose,
   doctorName,
   doctorId,
-  onActivated
+  onActivated,
 }: ClaimProfileModalProps) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<Step>('otp');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // OTP
+  // ─── OTP ───
   const [phoneRaw, setPhoneRaw] = useState('');
   const [phoneDisplay, setPhoneDisplay] = useState('');
   const [countryCode] = useState('+503');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
-  // License
+  // ─── Licencia + Términos ───
   const [license, setLicense] = useState('');
+  const [tosAccepted, setTosAccepted] = useState(false);
 
-  // Availability
-  const [availability, setAvailability] = useState<Record<string, { enabled: boolean; start: string; end: string }>>({
-    monday: { enabled: false, start: '09:00', end: '17:00' },
-    tuesday: { enabled: false, start: '09:00', end: '17:00' },
-    wednesday: { enabled: false, start: '09:00', end: '17:00' },
-    thursday: { enabled: false, start: '09:00', end: '17:00' },
-    friday: { enabled: false, start: '09:00', end: '17:00' },
-    saturday: { enabled: false, start: '09:00', end: '14:00' },
-    sunday: { enabled: false, start: '09:00', end: '14:00' },
-  });
-
-  // Services
-  const [services, setServices] = useState([
-    { name: 'Primera consulta', duration: 60, price: 80, enabled: true },
-    { name: 'Consulta de control', duration: 30, price: 50, enabled: false },
-    { name: 'Teleconsulta', duration: 30, price: 60, enabled: false },
-  ]);
-
-  const [lucyEnabled, setLucyEnabled] = useState(false);
+  // ─── Estado UI ───
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ code: ClaimErrorCode; title: string; detail: string; manual?: boolean } | null>(
+    null,
+  );
+  const [genericError, setGenericError] = useState('');
 
-  // Verificar sesión al abrir
   useEffect(() => {
-    if (isOpen) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) {
-          setIsAuthenticated(true);
-          setStep(2); // Saltar OTP, ir a licencia
-        }
-      });
-    }
+    if (!isOpen) return;
+    // Reset por si lo cerraron y reabren
+    setError(null);
+    setGenericError('');
+    setLoading(false);
+    setOtpCode('');
+    setOtpSent(false);
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setIsAuthenticated(true);
+        setStep('license');
+      } else {
+        setIsAuthenticated(false);
+        setStep('otp');
+      }
+    });
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const fullPhone = `${countryCode}${phoneRaw}`;
   const isPhoneValid = phoneRaw.length === 8;
+  const canClaim = license.trim().length >= 3 && tosAccepted && !loading;
 
-  const formatPhone = (value: string) => {
+  const handlePhoneChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 8);
-    let formatted = digits;
-    if (digits.length > 4) formatted = `${digits.slice(0, 4)}-${digits.slice(4)}`;
     setPhoneRaw(digits);
-    setPhoneDisplay(formatted);
+    setPhoneDisplay(digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits);
   };
 
-  // ─── Step 1: OTP ───
   const handleSendOtp = async () => {
-    setError('');
+    setGenericError('');
     setLoading(true);
     try {
       const result = await sendOtp(fullPhone);
       if (result.success) {
         setOtpSent(true);
       } else {
-        setError(result.error || 'Error enviando código');
+        setGenericError(result.error || 'Error enviando el código');
       }
-    } catch { setError('Error de conexión'); }
-    finally { setLoading(false); }
+    } catch {
+      setGenericError('Error de conexión');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleVerifyOtp = async () => {
-    setError('');
+    setGenericError('');
     setLoading(true);
     try {
       const result = await verifyOtp(fullPhone, otpCode);
       if (result.success) {
         setIsAuthenticated(true);
-        setStep(2);
+        setStep('license');
       } else {
-        setError(result.error || 'Código incorrecto');
+        setGenericError(result.error || 'Código incorrecto');
       }
-    } catch { setError('Error de conexión'); }
-    finally { setLoading(false); }
+    } catch {
+      setGenericError('Error de conexión');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // ─── Step 3: Finish ───
-  const handleFinish = async () => {
-    setError('');
+  const handleClaim = async () => {
+    if (!canClaim) return;
+    setError(null);
+    setGenericError('');
     setLoading(true);
     try {
-      const availabilityRules = dayConfig
-        .filter(d => availability[d.key]?.enabled)
-        .map(d => ({
-          dayOfWeek: d.dayOfWeek,
-          startTime: availability[d.key].start,
-          endTime: availability[d.key].end,
-          slotDuration: 30,
-        }));
-
       const result = await claimDoctorProfile({
         doctorId,
         licenseNumber: license,
-        services: services.map(s => ({
-          name: s.name,
-          durationMinutes: s.duration,
-          price: s.price,
-          enabled: s.enabled,
-        })),
-        availability: availabilityRules,
-        enableBooking: lucyEnabled,
+        tosVersion: TOS_VERSION,
       });
 
       if (result.success) {
-        setStep(4); // Éxito
+        setStep('success');
         if (onActivated) onActivated();
       } else {
-        setError(result.error || 'Error al reclamar perfil');
+        const code = result.errorCode ?? 'UNKNOWN';
+        const copy = ERROR_COPY[code];
+        setError({ code, ...copy });
       }
-    } catch { setError('Error inesperado'); }
-    finally { setLoading(false); }
+    } catch {
+      setError({ code: 'UNKNOWN', ...ERROR_COPY.UNKNOWN });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const stepIndex = step === 'otp' ? 1 : step === 'license' ? 2 : 3;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Reclamar perfil</h2>
             <p className="text-sm text-gray-600 mt-1">{doctorName}</p>
           </div>
-          <button onClick={onClose} type="button" className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full cursor-pointer">
+          <button
+            onClick={onClose}
+            type="button"
+            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full cursor-pointer"
+            aria-label="Cerrar"
+          >
             <i className="ri-close-line text-xl text-gray-700"></i>
           </button>
         </div>
 
         {/* Progress */}
-        {step <= 3 && (
+        {step !== 'success' && (
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              {[1, 2, 3].map(s => (
+              {[1, 2].map((s) => (
                 <div key={s} className="flex items-center flex-1">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium ${step >= s ? 'bg-emerald-700 text-white' : 'bg-gray-200 text-gray-500'}`}>{s}</div>
-                  {s < 3 && <div className={`flex-1 h-1 mx-2 ${step > s ? 'bg-emerald-700' : 'bg-gray-200'}`}></div>}
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center font-medium ${
+                      stepIndex >= s ? 'bg-emerald-700 text-white' : 'bg-gray-200 text-gray-500'
+                    }`}
+                  >
+                    {s}
+                  </div>
+                  {s < 2 && (
+                    <div className={`flex-1 h-1 mx-2 ${stepIndex > s ? 'bg-emerald-700' : 'bg-gray-200'}`}></div>
+                  )}
                 </div>
               ))}
             </div>
             <div className="flex justify-between mt-2">
               <span className="text-xs text-gray-600">Verificación</span>
-              <span className="text-xs text-gray-600">Licencia</span>
-              <span className="text-xs text-gray-600">Agenda</span>
+              <span className="text-xs text-gray-600">Licencia y términos</span>
             </div>
           </div>
         )}
 
-        {/* Content */}
         <div className="p-6">
-          {error && (
+          {genericError && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-600">{error}</p>
+              <p className="text-sm text-red-700">{genericError}</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm font-medium text-red-900">{error.title}</p>
+              <p className="text-sm text-red-700 mt-1">{error.detail}</p>
+              {error.manual && (
+                <a
+                  href="https://wa.me/50378056365"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 mt-3 text-sm font-medium text-red-800 hover:text-red-900 underline"
+                >
+                  <i className="ri-whatsapp-line"></i>
+                  Escribinos por WhatsApp
+                </a>
+              )}
             </div>
           )}
 
           {/* ═══ STEP 1: OTP ═══ */}
-          {step === 1 && !isAuthenticated && (
-            <div className="space-y-6">
+          {step === 'otp' && !isAuthenticated && (
+            <div className="space-y-5">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Verificación telefónica</h3>
-                <p className="text-sm text-gray-600">Ingresa tu número de teléfono para verificar tu identidad</p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Verificá tu identidad</h3>
+                <p className="text-sm text-gray-600">
+                  Tu cuenta debe estar verificada con el mismo teléfono registrado para este perfil. Si no lo conocés,
+                  no vas a poder reclamarlo automáticamente.
+                </p>
               </div>
 
               {!otpSent ? (
                 <>
-                  <input type="text" inputMode="numeric" value={phoneDisplay} onChange={e => formatPhone(e.target.value)} placeholder="7777-7777" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-900 text-gray-900" />
-                  <button onClick={handleSendOtp} disabled={!isPhoneValid || loading} className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${isPhoneValid && !loading ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'}`}>
-                    {loading ? 'Enviando...' : 'Enviar código'}
+                  <label className="block text-sm font-medium text-gray-700">Teléfono (El Salvador)</label>
+                  <div className="flex gap-2">
+                    <span className="px-3 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700">+503</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={phoneDisplay}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      placeholder="7777-7777"
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSendOtp}
+                    disabled={!isPhoneValid || loading}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
+                      isPhoneValid && !loading
+                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {loading ? 'Enviando…' : 'Enviar código por SMS'}
                   </button>
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-gray-600">Código enviado a <span className="font-semibold">{countryCode} {phoneDisplay}</span></p>
-                  <input type="text" inputMode="numeric" maxLength={6} value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-700 text-gray-900" autoFocus />
-                  <button onClick={handleVerifyOtp} disabled={otpCode.length !== 6 || loading} className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${otpCode.length === 6 && !loading ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'}`}>
-                    {loading ? 'Verificando...' : 'Verificar y continuar'}
+                  <p className="text-sm text-gray-600">
+                    Código enviado a{' '}
+                    <span className="font-semibold">
+                      {countryCode} {phoneDisplay}
+                    </span>
+                  </p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-600 text-gray-900"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleVerifyOtp}
+                    disabled={otpCode.length !== 6 || loading}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
+                      otpCode.length === 6 && !loading
+                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {loading ? 'Verificando…' : 'Verificar y continuar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpSent(false);
+                      setOtpCode('');
+                    }}
+                    className="w-full text-sm text-gray-600 hover:text-gray-900 underline"
+                  >
+                    Cambiar teléfono
                   </button>
                 </>
               )}
             </div>
           )}
 
-          {/* ═══ STEP 2: Licencia ═══ */}
-          {step === 2 && (
-            <div className="space-y-6">
+          {/* ═══ STEP 2: Licencia + Términos ═══ */}
+          {step === 'license' && (
+            <div className="space-y-5">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Verificación profesional</h3>
-                <p className="text-sm text-gray-600">Ingresa tu número de licencia médica</p>
+                <p className="text-sm text-gray-600">
+                  Ingresá el número exacto de tu licencia profesional / JVPM tal como figura en tu credencial. Lo
+                  comparamos con el dato que tenemos registrado para este perfil.
+                </p>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Cédula profesional o número de licencia</label>
-                <input type="text" value={license} onChange={e => setLicense(e.target.value)} placeholder="Ej: 12345678" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-900 text-gray-900" />
-                <p className="text-xs text-gray-500 mt-1">Necesitamos verificar tu identidad profesional</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Licencia profesional / JVPM</label>
+                <input
+                  type="text"
+                  value={license}
+                  onChange={(e) => setLicense(e.target.value)}
+                  placeholder="Ej: JVPM-1234"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900 uppercase"
+                />
               </div>
-              <button onClick={() => setStep(3)} disabled={license.length < 4} className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${license.length >= 4 ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'}`}>
-                Continuar
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                <p className="text-sm text-gray-700">
+                  Al reclamar este perfil confirmás que <strong>sos el profesional</strong> y aceptás nuestros{' '}
+                  <a
+                    href="/terminos"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-700 underline"
+                  >
+                    Términos de Uso
+                  </a>{' '}
+                  ({TOS_VERSION}).
+                </p>
+                <p className="text-xs text-gray-500">
+                  Reclamar no publica tu perfil ni activa agenda online. Esos pasos los hacemos junto con vos después
+                  de un breve onboarding.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tosAccepted}
+                    onChange={(e) => setTosAccepted(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-emerald-700 rounded cursor-pointer"
+                  />
+                  <span className="text-sm text-gray-700">Sí, soy el profesional y acepto los términos.</span>
+                </label>
+              </div>
+
+              <button
+                onClick={handleClaim}
+                disabled={!canClaim}
+                className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
+                  canClaim
+                    ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                {loading ? 'Reclamando…' : 'Reclamar mi perfil'}
               </button>
             </div>
           )}
 
-          {/* ═══ STEP 3: Agenda ═══ */}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Configura tu agenda</h3>
-                <p className="text-sm text-gray-600">Define tu disponibilidad y servicios</p>
-              </div>
-
-              {/* Availability */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3">Disponibilidad semanal</h4>
-                <div className="space-y-2">
-                  {dayConfig.map(day => {
-                    const config = availability[day.key];
-                    return (
-                      <div key={day.key} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <input type="checkbox" checked={config.enabled} onChange={e => setAvailability({ ...availability, [day.key]: { ...config, enabled: e.target.checked } })} className="w-4 h-4 text-emerald-700 rounded cursor-pointer" />
-                        <span className="w-24 text-sm font-medium text-gray-700">{day.label}</span>
-                        {config.enabled && (
-                          <div className="flex items-center gap-2 flex-1">
-                            <input type="time" value={config.start} onChange={e => setAvailability({ ...availability, [day.key]: { ...config, start: e.target.value } })} className="px-2 py-1 border border-gray-300 rounded text-sm" />
-                            <span className="text-gray-500">a</span>
-                            <input type="time" value={config.end} onChange={e => setAvailability({ ...availability, [day.key]: { ...config, end: e.target.value } })} className="px-2 py-1 border border-gray-300 rounded text-sm" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Services */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3">Servicios agendables</h4>
-                <div className="space-y-3">
-                  {services.map((service, index) => (
-                    <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                      <div className="flex items-start gap-3">
-                        <input type="checkbox" checked={service.enabled} onChange={e => { const n = [...services]; n[index].enabled = e.target.checked; setServices(n); }} className="w-4 h-4 text-emerald-700 rounded cursor-pointer mt-1" />
-                        <div className="flex-1">
-                          <input type="text" value={service.name} onChange={e => { const n = [...services]; n[index].name = e.target.value; setServices(n); }} className="w-full font-medium text-gray-900 border-0 border-b border-transparent hover:border-gray-300 focus:border-emerald-600 focus:outline-none px-0 py-1" />
-                          <div className="flex gap-4 mt-2">
-                            <div className="flex items-center gap-2">
-                              <i className="ri-time-line text-gray-400 text-sm"></i>
-                              <input type="number" value={service.duration} onChange={e => { const n = [...services]; n[index].duration = parseInt(e.target.value) || 0; setServices(n); }} className="w-16 px-2 py-1 border border-gray-300 rounded text-sm" />
-                              <span className="text-sm text-gray-600">min</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-600">$</span>
-                              <input type="number" value={service.price} onChange={e => { const n = [...services]; n[index].price = parseInt(e.target.value) || 0; setServices(n); }} className="w-20 px-2 py-1 border border-gray-300 rounded text-sm" />
-                              <span className="text-sm text-gray-600">USD</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Lucy Toggle */}
-              <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-2 border-emerald-200 rounded-xl p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <i className="ri-calendar-check-line text-emerald-700 text-xl"></i>
-                      <h4 className="font-semibold text-gray-900">Activar agenda online</h4>
-                    </div>
-                    <p className="text-sm text-gray-600">Permite que los pacientes reserven citas automáticamente</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" checked={lucyEnabled} onChange={e => setLucyEnabled(e.target.checked)} className="sr-only peer" />
-                    <div className="w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-700"></div>
-                  </label>
-                </div>
-              </div>
-
-              <button onClick={handleFinish} disabled={loading} className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${!loading ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'}`}>
-                {loading ? 'Guardando...' : lucyEnabled ? 'Activar agenda y finalizar' : 'Guardar y finalizar'}
-              </button>
-            </div>
-          )}
-
-          {/* ═══ STEP 4: Éxito ═══ */}
-          {step === 4 && (
-            <div className="text-center py-8">
+          {/* ═══ STEP 3: Éxito ═══ */}
+          {step === 'success' && (
+            <div className="text-center py-6">
               <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <i className="ri-check-line text-4xl text-emerald-700"></i>
               </div>
-              <h3 className="text-2xl font-semibold text-gray-900 mb-3">
-                {lucyEnabled ? '¡Perfil reclamado y agenda activada!' : '¡Perfil reclamado!'}
-              </h3>
-              <p className="text-gray-600 mb-6">
-                {lucyEnabled
-                  ? 'Ahora los pacientes pueden reservar citas contigo desde el directorio.'
-                  : 'Tu perfil ha sido vinculado. Activa tu agenda cuando estés listo.'
-                }
+              <h3 className="text-2xl font-semibold text-gray-900 mb-3">¡Perfil reclamado!</h3>
+              <p className="text-gray-600 mb-2">
+                Tu perfil quedó vinculado a tu cuenta. Aparece igual que antes en el directorio.
               </p>
-              <button onClick={onClose} className="px-8 py-3 bg-[#3C2285] text-white rounded-lg font-semibold hover:bg-[#2d1a64] cursor-pointer">
-                Entendido
+              <p className="text-sm text-gray-500 mb-6">
+                Para activar agenda online o publicarlo oficialmente, escribinos: hacemos un onboarding corto y lo
+                dejamos listo.
+              </p>
+              <a
+                href="https://wa.me/50378056365"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer mb-3"
+              >
+                <i className="ri-whatsapp-line text-lg"></i>
+                Contactar a Lucy
+              </a>
+              <button
+                onClick={onClose}
+                className="block w-full px-6 py-2 text-sm text-gray-600 hover:text-gray-900 underline cursor-pointer"
+              >
+                Cerrar
               </button>
             </div>
           )}
