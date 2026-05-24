@@ -221,7 +221,12 @@ export async function fetchDoctorDetail(
     `)
     .eq('id', doctorId)
     .eq('is_published', true)
-    .eq('is_operational', true)
+    // Permitimos abrir el perfil si está operativo (caso normal) o si todavía
+    // es listed_only (todavía no reclamado). Esto habilita que un médico llegue
+    // a su propio perfil vía link directo para reclamarlo, sin obligar a marcarlo
+    // is_operational=true antes de tiempo. La RPC claim_doctor_profile sigue
+    // validando lucy_status='listed_only' server-side.
+    .or('is_operational.eq.true,lucy_status.eq.listed_only')
     .single()
 
   if (error) {

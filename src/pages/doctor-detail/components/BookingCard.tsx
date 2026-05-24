@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import LoginModal from './LoginModal';
 import WaitlistModal from './WaitlistModal';
-import ClaimProfileModal from './ClaimProfileModal';
 import { getCurrentAuthUser, signOut } from '../../../services/auth.service';
 import { useAvailableSlots } from '../../../hooks/useBooking';
 import { createBooking } from '../../../services/booking.service';
@@ -17,7 +16,6 @@ interface BookingCardProps {
   canBook: boolean;
   lucyStatus: string;
   nextAvailableSlot?: string;
-  onLucyActivated?: () => void;
   // Servicios reales del doctor (desde el detalle)
   services?: DoctorService[];
   clinicId?: string;
@@ -30,7 +28,6 @@ export default function BookingCard({
   phone,
   canBook,
   lucyStatus,
-  onLucyActivated,
   services: doctorServices,
   clinicId,
 }: BookingCardProps) {
@@ -40,7 +37,6 @@ export default function BookingCard({
   const [selectedSlotEnd, setSelectedSlotEnd] = useState('');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showWaitlistModal, setShowWaitlistModal] = useState(false);
-  const [showClaimModal, setShowClaimModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [booking, setBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
@@ -185,21 +181,8 @@ export default function BookingCard({
             </button>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="flex items-start gap-2 text-xs text-gray-500">
-              <i className="ri-lightbulb-line text-sm flex-shrink-0 mt-0.5"></i>
-              <p>
-                ¿Eres este profesional?{' '}
-                <button onClick={() => setShowClaimModal(true)} className="text-emerald-700 font-medium hover:underline cursor-pointer">
-                  Reclama tu perfil
-                </button>
-                {' '}y activa tu agenda en Lucy para recibir más pacientes.
-              </p>
-            </div>
-          </div>
         </div>
 
-        <ClaimProfileModal isOpen={showClaimModal} onClose={() => setShowClaimModal(false)} doctorName={doctorName} doctorId={doctorId} onActivated={onLucyActivated} />
         <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorName={doctorName} />
       </>
     );
