@@ -61,6 +61,25 @@ const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual
 
 type Step = 'otp' | 'license' | 'success';
 
+/**
+ * Lee la sesión actual de supabase con un timeout duro. Si el wrapper
+ * interno se cuelga (lock de auth en algunos browsers), no lo
+ * esperamos para siempre.
+ */
+async function getSessionWithTimeout(
+  ms: number,
+): Promise<{ accessToken: string; userId: string } | null> {
+  const sessionPromise = supabase.auth.getSession().then(({ data }) => {
+    const s = data.session;
+    if (s?.access_token && s.user?.id) {
+      return { accessToken: s.access_token, userId: s.user.id };
+    }
+    return null;
+  });
+  const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+  return Promise.race([sessionPromise, timeoutPromise]);
+}
+
 export default function ClaimProfileModal({
   isOpen,
   onClose,
@@ -70,6 +89,11 @@ export default function ClaimProfileModal({
 }: ClaimProfileModalProps) {
   const [step, setStep] = useState<Step>('otp');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Token de la sesión actual, capturado apenas el modal lo tiene.
+  // Lo guardamos para no depender de getSession() en el submit, donde
+  // cualquier cuelgue del auth wrapper bloquearía el flujo.
+  const [sessionToken, setSessionToken] = useState<{ accessToken: string; userId: string } | null>(null);
 
   // ─── OTP ───
   const [phoneRaw, setPhoneRaw] = useState('');
@@ -97,16 +121,24 @@ export default function ClaimProfileModal({
     setLoading(false);
     setOtpCode('');
     setOtpSent(false);
+    setSessionToken(null);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
+    let cancelled = false;
+    (async () => {
+      const tok = await getSessionWithTimeout(3000);
+      if (cancelled) return;
+      if (tok) {
+        setSessionToken(tok);
         setIsAuthenticated(true);
         setStep('license');
       } else {
         setIsAuthenticated(false);
         setStep('otp');
       }
-    });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -144,6 +176,17 @@ export default function ClaimProfileModal({
     try {
       const result = await verifyOtp(fullPhone, otpCode);
       if (result.success) {
+        // Capturamos el token AHORA, mientras el auth wrapper acaba
+        // de procesar la sesión. Si tomamos getSession más tarde puede
+        // colgarse por un lock interno en algunos browsers.
+        const tok = await getSessionWithTimeout(3000);
+        if (!tok) {
+          setGenericError(
+            'No pudimos confirmar tu sesión después del código. Refrescá la página e intentá de nuevo.',
+          );
+          return;
+        }
+        setSessionToken(tok);
         setIsAuthenticated(true);
         setStep('license');
       } else {
@@ -162,10 +205,28 @@ export default function ClaimProfileModal({
     setGenericError('');
     setLoading(true);
     try {
+      // Asegurar que tenemos token. Si no, reintentar getSession con
+      // timeout corto antes de fallar — no esperar indefinidamente.
+      let tok = sessionToken;
+      if (!tok) {
+        tok = await getSessionWithTimeout(3000);
+        if (tok) setSessionToken(tok);
+      }
+      if (!tok) {
+        setError({
+          code: 'NOT_AUTHENTICATED',
+          ...ERROR_COPY.NOT_AUTHENTICATED,
+          detail: 'No pudimos confirmar tu sesión. Cerrá sesión, refrescá la página e intentá de nuevo.',
+        });
+        return;
+      }
+
       const result = await claimDoctorProfile({
         doctorId,
         licenseNumber: license,
         tosVersion: TOS_VERSION,
+        accessToken: tok.accessToken,
+        sessionUserId: tok.userId,
       });
 
       if (result.success) {

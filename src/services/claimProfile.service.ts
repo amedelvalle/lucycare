@@ -2,41 +2,40 @@
  * Servicio de Reclamo de Perfil del Médico (Fase 2 — reclamo seguro).
  *
  * Toda la lógica vive en la RPC `claim_doctor_profile` (s7_13).
- * El cliente hace POST directo al endpoint REST de Supabase con el
- * access_token de la sesión actual. Evitamos `supabase.rpc()` porque
- * en algunos browsers se cuelga esperando un lock interno de auth y
- * la request HTTP nunca sale (verificado con DevTools → Network vacío).
  *
- * - timeout cliente (8s) con AbortController. Si vence o falla la red,
- *   antes de devolver error consultamos el estado del doctor: si quedó
- *   `claimed` y profile_id coincide con la sesión, devolvemos success
- *   (la respuesta se perdió en transit, no hay que pedir reintento).
- * - mapeo de SQLSTATE P0001..P0007 a `errorCode` tipado.
+ * Diseño defensivo:
+ *   - NO usamos `supabase.rpc(...)` ni `supabase.from(...).select(...)`.
+ *     En algunos browsers (con navigator.locks tomado por otra cosa)
+ *     esos wrappers se cuelgan ANTES de hacer la request HTTP y la
+ *     llamada al backend nunca sale (verificado en DevTools → Network).
+ *   - Hacemos `fetch()` directos al endpoint REST de Supabase, pasando
+ *     el access_token que el caller ya tiene en mano (obtenido del
+ *     modal apenas verifyOtp completa, o vía getSession con su propio
+ *     timeout al abrir el modal). Así nunca dependemos de un lock
+ *     interno de supabase-js durante el submit.
+ *   - AbortController con timeout 8 s. Si vence o falla la red,
+ *     consultamos el estado del doctor (otro fetch directo): si quedó
+ *     claimed y profile_id coincide con la sesión, devolvemos success
+ *     (la RPC corrió OK, la respuesta se perdió en transit).
+ *   - Mapeo de SQLSTATE P0001..P0007 a `errorCode` tipado.
  *
- * IMPORTANTE: la RPC valida server-side el teléfono verificado de la
- * sesión y la licencia. El cliente NO decide nada de seguridad.
- *
- * Lo que el reclamo NO hace (regla de producto vigente):
+ * Reglas que NO se tocan al reclamar:
  *   - No marca `is_verified`
  *   - No cambia `is_published`
  *   - No habilita `booking_enabled`
  *   - No activa `is_operational`
  *   - No crea `services` ni `availability_rules`
- *
- * Esos ejes los administra LucyAdmin desde el panel /admin.
  */
 
-import { supabase } from '../lib/supabase';
-
 export type ClaimErrorCode =
-  | 'NOT_AUTHENTICATED'      // sin sesión o sin phone verificado
+  | 'NOT_AUTHENTICATED'      // sin sesión / sin access_token
   | 'DOCTOR_NOT_FOUND'       // P0002
   | 'ALREADY_CLAIMED'        // P0003
   | 'DOCTOR_NO_PHONE'        // P0004
   | 'PHONE_MISMATCH'         // P0005
   | 'DOCTOR_NO_LICENSE'      // P0006
   | 'LICENSE_MISMATCH'       // P0007
-  | 'TIMEOUT'                // la request tardó > N segundos
+  | 'TIMEOUT'                // > N segundos sin respuesta
   | 'UNKNOWN';
 
 export interface ClaimResult {
@@ -49,6 +48,10 @@ interface ClaimDoctorProfileInput {
   doctorId: string;
   licenseNumber: string;
   tosVersion?: string;
+  /** access_token de la sesión actual, obtenido por el caller. */
+  accessToken: string;
+  /** user.id de la sesión actual. Para verificar recovery post-error. */
+  sessionUserId: string;
 }
 
 const SQLSTATE_TO_CODE: Record<string, ClaimErrorCode> = {
@@ -63,63 +66,66 @@ const SQLSTATE_TO_CODE: Record<string, ClaimErrorCode> = {
 };
 
 const CLAIM_TIMEOUT_MS = 8_000;
+const CHECK_TIMEOUT_MS = 4_000;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+function authHeaders(accessToken: string): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/json',
+  };
+}
+
 /**
- * Lee el estado actual del doctor. Si quedó claimed y la sesión
- * coincide con profile_id, asumimos que el claim ya se hizo
- * (respuesta perdida en transit).
+ * Consulta el estado del doctor vía fetch directo. Devuelve true si
+ * el doctor ya quedó claimed y vinculado al usuario de la sesión
+ * (caso de respuesta perdida en transit).
  */
 async function checkAlreadyClaimedByMe(
   doctorId: string,
-  sessionUserId: string | null,
+  accessToken: string,
+  sessionUserId: string,
 ): Promise<boolean> {
-  if (!sessionUserId) return false;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
   try {
-    const { data } = await supabase
-      .from('doctors')
-      .select('profile_id, lucy_status')
-      .eq('id', doctorId)
-      .maybeSingle();
-    if (!data) return false;
-    return data.lucy_status !== 'listed_only' && data.profile_id === sessionUserId;
+    const url = `${SUPABASE_URL}/rest/v1/doctors?id=eq.${encodeURIComponent(doctorId)}&select=profile_id,lucy_status`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: authHeaders(accessToken),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    if (!resp.ok) return false;
+    const rows = (await resp.json()) as Array<{ profile_id: string | null; lucy_status: string | null }>;
+    const row = rows?.[0];
+    if (!row) return false;
+    return row.lucy_status !== 'listed_only' && row.profile_id === sessionUserId;
   } catch {
+    clearTimeout(t);
     return false;
   }
 }
 
-export async function claimDoctorProfile(
-  input: ClaimDoctorProfileInput,
-): Promise<ClaimResult> {
-  // ─── 1. Obtener access token de la sesión actual ───
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const accessToken = session?.access_token;
-  const sessionUserId = session?.user?.id ?? null;
-
-  if (!accessToken) {
+export async function claimDoctorProfile(input: ClaimDoctorProfileInput): Promise<ClaimResult> {
+  if (!input.accessToken || !input.sessionUserId) {
     return {
       success: false,
       errorCode: 'NOT_AUTHENTICATED',
-      errorMessage: 'Sesión no encontrada',
+      errorMessage: 'Sesión no disponible',
     };
   }
 
-  // ─── 2. POST directo al endpoint REST (sin pasar por supabase.rpc) ───
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CLAIM_TIMEOUT_MS);
 
   try {
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_doctor_profile`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
+      headers: authHeaders(input.accessToken),
       body: JSON.stringify({
         p_doctor_id: input.doctorId,
         p_license_typed: input.licenseNumber,
@@ -138,10 +144,8 @@ export async function claimDoctorProfile(
     }
 
     if (!resp.ok) {
-      // Errores RPC vienen como { code, message, details, hint }
       const errBody = (body || {}) as { code?: string; message?: string };
-      // Fallback recovery: tal vez la RPC corrió OK antes del error y se confundió
-      if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
+      if (await checkAlreadyClaimedByMe(input.doctorId, input.accessToken, input.sessionUserId)) {
         return { success: true };
       }
       const code = errBody.code ? SQLSTATE_TO_CODE[errBody.code] : undefined;
@@ -154,8 +158,7 @@ export async function claimDoctorProfile(
 
     const ok = !!(body && typeof body === 'object' && (body as { success?: boolean }).success);
     if (!ok) {
-      // No esperábamos esto. Verificar DB por las dudas.
-      if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
+      if (await checkAlreadyClaimedByMe(input.doctorId, input.accessToken, input.sessionUserId)) {
         return { success: true };
       }
       return {
@@ -168,8 +171,7 @@ export async function claimDoctorProfile(
     return { success: true };
   } catch (err) {
     clearTimeout(timeoutId);
-    // Timeout (AbortError) o error de red. Recovery: ¿quedó claimed igual?
-    if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
+    if (await checkAlreadyClaimedByMe(input.doctorId, input.accessToken, input.sessionUserId)) {
       return { success: true };
     }
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
