@@ -48,6 +48,11 @@ const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual
     detail:
       'La licencia/JVPM que ingresaste no coincide con la registrada para este perfil. Verificala y volvé a intentar — si seguís sin poder, contactanos para revisión manual.',
   },
+  TIMEOUT: {
+    title: 'No pudimos confirmar el reclamo',
+    detail:
+      'La operación tardó más de lo normal. Refrescá la página: si tu perfil ya aparece reclamado, todo está bien. Si no, volvé a intentar.',
+  },
   UNKNOWN: {
     title: 'No pudimos reclamar el perfil',
     detail: 'Ocurrió un error inesperado. Intentá de nuevo en un momento.',
