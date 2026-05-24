@@ -4,6 +4,7 @@ import { useDoctorDetail } from '../../hooks/useDirectory';
 import ImageGallery from './components/ImageGallery';
 import BookingCard from './components/BookingCard';
 import ClaimProfilePromptCard from './components/ClaimProfilePromptCard';
+import ClaimedProfileNoticeCard from './components/ClaimedProfileNoticeCard';
 import ReviewsSection from './components/ReviewsSection';
 import MobileBookingSheet from './components/MobileBookingSheet';
 import { DoctorDetailSkeleton } from '../../components/skeletons/DirectorySkeletons';
@@ -166,6 +167,13 @@ export default function DoctorDetail() {
                   doctorId={doctor.id}
                   doctorName={doctor.fullName}
                 />
+              </div>
+            )}
+
+            {/* Aviso: perfil reclamado pero todavía sin agenda online ni verificación */}
+            {lucyStatus === 'CLAIMED' && !canBook && !isVerified && (
+              <div className="mb-8">
+                <ClaimedProfileNoticeCard />
               </div>
             )}
 
