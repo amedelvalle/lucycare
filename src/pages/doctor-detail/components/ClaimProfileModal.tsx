@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { sendOtp, verifyOtp } from '../../../services/auth.service';
 import { claimDoctorProfile, type ClaimErrorCode } from '../../../services/claimProfile.service';
-import { supabase } from '../../../lib/supabase';
+import { getSessionWithTimeout } from '../../../lib/session';
 
 interface ClaimProfileModalProps {
   isOpen: boolean;
@@ -60,25 +60,6 @@ const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual
 };
 
 type Step = 'otp' | 'license' | 'success';
-
-/**
- * Lee la sesión actual de supabase con un timeout duro. Si el wrapper
- * interno se cuelga (lock de auth en algunos browsers), no lo
- * esperamos para siempre.
- */
-async function getSessionWithTimeout(
-  ms: number,
-): Promise<{ accessToken: string; userId: string } | null> {
-  const sessionPromise = supabase.auth.getSession().then(({ data }) => {
-    const s = data.session;
-    if (s?.access_token && s.user?.id) {
-      return { accessToken: s.access_token, userId: s.user.id };
-    }
-    return null;
-  });
-  const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
-  return Promise.race([sessionPromise, timeoutPromise]);
-}
 
 export default function ClaimProfileModal({
   isOpen,

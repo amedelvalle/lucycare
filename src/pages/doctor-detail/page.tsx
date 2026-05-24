@@ -170,10 +170,12 @@ export default function DoctorDetail() {
               </div>
             )}
 
-            {/* Aviso: perfil reclamado pero todavía sin agenda online ni verificación */}
-            {lucyStatus === 'CLAIMED' && !canBook && !isVerified && (
+            {/* Aviso: perfil reclamado pero todavía sin agenda online ni verificación.
+                La card decide internamente si mostrar la variante owner (CTA panel)
+                o la pública (neutra) según auth.uid() vs doctor.profileId. */}
+            {lucyStatus === 'CLAIMED' && !canBook && !isVerified && doctor.profileId && (
               <div className="mb-8">
-                <ClaimedProfileNoticeCard />
+                <ClaimedProfileNoticeCard doctorProfileId={doctor.profileId} />
               </div>
             )}
 
