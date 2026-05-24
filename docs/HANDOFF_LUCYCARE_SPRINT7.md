@@ -1,151 +1,184 @@
 # Handoff LucyCare — Sprint 7 (continuidad de contexto)
 
 > Documento para retomar el proyecto en una nueva ventana sin depender
-> del chat previo. Snapshot 2026-05-20. Acompaña a `ESTADO_TECNICO.md`
-> (ER/BD + reglas) y `PLAN_SPRINT7_ADMIN.md` (plan del sprint).
+> del chat previo. **Snapshot 2026-05-23.** Acompaña a `ESTADO_TECNICO.md`
+> (ER/BD + reglas), `PLAN_SPRINT7_ADMIN.md` (plan del sprint) y los
+> análisis nuevos: `ANALISIS_AUTH_MEDICO.md`, `ANALISIS_RECLAMAR_PERFIL.md`,
+> `PLAN_PILOTO_5_MEDICOS.md`.
 
 ---
 
 ## 1. Estado actual
 
+- **HEAD esperado en `main`:** `f6a4f32` o posterior. **PRs #1–#30 mergeados.**
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
-- **Sprint 7/8 — Admin SaaS:**
-  - Fase A (cimientos) ✅ PR #16
-  - Fase B (gestión de médicos: verificar/publicar/operativo + búsqueda/filtros/paginación) ✅ PR #18
-  - Fase B2-A (edición perfil/clínica/info del médico) ✅ PR #20
-- **Importación de médicos:** 100 médicos cargados (hoja `Importar_100` del Excel `Listado_medicos_depurado_LucyCare.xlsx`). DB ahora ~113 doctores (13 originales + 100). 9 especialidades nuevas creadas.
-- **Demo operativo:** Dr. Camilo Carrillo / "Pepe Toro", teléfono `50378627694`, `lucy_status='verified'`, `is_published=true`, `is_operational=true`. Es el ÚNICO publicado/operativo. Los otros 12 demos quedaron desactivados (no borrados).
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_05` (todas). Cada `s6_*`/`s7_*` tiene `scripts/check-*.mjs` para verificar.
-- **Branch / flujo:** worktree en `.claude/worktrees/…`; un branch+PR por fase desde `main`; squash-merge. `gh` CLI instalado y autenticado (keyring).
+- **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A,
+  B3-doctor, B3-admin (PRs #16, #18, #20, #25, #30).
+  - PRs hotfix/transversales: #23 (clinics.updated_at), #24 (UI acceso admin),
+    #26 (servicios inactivos en flujos internos), #27 (document nullable),
+    #28 (dedup teléfono + Nuevo paciente + normalización), #29 (DUI validation).
+- **Pendientes Sprint 7+:** B4 disponibilidad, C suspender pacientes/asistentes,
+  D dashboard, E reputación admin, F audit log, G catálogos globales.
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`,
+  `s7_01..s7_12` (todas).
+- **Importación:** 100 médicos cargados; ~113 en DB. Único publicado/operativo:
+  Dr. Camilo Carrillo / "Pepe Toro" (`50378627694`).
+- **Branch flow:** un branch+PR por fase desde `main`; squash-merge.
 
 ### Acceso admin / QA
-- **Admin:** profile con teléfono `50378056365`, `role='admin'`.
-- **Login sin SMS:** Supabase → Authentication → Phone → "Test phone numbers": `50378627694=123456, 50378056365=123456`. ⚠️ Mantener "Test OTPs Valid Until" en fecha futura (estaba 2026; subir a 2027+).
-- Entrar al admin: login con `50378056365`/`123456` → navegar a `/admin` (no hay link en UI pública).
+- **Admin Plataforma:** profile con teléfono `50378056365`, `role='admin'`.
+- **Login sin SMS:** Supabase → Authentication → Phone → Test phone numbers:
+  `50378627694=123456, 50378056365=123456`. Mantener "Test OTPs Valid Until"
+  en fecha futura (vencimiento manual cada año).
+- Entrar al admin: login con `50378056365`/`123456` → header muestra botón
+  "Panel Admin" (PR #24) → `/admin`.
 
 ---
 
 ## 2. Decisiones de producto vigentes (no reabrir)
 
 - **Admin SaaS = admin de PLATAFORMA** (dueño de LucyCare). NO es admin de clínica.
-- **MVP = single-tenant operativo.** Multi-tenant fuera de scope, pero el diseño debe quedar **tenant-ready** (no hardcodear "una sola clínica"; conservar `clinic_id`).
+- **MVP = single-tenant operativo.** Multi-tenant fuera de scope, pero el diseño
+  debe quedar **tenant-ready** (no hardcodear "una sola clínica"; conservar `clinic_id`).
 - **Ejes independientes del médico:**
-  - `lucy_status` (enum `listed_only|claimed|booking_enabled|verified`) = etapa comercial/onboarding.
-  - `is_published` = aparece en el directorio público.
-  - `is_operational` = puede operar agenda/citas/consultas/firma.
+  - `lucy_status` (enum `listed_only|claimed|booking_enabled|verified`).
+  - `is_published` = directorio público.
+  - `is_operational` = puede operar panel/agenda.
   - `booking_enabled` = acepta reservas online.
-  - `profiles.is_active` = suspensión global de cuenta (paciente/asistente).
-- **`is_verified` es DERIVADO** (columna GENERATED) de `lucy_status='verified'`. NO editable a mano. Para "verificar" → poner `lucy_status='verified'`.
-- Admin **puede** editar datos públicos/operativos del médico (nombre, contacto, clínica, especialidad, bio).
-- Admin **NO puede** editar contenido clínico (consultas, recetas, diagnósticos, notas, historia).
-- Importaciones de médicos: defaults seguros (`listed_only`, no publicado, no operativo). Sin SMS/OTP/invitaciones.
+- **`is_verified` es DERIVADO** (GENERATED) de `lucy_status='verified'`. NO editable a mano.
+- **Reclamar perfil**: solo pasa `lucy_status` de `listed_only` → `claimed`. NUNCA
+  toca `verified`, `published`, `operational`, `booking_enabled` ni inserta servicios.
+  Ver `ANALISIS_RECLAMAR_PERFIL.md`.
+- **Auth del médico**: paciente sigue con OTP; médico tendrá email+password
+  cuando reclame perfil (no antes). Ver `ANALISIS_AUTH_MEDICO.md`.
+- Admin **puede** editar datos públicos/operativos del médico (perfil, clínica,
+  info profesional, servicios). **NO puede** editar contenido clínico.
+- Importaciones: defaults seguros (`listed_only`, no publicado, no operativo).
 
 ---
 
 ## 3. Estado técnico del Admin SaaS
 
-- **Ruta:** `/admin` (layout `AdminLayout`), hijos: `/admin` (dashboard), `/admin/medicos` (listado), `/admin/medicos/:id` (edición).
-- **Guard:** `src/router/AdminOnlyRoute.tsx` — verifica `role==='admin'` vía `getCurrentAuthUser`; si no, redirige a `/`.
-- **`is_admin()`** (SQL, SECURITY DEFINER STABLE) — base para gatear RPCs y futuras RLS.
-- **RPCs admin existentes (todas SECURITY DEFINER + gateadas por `is_admin()` + escriben `audit_log`):**
-  - `get_platform_stats()` → vista `admin_platform_stats` (conteos agregados, sin PII/clínico).
-  - `admin_list_doctors(p_search, p_published, p_operational, p_lucy_status, p_limit, p_offset)` → filtros + paginación server-side + `total_count`.
-  - `admin_set_doctor_published`, `admin_set_doctor_operational`, `admin_set_lucy_status`.
-  - `admin_get_doctor_detail`, `admin_update_doctor_profile`, `admin_update_doctor_clinic`, `admin_update_doctor_info`.
-  - `admin_review_traceability` (vista, de Sprint 6 Fase F) — solo service_role.
-- **`admin_update_doctor_profile`** actualiza `auth.users` + `profiles` en la misma transacción (no rompe login). Mantiene `*_confirmed_at` (sin disparar verificación).
-- **Dashboard:** `AdminDashboardPage` — tarjetas de métricas (médicos, pacientes, citas, consultas firmadas, reseñas, score).
-- **Gestión de médicos:** `AdminDoctorsPage` — tabla con badges (Operativo/Publicado/Verificado), buscador (debounce), filtros (publicado/operativo/lucy_status), paginación (25/pág), acciones (Publicar/Suspender, select lucy_status, Editar).
-- **Edición:** `AdminDoctorEditPage` — 3 secciones independientes (Perfil / Clínica / Profesional), cada una con su Guardar.
-- **Servicio:** `src/services/admin.service.ts` (todas las llamadas admin).
-- **Auditoría:** toda acción admin → `audit_log` con `old_data`/`new_data`.
+- **Ruta:** `/admin` (`AdminLayout`), hijos: `/admin` (dashboard), `/admin/medicos`
+  (listado), `/admin/medicos/:id` (edición).
+- **Guard:** `src/router/AdminOnlyRoute.tsx`.
+- **`is_admin()`** SQL SECURITY DEFINER STABLE.
+- **RPCs admin existentes** (todas SECURITY DEFINER + gateadas + audit_log):
+  - `get_platform_stats()`.
+  - `admin_list_doctors(...)`, `admin_set_doctor_published/operational/lucy_status`.
+  - `admin_get_doctor_detail`, `admin_update_doctor_profile/clinic/info`.
+  - `admin_list_doctor_services`, `admin_create_service`, `admin_update_service`,
+    `admin_set_service_active`, `admin_delete_service` (s7_12).
+- **`AdminDoctorEditPage`** — 4 secciones: Perfil, Clínica, Profesional, Servicios.
+- **`AdminDashboardPage`** — tarjetas de métricas.
+- **Auditoría:** toda acción admin → `audit_log` con `edited_via: 'admin'`.
 
 ---
 
-## 4. Smoke-test PENDIENTE (PR #20)
+## 4. Próximas fases (orden recomendado)
 
-Validar `admin_update_doctor_profile` en runtime (escribe `auth.users`):
+**Pre-piloto público (bloqueantes):**
+1. **Reclamo seguro** — ver `ANALISIS_RECLAMAR_PERFIL.md`. Fase 2.
+2. **Auth robusta del médico** — ver `ANALISIS_AUTH_MEDICO.md`. PR-A + PR-B.
+3. **Limpieza de datos** — ver `PLAN_PILOTO_5_MEDICOS.md`.
+4. **Twilio trial vs paga** — decisión + setup de test phones si trial.
 
-1. Login como admin (`50378056365`/`123456`).
-2. Ir a `/admin/medicos`.
-3. "Editar" en un médico **importado** (no Camilo).
-4. Sección **Perfil** → cambiar el teléfono → Guardar.
+**Admin SaaS restantes (post-piloto o paralelo):**
+5. **B4 — Disponibilidad/horarios** del médico desde admin.
+6. **C — Suspender/reactivar pacientes y asistentes** (`profiles.is_active` /
+   `clinic_members.is_active`).
+7. **D — Dashboard de tracción mensual** (citas creadas/atendidas por mes).
+8. **E — Reputación admin** (UI sobre `admin_review_traceability`).
+9. **F — Explorador de `audit_log`** con filtros.
+10. **G — Catálogos globales** + onboarding manual de médico.
 
-**Resultado esperado:**
-- ✅ "Guardado ✓" → el `UPDATE auth.users` desde la función SECURITY DEFINER funciona. Todo OK.
-- ❌ Error `permission denied for table users` → la función no tiene privilegio sobre `auth.users`. **Fix:** hacer la actualización de `auth.users` vía **Supabase Admin API** (`auth.admin.updateUserById`) desde un contexto server/script en lugar de SQL directo, y dejar la RPC tocando solo `profiles`. Es no destructivo (la transacción revierte).
-
-Secciones Clínica y Profesional no tocan `auth` — seguras.
-
----
-
-## 5. Próximas fases (orden recomendado)
-
-1. Resolver el smoke-test de §4 si falla.
-2. **B3 — Servicios del médico** (nombre, duración, precio) editables por admin.
-3. **B4 — Disponibilidad/horarios** del médico desde admin (reutilizar lógica de `availability.service` / `slots.service` si es viable).
-4. **C — Suspender/reactivar pacientes y asistentes** (`profiles.is_active` / `clinic_members.is_active`).
-5. **D — Dashboard de tracción mensual** (citas creadas/atendidas por mes).
-6. **E — Reputación admin** (UI sobre `admin_review_traceability` + moderar `is_visible` de reseñas).
-7. **F — Explorador de `audit_log`** con filtros.
-8. **G — Catálogos globales** + onboarding manual de médico.
-
-Cada fase: 1 PR chico · migración `s7_0X` + `scripts/check-s7_0X.mjs` · `vite build` OK · preview validado · luego merge.
+Cada fase: 1 PR chico · migración `s7_0X` (si aplica) + `scripts/check-s7_0X.mjs`
+· `vite build` OK · preview validado · luego merge.
 
 ---
 
-## 6. Riesgos y reglas críticas
+## 5. Riesgos y reglas críticas
 
-- **NO exponer contenido clínico** al admin plataforma (consultas/recetas/diagnósticos/historia). Solo volúmenes/metadatos.
+- **NO exponer contenido clínico** al admin plataforma.
 - **Toda acción admin se audita** en `audit_log`.
-- **No romper login** al editar `phone`/`email`: deben sincronizarse `auth.users` ↔ `profiles`.
-- **No borrar médicos demo** con dependencias (citas/consultas/reviews): desactivar, no DELETE.
-- **Médicos importados** nacen con defaults seguros: no publicados, no operativos, `listed_only`.
-- **Sin publicación** (`is_published=false`) → NO aparecen en directorio público.
-- **Sin operación** (`is_operational=false`) → NO reciben citas; el doctor ve "Cuenta suspendida" en el panel.
-- **Validar con `vite build` real**, no solo `tsc --noEmit` (un `tsc` limpio dejó pasar un `setStartHour` fantasma que rompió en runtime).
-- **Twilio en modo trial:** OTP solo llega a números verificados. Para QA usar test phones en Supabase. **Antes del piloto real hay que upgradear Twilio a cuenta paga** (bloqueante de lanzamiento).
-- **Caché del directorio público:** cambios de admin se reflejan en DB al instante, pero la lista pública puede requerir hard refresh / esperar `staleTime` de React Query. Aceptado como UX, no bug.
+- **No romper login** al editar `phone`/`email` del médico: sincronizan
+  `auth.users` ↔ `profiles` en la misma transacción (s7_05).
+- **No borrar médicos** con dependencias (citas/consultas/reviews): desactivar.
+- **Sin `is_published`** → no aparecen en directorio público.
+- **Sin `is_operational`** → no reciben citas; ven "Cuenta suspendida".
+- **Validar con `vite build` real**, no solo `tsc --noEmit`.
+- **Twilio trial:** bloqueante para piloto público real. Email+password mitiga
+  parcialmente (PR-A del análisis de auth).
+- **Caché del directorio público:** cambios admin se reflejan en DB al
+  instante; lista pública puede tardar `staleTime` (5 min) o pedir hard refresh.
 
 ---
 
-## 7. Archivos clave
+## 6. Archivos clave
 
-**Docs:**
-- `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
-- `docs/PLAN_SPRINT7_ADMIN.md` — plan oficial Sprint 7/8.
+**Docs (siempre leer antes de codear):**
+- `CLAUDE.md` — contexto histórico y vinculante del proyecto.
 - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — este documento.
-- `CLAUDE.md` — contexto histórico del proyecto (sprints previos).
+- `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
+- `docs/PLAN_SPRINT7_ADMIN.md` — plan oficial.
+- `docs/ANALISIS_AUTH_MEDICO.md` — decisión y plan auth robusta.
+- `docs/ANALISIS_RECLAMAR_PERFIL.md` — diagnóstico y rediseño de reclamo.
+- `docs/PLAN_PILOTO_5_MEDICOS.md` — checklist de piloto.
 
 **Migraciones Sprint 7** (`/migrations/`, todas aplicadas):
-- `s7_01_admin_foundation.sql` — `is_admin()`, `admin_platform_stats`, `get_platform_stats()`.
-- `s7_02_admin_doctors.sql` — `is_operational` + RPCs set + `admin_list_doctors`.
-- `s7_03_unify_verified_with_lucy_status.sql` — `is_verified` GENERATED.
-- `s7_04_admin_doctors_search_paginate.sql` — `admin_list_doctors` con filtros/paginación.
-- `s7_05_admin_edit_doctor.sql` — RPCs de edición (perfil/clínica/info).
+- `s7_01_admin_foundation.sql`
+- `s7_02_admin_doctors.sql`
+- `s7_03_unify_verified_with_lucy_status.sql`
+- `s7_04_admin_doctors_search_paginate.sql`
+- `s7_05_admin_edit_doctor.sql`
+- `s7_06_fix_clinic_update.sql`
+- `s7_07_clinics_updated_at_column.sql`
+- `s7_08_services_delete_policy.sql`
+- `s7_09_block_inactive_service_appointment.sql`
+- `s7_10_patient_document_nullable.sql`
+- `s7_11_normalize_patient_phone.sql`
+- `s7_12_admin_services.sql`
 
 **Scripts** (`/scripts/`):
-- `import-doctors.mjs` — importador idempotente (`--file --sheet --dry-run|--apply --limit`).
-- `_deactivate-demos.mjs` — desactiva demos, preserva Camilo.
-- `check-s7_01..05.mjs` — verificadores por migración.
-- `verify-migrations.mjs` — verificación general.
+- `import-doctors.mjs`, `_deactivate-demos.mjs`.
+- `check-s7_01..12.mjs`, `check-patient-documents.mjs`.
+- `verify-migrations.mjs`.
 
 **Frontend admin:**
-- `src/router/AdminOnlyRoute.tsx`, `src/router/config.tsx` (rutas `/admin*`).
-- `src/pages/admin/AdminLayout.tsx`, `AdminDashboardPage.tsx`, `AdminDoctorsPage.tsx`, `AdminDoctorEditPage.tsx`.
+- `src/router/AdminOnlyRoute.tsx`, `src/router/config.tsx`.
+- `src/pages/admin/AdminLayout.tsx`, `AdminDashboardPage.tsx`, `AdminDoctorsPage.tsx`,
+  `AdminDoctorEditPage.tsx`, `components/AdminDoctorServicesSection.tsx`.
 - `src/services/admin.service.ts`.
 
+**Helpers compartidos (`src/lib/`):**
+- `phone.ts` — `normalizePhoneSV`.
+- `document.ts` — `validateDocument`, `sanitizeDuiInput`, `formatDuiDisplay`.
+- `errors.ts` — `friendlyErrorMessage`.
+
 **Otros relevantes:**
-- `src/services/appointments.service.ts`, `availability.service.ts`, `slots.service.ts`, `reviews.service.ts`.
-- `src/hooks/useClinicContext.ts` (incluye `doctorIsOperational`).
-- `vercel.json` (SPA fallback para deep-links).
+- `src/services/appointments.service.ts`, `availability.service.ts`,
+  `slots.service.ts`, `reviews.service.ts`, `services.service.ts`,
+  `patients.service.ts` (con `DuplicatePhoneError` + `createBasicPatient`).
+- `src/hooks/useClinicContext.ts` (con `doctorIsOperational`).
+- `vercel.json` (SPA fallback).
 
 ---
 
 ## Cómo retomar en una ventana nueva
 
-1. Leer este handoff + `ESTADO_TECNICO.md` + `PLAN_SPRINT7_ADMIN.md`.
-2. `git log --oneline -10` para ver el último estado.
-3. Confirmar resultado del smoke-test de §4 con el owner.
-4. Continuar por la fase que corresponda en §5.
-5. Mantener el flujo: branch por fase → migración + check → `vite build` → preview → merge.
+```
+Continuamos LucyCare.
+
+git fetch origin && git checkout main && git pull --ff-only
+git log --oneline -5
+
+Leé:
+- CLAUDE.md
+- docs/HANDOFF_LUCYCARE_SPRINT7.md
+- docs/<doc específico para el objetivo de hoy>
+
+Estado: PRs hasta #30 mergeados, migraciones hasta s7_12.
+Hoy: <objetivo específico>
+```
+
+Eso es todo lo que necesito para entrar en contexto.
