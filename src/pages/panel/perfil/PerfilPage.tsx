@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  myDoctorProfileKey,
   useMyDoctorProfile,
   useUpdateDoctorPublic,
   useUpdateProfileBasic,
@@ -9,8 +11,11 @@ import {
 } from '@/hooks/useDoctorProfile';
 import { useSpecialties } from '@/hooks/useDirectory';
 import { useClinicContext } from '@/hooks/useClinicContext';
+import AvatarUploader from '@/components/AvatarUploader';
+import { uploadMyAvatar, removeMyAvatar } from '@/services/avatar.service';
 
 export default function PerfilPage() {
+  const qc = useQueryClient();
   const { data: ctx, isLoading: ctxLoading } = useClinicContext();
   const { data: profile, isLoading } = useMyDoctorProfile();
   const { data: specialties = [] } = useSpecialties();
@@ -135,6 +140,24 @@ export default function PerfilPage() {
             Ver perfil público
           </a>
         )}
+      </div>
+
+      {/* Foto de perfil */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Foto de perfil</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Es lo primero que ven los pacientes. Una foto clara, con buena iluminación y mirando a cámara funciona
+            mejor.
+          </p>
+        </div>
+        <AvatarUploader
+          name={profile.full_name}
+          currentUrl={profile.avatar_url}
+          onUpload={uploadMyAvatar}
+          onRemove={removeMyAvatar}
+          onSuccess={() => qc.invalidateQueries({ queryKey: myDoctorProfileKey })}
+        />
       </div>
 
       {/* Estado de publicación */}
