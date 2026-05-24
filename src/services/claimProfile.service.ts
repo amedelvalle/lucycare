@@ -2,16 +2,16 @@
  * Servicio de Reclamo de Perfil del Médico (Fase 2 — reclamo seguro).
  *
  * Toda la lógica vive en la RPC `claim_doctor_profile` (s7_13).
- * Este wrapper:
- *   - reenvía los inputs,
- *   - aplica un timeout cliente (la RPC server-side tarda ~200ms;
- *     si el browser no recibe respuesta en 15s pasa algo raro en
- *     la red y no queremos colgar el modal),
- *   - tras timeout o error de red consulta el estado real del
- *     doctor: si quedó `claimed`, asume que el claim se hizo igual
- *     (la respuesta se perdió en transit) y devuelve success,
- *   - mapea SQLSTATE custom (P0001..P0007) a `errorCode` tipado
- *     para que el modal muestre mensajes específicos por escenario.
+ * El cliente hace POST directo al endpoint REST de Supabase con el
+ * access_token de la sesión actual. Evitamos `supabase.rpc()` porque
+ * en algunos browsers se cuelga esperando un lock interno de auth y
+ * la request HTTP nunca sale (verificado con DevTools → Network vacío).
+ *
+ * - timeout cliente (8s) con AbortController. Si vence o falla la red,
+ *   antes de devolver error consultamos el estado del doctor: si quedó
+ *   `claimed` y profile_id coincide con la sesión, devolvemos success
+ *   (la respuesta se perdió en transit, no hay que pedir reintento).
+ * - mapeo de SQLSTATE P0001..P0007 a `errorCode` tipado.
  *
  * IMPORTANTE: la RPC valida server-side el teléfono verificado de la
  * sesión y la licencia. El cliente NO decide nada de seguridad.
@@ -29,14 +29,14 @@
 import { supabase } from '../lib/supabase';
 
 export type ClaimErrorCode =
-  | 'NOT_AUTHENTICATED'      // P0001 / 28000  → no hay sesión con phone verificado
-  | 'DOCTOR_NOT_FOUND'       // P0002          → doctor_id inválido
-  | 'ALREADY_CLAIMED'        // P0003          → lucy_status != listed_only
-  | 'DOCTOR_NO_PHONE'        // P0004          → profile del doctor sin phone
-  | 'PHONE_MISMATCH'         // P0005          → phone sesión != phone doctor
-  | 'DOCTOR_NO_LICENSE'      // P0006          → doctor sin license_number
-  | 'LICENSE_MISMATCH'       // P0007          → license tipeada != registrada
-  | 'TIMEOUT'                // cliente colgado, no llegó respuesta en N segundos
+  | 'NOT_AUTHENTICATED'      // sin sesión o sin phone verificado
+  | 'DOCTOR_NOT_FOUND'       // P0002
+  | 'ALREADY_CLAIMED'        // P0003
+  | 'DOCTOR_NO_PHONE'        // P0004
+  | 'PHONE_MISMATCH'         // P0005
+  | 'DOCTOR_NO_LICENSE'      // P0006
+  | 'LICENSE_MISMATCH'       // P0007
+  | 'TIMEOUT'                // la request tardó > N segundos
   | 'UNKNOWN';
 
 export interface ClaimResult {
@@ -62,51 +62,28 @@ const SQLSTATE_TO_CODE: Record<string, ClaimErrorCode> = {
   P0007: 'LICENSE_MISMATCH',
 };
 
-const CLAIM_TIMEOUT_MS = 15_000;
-
-class ClaimTimeoutError extends Error {
-  constructor() {
-    super('claim_doctor_profile timeout');
-    this.name = 'ClaimTimeoutError';
-  }
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new ClaimTimeoutError()), ms);
-    promise.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
+const CLAIM_TIMEOUT_MS = 8_000;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 /**
- * Lee el estado actual del doctor. Si quedó `claimed` y la sesión
- * actual coincide con su profile_id, consideramos el claim ya hecho
- * (probable respuesta perdida en transit).
+ * Lee el estado actual del doctor. Si quedó claimed y la sesión
+ * coincide con profile_id, asumimos que el claim ya se hizo
+ * (respuesta perdida en transit).
  */
-async function checkAlreadyClaimedByMe(doctorId: string): Promise<boolean> {
+async function checkAlreadyClaimedByMe(
+  doctorId: string,
+  sessionUserId: string | null,
+): Promise<boolean> {
+  if (!sessionUserId) return false;
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.user?.id) return false;
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('doctors')
       .select('profile_id, lucy_status')
       .eq('id', doctorId)
       .maybeSingle();
-
-    if (error || !data) return false;
-    return data.lucy_status !== 'listed_only' && data.profile_id === session.user.id;
+    if (!data) return false;
+    return data.lucy_status !== 'listed_only' && data.profile_id === sessionUserId;
   } catch {
     return false;
   }
@@ -115,44 +92,88 @@ async function checkAlreadyClaimedByMe(doctorId: string): Promise<boolean> {
 export async function claimDoctorProfile(
   input: ClaimDoctorProfileInput,
 ): Promise<ClaimResult> {
+  // ─── 1. Obtener access token de la sesión actual ───
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  const sessionUserId = session?.user?.id ?? null;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      errorCode: 'NOT_AUTHENTICATED',
+      errorMessage: 'Sesión no encontrada',
+    };
+  }
+
+  // ─── 2. POST directo al endpoint REST (sin pasar por supabase.rpc) ───
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLAIM_TIMEOUT_MS);
+
   try {
-    const { data, error } = await withTimeout(
-      supabase.rpc('claim_doctor_profile', {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_doctor_profile`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
         p_doctor_id: input.doctorId,
         p_license_typed: input.licenseNumber,
         p_tos_version: input.tosVersion ?? 'v1.0',
       }),
-      CLAIM_TIMEOUT_MS,
-    );
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
 
-    if (error) {
-      // Antes de devolver error, chequeamos si el claim se hizo igual
-      // (caso raro de respuesta de éxito perdida en transit y supabase-js
-      // interpretándola como error).
-      if (await checkAlreadyClaimedByMe(input.doctorId)) {
+    const text = await resp.text();
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+
+    if (!resp.ok) {
+      // Errores RPC vienen como { code, message, details, hint }
+      const errBody = (body || {}) as { code?: string; message?: string };
+      // Fallback recovery: tal vez la RPC corrió OK antes del error y se confundió
+      if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
         return { success: true };
       }
-      const code = (error.code ? SQLSTATE_TO_CODE[error.code] : undefined) ?? 'UNKNOWN';
+      const code = errBody.code ? SQLSTATE_TO_CODE[errBody.code] : undefined;
       return {
         success: false,
-        errorCode: code,
-        errorMessage: error.message,
+        errorCode: code ?? 'UNKNOWN',
+        errorMessage: errBody.message ?? `HTTP ${resp.status}`,
       };
     }
 
-    // La RPC devuelve jsonb { success, doctor_id, lucy_status }
-    const ok = !!(data && (data as { success?: boolean }).success);
+    const ok = !!(body && typeof body === 'object' && (body as { success?: boolean }).success);
     if (!ok) {
-      return { success: false, errorCode: 'UNKNOWN', errorMessage: 'Respuesta inesperada del servidor' };
+      // No esperábamos esto. Verificar DB por las dudas.
+      if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
+        return { success: true };
+      }
+      return {
+        success: false,
+        errorCode: 'UNKNOWN',
+        errorMessage: 'Respuesta inesperada del servidor',
+      };
     }
+
     return { success: true };
   } catch (err) {
-    // Timeout o excepción de red. Antes de fallar, vemos si la DB
-    // ya quedó claimed: si sí, la RPC corrió OK y la respuesta se perdió.
-    if (await checkAlreadyClaimedByMe(input.doctorId)) {
+    clearTimeout(timeoutId);
+    // Timeout (AbortError) o error de red. Recovery: ¿quedó claimed igual?
+    if (await checkAlreadyClaimedByMe(input.doctorId, sessionUserId)) {
       return { success: true };
     }
-    if (err instanceof ClaimTimeoutError) {
+    const isAbort = err instanceof DOMException && err.name === 'AbortError';
+    if (isAbort) {
       return {
         success: false,
         errorCode: 'TIMEOUT',
@@ -163,7 +184,7 @@ export async function claimDoctorProfile(
     return {
       success: false,
       errorCode: 'UNKNOWN',
-      errorMessage: err instanceof Error ? err.message : 'Error inesperado',
+      errorMessage: err instanceof Error ? err.message : 'Error de red',
     };
   }
 }
