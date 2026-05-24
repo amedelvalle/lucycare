@@ -9,6 +9,8 @@ import {
   updateDoctorInfo,
 } from '../../services/admin.service';
 import AdminDoctorServicesSection from './components/AdminDoctorServicesSection';
+import AvatarUploader from '@/components/AvatarUploader';
+import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
 
 const inputCls =
   'w-full text-sm border border-gray-200 rounded-lg px-3 py-2 ' +
@@ -148,6 +150,20 @@ export default function AdminDoctorEditPage() {
           {d.isOperational ? 'Operativo' : 'Suspendido'} · {d.isPublished ? 'Publicado' : 'No publicado'} · lucy={d.lucyStatus}
         </p>
       </header>
+
+      {/* ─── Foto de perfil ──────────────────────────────── */}
+      <Section
+        title="Foto de perfil"
+        subtitle="Aparece en el directorio público y en el panel del médico. Tipos: JPG, PNG, WEBP · máx 5 MB."
+      >
+        <AvatarUploader
+          name={d.fullName || ''}
+          currentUrl={d.avatarUrl}
+          onUpload={(file) => uploadDoctorAvatarAsAdmin(d.doctorId, d.profileId, file)}
+          onRemove={() => removeDoctorAvatarAsAdmin(d.doctorId, d.profileId)}
+          onSuccess={invalidate}
+        />
+      </Section>
 
       {/* ─── Perfil ─────────────────────────────────────── */}
       <Section

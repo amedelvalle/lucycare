@@ -6,7 +6,10 @@
  * RUTA:   src/pages/panel/home/page.tsx
  */
 
+import { Link } from 'react-router-dom'
 import { useDashboard } from '../../../hooks/useDashboard'
+import { useMyDoctorProfile } from '../../../hooks/useDoctorProfile'
+import { useClinicContext } from '../../../hooks/useClinicContext'
 import { StatCard } from './components/StatCard'
 import { TodayAppointments } from './components/TodayAppointments'
 import { UpcomingAppointments } from './components/UpcomingAppointments'
@@ -20,6 +23,12 @@ export default function PanelHomePage() {
     isDoctorLoading,
     error,
   } = useDashboard()
+
+  // Banner "Completá con foto" cuando el médico logueado todavía no subió foto.
+  // Solo aplica al rol doctor; asistentes no ven su propio perfil público.
+  const { data: ctx } = useClinicContext()
+  const { data: myProfile } = useMyDoctorProfile()
+  const showAvatarBanner = ctx?.role === 'doctor' && !!myProfile && !myProfile.avatar_url
 
   // ── Error ──
   if (error) {
@@ -68,6 +77,27 @@ export default function PanelHomePage() {
           </>
         )}
       </div>
+
+      {/* ── Banner: completá con foto ── */}
+      {showAvatarBanner && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center flex-shrink-0 border border-amber-200">
+            <i className="ri-camera-line text-xl text-amber-700"></i>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-900">Completá tu perfil con una foto</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Los pacientes confían más en perfiles con foto. Tarda menos de un minuto.
+            </p>
+          </div>
+          <Link
+            to="/panel/perfil"
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors text-sm whitespace-nowrap"
+          >
+            Subir foto
+          </Link>
+        </div>
+      )}
 
       {/* ── 4 Métricas ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">

@@ -89,6 +89,7 @@ export interface AdminDoctorDetail {
   fullName: string;
   email: string | null;
   phone: string | null;
+  avatarUrl: string | null;
   specialtyId: string | null;
   specialtyName: string | null;
   bio: string | null;
@@ -112,6 +113,7 @@ export async function getDoctorAdminDetail(doctorId: string): Promise<AdminDocto
     fullName: (row.full_name as string) ?? '',
     email: (row.email as string) ?? null,
     phone: (row.phone as string) ?? null,
+    avatarUrl: (row.avatar_url as string) ?? null,
     specialtyId: (row.specialty_id as string) ?? null,
     specialtyName: (row.specialty_name as string) ?? null,
     bio: (row.bio as string) ?? null,
