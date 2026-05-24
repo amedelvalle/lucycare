@@ -4,13 +4,8 @@
  * firmada; el trigger debe rechazar el UPDATE (no persiste nada).
  * Uso: node scripts/check-s6_02.mjs
  */
-import { createClient } from '@supabase/supabase-js';
 
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
-
-const a = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-
+import { supabaseAdmin as a } from './_lib/supabase-admin.mjs';
 console.log('═══ Verificando s6_02 (firma ↔ estado de cita) ═══\n');
 
 // Buscar una cita con consulta firmada

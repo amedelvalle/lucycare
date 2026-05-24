@@ -5,16 +5,9 @@
  *
  * Uso: node scripts/check-s7_14.mjs
  */
-import { createClient } from '@supabase/supabase-js';
 
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const SERVICE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
-const ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMDIwMTQsImV4cCI6MjA5MDg3ODAxNH0.hESVl_M0WfUJfgUXaTZ80tIe3JR7IijLZJxjbxnNqUQ';
-
-const svc = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
-const anon = createClient(URL, ANON_KEY, { auth: { persistSession: false } });
+import { supabaseAdmin as svc } from './_lib/supabase-admin.mjs';
+import { supabaseAnon as anon } from './_lib/supabase-anon.mjs';
 
 console.log('═══ Verificando s7_14 (avatares) ═══\n');
 

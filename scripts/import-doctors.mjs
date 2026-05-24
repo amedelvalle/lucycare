@@ -17,13 +17,11 @@
  * - Crea auth.users via Admin API (sin SMS/OTP) + profiles + clinics + doctors.
  * - Si el teléfono fijo viene inválido, se deja clinics.phone=null y se reporta.
  */
+
+import { supabaseAdmin as sb } from './_lib/supabase-admin.mjs';
+
 import * as XLSX from 'xlsx';
 import fs from 'node:fs';
-import { createClient } from '@supabase/supabase-js';
-
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
-
 // ─── Args ──────────────────────────────────────────────────────
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, cur, i, arr) => {
@@ -43,8 +41,6 @@ const APPLY = args.apply === true && !args['dry-run'];
 const LIMIT = args.limit ? parseInt(args.limit, 10) : Infinity;
 if (!FILE) { console.error('Falta --file <ruta.xlsx>'); process.exit(1); }
 if (!fs.existsSync(FILE)) { console.error(`No existe: ${FILE}`); process.exit(1); }
-
-const sb = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
 // ─── Helpers de normalización ─────────────────────────────────
 function normName(s) { return (s || '').toString().trim().replace(/\s+/g, ' '); }

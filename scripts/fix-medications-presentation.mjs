@@ -6,16 +6,11 @@
  * correcta. Match por (commercial_name + concentration) — ya garantizado
  * único en el seed.
  */
-import { createClient } from '@supabase/supabase-js';
+
+import { supabaseAdmin as admin } from './_lib/supabase-admin.mjs';
+
 import * as XLSX from 'xlsx';
 import { readFileSync } from 'node:fs';
-
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
-
-const admin = createClient(URL, SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
 
 // Verificar que el enum acepta los nuevos valores
 console.log('═══ Verificando enum ═══');
