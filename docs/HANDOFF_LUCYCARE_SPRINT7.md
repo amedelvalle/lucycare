@@ -1,131 +1,197 @@
-# Handoff LucyCare — Sprint 7 (continuidad de contexto)
+# Handoff LucyCare — Pre-piloto (post Sprint 7)
 
 > Documento para retomar el proyecto en una nueva ventana sin depender
-> del chat previo. **Snapshot 2026-05-23.** Acompaña a `ESTADO_TECNICO.md`
-> (ER/BD + reglas), `PLAN_SPRINT7_ADMIN.md` (plan del sprint) y los
-> análisis nuevos: `ANALISIS_AUTH_MEDICO.md`, `ANALISIS_RECLAMAR_PERFIL.md`,
-> `PLAN_PILOTO_5_MEDICOS.md`.
+> del chat previo. **Snapshot 2026-05-25.** Acompaña a `CLAUDE.md`
+> (guía rápida + sistema de diseño), `docs/ESTADO_TECNICO.md` (ER/BD)
+> y los análisis vivos en `docs/ANALISIS_*.md`.
 
 ---
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `f6a4f32` o posterior. **PRs #1–#30 mergeados.**
-- **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
-- **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A,
-  B3-doctor, B3-admin (PRs #16, #18, #20, #25, #30).
-  - PRs hotfix/transversales: #23 (clinics.updated_at), #24 (UI acceso admin),
-    #26 (servicios inactivos en flujos internos), #27 (document nullable),
-    #28 (dedup teléfono + Nuevo paciente + normalización), #29 (DUI validation).
-- **Pendientes Sprint 7+:** B4 disponibilidad, C suspender pacientes/asistentes,
-  D dashboard, E reputación admin, F audit log, G catálogos globales.
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`,
-  `s7_01..s7_12` (todas).
-- **Importación:** 100 médicos cargados; ~113 en DB. Único publicado/operativo:
-  Dr. Camilo Carrillo / "Pepe Toro" (`50378627694`).
-- **Branch flow:** un branch+PR por fase desde `main`; squash-merge.
+- **HEAD esperado en `main`:** `4c4fef1` o posterior. **PRs #1–#44 mergeados.**
+- **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#44):**
+  - PR #32 Reclamo seguro (s7_13).
+  - PR #33 Estabilización supabase-js lock no-op.
+  - PR #34 Foto de perfil (s7_14).
+  - PR #35 Security Gate audit + trigger reviews (s7_15).
+  - PR #36 Rotación service_role + ENV vars (32 scripts).
+  - PR #37 RLS hardening de profiles (s7_16, s7_16b).
+  - PR #38 Desactivar seed `*.lucycare.test` (s7_17).
+  - PR #39 Auth email+password + reset por email (Fase 4 PR-A).
+  - PR #40 LoginModal no cierra al click outside.
+  - PR #41 Directorio informativo + copy ES.
+  - PR #42 Análisis paciente global (doc + decisiones DA1-DA4).
+  - PR #43 Lista de espera real + badge admin (s7_18, s7_19).
+  - PR #44 Paciente Global Fase 1 (s7_20).
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
+- **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
+  - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
+  - Otros 4 (Gina, Abraham, German, Elena): publicados sin agenda en línea, captados por el directorio informativo.
+- **Seed legacy:** 12 médicos `*.lucycare.test` desactivados (`is_active=false`) en PR #38.
 
-### Acceso admin / QA
-- **Admin Plataforma:** profile con teléfono `50378056365`, `role='admin'`.
-- **Login sin SMS:** Supabase → Authentication → Phone → Test phone numbers:
-  `50378627694=123456, 50378056365=123456`. Mantener "Test OTPs Valid Until"
-  en fecha futura (vencimiento manual cada año).
-- Entrar al admin: login con `50378056365`/`123456` → header muestra botón
-  "Panel Admin" (PR #24) → `/admin`.
+### Acceso para QA
+
+- **Admin Plataforma:** Test Phone `50378056365` / OTP `123456`. Header → "Panel Admin" → `/admin`.
+- **Médico demo:** Test Phone `50378627694` / OTP `123456` (Camilo, ver `docs/CUENTA_DEMO_CAMILO.md`).
+- **Paciente test (Fase 1):** Test Phone `50375000001` / OTP `123456`. Hay 3 patients precargados con marker `notes='test_patient_phase1'` para validar la vinculación retroactiva. Cleanup: `node scripts/setup-test-patient.mjs --clean`.
+- Login sin SMS real vía Test Phone Numbers en Supabase Dashboard → Authentication → Phone.
+
+### Setup local
+
+Cada máquina necesita una vez:
+
+```
+cp .env.local.example .env.local
+# completar SUPABASE_URL, SUPABASE_ANON_KEY (sb_publishable_*),
+# SUPABASE_SERVICE_ROLE_KEY (sb_secret_*)
+```
+
+Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 
 ---
 
 ## 2. Decisiones de producto vigentes (no reabrir)
 
-- **Admin SaaS = admin de PLATAFORMA** (dueño de LucyCare). NO es admin de clínica.
-- **MVP = single-tenant operativo.** Multi-tenant fuera de scope, pero el diseño
-  debe quedar **tenant-ready** (no hardcodear "una sola clínica"; conservar `clinic_id`).
-- **Ejes independientes del médico:**
-  - `lucy_status` (enum `listed_only|claimed|booking_enabled|verified`).
-  - `is_published` = directorio público.
-  - `is_operational` = puede operar panel/agenda.
-  - `booking_enabled` = acepta reservas online.
-- **`is_verified` es DERIVADO** (GENERATED) de `lucy_status='verified'`. NO editable a mano.
-- **Reclamar perfil**: solo pasa `lucy_status` de `listed_only` → `claimed`. NUNCA
-  toca `verified`, `published`, `operational`, `booking_enabled` ni inserta servicios.
-  Ver `ANALISIS_RECLAMAR_PERFIL.md`.
-- **Auth del médico**: paciente sigue con OTP; médico tendrá email+password
-  cuando reclame perfil (no antes). Ver `ANALISIS_AUTH_MEDICO.md`.
-- Admin **puede** editar datos públicos/operativos del médico (perfil, clínica,
-  info profesional, servicios). **NO puede** editar contenido clínico.
-- Importaciones: defaults seguros (`listed_only`, no publicado, no operativo).
+### Modelo del médico (4 ejes independientes)
+- `lucy_status` — funnel: `listed_only | claimed | booking_enabled | verified`.
+- `is_published` — controla solo visibilidad en directorio. **No exige `is_operational`.**
+- `is_operational` — gate del panel del médico (puede operar agenda).
+- `booking_enabled` — muestra reserva en línea pública.
+- `is_verified` — GENERATED de `lucy_status='verified'`. No editable manualmente.
+
+### Directorio informativo (firmado en `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md`)
+- D1: completitud mínima para aparecer en directorio = full_name + specialty + clinic.name + address.
+- D2: pill "Agenda en línea" / "Sin agenda en línea". Copy ES (sin "booking", "online", "onboarding" en UI pública). Orden: booking_enabled DESC primero.
+- D3: waitlist idempotente UNIQUE(doctor_id, phone_normalized).
+- D4: notificación manual desde admin (sin SMS auto, sin Edge Functions).
+
+### Modelo de paciente global (firmado en `docs/ANALISIS_PACIENTE_GLOBAL.md`)
+- DA1: identidad global en `profiles` extendido. `patients` sigue como ficha por clínica.
+- DA2: vinculación retroactiva automática **solo con phone OTP-verified**.
+- DA3: walk-in editable libremente hasta reclamo.
+- DA4: "Mis atenciones" muestra clínica.
+
+### Reclamo de perfil (firmado en `docs/ANALISIS_RECLAMAR_PERFIL.md`)
+- Cambia **solo** `lucy_status: listed_only → claimed`.
+- **NUNCA** toca `is_verified`, `is_published`, `booking_enabled`, `is_operational`, `services`, `availability_rules`.
+- Match dual phone OTP-verified + license case-insensitive sin espacios.
+- Audit log con `edited_via='claim_self_service'`.
+
+### Auth (firmado en `docs/ANALISIS_AUTH_MEDICO.md`)
+- Paciente: OTP por SMS (default).
+- Médico/Admin: OTP **+** email/password (PR #39 ✅).
+- Reset por email vía Supabase (PR #39 ✅).
+- Activación de password en flujo de Reclamar perfil: **pendiente PR-B**.
+
+### Seguridad (firmado en `docs/SECURITY_GATE_PILOTO.md`)
+- `service_role` rotado en PR #36 + invalidado el JWT legacy. Scripts leen `.env.local`.
+- RLS hardening de `profiles`: anon solo (id, full_name, avatar_url) de médicos publicados.
+- audit_log con coverage: claim, avatar, admin edits, reviews, waitlist, paciente global.
+- Modales sensibles no cierran al click outside.
+
+### Cuenta demo oficial — Camilo
+Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla activa para validar todos los flujos del médico operativo real.
 
 ---
 
-## 3. Estado técnico del Admin SaaS
+## 3. Stack de features pre-piloto (estado live)
 
-- **Ruta:** `/admin` (`AdminLayout`), hijos: `/admin` (dashboard), `/admin/medicos`
-  (listado), `/admin/medicos/:id` (edición).
-- **Guard:** `src/router/AdminOnlyRoute.tsx`.
-- **`is_admin()`** SQL SECURITY DEFINER STABLE.
-- **RPCs admin existentes** (todas SECURITY DEFINER + gateadas + audit_log):
-  - `get_platform_stats()`.
-  - `admin_list_doctors(...)`, `admin_set_doctor_published/operational/lucy_status`.
-  - `admin_get_doctor_detail`, `admin_update_doctor_profile/clinic/info`.
-  - `admin_list_doctor_services`, `admin_create_service`, `admin_update_service`,
-    `admin_set_service_active`, `admin_delete_service` (s7_12).
-- **`AdminDoctorEditPage`** — 4 secciones: Perfil, Clínica, Profesional, Servicios.
-- **`AdminDashboardPage`** — tarjetas de métricas.
-- **Auditoría:** toda acción admin → `audit_log` con `edited_via: 'admin'`.
+| Feature | Donde vive | Estado |
+|---|---|---|
+| Reclamar perfil seguro | `/doctor/:id` card emerald + ClaimProfileModal | ✅ live |
+| Card post-reclamo owner vs pública | `ClaimedProfileNoticeCard` | ✅ live |
+| Foto de perfil médico (self/admin) | `/panel/perfil`, `/admin/medicos/:id`, AvatarUploader | ✅ live |
+| Banner "completá con foto" en home panel | `/panel/home` cuando avatar_url null | ✅ live |
+| Login email+password + tab Email | `LoginModal` (tab Email) | ✅ live |
+| Reset por email | `/reset-password` | ✅ live |
+| Directorio informativo | Home muestra publicados aunque no operativos | ✅ live |
+| Pill "Agenda en línea / Sin agenda en línea" | `DoctorCard` + detalle | ✅ live |
+| Lista de espera real | `WaitlistModal` + tabla `waitlist_entries` | ✅ live |
+| Badge "Lista de espera: N" en admin | `/admin/medicos` | ✅ live |
+| Sección lista de espera en ficha médica admin | `AdminDoctorWaitlistSection` | ✅ live |
+| Paciente Global Fase 1 — vinculación retroactiva | RPC `claim_patient_records` post-OTP | ✅ live |
+| "Mis atenciones" cross-clinic | `/paciente/mis-atenciones` | ✅ live |
+| Dropdown "Mi cuenta" en header | `PatientAccountMenu` + `PatientHeader` | ✅ live |
 
 ---
 
 ## 4. Próximas fases (orden recomendado)
 
-**Pre-piloto público (bloqueantes):**
-1. **Reclamo seguro** — ver `ANALISIS_RECLAMAR_PERFIL.md`. Fase 2.
-2. **Auth robusta del médico** — ver `ANALISIS_AUTH_MEDICO.md`. PR-A + PR-B.
-3. **Limpieza de datos** — ver `PLAN_PILOTO_5_MEDICOS.md`.
-4. **Twilio trial vs paga** — decisión + setup de test phones si trial.
+### 4.1 Pre-piloto público (operativo, no código)
 
-**Admin SaaS restantes (post-piloto o paralelo):**
-5. **B4 — Disponibilidad/horarios** del médico desde admin.
-6. **C — Suspender/reactivar pacientes y asistentes** (`profiles.is_active` /
-   `clinic_members.is_active`).
-7. **D — Dashboard de tracción mensual** (citas creadas/atendidas por mes).
-8. **E — Reputación admin** (UI sobre `admin_review_traceability`).
-9. **F — Explorador de `audit_log`** con filtros.
-10. **G — Catálogos globales** + onboarding manual de médico.
+1. **SMTP externo (Resend)** — Supabase Auth Email Provider. Antes del piloto público para no depender del rate limit builtin (4 emails/h). Hoy el reset por email funciona pero limitado.
+2. **Re-validar reset por email** tras cooldown (operativo, sin código).
+3. **Cleanup test patients Fase 1** cuando termine validación (`node scripts/setup-test-patient.mjs --clean`).
 
-Cada fase: 1 PR chico · migración `s7_0X` (si aplica) + `scripts/check-s7_0X.mjs`
-· `vite build` OK · preview validado · luego merge.
+### 4.2 Auth — Fase 4 PR-B
+
+Integrar email+password dentro del flujo de Reclamar perfil. Después del match phone+license, ofrecer:
+- Opción A: "Recibir link por email para crear contraseña".
+- Opción B: "Crear contraseña ahora".
+
+Detalles en `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+
+### 4.3 Paciente Global — Fases 2-5
+
+- **Fase 2**: extender `profiles` con DUI, DOB, género, dpto, muni. Página `/paciente/perfil` editable. Banner "completá tu perfil" cuando falta.
+- **Fase 3**: RLS/trigger que bloquee al médico modificar datos personales del paciente cuando ya está vinculado a un profile.
+- **Fase 4**: herramienta admin para fusionar duplicados (`admin_merge_patients` con audit).
+- **Fase 5**: dedup preventivo cross-clinic al crear paciente desde walk-in.
+
+Detalles en `docs/ANALISIS_PACIENTE_GLOBAL.md`.
+
+### 4.4 Directorio — Follow-ups
+
+- Vista global `/admin/lista-espera` cross-médicos con filtros (médico, fecha, estado).
+- Sección "Lista de espera" en panel del médico (RLS ya permite, falta UI).
+- Rate limit fuerte para tráfico público real (Cloudflare WAF o counter por IP en RPC).
+- Notificación automática al activar `booking_enabled` (Edge Function + Twilio).
+
+### 4.5 Admin SaaS restantes
+
+- B4: disponibilidad/horarios desde admin.
+- C: suspender/reactivar pacientes y asistentes.
+- D: dashboard tracción mensual.
+- E: UI sobre `admin_review_traceability` + moderar reseñas.
+- F: explorador de `audit_log` con filtros.
+- G: catálogos globales + onboarding manual de médico.
+
+Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.mjs` · `vite build` OK · preview validado · luego merge.
 
 ---
 
 ## 5. Riesgos y reglas críticas
 
-- **NO exponer contenido clínico** al admin plataforma.
-- **Toda acción admin se audita** en `audit_log`.
-- **No romper login** al editar `phone`/`email` del médico: sincronizan
-  `auth.users` ↔ `profiles` en la misma transacción (s7_05).
+- **NO exponer contenido clínico** al admin plataforma. Validado en RLS y Security Gate.
+- **Toda acción admin se audita** en `audit_log`. RPCs admin escriben `edited_via='admin'`.
 - **No borrar médicos** con dependencias (citas/consultas/reviews): desactivar.
-- **Sin `is_published`** → no aparecen en directorio público.
-- **Sin `is_operational`** → no reciben citas; ven "Cuenta suspendida".
+- **Sin `is_published`** → no aparecen en directorio público (pero sí en admin).
+- **Sin `is_operational`** → no operan agenda (ven "Cuenta suspendida" en panel). Hoy NO controla visibilidad en directorio.
 - **Validar con `vite build` real**, no solo `tsc --noEmit`.
-- **Twilio trial:** bloqueante para piloto público real. Email+password mitiga
-  parcialmente (PR-A del análisis de auth).
-- **Caché del directorio público:** cambios admin se reflejan en DB al
-  instante; lista pública puede tardar `staleTime` (5 min) o pedir hard refresh.
+- **SMTP builtin de Supabase tiene rate limit de ~4 emails/h** — bloqueante para piloto público. Mitigación: configurar Resend.
+- **NO commitear `service_role`** ni ningún JWT. Está rotado y el viejo invalidado, pero el repo es público.
+- **Branches** con nombres cortos (`claude/<8-12 chars>`) para que Vercel no las trunque.
 
 ---
 
 ## 6. Archivos clave
 
-**Docs (siempre leer antes de codear):**
-- `CLAUDE.md` — contexto histórico y vinculante del proyecto.
+**Docs (siempre leer antes de codear según el objetivo del día):**
+- `CLAUDE.md` — guía rápida + sistema de diseño + tablero de decisiones.
 - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — este documento.
 - `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
-- `docs/PLAN_SPRINT7_ADMIN.md` — plan oficial.
-- `docs/ANALISIS_AUTH_MEDICO.md` — decisión y plan auth robusta.
-- `docs/ANALISIS_RECLAMAR_PERFIL.md` — diagnóstico y rediseño de reclamo.
-- `docs/PLAN_PILOTO_5_MEDICOS.md` — checklist de piloto.
+- `docs/SECURITY_GATE_PILOTO.md` — auditoría de seguridad pre-piloto.
+- `docs/CUENTA_DEMO_CAMILO.md` — cuenta demo oficial.
+- `docs/FASE_4_AUTH_EMAIL.md` — guía Supabase URL/email config.
+- `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo (Fase 2 ✅).
+- `docs/ANALISIS_AUTH_MEDICO.md` — plan auth (PR-A ✅, PR-B en cola).
+- `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial directorio.
+- `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de paciente (Fase 1 ✅).
+- `docs/PLAN_PILOTO_5_MEDICOS.md` — checklist piloto.
 
-**Migraciones Sprint 7** (`/migrations/`, todas aplicadas):
+**Migraciones Sprint 7 + pre-piloto (todas aplicadas):**
 - `s7_01_admin_foundation.sql`
 - `s7_02_admin_doctors.sql`
 - `s7_03_unify_verified_with_lucy_status.sql`
@@ -138,47 +204,81 @@ Cada fase: 1 PR chico · migración `s7_0X` (si aplica) + `scripts/check-s7_0X.m
 - `s7_10_patient_document_nullable.sql`
 - `s7_11_normalize_patient_phone.sql`
 - `s7_12_admin_services.sql`
+- `s7_13_secure_claim_doctor_profile.sql`
+- `s7_14_avatars_bucket_and_audit.sql`
+- `s7_15_audit_reviews_trigger.sql`
+- `s7_16_profiles_rls_hardening.sql`
+- `s7_16b_drop_legacy_profile_policies.sql`
+- `s7_17_deactivate_seed_doctors.sql`
+- `s7_18_waitlist_entries.sql`
+- `s7_19_waitlist_pending_count_by_doctor.sql`
+- `s7_20_patient_global_phase1.sql`
 
 **Scripts** (`/scripts/`):
-- `import-doctors.mjs`, `_deactivate-demos.mjs`.
-- `check-s7_01..12.mjs`, `check-patient-documents.mjs`.
-- `verify-migrations.mjs`.
+- `_lib/env.mjs`, `_lib/supabase-admin.mjs`, `_lib/supabase-anon.mjs` — infra.
+- `check-s7_NN.mjs` — verificador por migración.
+- `setup-test-patient.mjs` — datos paciente global Fase 1 (--apply --reset --clean).
+- `import-doctors.mjs`, `_deactivate-demos.mjs`, `check-patient-documents.mjs`, etc.
+- `scripts/README.md` — guía completa de uso.
 
-**Frontend admin:**
-- `src/router/AdminOnlyRoute.tsx`, `src/router/config.tsx`.
-- `src/pages/admin/AdminLayout.tsx`, `AdminDashboardPage.tsx`, `AdminDoctorsPage.tsx`,
-  `AdminDoctorEditPage.tsx`, `components/AdminDoctorServicesSection.tsx`.
-- `src/services/admin.service.ts`.
+**Frontend — secciones críticas:**
 
-**Helpers compartidos (`src/lib/`):**
-- `phone.ts` — `normalizePhoneSV`.
-- `document.ts` — `validateDocument`, `sanitizeDuiInput`, `formatDuiDisplay`.
-- `errors.ts` — `friendlyErrorMessage`.
+Public site:
+- `src/pages/home/page.tsx` — directorio + filtros + login/register.
+- `src/pages/doctor-detail/page.tsx` — detalle + booking + claim.
+- `src/pages/doctor-detail/components/{BookingCard, LoginModal, ClaimProfileModal, ClaimProfilePromptCard, ClaimedProfileNoticeCard, WaitlistModal}.tsx`.
 
-**Otros relevantes:**
-- `src/services/appointments.service.ts`, `availability.service.ts`,
-  `slots.service.ts`, `reviews.service.ts`, `services.service.ts`,
-  `patients.service.ts` (con `DuplicatePhoneError` + `createBasicPatient`).
-- `src/hooks/useClinicContext.ts` (con `doctorIsOperational`).
-- `vercel.json` (SPA fallback).
+Paciente:
+- `src/pages/paciente/MisAtencionesPage.tsx`.
+- `src/components/{PatientAccountMenu, PatientHeader}.tsx`.
+- `src/router/PatientOnlyRoute.tsx`.
+
+Reset password:
+- `src/pages/reset-password/ResetPasswordPage.tsx`.
+
+Panel médico:
+- `src/pages/panel/perfil/PerfilPage.tsx` (con AvatarUploader).
+- Otros bajo `src/pages/panel/*`.
+
+Admin:
+- `src/pages/admin/{AdminLayout, AdminDoctorsPage, AdminDoctorEditPage}.tsx`.
+- `src/pages/admin/components/{AdminDoctorServicesSection, AdminDoctorWaitlistSection}.tsx`.
+
+Servicios:
+- `src/services/{auth, directory, booking, patients, claimProfile, avatar, waitlist, patientHistory, admin, doctorProfile}.service.ts`.
+- `src/hooks/useClinicContext.ts`.
+
+Infra:
+- `src/lib/{supabase, session, phone, document, errors}.ts`.
+- `src/main.tsx` — bootstrap defensivo con timeout.
 
 ---
 
-## Cómo retomar en una ventana nueva
+## 7. Cómo retomar en una ventana nueva
 
 ```
 Continuamos LucyCare.
 
 git fetch origin && git checkout main && git pull --ff-only
-git log --oneline -5
+git log --oneline -10
 
-Leé:
-- CLAUDE.md
-- docs/HANDOFF_LUCYCARE_SPRINT7.md
-- docs/<doc específico para el objetivo de hoy>
+Leé en este orden:
+1. CLAUDE.md
+2. docs/HANDOFF_LUCYCARE_SPRINT7.md
+3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs hasta #30 mergeados, migraciones hasta s7_12.
-Hoy: <objetivo específico>
+Estado: PRs #1–#44 mergeados, migraciones hasta s7_20.
+
+Hoy hacemos: ___[ej:
+  - SMTP externo Resend (operativo);
+  - Fase 4 PR-B password en flujo de Reclamar perfil;
+  - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);
+  - vista global /admin/lista-espera cross-médicos;
+  - Fase 3 Paciente Global read-only datos del médico;
+  - admin merge de pacientes duplicados;
+  - SMS automático al invitar asistente (S5-08);
+  - etc.
+]___
 ```
 
 Eso es todo lo que necesito para entrar en contexto.
