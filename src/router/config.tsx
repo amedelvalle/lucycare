@@ -22,6 +22,8 @@ import EquipoPage from "../pages/panel/equipo/EquipoPage";
 import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
 import ResetPasswordPage from "../pages/reset-password/ResetPasswordPage";
+import MisAtencionesPage from "../pages/paciente/MisAtencionesPage";
+import PatientOnlyRoute from "./PatientOnlyRoute";
 import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
@@ -45,6 +47,14 @@ const routes: RouteObject[] = [
   {
     path: "/reset-password",
     element: <ResetPasswordPage />,
+  },
+  {
+    path: "/paciente/mis-atenciones",
+    element: (
+      <PatientOnlyRoute>
+        <MisAtencionesPage />
+      </PatientOnlyRoute>
+    ),
   },
   {
     path: "/admin",
