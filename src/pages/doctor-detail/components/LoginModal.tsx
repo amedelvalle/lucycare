@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   sendOtp,
@@ -213,13 +213,28 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
   };
 
   const handleClose = () => {
+    // Bloquea el cierre durante una operación en curso: evita que el
+    // usuario pierda contexto si toca X o Esc mientras se procesa el
+    // login. La X queda visible pero deshabilitada (gris) mientras
+    // loading=true.
+    if (loading) return;
     onClose();
     resetState();
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) handleClose();
-  };
+  // Cerrar con Escape (excepto durante loading). Cierre por click
+  // fuera del modal está DESHABILITADO a propósito para no perder
+  // contexto cuando el usuario tipea en mobile/desktop. El modal
+  // solo se cierra por X, Escape, o éxito.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, loading]);
 
   const selectedCountry = countries.find((c) => c.code === countryCode) || countries[0];
 
@@ -229,6 +244,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
     (tab === 'email' && emailStep !== 'login');
 
   const handleBack = () => {
+    if (loading) return;          // mismo guard que handleClose
     setError('');
     if (tab === 'phone' && phoneStep === 'otp') {
       setPhoneStep('phone');
@@ -248,20 +264,27 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
   if (tab === 'email' && emailStep === 'forgot_sent') headerTitle = 'Revisá tu correo';
 
   return (
+    // El overlay NO cierra al click. El modal solo se cierra por X,
+    // Escape o éxito de auth — evita pérdida de contexto al tocar
+    // fuera mientras el usuario escribe (especialmente en mobile).
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-      onClick={handleOverlayClick}
+      role="presentation"
     >
       <div
         className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-5 flex items-center justify-between rounded-t-3xl z-10">
           <button
             onClick={showBackButton ? handleBack : handleClose}
             type="button"
-            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+            disabled={loading}
+            className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+              loading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 cursor-pointer'
+            }`}
             aria-label={showBackButton ? 'Atrás' : 'Cerrar'}
           >
             <i className={`${showBackButton ? 'ri-arrow-left-line' : 'ri-close-line'} text-xl text-gray-700`}></i>
