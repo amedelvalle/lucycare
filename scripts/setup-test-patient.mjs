@@ -133,11 +133,16 @@ const { data: services } = await svc.from('services').select('id, doctor_id').eq
 
 if (statuses && statuses.length > 0 && services && services.length > 0) {
   const apptsToInsert = [];
-  for (let i = 0; i < Math.min(2, inserted?.length ?? 0); i++) {
-    const patient = inserted![i];
+  const insertedRows = inserted || [];
+  for (let i = 0; i < Math.min(2, insertedRows.length); i++) {
+    const patient = insertedRows[i];
     const svcForClinic = services.find(() => true);
     if (!svcForClinic) continue;
-    const startTime = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000); // 1-2 semanas atrás
+    // Fechas futuras (3-10 días adelante) — el trigger block_past_appointment
+    // rechaza fechas pasadas aunque sean datos de prueba.
+    const daysAhead = (i + 1) * 3;
+    const startTime = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+    startTime.setHours(10 + i, 0, 0, 0);
     const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
     apptsToInsert.push({
       clinic_id: patient.clinic_id,

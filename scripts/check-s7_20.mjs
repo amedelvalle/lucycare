@@ -34,12 +34,19 @@ const anon = createClient(URL, ANON, { auth: { persistSession: false } });
 {
   const { error } = await anon.rpc('claim_patient_records');
   const missing = !!error && /could not find|does not exist/i.test(error.message);
-  const gated = !!error && (error.code === '28000' || /iniciar sesión/i.test(error.message));
+  // Anon puede ser bloqueado por: (a) auth.uid IS NULL → SQLSTATE 28000 /
+  // "iniciar sesión", o (b) permission denied por REVOKE (lo más seguro,
+  // porque el RPC tiene REVOKE FROM anon explícito).
+  const gated =
+    !!error &&
+    (error.code === '28000' ||
+      /iniciar sesión/i.test(error.message) ||
+      /permission denied/i.test(error.message));
   if (missing) { fail('RPC claim_patient_records NO existe'); process.exit(1); }
   if (!gated) {
     warn(`RPC existe pero respuesta sin sesión inesperada: ${error?.message ?? 'sin error'}`);
   } else {
-    pass('RPC claim_patient_records existe y rechaza sin sesión');
+    pass('RPC claim_patient_records existe y rechaza sin sesión (REVOKE FROM anon)');
   }
 }
 
