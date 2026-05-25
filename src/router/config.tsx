@@ -21,6 +21,7 @@ import ServiciosPage from "../pages/panel/servicios/ServiciosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
 import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
+import ResetPasswordPage from "../pages/reset-password/ResetPasswordPage";
 import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
@@ -40,6 +41,10 @@ const routes: RouteObject[] = [
   {
     path: "/calificar/:token",
     element: <CalificarPage />,
+  },
+  {
+    path: "/reset-password",
+    element: <ResetPasswordPage />,
   },
   {
     path: "/admin",

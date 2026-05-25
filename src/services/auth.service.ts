@@ -178,6 +178,147 @@ export async function signOut(): Promise<void> {
   await supabase.auth.signOut()
 }
 
+// ═══════════════════════════════════════════════════════════
+// Email + Password (Fase 4 PR-A)
+// ═══════════════════════════════════════════════════════════
+// Usado solo por médicos (y admin). El paciente sigue con OTP por
+// teléfono como flujo principal. Los métodos viven aquí para
+// compartir el mismo cliente y el mismo manejo de profile.
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Login con email + password.
+ *
+ * Mensaje de error genérico (mismo texto para "email no existe" y
+ * "password incorrecto") para no filtrar qué emails tienen cuenta.
+ */
+export async function signInWithEmail(
+  email: string,
+  password: string,
+): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  })
+
+  if (error) {
+    console.warn('[signInWithEmail] error:', error.message)
+    // Mensaje genérico — no revelamos si el email existe.
+    return {
+      success: false,
+      error: 'Email o contraseña incorrectos. Si olvidaste tu contraseña, podés solicitar restablecerla.',
+    }
+  }
+
+  if (!data.user) {
+    return { success: false, error: 'No se pudo crear la sesión.' }
+  }
+
+  // Cargar profile para devolver role/name (sin crear: si llegó por
+  // password, el profile ya debería existir).
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, role')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
+  return {
+    success: true,
+    user: {
+      id: data.user.id,
+      phone: data.user.phone || '',
+      name: profile?.full_name || null,
+      role: profile?.role || 'patient',
+    },
+  }
+}
+
+/**
+ * Solicitar el envío del email de recuperación.
+ *
+ * SIEMPRE responde success: true (incluso si el email no existe)
+ * para no filtrar qué emails están registrados. El log interno
+ * sí captura el error real para debugging.
+ *
+ * El link de recuperación apunta a /reset-password (config en
+ * Supabase Dashboard → Auth → URL Configuration).
+ */
+export async function requestPasswordReset(
+  email: string,
+): Promise<{ success: boolean }> {
+  const cleanEmail = email.trim().toLowerCase()
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { success: true } // mismo mensaje genérico
+  }
+
+  const redirectTo = `${window.location.origin}/reset-password`
+  const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+    redirectTo,
+  })
+
+  if (error) {
+    console.warn('[requestPasswordReset] error (silenciado):', error.message)
+  }
+
+  // No revelamos el resultado real.
+  return { success: true }
+}
+
+/**
+ * Establecer una nueva contraseña usando la sesión de recuperación
+ * activa (el usuario llegó vía el link del email y Supabase ya
+ * inyectó la sesión temporal).
+ *
+ * Devuelve error si:
+ * - No hay sesión activa (el link expiró o el usuario lo abrió mal).
+ * - El password no cumple políticas mínimas (Supabase responde con error).
+ */
+export async function setPasswordFromRecovery(
+  newPassword: string,
+): Promise<{ success: boolean; error?: string }> {
+  // Verificar que estamos en una sesión de recuperación válida
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.user) {
+    return {
+      success: false,
+      error: 'Tu link de recuperación expiró o no es válido. Solicitá uno nuevo.',
+    }
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
+  if (error) {
+    return {
+      success: false,
+      error: error.message,
+    }
+  }
+
+  return { success: true }
+}
+
+/**
+ * Determinar a dónde redirigir tras un login exitoso, según el rol
+ * del usuario. Usado por la UI post-login y post-reset-password.
+ *
+ *  - admin     → /admin
+ *  - doctor    → /panel (el panel ya muestra "Cuenta suspendida" si no es operativo)
+ *  - assistant → /panel
+ *  - patient o desconocido → /
+ */
+export function destinationForRole(role: string | null | undefined): string {
+  switch (role) {
+    case 'admin':
+      return '/admin'
+    case 'doctor':
+    case 'assistant':
+      return '/panel'
+    default:
+      return '/'
+  }
+}
+
 /**
  * Escuchar cambios de sesión (login, logout, token refresh).
  * Útil para actualizar el estado global de autenticación.
