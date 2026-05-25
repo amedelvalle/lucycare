@@ -396,6 +396,7 @@ export default function MobileBookingSheet({
       <WaitlistModal
         isOpen={showWaitlistModal}
         onClose={() => setShowWaitlistModal(false)}
+        doctorId={String(doctorId)}
         doctorName={doctorName}
       />
     </>

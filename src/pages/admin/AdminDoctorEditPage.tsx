@@ -9,6 +9,7 @@ import {
   updateDoctorInfo,
 } from '../../services/admin.service';
 import AdminDoctorServicesSection from './components/AdminDoctorServicesSection';
+import AdminDoctorWaitlistSection from './components/AdminDoctorWaitlistSection';
 import AvatarUploader from '@/components/AvatarUploader';
 import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
 
@@ -280,6 +281,9 @@ export default function AdminDoctorEditPage() {
 
       {/* ─── Servicios (B3-admin) ──────────────────────────── */}
       <AdminDoctorServicesSection doctorId={d.doctorId} />
+
+      {/* ─── Lista de espera (Directorio PR-B) ─────────────── */}
+      <AdminDoctorWaitlistSection doctorId={d.doctorId} />
 
       <p className="text-[11px] text-gray-400 mt-2">
         Disponibilidad/horarios se editan en una fase posterior (B4).
