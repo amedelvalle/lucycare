@@ -75,7 +75,7 @@ export default function ServiciosPage() {
           <h1 className="text-2xl font-bold text-gray-900">Mis servicios</h1>
           <p className="text-sm text-gray-500 mt-1">
             Tus tipos de consulta. Definí nombre, duración y precio; aparecen en
-            tu perfil público y en la reserva online.
+            tu perfil público y en la reserva en línea.
           </p>
         </div>
         <Button variant="primary" size="sm" leftIcon={<PlusIcon />} onClick={() => setModal('new')}>

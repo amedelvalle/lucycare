@@ -125,7 +125,7 @@ export default function SearchSection({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Solo médicos con agenda online
+                Solo médicos con agenda en línea
               </h3>
               <p className="text-xs sm:text-sm text-white">
                 Reserva tu cita al instante
