@@ -139,12 +139,12 @@ export default function DoctorDetail() {
                 {canBook ? (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
                     <i className="ri-calendar-check-line"></i>
-                    Agenda online
+                    Agenda en línea
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-400 text-white rounded-full text-sm font-medium">
                     <i className="ri-calendar-close-line"></i>
-                    Sin agenda online
+                    Sin agenda en línea
                   </span>
                 )}
               </div>

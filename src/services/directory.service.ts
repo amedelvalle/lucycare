@@ -80,9 +80,16 @@ export async function fetchDoctors(
         is_active
       )
     `)
+    // Directorio = solo is_published. is_operational pasa a controlar
+    // SOLO el panel del médico (no la visibilidad pública). Esto permite
+    // mostrar médicos "informativos" — reales pero que aún no operan
+    // agenda en línea con Lucy. Decisión documentada en
+    // docs/ANALISIS_DIRECTORIO_INFORMATIVO.md.
     .eq('is_published', true)
-    .eq('is_operational', true)
-    .order('is_verified', { ascending: false }) // Verificados primero
+    // Orden: primero los que aceptan reserva en línea (booking_enabled),
+    // después verificados, después por fecha.
+    .order('booking_enabled', { ascending: false })
+    .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false })
 
   // Filtro por especialidad
@@ -142,6 +149,19 @@ export async function fetchDoctors(
       startingPrice,
     }
   })
+
+  // Filtro de completitud mínima (D1):
+  // El médico debe tener full_name, specialty, clinic.name y clinic.address.
+  // No exigimos foto, bio ni servicios — el placeholder de iniciales y
+  // los CTAs alternativos cubren el caso informativo.
+  doctors = doctors.filter(
+    (doc) =>
+      !!doc.fullName?.trim() &&
+      doc.fullName !== 'Sin nombre' &&
+      !!doc.specialty &&
+      !!doc.clinicName?.trim() &&
+      !!doc.addressLine?.trim(),
+  )
 
   // Filtro por nombre (client-side para soportar búsqueda sin tildes)
   if (filters.search && filters.search.trim() !== '') {
@@ -220,13 +240,13 @@ export async function fetchDoctorDetail(
       )
     `)
     .eq('id', doctorId)
+    // El detalle se abre con solo is_published=true. is_operational
+    // controla únicamente el panel del médico (operar agenda interna),
+    // no la visibilidad pública. Esto permite que médicos informativos
+    // (publicados, sin agenda en línea todavía) sigan teniendo perfil
+    // alcanzable por link directo. La RPC claim_doctor_profile mantiene
+    // sus propias validaciones server-side.
     .eq('is_published', true)
-    // Permitimos abrir el perfil si está operativo (caso normal) o si todavía
-    // es listed_only (todavía no reclamado). Esto habilita que un médico llegue
-    // a su propio perfil vía link directo para reclamarlo, sin obligar a marcarlo
-    // is_operational=true antes de tiempo. La RPC claim_doctor_profile sigue
-    // validando lucy_status='listed_only' server-side.
-    .or('is_operational.eq.true,lucy_status.eq.listed_only')
     .single()
 
   if (error) {

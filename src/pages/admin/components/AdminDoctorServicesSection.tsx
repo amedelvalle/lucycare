@@ -67,7 +67,7 @@ export default function AdminDoctorServicesSection({ doctorId }: Props) {
         <div>
           <h2 className="text-base font-semibold text-gray-900">Servicios</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Tipos de consulta del médico. Aparecen en su perfil público y en la reserva online.
+            Tipos de consulta del médico. Aparecen en su perfil público y en la reserva en línea.
           </p>
         </div>
         <button

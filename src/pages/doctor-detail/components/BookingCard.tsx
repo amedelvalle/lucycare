@@ -142,8 +142,8 @@ export default function BookingCard({
                 <div className="flex gap-3">
                   <i className="ri-information-line text-amber-600 text-xl flex-shrink-0"></i>
                   <div>
-                    <p className="text-sm font-medium text-amber-900 mb-1">Perfil informativo</p>
-                    <p className="text-xs text-amber-700">La reserva online está disponible solo con agenda activa en Lucy. Puedes contactarlo directamente.</p>
+                    <p className="text-sm font-medium text-amber-900 mb-1">Sin agenda en línea</p>
+                    <p className="text-xs text-amber-700">Este médico aún no tiene agenda activa en Lucy. Podés contactarlo por llamada o WhatsApp, o unirte a la lista de espera.</p>
                   </div>
                 </div>
               </div>
@@ -154,8 +154,8 @@ export default function BookingCard({
                 <div className="flex gap-3">
                   <i className="ri-calendar-line text-blue-600 text-xl flex-shrink-0"></i>
                   <div>
-                    <p className="text-sm font-medium text-blue-900 mb-1">Agenda en configuración</p>
-                    <p className="text-xs text-blue-700">La reserva online está disponible solo con agenda activa en Lucy. Por ahora, contacta directamente.</p>
+                    <p className="text-sm font-medium text-blue-900 mb-1">Sin agenda en línea</p>
+                    <p className="text-xs text-blue-700">Este médico aún no tiene agenda activa en Lucy. Podés contactarlo por llamada o WhatsApp, o unirte a la lista de espera.</p>
                   </div>
                 </div>
               </div>

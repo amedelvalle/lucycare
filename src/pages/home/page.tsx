@@ -186,7 +186,7 @@ export default function Home() {
             ) : (
               <>
                 <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
-                  {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda online' : 'disponibles')}
+                  {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda en línea' : 'disponibles')}
                 </h2>
                 {searchTerm && (
                   <p className="text-sm text-gray-600 mt-1">

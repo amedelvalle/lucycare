@@ -414,7 +414,7 @@ export default function ClaimProfileModal({
                   ({TOS_VERSION}).
                 </p>
                 <p className="text-xs text-gray-500">
-                  Reclamar no publica tu perfil ni activa agenda online. Esos pasos los hacemos junto con vos después
+                  Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos junto con vos después
                   de un breve onboarding.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
@@ -453,7 +453,7 @@ export default function ClaimProfileModal({
                 Tu perfil quedó vinculado a tu cuenta. Aparece igual que antes en el directorio.
               </p>
               <p className="text-sm text-gray-500 mb-6">
-                Para activar agenda online o publicarlo oficialmente, escribinos: hacemos un onboarding corto y lo
+                Para activar agenda en línea o publicarlo oficialmente, escribinos: hacemos un onboarding corto y lo
                 dejamos listo.
               </p>
               <a

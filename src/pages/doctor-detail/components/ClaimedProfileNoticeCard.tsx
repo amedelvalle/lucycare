@@ -10,14 +10,14 @@ interface ClaimedProfileNoticeCardProps {
 /**
  * Card informativa que aparece en /doctor/:id cuando el médico ya
  * reclamó su perfil (`lucy_status='claimed'`) pero todavía no tiene
- * agenda online ni verificación oficial.
+ * agenda en línea ni verificación oficial.
  *
  * Dos variantes según el viewer:
  *   - owner: el usuario logueado es el dueño (auth.uid() === profileId).
  *     Card azul con CTA al panel + WhatsApp Lucy.
  *   - public: cualquier otro viewer (anónimo, paciente, otro médico, admin).
  *     Card neutral en gris suave. Sin mencionar "onboarding" ni "en proceso";
- *     solo deja en claro que la reserva online aún no está activa.
+ *     solo deja en claro que la reserva en línea aún no está activa.
  *
  * Mientras se resuelve la sesión renderiza la variante pública como fallback
  * fail-safe (nunca exponemos texto interno por error).
@@ -48,7 +48,7 @@ export default function ClaimedProfileNoticeCard({ doctorProfileId }: ClaimedPro
           <div className="flex-1">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900">Tu perfil quedó reclamado</h3>
             <p className="text-sm text-gray-700 mt-1">
-              Lucy está coordinando el onboarding para activar tu agenda online. Si necesitás continuar, escribinos.
+              Lucy está coordinando el onboarding para activar tu agenda en línea. Si necesitás continuar, escribinos.
             </p>
             <div className="flex flex-col sm:flex-row gap-2 mt-4">
               <button
@@ -82,7 +82,7 @@ export default function ClaimedProfileNoticeCard({ doctorProfileId }: ClaimedPro
         <div>
           <p className="text-sm font-medium text-gray-900">Perfil informativo</p>
           <p className="text-sm text-gray-600 mt-0.5">
-            Este profesional acepta consultas, pero la reserva online aún no está activa. Contactalo directamente desde
+            Este profesional acepta consultas, pero la reserva en línea aún no está activa. Contactalo directamente desde
             los datos del perfil.
           </p>
         </div>

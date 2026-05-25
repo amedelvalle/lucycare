@@ -74,14 +74,14 @@ export default function DoctorCard({
       return (
         <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm">
           <i className="ri-calendar-check-line"></i>
-          <span>Agenda online</span>
+          <span>Agenda en línea</span>
         </div>
       );
     }
     return (
       <div className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-200 text-gray-600 rounded-full text-xs font-medium">
         <i className="ri-information-line"></i>
-        <span>Sin agenda online</span>
+        <span>Sin agenda en línea</span>
       </div>
     );
   };
