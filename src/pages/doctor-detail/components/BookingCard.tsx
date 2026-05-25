@@ -183,7 +183,7 @@ export default function BookingCard({
 
         </div>
 
-        <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorName={doctorName} />
+        <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorId={doctorId} doctorName={doctorName} />
       </>
     );
   }
@@ -348,7 +348,7 @@ export default function BookingCard({
       </div>
 
       <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onSuccess={handleLoginSuccess} />
-      <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorName={doctorName} />
+      <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorId={doctorId} doctorName={doctorName} />
     </>
   );
 }
