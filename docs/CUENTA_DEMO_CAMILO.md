@@ -13,7 +13,7 @@
 | `clinic_id` | `8ea0fd8f-87a9-45f9-8f4e-f358764f58c0` |
 | Nombre | Dr. Camilo Carrillo |
 | Phone (login) | `50378627694` (Test Phone en Supabase OTP `123456`) |
-| Email | `carlosmartine@gmail.com` (real, controlado) |
+| Email | `carlosmartinezddv@gmail.com` (real, controlado) |
 | Especialidad | Medicina General |
 | Licencia | `1023` |
 
@@ -43,7 +43,7 @@
 - Receta + print.
 - Servicios y disponibilidad.
 - Reputación (recibir reseñas).
-- Futura recuperación por email (Fase 4 — Supabase enviará el reset link a `carlosmartine@gmail.com`).
+- Futura recuperación por email (Fase 4 — Supabase enviará el reset link a `carlosmartinezddv@gmail.com`).
 
 ## Reglas
 
@@ -54,7 +54,7 @@
 2. **No cambiar `lucy_status` a `listed_only`** para "limpieza visual".
 3. **No despublicar** sin coordinación: producción lo muestra en el directorio.
 4. **No modificar email** si se planea probar Fase 4 — el reset password
-   irá a `carlosmartine@gmail.com`.
+   irá a `carlosmartinezddv@gmail.com`.
 
 ## Pendientes opcionales (no bloqueantes)
 
