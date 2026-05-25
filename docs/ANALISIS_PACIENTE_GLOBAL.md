@@ -446,30 +446,69 @@ Y dejo flagged para más adelante:
 - Fase 4 — admin merge.
 - Fase 5 — dedup preventivo en creación.
 
-## Decisiones abiertas que necesito alinear antes de codear
+## Decisiones cerradas (DA1-DA4 firmadas por el owner)
 
-### DA1. ¿Opción A o B para identidad global?
+### DA1 — Opción A: extender `profiles` ✅ APROBADO
 
-A: extender `profiles`. B: tabla `patient_global` aparte.
+Identidad global vive en `profiles`. Tabla `patients` actual **sigue
+existiendo** como ficha del paciente por clínica/médico (ahí viven
+citas, consultas, historia clínica). No hay tabla nueva
+`patient_global`.
 
-Mi recomendación: **A**. Menos invasivo, reusa lo que hay.
+### DA2 — Vinculación automática solo con coincidencias fuertes ✅ APROBADO
 
-### DA2. ¿La invocación de `claim_patient_records` es automática o manual?
+Aclaración del owner: **automática solo cuando hay match fuerte**, es
+decir, phone verificado por OTP del paciente == phone de las rows
+target. Casos ambiguos (phone parcial, name+DOB similar, document
+similar) **NO se fusionan automáticamente** — quedan pendientes para
+revisión manual desde admin (Fase 4).
 
-A: automática en `ensureProfile` post-OTP (siempre).
-B: manual desde `/paciente/perfil` (botón "tengo rows previas que
-quiero vincular").
+Implementación Fase 1 ajustada:
+- `claim_patient_records(p_phone_normalized)` SECURITY DEFINER.
+- Verifica `auth.users.phone` del caller == `p_phone_normalized` (OTP-verified).
+- Solo entonces vincula `patients` con ese phone donde `profile_id IS NULL`.
+- Nunca fusiona ni mueve historia clínica entre patients. Solo setea `profile_id`.
 
-Mi recomendación: **A** (transparente, fail-safe). El paciente no
-necesita hacer nada para reclamar sus rows previas.
+### DA3 — Walk-in editable hasta reclamo ✅ APROBADO
 
-### DA3. ¿Walk-in puro (sin profile_id) sigue editándose libremente?
+Mientras `patients.profile_id IS NULL`, el médico maneja los datos
+libremente (no hay identidad canónica todavía). Cuando el paciente
+reclama por OTP y se vincula → los datos personales pasan a ser
+canónicos en `profiles` y el médico ya no los puede editar libremente
+(Fase 3 implementa este lock).
 
-Mi recomendación: **sí, hasta que el paciente reclame su identidad
-via OTP**. Es coherente con el modelo: si no hay profile, no hay
-identidad canónica, el médico maneja los datos.
+### DA4 — Mostrar clínica en "Mis atenciones" ✅ APROBADO
 
-### DA4. ¿En Fase 1 mostramos clínica en "Mis atenciones" o no?
+La pantalla `/paciente/mis-atenciones` muestra: fecha, médico,
+**clínica**, especialidad, servicio, estado. Útil para que el
+paciente recuerde dónde fue atendido. Paginada.
 
-Mi recomendación: **sí**, mostrar nombre de clínica. Útil para que el
-paciente recuerde dónde fue atendido.
+### Regla operativa derivada (del owner)
+
+> "El médico puede manejar información clínica y operativa de su
+> relación con ese paciente, pero datos globales como DUI, fecha de
+> nacimiento, teléfono principal, departamento/municipio deberían
+> pertenecer al perfil del paciente o a un flujo controlado."
+
+Implicancia concreta para el schema futuro: cuando lleguemos a Fase
+2-3, las columnas `document_*`, `date_of_birth`, `gender`, departamento,
+municipio se moverán a `profiles`. Mientras tanto siguen en `patients`
+sin cambio. Walk-in con identidad reclamada → el médico ve esos
+campos read-only.
+
+> "No quiero una migración agresiva ni fusión automática de pacientes
+> todavía. Cualquier deduplicación cross-clinic debe ser conservadora
+> y auditable."
+
+Fase 4 (merge admin) y Fase 5 (dedup preventivo) se diseñan con
+auditoría obligatoria + reversibilidad como requisitos no negociables.
+
+> "No quiero que este tema retrase el piloto, pero sí quiero que el
+> modelo quede bien orientado desde ahora para no crear duplicación
+> estructural difícil de corregir después."
+
+Por eso:
+- **PR-B Directorio (waitlist) primero** — cierra flujo comercial.
+- **Fase 1 Paciente Global después** — bajo riesgo, prepara el modelo
+  sin bloquear nada.
+- Fases 2-5 quedan post-piloto, según feedback real de los 5 médicos.
