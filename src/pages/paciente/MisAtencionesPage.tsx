@@ -14,10 +14,10 @@
  */
 
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listMyAppointments } from '@/services/patientHistory.service';
-import { signOut } from '@/services/auth.service';
+import PatientHeader from '@/components/PatientHeader';
 
 const PAGE_SIZE = 20;
 
@@ -54,7 +54,6 @@ function statusBadge(statusKey: string, statusLabel: string, isFinal: boolean) {
 
 export default function MisAtencionesPage() {
   const [page, setPage] = useState(0);
-  const navigate = useNavigate();
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['my-appointments', page],
@@ -66,32 +65,9 @@ export default function MisAtencionesPage() {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/');
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header simple para el paciente */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <img
-              src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
-              alt="Lucy Care"
-              className="h-10"
-            />
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </header>
+      <PatientHeader />
 
       <main className="max-w-4xl mx-auto px-4 py-6">
         <div className="mb-6">
