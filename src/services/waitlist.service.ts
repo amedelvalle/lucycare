@@ -119,6 +119,22 @@ export async function adminCountWaitlistForDoctor(
   return Number(data ?? 0);
 }
 
+/**
+ * Devuelve un Map<doctor_id, pending_count> solo con los médicos
+ * que tienen al menos 1 entrada en estado pending. Usado por la
+ * lista general /admin/medicos para mostrar un badge en cada row.
+ * Una sola query bulk; no N+1.
+ */
+export async function adminWaitlistPendingCountByDoctor(): Promise<Map<string, number>> {
+  const { data, error } = await supabase.rpc('admin_waitlist_pending_count_by_doctor');
+  if (error) throw new Error(error.message);
+  const map = new Map<string, number>();
+  for (const row of (data ?? []) as Array<{ doctor_id: string; pending_count: number }>) {
+    if (row.doctor_id) map.set(row.doctor_id, Number(row.pending_count));
+  }
+  return map;
+}
+
 export async function adminUpdateWaitlistEntry(
   entryId: string,
   status: 'pending' | 'contacted' | 'cancelled',

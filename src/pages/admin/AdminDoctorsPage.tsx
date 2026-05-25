@@ -9,6 +9,7 @@ import {
   type AdminDoctorRow,
   type LucyStatus,
 } from '../../services/admin.service';
+import { adminWaitlistPendingCountByDoctor } from '../../services/waitlist.service';
 
 const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
   { value: 'listed_only', label: 'Solo listado' },
@@ -89,6 +90,15 @@ export default function AdminDoctorsPage() {
       }),
     placeholderData: (prev) => prev,
   });
+
+  // Bulk count de pendientes en lista de espera (1 query para todos los médicos).
+  // Independiente del listado: refresca cada 60s o al invalidar.
+  const waitlistCountsQ = useQuery({
+    queryKey: ['admin-waitlist-pending-counts'],
+    queryFn: adminWaitlistPendingCountByDoctor,
+    staleTime: 60_000,
+  });
+  const waitlistCounts = waitlistCountsQ.data ?? new Map<string, number>();
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-doctors'] });
 
@@ -228,7 +238,22 @@ export default function AdminDoctorsPage() {
               {rows.map((d: AdminDoctorRow) => (
                 <tr key={d.id}>
                   <td className="px-4 py-3 align-top">
-                    <p className="font-medium text-gray-900">{d.fullName ?? '—'}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-gray-900">{d.fullName ?? '—'}</p>
+                      {(() => {
+                        const pendingCount = waitlistCounts.get(d.id) ?? 0;
+                        return pendingCount > 0 ? (
+                          <Link
+                            to={`/admin/medicos/${d.id}`}
+                            title="Ver lista de espera"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[11px] font-medium hover:bg-amber-200 transition-colors"
+                          >
+                            <i className="ri-time-line"></i>
+                            Lista de espera: {pendingCount}
+                          </Link>
+                        ) : null;
+                      })()}
+                    </div>
                     <p className="text-xs text-gray-500">{d.specialty ?? 'Sin especialidad'}</p>
                     <p className="text-[11px] text-gray-400">{d.clinicName ?? ''}</p>
                   </td>
