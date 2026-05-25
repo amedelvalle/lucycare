@@ -11,12 +11,9 @@
  *
  * Uso: node scripts/check-patient-documents.mjs
  */
-import { createClient } from '@supabase/supabase-js';
-
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
 
 // Réplica de src/lib/document.ts → validateDocument (idéntica lógica).
+import { supabaseAdmin as a } from './_lib/supabase-admin.mjs';
 function validateDocument(type, rawNumber) {
   const num = (rawNumber ?? '').trim();
   if (!num) return { valid: true, canonical: null };
@@ -34,8 +31,6 @@ function validateDocument(type, rawNumber) {
   }
   return { valid: true, canonical: generic };
 }
-
-const a = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
 console.log('═══ Diagnóstico de documentos de pacientes ═══\n');
 

@@ -11,17 +11,12 @@
  *   node scripts/_deactivate-demos.mjs --dry-run
  *   node scripts/_deactivate-demos.mjs --apply
  */
-import { createClient } from '@supabase/supabase-js';
 
-const URL = 'https://kvrsfmzlrmmmavillpuj.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnNmbXpscm1tbWF2aWxscHVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMwMjAxNCwiZXhwIjoyMDkwODc4MDE0fQ.ZdxQdkEuB_nIztj-JLSit-esJ_E76cQ_qgiV-uittsc';
-
+import { supabaseAdmin as sb } from './_lib/supabase-admin.mjs';
 const KEEP_PHONE = '50378627694'; // Pepe Toro / Dr. Camilo Carrillo
 
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply') && !args.has('--dry-run');
-
-const sb = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
 const { data, error } = await sb
   .from('doctors')
