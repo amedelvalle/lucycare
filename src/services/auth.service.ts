@@ -98,6 +98,22 @@ export async function verifyOtp(
     console.warn('[verifyOtp] error procesando invitaciones (no crítico):', err)
   }
 
+  // Paciente Global Fase 1 — vinculación retroactiva de patients legacy.
+  // Si el usuario ya tenía filas en `patients` con su phone (creadas por
+  // walk-in de algún médico antes de que él se logueara), las vincula a
+  // su profile. Fail-safe: si la RPC falla NO rompemos el login.
+  // Solo aplica para pacientes (no doctor/asistente/admin) por simplicidad.
+  if (finalRole === 'patient') {
+    try {
+      const { error: claimErr } = await supabase.rpc('claim_patient_records')
+      if (claimErr) {
+        console.warn('[verifyOtp] claim_patient_records error (silenciado):', claimErr.message)
+      }
+    } catch (err) {
+      console.warn('[verifyOtp] claim_patient_records exception (silenciado):', err)
+    }
+  }
+
   return {
     success: true,
     user: {
