@@ -53,6 +53,26 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Cerrar con Escape (excepto durante loading). Cierre por click
+  // fuera del modal está DESHABILITADO a propósito para no perder
+  // contexto cuando el usuario tipea en mobile/desktop. El modal
+  // solo se cierra por X, Escape, o éxito.
+  //
+  // IMPORTANTE: este hook debe declararse ANTES del early return
+  // `if (!isOpen) return null` — si va después, React detecta orden
+  // de hooks variable entre renders y rompe el árbol (pantalla
+  // blanca). El listener internamente chequea isOpen y loading.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, loading, onClose]);
+
   if (!isOpen) return null;
 
   const countries = [
@@ -221,20 +241,6 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
     onClose();
     resetState();
   };
-
-  // Cerrar con Escape (excepto durante loading). Cierre por click
-  // fuera del modal está DESHABILITADO a propósito para no perder
-  // contexto cuando el usuario tipea en mobile/desktop. El modal
-  // solo se cierra por X, Escape, o éxito.
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, loading]);
 
   const selectedCountry = countries.find((c) => c.code === countryCode) || countries[0];
 
