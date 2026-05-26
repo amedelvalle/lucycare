@@ -290,6 +290,10 @@ if (pErr) {
 console.log('  ✅ profile (role=doctor)');
 
 // 3. clinic
+// is_active=true es necesario porque getDoctorDetail joinea
+// `clinics!inner` y la RLS de clinics para anon filtra is_active=true.
+// La visibilidad real del seed se controla por doctors.is_published
+// (false por default; --publish lo flipea durante el smoke).
 const { data: clinic, error: cErr } = await svc
   .from('clinics')
   .insert({
@@ -297,7 +301,7 @@ const { data: clinic, error: cErr } = await svc
     address_line: '[Test PRB] sin dirección',
     phone: TEST_PHONE,
     owner_id: userId,
-    is_active: false,
+    is_active: true,
   })
   .select('id')
   .single();
@@ -305,7 +309,7 @@ if (cErr) {
   console.error('  ❌ clinics insert:', cErr.message);
   process.exit(1);
 }
-console.log(`  ✅ clinic (id=${clinic.id.slice(0, 8)}…, is_active=false)`);
+console.log(`  ✅ clinic (id=${clinic.id.slice(0, 8)}…, is_active=true — necesario por RLS de clinics)`);
 
 // 4. doctor
 const specialty = await pickSpecialty();
