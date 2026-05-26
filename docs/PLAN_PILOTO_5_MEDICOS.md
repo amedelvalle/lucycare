@@ -52,7 +52,7 @@ Scripts diagnóstico disponibles:
 
 ### B. Invitación al médico
 - [ ] Contacto por canal externo (WhatsApp/email) con instrucciones:
-  - URL del directorio: `https://lucycare.vercel.app`.
+  - URL del directorio: `https://lucycare.app` (dominio público; `lucycare.vercel.app` sigue activo como fallback temporal).
   - Buscar su perfil.
   - Click "Reclamar mi perfil" en la card del médico.
   - Verificar phone (OTP) + tipear licencia.

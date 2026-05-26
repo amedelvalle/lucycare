@@ -45,16 +45,16 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-26)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `f7797a5` o posterior. **PRs #1–#46 mergeados**.
+- **HEAD esperado:** `d61ae3f` o posterior. **PRs #1–#48 mergeados**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
-- **Pre-piloto (PRs #32–#46):** ✅ reclamo seguro, foto perfil, auth email+password, Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend.
+- **Pre-piloto (PRs #32–#48):** ✅ reclamo seguro, foto perfil, auth email+password, Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`.
 - **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`. Verificables con `node scripts/check-s7_NN.mjs`.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
 - **Deploy:** Vercel auto-deploy desde `main`. `gh` CLI autenticado.
 - **Service role:** rotado en PR #36. Scripts admin leen de `.env.local` (ENV vars), `service_role` no está en el repo.
-- **Dominio:** `lucycare.app` **comprado en Cloudflare** (DNS gestionado ahí mismo). Producción aún se sirve desde `lucycare.vercel.app` — el cambio a `https://lucycare.app` en Vercel es el siguiente paso operativo, no ejecutado todavía.
+- **Dominio público:** `https://lucycare.app` ✅ live en producción desde 2026-05-26 (PR #48). DNS gestionado en Cloudflare. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar). Previews siguen en `lucycare-git-*.vercel.app`.
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
 ## Decisiones cerradas (NO reabrir)
@@ -223,7 +223,7 @@ Encuesta post-cita con token único, NPS, score público ajustado bayesianamente
 ### Sprint 7 — Admin SaaS + Robustez ✅ (PRs #16–#30)
 Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios). Robustez pacientes (document_number nullable, dedup teléfono, normalización SV, validación DUI).
 
-### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#46)
+### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#48)
 - **Reclamo seguro** (PR #32, s7_13).
 - **Estabilización supabase-js lock** (PR #33).
 - **Foto de perfil** (PR #34, s7_14).
@@ -238,12 +238,12 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Lista de espera real + badge admin** (PR #43, s7_18, s7_19).
 - **Paciente Global Fase 1** (PR #44, s7_20).
 - **SMTP externo Resend + reset por email validado** (PR #46, doc + setup operativo 2026-05-26, dominio `lucycare.app`).
+- **Dominio público `lucycare.app` live en Vercel** (PR #48, setup operativo 2026-05-26, DNS en Cloudflare, www→apex 308, Supabase Site URL + reset email validados).
 
 ## Próximas fases (en cola)
 
 ### Próxima prioridad recomendada
-1. **Configurar dominio público en Vercel** (operativo). `lucycare.app` comprado en Cloudflare; falta agregarlo en Vercel, DNS web sin tocar el email de Resend, SSL, y Supabase Auth → URL Configuration. PR separado con `docs/SETUP_VERCEL_DOMAIN.md`.
-2. **Fase 4 PR-B — password en flujo de Reclamar perfil.** Después del dominio. Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+1. **Fase 4 PR-B — password en flujo de Reclamar perfil.** Ahora que el dominio público y el reset por email están estables, queda activar la creación de password durante el claim. Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
 
 ### Pre-piloto público (operativo, no código)
 1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
@@ -361,6 +361,8 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+d61ae3f chore(infra): configurar dominio público lucycare.app (#48)
+518b84e docs(project): registrar SMTP externo Resend como configurado (#47)
 f7797a5 docs(auth): documentar setup SMTP externo con Resend (#46)
 b303270 docs: refresh CLAUDE.md + HANDOFF post-PR #44 (#45)
 4c4fef1 feat(paciente): Paciente Global Fase 1 — vinculación retroactiva + Mis atenciones (#44)
@@ -409,16 +411,16 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#46 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio `lucycare.app` comprado en Cloudflare; Vercel domain pendiente.
+Estado: PRs #1–#48 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live en Vercel (DNS Cloudflare, `vercel.app` queda como fallback, previews en `lucycare-git-*.vercel.app`).
 
-Hoy hacemos: ___[próxima prioridad recomendada en orden:
-                   1) configurar dominio público lucycare.app en Vercel (operativo);
-                   2) Fase 4 PR-B password en flujo Reclamar perfil;
+Hoy hacemos: ___[próxima prioridad recomendada:
+                   Fase 4 PR-B — password en flujo Reclamar perfil;
 
                    otras en cola:
                    - Fase 2 Paciente Global perfil extendido;
                    - vista global /admin/lista-espera;
                    - Fase 3 Paciente Global read-only datos del médico;
+                   - smoke 7.3 opcional capacidad SMTP;
                    - etc.]___
 ```
 

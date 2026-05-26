@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `f7797a5` o posterior. **PRs #1–#46 mergeados.**
+- **HEAD esperado en `main`:** `d61ae3f` o posterior. **PRs #1–#48 mergeados.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#46):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#48):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -26,6 +26,8 @@
   - PR #43 Lista de espera real + badge admin (s7_18, s7_19).
   - PR #44 Paciente Global Fase 1 (s7_20).
   - PR #46 SMTP externo Resend + reset por email validado (doc + setup operativo 2026-05-26, dominio `lucycare.app` **comprado en Cloudflare**, DNS email — SPF/DKIM/DMARC — gestionado ahí mismo).
+  - PR #47 Refresh documental post-Resend (`HANDOFF_TOMA_DECISIONES_2.md` + actualizaciones en CLAUDE.md / HANDOFF).
+  - PR #48 Dominio público `lucycare.app` live en Vercel (setup operativo 2026-05-26, DNS en Cloudflare con CNAME flattening en apex, `www` → apex 308, Supabase Site URL actualizado, reset por email validado end-to-end).
 - **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
@@ -92,7 +94,7 @@ Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 - audit_log con coverage: claim, avatar, admin edits, reviews, waitlist, paciente global.
 - Modales sensibles no cierran al click outside.
 - SMTP transaccional con Resend (dominio `lucycare.app` comprado en Cloudflare, DNS gestionado ahí, SMTP custom en Supabase Auth). Hallazgo #6 del Security Gate ✅ cerrado en PR #46.
-- Producción aún en `lucycare.vercel.app`. Cambio a `https://lucycare.app` queda como próximo paso operativo (PR separado).
+- Dominio público `https://lucycare.app` ✅ **live en producción** desde 2026-05-26 (PR #48). DNS en Cloudflare con CNAME en apex (vía CNAME flattening) y CNAME `www`. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar; sirve para links viejos en circulación + rollback rápido). Previews siguen vigentes en `lucycare-git-*.vercel.app`.
 
 ### Cuenta demo oficial — Camilo
 Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla activa para validar todos los flujos del médico operativo real.
@@ -124,8 +126,7 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ### 4.0 Próxima prioridad recomendada
 
-1. **Configurar dominio público en Vercel** (operativo, no código): `lucycare.app` ya está comprado en Cloudflare; falta agregarlo como dominio principal en Vercel, configurar DNS web (sin tocar los registros de email de Resend), validar SSL, y actualizar Supabase Auth → URL Configuration. PR separado con doc `docs/SETUP_VERCEL_DOMAIN.md` siguiendo el patrón de `SETUP_SMTP_RESEND.md`.
-2. **Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Después del dominio Vercel, porque PR-B toca templates/UX donde el dominio importa.
+**Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Es el siguiente paso lógico ahora que el dominio público y el SMTP transaccional están estables.
 
 ### 4.1 Pre-piloto público (operativo, no código)
 
@@ -278,7 +279,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#46 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live.
+Estado: PRs #1–#48 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live (Vercel + Cloudflare).
 
 Hoy hacemos: ___[próxima prioridad recomendada:
   - Fase 4 PR-B password en flujo de Reclamar perfil;

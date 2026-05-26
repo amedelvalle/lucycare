@@ -242,17 +242,17 @@ Revisar que `Site URL` y `Redirect URLs` ya estén configurados según
 [`docs/FASE_4_AUTH_EMAIL.md`](FASE_4_AUTH_EMAIL.md) sección 1. Si no
 están, completarlos ahora.
 
-Valores esperados:
+Valores actuales (post-PR #48 — dominio público `lucycare.app` live):
 
 | Campo | Valor |
 |---|---|
-| Site URL | `https://lucycare.vercel.app` |
-| Redirect URLs | `https://lucycare.vercel.app/reset-password` |
-|  | `https://lucycare.vercel.app/**` |
+| Site URL | `https://lucycare.app` |
+| Redirect URLs | `https://lucycare.app/**` |
+|  | `https://www.lucycare.app/**` |
+|  | `https://lucycare.vercel.app/**` (fallback temporal — no quitar todavía) |
 |  | `https://lucycare-git-*.vercel.app/**` (previews) |
 
-Cuando el dominio propio (`lucycare.com`) reemplace a `lucycare.vercel.app`,
-actualizar estos valores y reabrir un PR de docs.
+Detalle del corte en `docs/SETUP_VERCEL_DOMAIN.md`.
 
 ### 5.7 Email Templates
 
@@ -312,7 +312,7 @@ siguiente. Si uno falla, no avanzar.
 > Camilo (`carlosmartinezddv@gmail.com`) — ver
 > `docs/CUENTA_DEMO_CAMILO.md`.
 
-- [ ] Ir a producción `https://lucycare.vercel.app/`.
+- [ ] Ir a producción `https://lucycare.app/`.
 - [ ] Click "Iniciar sesión" → tab **Email** → "¿Olvidaste tu
       contraseña?".
 - [ ] Ingresar el email del médico → "Enviar link".
@@ -321,10 +321,10 @@ siguiente. Si uno falla, no avanzar.
       `noreply@mail.app.supabase.io` (eso indicaría que el SMTP custom
       no quedó aplicado).
 - [ ] El email muestra el sender configurado en 5.4 (ej.
-      `LucyCare <no-reply@mail.lucycare.com>`).
+      `LucyCare <no-reply@lucycare.app>`).
 - [ ] El email está en español (template configurado en
       `FASE_4_AUTH_EMAIL.md` §2).
-- [ ] Click en el link del correo abre `https://lucycare.vercel.app/reset-password`.
+- [ ] Click en el link del correo abre `https://lucycare.app/reset-password`.
 - [ ] La página detecta sesión de recovery y muestra form de nueva
       contraseña.
 - [ ] Ingresar contraseña ≥ 8 caracteres + confirmación → "Guardar y
