@@ -16,6 +16,7 @@ que cerrar antes del go-live.
 | #3 — `reviews` no se escriben en `audit_log` | ⚠ Medio | **Resuelto en este PR** (migración `s7_15`) |
 | #4 — Sin rate limit propio en `claim_doctor_profile` | ⚠ Bajo | Doc + PR post-piloto |
 | #5 — 12 médicos seed con email placeholder | ⚠ Bajo | Limpieza de datos antes de Fase 4 |
+| #6 — SMTP builtin con rate limit ~4 emails/h | ⚠ Medio | **✅ Resuelto** (PR #46 + setup operativo 2026-05-26). Resend con dominio `lucycare.app` verificado, SMTP custom activo en Supabase, smoke de reset por email validado end-to-end. Ver [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md). |
 | 17 verificaciones positivas | ✅ OK | — |
 
 ---
@@ -322,6 +323,26 @@ select email from profiles where role='doctor' and email like '%@lucycare.test' 
 ```
 
 Son los seed iniciales con UUIDs `a0000001-*`. Si llegamos a Fase 4 (email+password), mandar reset link a `*.lucycare.test` rebota o termina en buzón inexistente. **Antes de Fase 4:** validar que están `is_active=false` o limpiarlos.
+
+### Hallazgo #6 — SMTP builtin de Supabase con rate limit ~4 emails/h
+
+El reset por email (Fase 4 PR-A, PR #39) está live contra el SMTP **builtin** de Supabase. Ese servicio es para desarrollo: documentado por Supabase con rate limit de ~4 emails/h por proyecto, sin deliverability garantizada, sin logs útiles de envío.
+
+**Vector / impacto:**
+- En piloto público con 5 médicos + pacientes reales pidiendo reset, la primera ola supera el rate limit y los emails siguientes se caen silenciosamente.
+- No es un vulnerabilidad de seguridad en sí, pero **bloquea el flujo de recuperación de contraseña** durante el piloto, lo cual fuerza al usuario a contactar soporte y degrada la experiencia.
+- Sin logs claros de bounce/delivered, debuggear "no me llegó el reset" es a ciegas.
+
+**Fix:** configurar **Resend** como SMTP custom en Supabase Auth.
+
+**Estado (cerrado 2026-05-26):**
+- ✅ Procedimiento documentado en [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md) (PR #46).
+- ✅ Configuración real ejecutada: dominio `lucycare.app` verificado en Resend, DNS en Cloudflare (SPF/DKIM/DMARC), API key con `Sending access` creada, SMTP custom activo en Supabase Auth.
+- ✅ Smoke real de reset por email con SMTP externo: enviado, recibido desde `LucyCare`, link abrió en `/reset-password`, cambio de contraseña OK, login con nueva contraseña OK.
+
+Smoke opcional pendiente (no bloqueante): capacidad 5 emails seguidos (sección 7.3 del setup doc). El rate limit builtin de ~4/h **ya no aplica** con SMTP externo activo.
+
+**Para piloto:** ✅ Listo. Reset por email puede exponerse a usuarios reales.
 
 ### Otros observados (no acción inmediata)
 
