@@ -47,7 +47,21 @@ export default function PanelLayout() {
     navigate('/');
   };
 
-  if (!user) {
+  // Guard combinado: esperar TANTO al user (auth.user) como al
+  // ctx (lucy_status, is_operational, role).
+  //
+  // Sin esperar `ctx`, el panel completo se renderizaba por un frame
+  // antes de la transición a "Perfil reclamado" / "Cuenta suspendida"
+  // cuando is_operational=false (flash visible al hacer login post-claim).
+  //
+  // `useClinicContext` es un useQuery; mientras carga devuelve
+  // `ctx === undefined` y el check `ctx?.role === 'doctor' && ...`
+  // evaluaba false → se caía al render del panel completo.
+  //
+  // Nota: si `useClinicContext` falla (retry agotado) el spinner queda
+  // permanente. Es una limitación pre-existente del panel; manejo de
+  // error de contexto queda como follow-up.
+  if (!user || !ctx) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
