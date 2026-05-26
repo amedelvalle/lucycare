@@ -52,23 +52,26 @@ reportar antes de modificar más**.
 
 ## 3. Estado actual del setup
 
-> Documento creado al momento de abrir el PR. **El setup operativo
-> aún NO está ejecutado.** Los valores reales se registran en la
-> sección 8 después de que el owner lo haga.
+> Actualizado por el owner el **2026-05-26**: dominio agregado en
+> Vercel, DNS web configurado, Vercel reporta **Valid Configuration**.
+> Faltan: smoke browser real + Supabase Auth → URL Configuration +
+> smoke de reset email con el dominio nuevo.
 
 | Item | Estado |
 |---|---|
 | Documentación de procedimiento | ✅ creada en este PR |
 | `lucycare.app` comprado en Cloudflare | ✅ confirmado (registrado en PR #47) |
-| DNS de email (Resend: SPF / DKIM / DMARC) en Cloudflare | ✅ ya configurado, **no tocar** |
-| Dominio agregado en Vercel → Settings → Domains | ⏳ pendiente |
-| Registros DNS web (A / CNAME) en Cloudflare | ⏳ pendiente |
-| SSL/HTTPS validado por Vercel | ⏳ pendiente |
+| DNS de email (Resend: SPF / DKIM / DMARC) en Cloudflare | ✅ intactos, **no tocar** |
+| Dominio agregado en Vercel → Settings → Domains | ✅ agregado |
+| Registros DNS web en Cloudflare | ✅ configurados (CNAME en apex — ver §5 nota) |
+| Vercel reporta **Valid Configuration** | ✅ sí (incluye SSL emitido por Vercel) |
+| Smoke browser de `https://lucycare.app` en producción | ⏳ pendiente |
 | Supabase Auth → URL Configuration actualizado | ⏳ pendiente |
-| Smoke de producción (directorio + perfil + login + reset) | ⏳ pendiente |
+| Smoke de reset por email con dominio nuevo | ⏳ pendiente |
+| `lucycare.vercel.app` se mantiene como fallback temporal | ✅ confirmado (no desactivar) |
 
-Cuando todos esos ítems pasen a ✅, completar la sección 8 con los
-valores reales antes del merge.
+Cuando los ítems ⏳ pasen a ✅, completar la sección 8 con los valores
+reales antes del merge.
 
 ## 4. Reglas de seguridad
 
@@ -100,12 +103,19 @@ valores reales antes del merge.
 2. Click **Add Domain**.
 3. Ingresar `lucycare.app` → Add.
 4. Vercel pregunta si querés agregar `www.lucycare.app` también. Aceptar.
-5. Vercel muestra qué registros DNS espera:
-   - **Apex** (`lucycare.app`) → normalmente un **A record** a la IP de Vercel (suele ser `76.76.21.21`, **confirmar con el valor exacto que muestre Vercel en el momento**).
+5. Vercel muestra qué registros DNS espera. Hay dos formas válidas
+   según lo que el dashboard recomiende y el proveedor DNS soporte:
+   - **Apex** (`lucycare.app`) →
+     - **A record** a la IP de Vercel (clásico, ej. `76.76.21.21`); o
+     - **CNAME** a un hostname tipo `<hash>.vercel-dns-XXX.com`
+       (Vercel lo recomienda cuando el proveedor soporta **CNAME
+       flattening** en apex — **Cloudflare lo soporta** nativamente).
    - **`www`** → normalmente un **CNAME** a `cname.vercel-dns.com`.
 
-   ⚠️ Vercel a veces cambia estos valores. **Usar los que muestre el
-   dashboard, no los de este doc.**
+   ⚠️ Vercel a veces cambia estos valores y elige automáticamente entre
+   A o CNAME según el dominio. **Usar los que muestre el dashboard en
+   el momento, no los de este doc.** En el setup real registrado en
+   §8 quedó un CNAME en apex.
 
 6. Definir `lucycare.app` como **Production Domain** (no solo
    "Redirect"). Si Vercel marca a `www.lucycare.app` como principal por
@@ -122,7 +132,11 @@ valores reales antes del merge.
    - `send` TXT (SPF de Amazon SES vía Resend).
    - `_dmarc` (TXT).
 3. **Agregar únicamente** los registros que pide Vercel en 5.1:
-   - **A record** para `@` (apex) → IP que mostró Vercel.
+   - Para `@` (apex) → **A record a IP de Vercel** o **CNAME al hostname
+     `<hash>.vercel-dns-XXX.com` que Vercel indique**. Cloudflare soporta
+     CNAME en apex vía flattening; ambos son válidos. Si ya existía un
+     A record viejo (placeholder), reemplazarlo por lo que Vercel pida
+     ahora.
    - **CNAME** para `www` → `cname.vercel-dns.com`.
 4. **Proxy status (nube naranja / DNS only):**
    - **Recomendado al inicio:** dejar los registros de Vercel en **DNS
@@ -296,22 +310,27 @@ siguiente.
 
 ## 8. Estado real de configuración
 
-> El owner completa esta sección **después** de ejecutar el setup,
-> dentro del mismo PR antes del merge.
+> Actualizado por el owner el **2026-05-26**. Esta sección refleja el
+> estado parcial del setup: DNS + Vercel ya configurados, falta
+> Supabase Auth + smoke real. Se actualiza nuevamente cuando esos
+> ítems pasen a ✅.
 
 | Campo | Valor |
 |---|---|
-| Fecha de configuración | _pendiente_ |
-| Production Domain definido en Vercel | _pendiente_ (esperado: `lucycare.app`) |
-| `www` configurado | _pendiente_ (sí / no; redirect / alias) |
-| A record apex en Cloudflare | _pendiente_ (IP exacta pedida por Vercel) |
-| CNAME www en Cloudflare | _pendiente_ (esperado: `cname.vercel-dns.com`) |
-| Proxy de Cloudflare al cierre del setup | _pendiente_ (DNS only / Proxied) |
-| SSL en Vercel | _pendiente_ (verde / problema) |
-| Supabase Site URL | _pendiente_ (esperado: `https://lucycare.app`) |
-| Supabase Redirect URLs | _pendiente_ (listar los valores efectivos al cierre) |
-| Smoke 7.3 producción | _pendiente_ (OK / KO + fecha) |
-| Pendientes operativos | _pendiente_ |
+| Fecha de configuración DNS + Vercel | 2026-05-26 |
+| Production Domain definido en Vercel | ✅ `lucycare.app` agregado, Vercel reporta **Valid Configuration** |
+| `www` configurado | no documentado en este parcial (revisar en Vercel Dashboard al cierre) |
+| Registro apex en Cloudflare | **CNAME** `@` → `baec289aec243dab.vercel-dns-017.com` (reemplazó el A record placeholder anterior, según lo recomendado por Vercel — Cloudflare hace CNAME flattening en apex) |
+| CNAME `www` en Cloudflare | no documentado en este parcial |
+| Proxy de Cloudflare al cierre del setup | **DNS only** (nube gris) — sin proxy, según recomendación inicial del doc |
+| SSL en Vercel | ✅ emitido (implícito en "Valid Configuration") — falta validación browser end-to-end |
+| Registros DNS de Resend | ✅ intactos (`resend._domainkey`, `send` MX/TXT, `_dmarc`) |
+| `lucycare.vercel.app` | ✅ se mantiene activo como **fallback temporal** para links viejos, pruebas internas y rollback. **No desactivar.** |
+| Supabase Site URL | ⏳ pendiente (cambio a `https://lucycare.app` aún no ejecutado) |
+| Supabase Redirect URLs | ⏳ pendiente (debe incluir `https://lucycare.app/**`, `https://lucycare.vercel.app/**` y `https://lucycare-git-*.vercel.app/**` al cierre) |
+| Smoke browser de `https://lucycare.app` | ⏳ pendiente (confirmar que abre producción correctamente) |
+| Smoke 7.3 producción (directorio + perfil + login + reset email + booking) | ⏳ pendiente |
+| Pendientes operativos antes de cerrar PR | (1) confirmar `https://lucycare.app` abre producción; (2) actualizar Supabase Auth Site URL a `https://lucycare.app` y verificar Redirect URLs; (3) reset password end-to-end con link apuntando a `lucycare.app/reset-password`; (4) actualizar esta sección con resultados. |
 
 ## 9. Rollback
 
