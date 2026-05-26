@@ -166,7 +166,7 @@ if (CLEAN) {
   const doctor = await findDoctorFor(userId);
   // Borrar dependencias en orden: clinic_members, doctor, clinic, profile, auth.user.
   if (doctor) {
-    await svc.from('clinic_members').delete().eq('user_id', userId);
+    await svc.from('clinic_members').delete().eq('profile_id', userId);
     await svc.from('doctors').delete().eq('id', doctor.id);
     if (doctor.clinic_id) {
       await svc.from('clinics').delete().eq('id', doctor.clinic_id);
