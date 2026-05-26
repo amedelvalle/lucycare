@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-26.**
+> **Snapshot 2026-05-26** (post-PR #48 — dominio público live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -19,26 +19,32 @@
 - **PR #44** ✅ mergeado — Paciente Global Fase 1 (`s7_20`).
 - **PR #45** ✅ mergeado — refresh docs post-PR #44.
 - **PR #46** ✅ mergeado — SMTP externo Resend + Supabase Auth SMTP custom validado end-to-end.
-- **PR #47** — refresh documental post-Resend (incluye este archivo).
+- **PR #47** ✅ mergeado — refresh documental post-Resend (incluye este archivo).
+- **PR #48** ✅ mergeado — dominio público `lucycare.app` live en Vercel + Cloudflare DNS + Supabase Site URL + reset email validado end-to-end.
 
-`main` HEAD esperado tras PR #47: snapshot 2026-05-26, PRs #1–#47.
+`main` HEAD esperado tras PR #48: `d61ae3f` o posterior, snapshot 2026-05-26, PRs #1–#48.
 
 ## 2. Infraestructura actual
 
 | Capa | Proveedor | Estado |
 |---|---|---|
 | Repositorio y PRs | GitHub (`github.com/amedelvalle/lucycare`) | ✅ activo, repo público |
-| Deploy producción / previews | Vercel (auto-deploy desde `main`) | ✅ activo en `lucycare.vercel.app`. Dominio personalizado **pendiente** |
-| DB / Auth / RLS / RPCs / Storage | Supabase | ✅ activo |
+| Deploy producción | Vercel (auto-deploy desde `main`) | ✅ **`https://lucycare.app`** (apex) + `www.lucycare.app` (redirect 308 a apex) |
+| Previews por PR | Vercel | ✅ `lucycare-git-*.vercel.app` siguen vigentes |
+| URL fallback temporal | Vercel (`lucycare.vercel.app`) | ✅ activo — **no desactivar** (links viejos en circulación + rollback) |
+| DB / Auth / RLS / RPCs / Storage | Supabase | ✅ activo. Auth Site URL = `https://lucycare.app` |
 | Auth SMTP transaccional | Supabase Auth → SMTP custom → Resend | ✅ activo desde 2026-05-26 |
-| Dominio | `lucycare.app` | ✅ **comprado en Cloudflare** (2026-05-26 o antes), DNS gestionado en Cloudflare |
-| DNS email (SPF / DKIM / DMARC) | Cloudflare | ✅ configurado para Resend |
+| Dominio | `lucycare.app` | ✅ comprado en Cloudflare, DNS gestionado en Cloudflare |
+| DNS web (apex + www) | Cloudflare | ✅ CNAME `@` → `…vercel-dns-017.com`, CNAME `www` → `cname.vercel-dns.com`, ambos DNS only |
+| DNS email (SPF / DKIM / DMARC) | Cloudflare | ✅ configurado para Resend, **no tocar** |
 | Envío de correos transaccionales | Resend (dominio `lucycare.app`) | ✅ verificado + smoke OK |
 
 **Notas:**
 
-- Producción **aún se sirve desde `lucycare.vercel.app`**. El cambio a `https://lucycare.app` es el siguiente paso operativo (PR de Vercel domain).
-- Resend usa el dominio `lucycare.app` para el sender; ese setup es independiente del dominio público de la app y no se debe tocar al configurar Vercel.
+- **Dominio público principal:** `https://lucycare.app`. `www.lucycare.app` redirige 308 a apex.
+- **`lucycare.vercel.app` queda como fallback temporal**, no se desactiva. Sirve para reset links viejos aún válidos + rollback rápido.
+- **Previews de Vercel** (`lucycare-git-*.vercel.app`) siguen vigentes para PRs.
+- Resend usa el dominio `lucycare.app` para el sender; ese setup es **independiente** del dominio público web. Los registros DNS de email (`resend._domainkey`, `send` MX/TXT, `_dmarc`) son distintos de los registros web y no se deben tocar.
 
 ## 3. Decisiones cerradas recientes (no reabrir)
 
@@ -67,7 +73,7 @@
 ### Reglas operativas que se mantienen
 
 - **No guardar secretos** (API keys, SMTP password, service_role, credenciales de Vercel/Cloudflare/Resend/Supabase) en repo, docs, commits, ni chat.
-- **No afirmar todavía que producción vive en `lucycare.app`** hasta que el dominio público quede configurado en Vercel.
+- **No desactivar `lucycare.vercel.app`** — queda como fallback temporal hasta que se decida quitarlo en una limpieza diferida (ver `docs/SETUP_VERCEL_DOMAIN.md` §5.6).
 - **Squash-merge** para integrar branches `claude/*`. Tras el merge, la rama puede borrarse.
 
 ## 4. Seguridad
@@ -83,20 +89,7 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Configurar dominio público en Vercel
-
-- Agregar `lucycare.app` como dominio principal de producción.
-- Decidir si `www.lucycare.app` redirige a apex o es alias.
-- Registros DNS web en Cloudflare (solo los que pida Vercel — **no tocar** los registros de email de Resend).
-- Validar SSL/HTTPS.
-- Actualizar Supabase Auth → URL Configuration **después** de que SSL esté OK:
-  - Site URL: `https://lucycare.app`.
-  - Redirect URLs: `https://lucycare.app/**`, mantener wildcard de previews Vercel.
-- Smoke de producción con el dominio nuevo (directorio, perfil público, login, reset).
-
-PR separado, con `docs/SETUP_VERCEL_DOMAIN.md` siguiendo el patrón de `docs/SETUP_SMTP_RESEND.md`.
-
-### 5.2 Auth Fase 4 PR-B
+### 5.1 Auth Fase 4 PR-B (próxima prioridad)
 
 - Integrar email+password dentro del flujo de **Reclamar perfil**.
 - Después del match phone+license, ofrecer al médico:
@@ -104,7 +97,14 @@ PR separado, con `docs/SETUP_VERCEL_DOMAIN.md` siguiendo el patrón de `docs/SET
   - Opción B: "Crear contraseña ahora" (médico ya logueado vía OTP, password directo).
 - Detalle en `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
 
-Orden recomendado: **primero 5.1 (Vercel), luego 5.2 (PR-B)**. PR-B toca templates/UX donde el dominio importa.
+Ahora se puede arrancar: el dominio público y SMTP transaccional están estables (los reset links salen apuntando a `https://lucycare.app`).
+
+### 5.2 Limpiezas operativas diferidas (no bloqueantes)
+
+- **`lucycare.vercel.app` como fallback:** mantenerlo activo al menos hasta que se haya rotado todo el ciclo de reset links viejos. En algún momento opcional, configurarlo como redirect 301 a `lucycare.app` desde Vercel — ver `docs/SETUP_VERCEL_DOMAIN.md` §5.6.
+- **Redirect URLs en Supabase:** quitar `https://lucycare.vercel.app/**` cuando no haya links viejos circulando. No urgente.
+- **Cleanup test patients Fase 1:** `node scripts/setup-test-patient.mjs --clean` cuando termine la validación.
+- **Smoke 7.3 opcional (SMTP):** 5 resets seguidos para confirmar que el rate limit builtin ya no aplica.
 
 ## 6. Backlog posterior
 

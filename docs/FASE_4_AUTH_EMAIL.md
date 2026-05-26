@@ -26,12 +26,18 @@ Para que el flujo de reset por email funcione, hay que configurar 3 cosas:
 
 ### 1. URL Configuration (Auth → URL Configuration)
 
+> **Estado actual (post-PR #48):** Site URL apunta al dominio público
+> `https://lucycare.app`. `lucycare.vercel.app` queda en Redirect URLs
+> como **fallback temporal** para reset links viejos en circulación
+> (no desactivar). Detalle del corte en `docs/SETUP_VERCEL_DOMAIN.md`.
+
 | Campo | Valor |
 |---|---|
-| **Site URL** | `https://lucycare.vercel.app` |
-| **Redirect URLs** (lista) | `https://lucycare.vercel.app/reset-password` |
-| | `https://lucycare.vercel.app/**` (si querés cubrir cualquier callback futuro) |
-| | `https://lucycare-git-*.vercel.app/**` (para previews — ver nota abajo) |
+| **Site URL** | `https://lucycare.app` |
+| **Redirect URLs** (lista) | `https://lucycare.app/**` |
+| | `https://www.lucycare.app/**` |
+| | `https://lucycare.vercel.app/**` (fallback temporal, ver §SETUP_VERCEL_DOMAIN §5.6) |
+| | `https://lucycare-git-*.vercel.app/**` (previews — ver nota abajo) |
 
 **Nota sobre previews de Vercel:** Supabase soporta wildcards en `Redirect URLs`. Agregar
 `https://lucycare-git-*.vercel.app/**` permite que el reset link redirija a la URL
@@ -79,10 +85,10 @@ incluyendo el token (apunta a `Site URL` + `?code=...` por default; con PKCE va 
 ## Smoke test de la recuperación
 
 1. Confirmar que un usuario médico tiene email seteado en su profile/auth.users (por ejemplo, Camilo: `carlosmartine@gmail.com`).
-2. Producción (después del merge): ir a `https://lucycare.vercel.app/` → "Iniciar sesión" → tab **Email** → "¿Olvidaste tu contraseña?" → ingresar el email → click "Enviar link".
+2. Producción: ir a `https://lucycare.app/` → "Iniciar sesión" → tab **Email** → "¿Olvidaste tu contraseña?" → ingresar el email → click "Enviar link".
 3. El usuario debe ver pantalla "Revisá tu correo" (mensaje genérico, **siempre** se muestra).
-4. Verificar en inbox del email indicado que llegó el correo de reset (puede tardar 1-3 min, también revisar spam).
-5. Click en el link del correo → debe redirigir a `https://lucycare.vercel.app/reset-password`.
+4. Verificar en inbox del email indicado que llegó el correo de reset (puede tardar 1-3 min, también revisar spam). El correo llega desde `LucyCare` (Resend con dominio `lucycare.app`).
+5. Click en el link del correo → debe redirigir a `https://lucycare.app/reset-password`.
 6. La página detecta la sesión de recovery y muestra el form de nueva contraseña.
 7. Ingresar nueva contraseña 2 veces → "Guardar y continuar" → redirige según rol (médico → `/panel`, admin → `/admin`).
 8. Volver a `/` y loguearse en tab **Email** con el nuevo password — debe funcionar.

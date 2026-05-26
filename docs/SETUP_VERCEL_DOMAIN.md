@@ -21,8 +21,10 @@ Que producción de LucyCare quede accesible en:
 - `https://lucycare.app` (dominio principal).
 - Opcionalmente `https://www.lucycare.app` redirigiendo a `https://lucycare.app` (o como alias, según lo que Vercel sugiera).
 
-Hoy producción se sirve desde `https://lucycare.vercel.app`. Vercel
-sigue siendo el host; lo que cambia es solo el hostname público.
+Pre-corte: producción se servía desde `https://lucycare.vercel.app`.
+Post-corte (registrado en §3 y §8): producción vive en
+`https://lucycare.app` y `vercel.app` queda como **fallback temporal**.
+Vercel sigue siendo el host; lo que cambia es solo el hostname público.
 
 ## 2. Alcance
 
@@ -374,18 +376,11 @@ documentación.
 Documentar como follow-up **si aparecen durante el setup**, pero no
 ejecutar en este PR:
 
-- **Refresh de docs que referencian `lucycare.vercel.app`** una vez que
-  el corte esté firme. Hoy tienen referencias:
-  - `docs/FASE_4_AUTH_EMAIL.md` (sección 1 — URL Configuration).
-  - `docs/SETUP_SMTP_RESEND.md` (sección 5.6).
-  - `docs/SECURITY_GATE_PILOTO.md` (sección 7.2 smoke).
-  - `docs/PLAN_PILOTO_5_MEDICOS.md`.
-  - `CLAUDE.md` (nota explícita actual: "producción aún en `lucycare.vercel.app`").
-  - `docs/HANDOFF_LUCYCARE_SPRINT7.md`.
-  - `docs/HANDOFF_TOMA_DECISIONES_2.md`.
-
-  Estos docs se actualizan en un mini PR documental aparte (similar al
-  PR #47), después de validar el corte en producción.
+- ~~**Refresh de docs que referencian `lucycare.vercel.app`** una vez que
+  el corte esté firme.~~ ✅ Resuelto en mini PR documental post-corte
+  (refresh de `CLAUDE.md`, `HANDOFF_LUCYCARE_SPRINT7.md`,
+  `HANDOFF_TOMA_DECISIONES_2.md`, `FASE_4_AUTH_EMAIL.md`,
+  `SETUP_SMTP_RESEND.md`, `PLAN_PILOTO_5_MEDICOS.md`).
 
 - **Considerar activar proxy de Cloudflare** (nube naranja) para
   habilitar WAF y cache. No bloqueante. Post-piloto.
