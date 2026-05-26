@@ -10,6 +10,28 @@
 > Este PR es **documental y de checklist**, sin código. La integración
 > con Resend + Supabase la ejecuta el owner desde los dashboards.
 
+## Estado actual del setup (al momento del PR)
+
+> Importante: **la integración real todavía NO está ejecutada.** Este
+> documento describe el procedimiento a seguir. Los valores concretos
+> (dominio, sender, fecha) se llenan en la sección 8 **después** de que
+> el owner haga el setup.
+
+| Item | Estado |
+|---|---|
+| Documentación de procedimiento | ✅ creada en este PR |
+| Cuenta Resend | ⏳ pendiente |
+| Dominio o subdominio (`mail.lucycare.com` es **objetivo propuesto**, aún no comprado/verificado) | ⏳ pendiente |
+| Registros DNS (SPF / DKIM / DMARC) | ⏳ pendiente |
+| API key Resend con `sending access` | ⏳ pendiente |
+| SMTP custom configurado en Supabase Dashboard | ⏳ pendiente |
+| Smoke de reset por email end-to-end | ⏳ pendiente |
+| Smoke de capacidad (5 emails seguidos) | ⏳ pendiente |
+
+Cuando todos esos ítems pasen a ✅, completar la sección 8 con los
+valores reales y abrir un follow-up al Security Gate cerrando el
+Hallazgo #6.
+
 ---
 
 ## 1. Objetivo
@@ -114,12 +136,18 @@ Resend requiere un dominio verificado para mandar desde
 `algo@tudominio.com`. Sin dominio verificado, los envíos van desde
 `onboarding@resend.dev`, lo cual no sirve para piloto real.
 
-**Opciones:**
+> ⚠️ Hoy LucyCare está sirviendo desde `lucycare.vercel.app`. El
+> dominio propio aún no está comprado/configurado. Los nombres como
+> `mail.lucycare.com` que aparecen abajo son **propuestos**, no
+> existen todavía. El owner define el dominio real al momento del
+> setup y lo registra en la sección 8.
+
+**Opciones (a decidir al momento del setup):**
 
 | Opción | Cuándo usar |
 |---|---|
-| Dominio principal (`lucycare.com` si existe) | Si el owner ya tiene el dominio comprado y controla DNS |
-| Subdominio (`mail.lucycare.com`) | Recomendado — aísla la reputación del subdominio sin afectar otros usos del dominio principal |
+| Dominio principal (ej. `lucycare.com`) | Si el owner compró el dominio y controla DNS |
+| Subdominio (ej. `mail.lucycare.com`) | Recomendado — aísla la reputación del subdominio sin afectar otros usos del dominio principal |
 | Sin dominio propio (`onboarding@resend.dev`) | Solo para pruebas internas, **no aceptable para piloto público** |
 
 **Recomendación operativa:** usar **subdominio** (`mail.<dominio>` o
