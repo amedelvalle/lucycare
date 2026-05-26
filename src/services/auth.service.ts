@@ -281,18 +281,109 @@ export async function requestPasswordReset(
 }
 
 /**
+ * Helper interno: setea password en la sesión activa vía fetch directo
+ * a `PUT /auth/v1/user`.
+ *
+ * NO usa `supabase.auth.updateUser({ password })` — en sesiones donde
+ * el usuario hizo varias llamadas previas a `supabase.auth.*` (ej.
+ * primero OTP, después `requestPasswordReset`, después update password
+ * dentro del mismo modal), el wrapper se cuelga ANTES de mandar la
+ * request HTTP y el spinner queda en "Guardando…" indefinidamente.
+ * Mismo patrón defensivo que `claimProfile.service.ts` y
+ * `getMyProfileEmail`.
+ *
+ * Timeout 8 s. Mapea errores comunes a copy amigable.
+ */
+const SET_PASSWORD_TIMEOUT_MS = 8_000
+
+async function setPasswordWithFetch(
+  newPassword: string,
+  accessToken: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!accessToken) {
+    return {
+      success: false,
+      error: 'No pudimos confirmar tu sesión. Refrescá la página y volvé a intentar.',
+    }
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), SET_PASSWORD_TIMEOUT_MS)
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ password: newPassword }),
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+
+    if (resp.ok) {
+      return { success: true }
+    }
+
+    // Mapear errores comunes de GoTrue a copy amigable.
+    let body: { code?: string; error_code?: string; msg?: string; message?: string } = {}
+    try {
+      body = await resp.json()
+    } catch {
+      // body queda vacío
+    }
+    const code = body.code ?? body.error_code ?? ''
+    const msg = body.msg ?? body.message ?? ''
+    if (resp.status === 401 || resp.status === 403) {
+      return {
+        success: false,
+        error: 'Tu sesión expiró. Refrescá la página y volvé a entrar para crear la contraseña.',
+      }
+    }
+    if (resp.status === 422 || /password/i.test(msg)) {
+      return {
+        success: false,
+        error: 'La contraseña no cumple los requisitos mínimos. Probá una distinta de al menos 8 caracteres.',
+      }
+    }
+    console.warn('[setPasswordWithFetch] HTTP', resp.status, code, msg)
+    return {
+      success: false,
+      error: 'No pudimos guardar tu contraseña. Probá de nuevo en un momento.',
+    }
+  } catch (err) {
+    clearTimeout(timeoutId)
+    const isAbort = err instanceof DOMException && err.name === 'AbortError'
+    if (isAbort) {
+      return {
+        success: false,
+        error: 'La operación tardó más de lo normal. Probá de nuevo.',
+      }
+    }
+    console.warn('[setPasswordWithFetch] error:', err)
+    return {
+      success: false,
+      error: 'Error de conexión al guardar la contraseña.',
+    }
+  }
+}
+
+/**
  * Establecer una nueva contraseña usando la sesión de recuperación
  * activa (el usuario llegó vía el link del email y Supabase ya
  * inyectó la sesión temporal).
  *
- * Devuelve error si:
- * - No hay sesión activa (el link expiró o el usuario lo abrió mal).
- * - El password no cumple políticas mínimas (Supabase responde con error).
+ * Sigue usando el wrapper de supabase-js porque el flujo de recovery
+ * arranca con una sesión fresca (sin acumulación de calls previas) y
+ * el hang no se ha observado ahí. Si se reportara, migrar a fetch
+ * directo con el patrón de `setPasswordFromClaim`.
  */
 export async function setPasswordFromRecovery(
   newPassword: string,
 ): Promise<{ success: boolean; error?: string }> {
-  // Verificar que estamos en una sesión de recuperación válida
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -312,6 +403,84 @@ export async function setPasswordFromRecovery(
   }
 
   return { success: true }
+}
+
+/**
+ * Establecer una contraseña usando la sesión OTP activa, dentro del
+ * flujo de Reclamar perfil (Fase 4 PR-B). El médico ya validó
+ * identidad (phone + license) en el reclamo previo; acá solo agregamos
+ * password al `auth.users` que ya existe.
+ *
+ * Recibe el `accessToken` que el modal ya capturó (mismo patrón que
+ * `claimDoctorProfile` y `getMyProfileEmail`) para no depender de
+ * `supabase.auth.getSession()` ni del wrapper de `updateUser()`,
+ * que se cuelgan en sesiones con varias llamadas previas.
+ */
+export async function setPasswordFromClaim(
+  newPassword: string,
+  accessToken: string,
+): Promise<{ success: boolean; error?: string }> {
+  return setPasswordWithFetch(newPassword, accessToken)
+}
+
+/**
+ * Devuelve el email registrado en `profiles.email` del usuario
+ * actual (self-select). Útil para mostrar el destino del link de
+ * reset en el step "Crear contraseña" del Reclamar perfil.
+ *
+ * IMPORTANTE: usa fetch directo a PostgREST en vez de
+ * `supabase.from(...)`. Igual que `claimProfile.service.ts`: en
+ * algunos browsers con `navigator.locks` tomado por otra cosa, el
+ * wrapper de supabase-js se cuelga ANTES de hacer la request HTTP
+ * y la llamada nunca sale. El modal del Reclamar perfil pasa el
+ * `accessToken` + `userId` que ya capturó al verificar OTP, así
+ * no necesitamos `getSession()` acá tampoco.
+ *
+ * Timeout de 5 s. Si vence o falla la red, devuelve `null` → el
+ * step "Recibir link por email" muestra el fallback amber ("No
+ * encontramos un correo registrado").
+ *
+ * El acceso a `profiles.email` está habilitado por la policy
+ * `profiles_self_select` (`auth.uid() = id`) — sin filtrado de
+ * columnas.
+ */
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const PROFILE_EMAIL_TIMEOUT_MS = 5_000
+
+export async function getMyProfileEmail(
+  accessToken: string,
+  userId: string,
+): Promise<string | null> {
+  if (!accessToken || !userId) return null
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), PROFILE_EMAIL_TIMEOUT_MS)
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      },
+    )
+    clearTimeout(timeoutId)
+    if (!resp.ok) {
+      console.warn('[getMyProfileEmail] HTTP', resp.status)
+      return null
+    }
+    const rows = (await resp.json()) as Array<{ email: string | null }>
+    return rows?.[0]?.email ?? null
+  } catch (err) {
+    clearTimeout(timeoutId)
+    console.warn('[getMyProfileEmail] error (silenciado):', err)
+    return null
+  }
 }
 
 /**

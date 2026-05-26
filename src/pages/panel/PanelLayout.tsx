@@ -47,7 +47,21 @@ export default function PanelLayout() {
     navigate('/');
   };
 
-  if (!user) {
+  // Guard combinado: esperar TANTO al user (auth.user) como al
+  // ctx (lucy_status, is_operational, role).
+  //
+  // Sin esperar `ctx`, el panel completo se renderizaba por un frame
+  // antes de la transición a "Perfil reclamado" / "Cuenta suspendida"
+  // cuando is_operational=false (flash visible al hacer login post-claim).
+  //
+  // `useClinicContext` es un useQuery; mientras carga devuelve
+  // `ctx === undefined` y el check `ctx?.role === 'doctor' && ...`
+  // evaluaba false → se caía al render del panel completo.
+  //
+  // Nota: si `useClinicContext` falla (retry agotado) el spinner queda
+  // permanente. Es una limitación pre-existente del panel; manejo de
+  // error de contexto queda como follow-up.
+  if (!user || !ctx) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
@@ -55,20 +69,33 @@ export default function PanelLayout() {
     );
   }
 
-  // Médico suspendido por admin → no puede operar el panel
+  // Médico no operativo → no puede operar el panel.
+  // Distinguimos dos casos por `lucy_status` para no confundir al
+  // médico recién reclamado con un "suspendido por admin":
+  //   - listed_only / claimed + !is_operational → recién reclamado,
+  //     esperando habilitación por LucyAdmin. Copy informativo.
+  //   - booking_enabled / verified + !is_operational → admin lo
+  //     suspendió. Copy original ("cuenta suspendida").
   if (ctx?.role === 'doctor' && ctx.doctorIsOperational === false) {
+    const isPendingHabilitation =
+      ctx.doctorLucyStatus === 'listed_only' || ctx.doctorLucyStatus === 'claimed';
+    const title = isPendingHabilitation ? 'Perfil reclamado' : 'Cuenta suspendida';
+    const description = isPendingHabilitation
+      ? 'Tu perfil ya fue reclamado. Estamos revisando tu habilitación para activar el panel completo. Te avisamos en cuanto esté listo.'
+      : 'Tu cuenta está pausada temporalmente por el administrador. No podés atender citas ni firmar consultas hasta que se reactive. Tu data histórica se conserva.';
+    const iconClass = isPendingHabilitation
+      ? 'ri-time-line text-2xl text-emerald-700'
+      : 'ri-pause-circle-line text-2xl text-amber-600';
+    const iconBg = isPendingHabilitation ? 'bg-emerald-100' : 'bg-amber-100';
+    const borderClass = isPendingHabilitation ? 'border-emerald-200' : 'border-amber-200';
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-        <div className="bg-white border border-amber-200 rounded-2xl p-6 max-w-md text-center shadow-sm">
-          <div className="w-12 h-12 mx-auto rounded-full bg-amber-100 flex items-center justify-center mb-3">
-            <i className="ri-pause-circle-line text-2xl text-amber-600" />
+        <div className={`bg-white border ${borderClass} rounded-2xl p-6 max-w-md text-center shadow-sm`}>
+          <div className={`w-12 h-12 mx-auto rounded-full ${iconBg} flex items-center justify-center mb-3`}>
+            <i className={iconClass} />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Cuenta suspendida</h2>
-          <p className="text-sm text-gray-600 mt-2">
-            Tu cuenta está pausada temporalmente por el administrador. No podés
-            atender citas ni firmar consultas hasta que se reactive. Tu data
-            histórica se conserva.
-          </p>
+          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <p className="text-sm text-gray-600 mt-2">{description}</p>
           <button
             onClick={handleLogout}
             className="mt-5 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl"
