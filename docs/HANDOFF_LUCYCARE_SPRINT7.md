@@ -1,7 +1,7 @@
 # Handoff LucyCare — Pre-piloto (post Sprint 7)
 
 > Documento para retomar el proyecto en una nueva ventana sin depender
-> del chat previo. **Snapshot 2026-05-25.** Acompaña a `CLAUDE.md`
+> del chat previo. **Snapshot 2026-05-26.** Acompaña a `CLAUDE.md`
 > (guía rápida + sistema de diseño), `docs/ESTADO_TECNICO.md` (ER/BD)
 > y los análisis vivos en `docs/ANALISIS_*.md`.
 
@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `4c4fef1` o posterior. **PRs #1–#44 mergeados.**
+- **HEAD esperado en `main`:** `f7797a5` o posterior. **PRs #1–#46 mergeados.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#44):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#46):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -25,6 +25,7 @@
   - PR #42 Análisis paciente global (doc + decisiones DA1-DA4).
   - PR #43 Lista de espera real + badge admin (s7_18, s7_19).
   - PR #44 Paciente Global Fase 1 (s7_20).
+  - PR #46 SMTP externo Resend + reset por email validado (doc + setup operativo 2026-05-26, dominio `lucycare.app` **comprado en Cloudflare**, DNS email — SPF/DKIM/DMARC — gestionado ahí mismo).
 - **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
@@ -90,6 +91,8 @@ Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 - RLS hardening de `profiles`: anon solo (id, full_name, avatar_url) de médicos publicados.
 - audit_log con coverage: claim, avatar, admin edits, reviews, waitlist, paciente global.
 - Modales sensibles no cierran al click outside.
+- SMTP transaccional con Resend (dominio `lucycare.app` comprado en Cloudflare, DNS gestionado ahí, SMTP custom en Supabase Auth). Hallazgo #6 del Security Gate ✅ cerrado en PR #46.
+- Producción aún en `lucycare.vercel.app`. Cambio a `https://lucycare.app` queda como próximo paso operativo (PR separado).
 
 ### Cuenta demo oficial — Camilo
 Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla activa para validar todos los flujos del médico operativo real.
@@ -119,10 +122,15 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ## 4. Próximas fases (orden recomendado)
 
+### 4.0 Próxima prioridad recomendada
+
+1. **Configurar dominio público en Vercel** (operativo, no código): `lucycare.app` ya está comprado en Cloudflare; falta agregarlo como dominio principal en Vercel, configurar DNS web (sin tocar los registros de email de Resend), validar SSL, y actualizar Supabase Auth → URL Configuration. PR separado con doc `docs/SETUP_VERCEL_DOMAIN.md` siguiendo el patrón de `SETUP_SMTP_RESEND.md`.
+2. **Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Después del dominio Vercel, porque PR-B toca templates/UX donde el dominio importa.
+
 ### 4.1 Pre-piloto público (operativo, no código)
 
-1. **SMTP externo (Resend)** — Supabase Auth Email Provider. Antes del piloto público para no depender del rate limit builtin (4 emails/h). Hoy el reset por email funciona pero limitado.
-2. **Re-validar reset por email** tras cooldown (operativo, sin código).
+1. ✅ **SMTP externo (Resend)** — completado en PR #46 (setup 2026-05-26). Ver `docs/SETUP_SMTP_RESEND.md`.
+2. **Smoke 7.3 opcional** — validar capacidad con 5 resets seguidos. No bloqueante: rate limit builtin ya no aplica.
 3. **Cleanup test patients Fase 1** cuando termine validación (`node scripts/setup-test-patient.mjs --clean`).
 
 ### 4.2 Auth — Fase 4 PR-B
@@ -170,8 +178,9 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 - **Sin `is_published`** → no aparecen en directorio público (pero sí en admin).
 - **Sin `is_operational`** → no operan agenda (ven "Cuenta suspendida" en panel). Hoy NO controla visibilidad en directorio.
 - **Validar con `vite build` real**, no solo `tsc --noEmit`.
-- **SMTP builtin de Supabase tiene rate limit de ~4 emails/h** — bloqueante para piloto público. Mitigación: configurar Resend.
+- ~~**SMTP builtin de Supabase tiene rate limit de ~4 emails/h** — bloqueante para piloto público.~~ ✅ Resuelto en PR #46 con Resend (dominio `lucycare.app`).
 - **NO commitear `service_role`** ni ningún JWT. Está rotado y el viejo invalidado, pero el repo es público.
+- **NO commitear** la API key de Resend ni credenciales SMTP. Viven en Supabase Dashboard + password manager del owner.
 - **Branches** con nombres cortos (`claude/<8-12 chars>`) para que Vercel no las trunque.
 
 ---
@@ -181,10 +190,12 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 **Docs (siempre leer antes de codear según el objetivo del día):**
 - `CLAUDE.md` — guía rápida + sistema de diseño + tablero de decisiones.
 - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — este documento.
+- `docs/HANDOFF_TOMA_DECISIONES_2.md` — handoff corto: decisiones cerradas + infra + próximos pasos.
 - `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
 - `docs/SECURITY_GATE_PILOTO.md` — auditoría de seguridad pre-piloto.
 - `docs/CUENTA_DEMO_CAMILO.md` — cuenta demo oficial.
 - `docs/FASE_4_AUTH_EMAIL.md` — guía Supabase URL/email config.
+- `docs/SETUP_SMTP_RESEND.md` — Resend como SMTP custom (✅ live desde 2026-05-26).
 - `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo (Fase 2 ✅).
 - `docs/ANALISIS_AUTH_MEDICO.md` — plan auth (PR-A ✅, PR-B en cola).
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial directorio.
@@ -267,16 +278,18 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#44 mergeados, migraciones hasta s7_20.
+Estado: PRs #1–#46 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live.
 
-Hoy hacemos: ___[ej:
-  - SMTP externo Resend (operativo);
+Hoy hacemos: ___[próxima prioridad recomendada:
   - Fase 4 PR-B password en flujo de Reclamar perfil;
+
+  otras opciones en cola:
   - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);
   - vista global /admin/lista-espera cross-médicos;
   - Fase 3 Paciente Global read-only datos del médico;
   - admin merge de pacientes duplicados;
   - SMS automático al invitar asistente (S5-08);
+  - smoke 7.3 opcional capacidad SMTP (5 emails seguidos);
   - etc.
 ]___
 ```

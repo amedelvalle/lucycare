@@ -20,6 +20,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 
 **Continuidad / base (siempre):**
 - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — handoff actualizado, snapshot vigente.
+- `docs/HANDOFF_TOMA_DECISIONES_2.md` — handoff corto de decisiones + estado de infra + próximos pasos.
 - `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
 
 **Análisis vivos (cada uno cubre un eje):**
@@ -29,6 +30,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial del directorio.
 - `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de identidad de paciente (Fase 1 ✅ live).
 - `docs/FASE_4_AUTH_EMAIL.md` — guía operativa Supabase URL/email config.
+- `docs/SETUP_SMTP_RESEND.md` — Resend como SMTP custom de Supabase Auth (✅ live desde 2026-05-26, dominio `lucycare.app`).
 - `docs/CUENTA_DEMO_CAMILO.md` — credenciales y reglas de la cuenta demo oficial.
 
 **Planes:**
@@ -40,18 +42,20 @@ Luego leé los documentos oficiales según el objetivo del día:
 contenido YA está en `main`. Re-mergearlas genera conflictos. Tras un
 squash-merge, la rama puede borrarse.
 
-## Estado actual del proyecto (snapshot 2026-05-25)
+## Estado actual del proyecto (snapshot 2026-05-26)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `4c4fef1` o posterior. **PRs #1–#44 mergeados**.
+- **HEAD esperado:** `f7797a5` o posterior. **PRs #1–#46 mergeados**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
-- **Pre-piloto (PRs #32–#44):** ✅ reclamo seguro, foto perfil, auth email+password, Security Gate (3 hallazgos críticos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1.
+- **Pre-piloto (PRs #32–#46):** ✅ reclamo seguro, foto perfil, auth email+password, Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend.
 - **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`. Verificables con `node scripts/check-s7_NN.mjs`.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
 - **Deploy:** Vercel auto-deploy desde `main`. `gh` CLI autenticado.
 - **Service role:** rotado en PR #36. Scripts admin leen de `.env.local` (ENV vars), `service_role` no está en el repo.
+- **Dominio:** `lucycare.app` **comprado en Cloudflare** (DNS gestionado ahí mismo). Producción aún se sirve desde `lucycare.vercel.app` — el cambio a `https://lucycare.app` en Vercel es el siguiente paso operativo, no ejecutado todavía.
+- **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
 ## Decisiones cerradas (NO reabrir)
 
@@ -219,7 +223,7 @@ Encuesta post-cita con token único, NPS, score público ajustado bayesianamente
 ### Sprint 7 — Admin SaaS + Robustez ✅ (PRs #16–#30)
 Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios). Robustez pacientes (document_number nullable, dedup teléfono, normalización SV, validación DUI).
 
-### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#44)
+### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#46)
 - **Reclamo seguro** (PR #32, s7_13).
 - **Estabilización supabase-js lock** (PR #33).
 - **Foto de perfil** (PR #34, s7_14).
@@ -233,13 +237,17 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Análisis paciente global + decisiones** (PR #42).
 - **Lista de espera real + badge admin** (PR #43, s7_18, s7_19).
 - **Paciente Global Fase 1** (PR #44, s7_20).
+- **SMTP externo Resend + reset por email validado** (PR #46, doc + setup operativo 2026-05-26, dominio `lucycare.app`).
 
 ## Próximas fases (en cola)
 
+### Próxima prioridad recomendada
+1. **Configurar dominio público en Vercel** (operativo). `lucycare.app` comprado en Cloudflare; falta agregarlo en Vercel, DNS web sin tocar el email de Resend, SSL, y Supabase Auth → URL Configuration. PR separado con `docs/SETUP_VERCEL_DOMAIN.md`.
+2. **Fase 4 PR-B — password en flujo de Reclamar perfil.** Después del dominio. Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+
 ### Pre-piloto público (operativo, no código)
-1. **SMTP externo (Resend)** — Supabase Auth Email Provider, antes del piloto público para no depender del rate limit builtin (4 emails/h). Documentar y aplicar setup.
-2. **Re-validar reset por email tras cooldown** — sigue pendiente desde PR #39.
-3. **Cleanup test patients Fase 1** cuando termine la validación (`node scripts/setup-test-patient.mjs --clean`).
+1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
+2. **Cleanup test patients Fase 1** cuando termine la validación (`node scripts/setup-test-patient.mjs --clean`).
 
 ### Fase 4 — Auth robusta del médico
 - **PR-B**: integrar email+password dentro del flujo de Reclamar perfil. Opción "crear password ahora" o "recibir link por email después". Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
@@ -282,7 +290,7 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 5. **No hay vista `/panel/consultas`** — solo se accede via cita o paciente.
 6. **WaitlistModal** todavía tiene el patrón legacy de click-outside-cierra; no es bloqueante (ya tiene UX correcta), pero por consistencia con LoginModal valdría hardening idéntico cuando se toque.
 
-## Datos en DB (snapshot 2026-05-25)
+## Datos en DB (snapshot 2026-05-26)
 
 - ~113 doctores totales. 5 publicados (4 informativos + 1 con agenda en línea).
 - 12 seed `*.lucycare.test` desactivados (`is_active=false`).
@@ -353,6 +361,8 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+f7797a5 docs(auth): documentar setup SMTP externo con Resend (#46)
+b303270 docs: refresh CLAUDE.md + HANDOFF post-PR #44 (#45)
 4c4fef1 feat(paciente): Paciente Global Fase 1 — vinculación retroactiva + Mis atenciones (#44)
 2d4c94a feat(directorio): lista de espera real + badge admin (#43)
 4225687 docs: análisis del modelo de paciente global + decisiones (#42)
@@ -399,13 +409,17 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#44 mergeados, migraciones hasta s7_20.
+Estado: PRs #1–#46 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio `lucycare.app` comprado en Cloudflare; Vercel domain pendiente.
 
-Hoy hacemos: ___[ej: SMTP externo Resend (operativo);
-                   Fase 4 PR-B password en reclamo;
-                   Fase 2 Paciente Global perfil extendido;
-                   vista global /admin/lista-espera;
-                   etc.]___
+Hoy hacemos: ___[próxima prioridad recomendada en orden:
+                   1) configurar dominio público lucycare.app en Vercel (operativo);
+                   2) Fase 4 PR-B password en flujo Reclamar perfil;
+
+                   otras en cola:
+                   - Fase 2 Paciente Global perfil extendido;
+                   - vista global /admin/lista-espera;
+                   - Fase 3 Paciente Global read-only datos del médico;
+                   - etc.]___
 ```
 
 ## Documentos fuente originales (en raíz)
