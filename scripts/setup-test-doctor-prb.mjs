@@ -211,7 +211,7 @@ if (RESET) {
   // Borrar clinic_members del owner (PR-B no los modifica, pero si el
   // claim del flow corre, se crean — para repetir el smoke desde cero
   // los quitamos).
-  await svc.from('clinic_members').delete().eq('user_id', userId);
+  await svc.from('clinic_members').delete().eq('profile_id', userId);
 
   // Resetear password a uno random conocido (no podemos "borrar" el
   // password con Admin API; lo mejor es ponerlo random así --apply de
