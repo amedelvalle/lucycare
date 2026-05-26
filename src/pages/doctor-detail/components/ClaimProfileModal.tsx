@@ -252,11 +252,16 @@ export default function ClaimProfileModal({
         if (onActivated) onActivated();
         // Pre-cargar email para mostrarlo en la opción "Recibir link".
         // No bloqueante: si falla, el step tendrá el fallback de
-        // "no encontramos email registrado".
+        // "no encontramos email registrado". Pasamos el token que el
+        // modal ya tiene capturado para evitar getSession() — que en
+        // algunos browsers se cuelga por navigator.locks.
         (async () => {
-          const email = await getMyProfileEmail();
-          setProfileEmail(email);
-          setProfileEmailLoaded(true);
+          try {
+            const email = await getMyProfileEmail(tok.accessToken, tok.userId);
+            setProfileEmail(email);
+          } finally {
+            setProfileEmailLoaded(true);
+          }
         })();
       } else {
         const code = result.errorCode ?? 'UNKNOWN';
@@ -346,28 +351,42 @@ export default function ClaimProfileModal({
         </div>
 
         {/* Progress */}
+        {/*
+          Layout: círculo · conector · círculo · conector · círculo.
+          Los círculos van a posiciones fijas (izquierda / centro /
+          derecha) gracias a `justify-between` y a los conectores
+          `flex-1` que ocupan el espacio intermedio. Así las labels
+          de abajo (también `justify-between`) alinean correctamente
+          con sus números. Importante: el último círculo NO tiene
+          conector después — sino el `justify-between` empujaría al
+          círculo 3 fuera del extremo derecho.
+        */}
         {step !== 'success' && (
           <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               {[1, 2, 3].map((s) => (
-                <div key={s} className="flex items-center flex-1">
+                <div key={s} className="contents">
+                  {s > 1 && (
+                    <div
+                      className={`flex-1 h-1 mx-2 ${
+                        stepIndex >= s ? 'bg-emerald-700' : 'bg-gray-200'
+                      }`}
+                    />
+                  )}
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center font-medium ${
+                    className={`w-8 h-8 rounded-full flex items-center justify-center font-medium shrink-0 ${
                       stepIndex >= s ? 'bg-emerald-700 text-white' : 'bg-gray-200 text-gray-500'
                     }`}
                   >
                     {s}
                   </div>
-                  {s < 3 && (
-                    <div className={`flex-1 h-1 mx-2 ${stepIndex > s ? 'bg-emerald-700' : 'bg-gray-200'}`}></div>
-                  )}
                 </div>
               ))}
             </div>
             <div className="flex justify-between mt-2">
               <span className="text-xs text-gray-600">Verificación</span>
-              <span className="text-xs text-gray-600">Licencia y términos</span>
-              <span className="text-xs text-gray-600">Contraseña</span>
+              <span className="text-xs text-gray-600 text-center">Licencia y términos</span>
+              <span className="text-xs text-gray-600 text-right">Contraseña</span>
             </div>
           </div>
         )}

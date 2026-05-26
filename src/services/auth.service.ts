@@ -344,27 +344,59 @@ export async function setPasswordFromClaim(
  * actual (self-select). Útil para mostrar el destino del link de
  * reset en el step "Crear contraseña" del Reclamar perfil.
  *
- * Devuelve `null` si no hay sesión o si el profile no tiene email.
- * El acceso está habilitado por la policy `profiles_self_select`
- * (`auth.uid() = id`) — sin filtrado de columnas.
+ * IMPORTANTE: usa fetch directo a PostgREST en vez de
+ * `supabase.from(...)`. Igual que `claimProfile.service.ts`: en
+ * algunos browsers con `navigator.locks` tomado por otra cosa, el
+ * wrapper de supabase-js se cuelga ANTES de hacer la request HTTP
+ * y la llamada nunca sale. El modal del Reclamar perfil pasa el
+ * `accessToken` + `userId` que ya capturó al verificar OTP, así
+ * no necesitamos `getSession()` acá tampoco.
+ *
+ * Timeout de 5 s. Si vence o falla la red, devuelve `null` → el
+ * step "Recibir link por email" muestra el fallback amber ("No
+ * encontramos un correo registrado").
+ *
+ * El acceso a `profiles.email` está habilitado por la policy
+ * `profiles_self_select` (`auth.uid() = id`) — sin filtrado de
+ * columnas.
  */
-export async function getMyProfileEmail(): Promise<string | null> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.user) return null
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const PROFILE_EMAIL_TIMEOUT_MS = 5_000
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('email')
-    .eq('id', session.user.id)
-    .maybeSingle()
-
-  if (error) {
-    console.warn('[getMyProfileEmail] error (silenciado):', error.message)
+export async function getMyProfileEmail(
+  accessToken: string,
+  userId: string,
+): Promise<string | null> {
+  if (!accessToken || !userId) return null
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), PROFILE_EMAIL_TIMEOUT_MS)
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      },
+    )
+    clearTimeout(timeoutId)
+    if (!resp.ok) {
+      console.warn('[getMyProfileEmail] HTTP', resp.status)
+      return null
+    }
+    const rows = (await resp.json()) as Array<{ email: string | null }>
+    return rows?.[0]?.email ?? null
+  } catch (err) {
+    clearTimeout(timeoutId)
+    console.warn('[getMyProfileEmail] error (silenciado):', err)
     return null
   }
-  return data?.email ?? null
 }
 
 /**
