@@ -286,7 +286,15 @@ export default function ClaimProfileModal({
     setGenericError('');
     setLoading(true);
     try {
-      const result = await setPasswordFromClaim(password);
+      // Pasamos el accessToken que el modal ya tiene capturado en
+      // sessionToken para evitar el wrapper de supabase-js (mismo
+      // motivo que getMyProfileEmail y claimDoctorProfile).
+      const tok = sessionToken;
+      if (!tok) {
+        setGenericError('No pudimos confirmar tu sesión. Refrescá la página y volvé a intentar.');
+        return;
+      }
+      const result = await setPasswordFromClaim(password, tok.accessToken);
       if (result.success) {
         setOutcome('password_set');
         setStep('success');
