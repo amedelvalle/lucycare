@@ -24,21 +24,38 @@
  * + email `test-prb@lucycare.test`. Ambos coinciden y se borran juntos.
  *
  * Uso:
- *   node scripts/setup-test-doctor-prb.mjs            # dry-run (info)
- *   node scripts/setup-test-doctor-prb.mjs --apply    # crear seed
- *   node scripts/setup-test-doctor-prb.mjs --reset    # revertir claim
- *                                                    # (lucy_status =
- *                                                    # listed_only,
- *                                                    # tos_accepted_at
- *                                                    # = NULL,
- *                                                    # password = nuevo
- *                                                    # random; útil
- *                                                    # para repetir
- *                                                    # smoke del modal)
- *   node scripts/setup-test-doctor-prb.mjs --clean    # eliminar todo
- *                                                    # (auth.user,
- *                                                    # profile, doctor,
- *                                                    # clinic, members)
+ *   node scripts/setup-test-doctor-prb.mjs              # dry-run (info)
+ *   node scripts/setup-test-doctor-prb.mjs --apply      # crear seed
+ *                                                      # (is_published=false
+ *                                                      # por default)
+ *   node scripts/setup-test-doctor-prb.mjs --publish    # flip
+ *                                                      # is_published=true
+ *                                                      # SOLO durante
+ *                                                      # el smoke
+ *   node scripts/setup-test-doctor-prb.mjs --unpublish  # flip
+ *                                                      # is_published=false
+ *                                                      # (revertir al
+ *                                                      # estado oculto)
+ *   node scripts/setup-test-doctor-prb.mjs --reset      # revertir claim
+ *                                                      # (lucy_status =
+ *                                                      # listed_only,
+ *                                                      # tos_accepted_at
+ *                                                      # = NULL,
+ *                                                      # password = nuevo
+ *                                                      # random; útil
+ *                                                      # para repetir
+ *                                                      # smoke del modal)
+ *   node scripts/setup-test-doctor-prb.mjs --clean      # eliminar todo
+ *                                                      # (auth.user,
+ *                                                      # profile, doctor,
+ *                                                      # clinic, members)
+ *
+ * Flujo operativo recomendado:
+ *   --apply       (una vez)
+ *   --publish     (antes del smoke; el seed se vuelve visible en /doctor/{id})
+ *   …smoke…
+ *   --unpublish   (al terminar — vuelve a estado oculto)
+ *   --clean       (cuando termines definitivamente con QA del PR-B)
  *
  * Pre-requisito operativo (manual, una sola vez):
  *   Agregar el phone +50375000099 con OTP 123456 en
@@ -64,6 +81,8 @@ const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');
 const RESET = args.has('--reset');
 const CLEAN = args.has('--clean');
+const PUBLISH = args.has('--publish');
+const UNPUBLISH = args.has('--unpublish');
 
 console.log('═══ Setup Test Doctor para Fase 4 PR-B ═══\n');
 
@@ -98,6 +117,41 @@ async function pickSpecialty() {
     throw new Error('No hay specialties en DB — cargar al menos una antes del seed.');
   }
   return data[0];
+}
+
+// ─── MODE: --publish / --unpublish ───
+if (PUBLISH || UNPUBLISH) {
+  const targetValue = PUBLISH;
+  const mode = PUBLISH ? '--publish' : '--unpublish';
+  console.log(`Modo ${mode}: ${targetValue ? 'mostrando' : 'ocultando'} seed en directorio…`);
+  const profile = await findExistingUser();
+  if (!profile) {
+    console.error('  No hay seed. Corré --apply primero.');
+    process.exit(1);
+  }
+  const doctor = await findDoctorFor(profile.id);
+  if (!doctor) {
+    console.error('  No hay doctor vinculado al seed. Inconsistencia — corré --clean y --apply.');
+    process.exit(1);
+  }
+  if (doctor.is_published === targetValue) {
+    console.log(`  El seed ya está con is_published=${targetValue}. Nada que hacer.`);
+    process.exit(0);
+  }
+  const { error: dErr } = await svc
+    .from('doctors')
+    .update({ is_published: targetValue, updated_at: new Date().toISOString() })
+    .eq('id', doctor.id);
+  if (dErr) {
+    console.error(`  Error: ${dErr.message}`);
+    process.exit(1);
+  }
+  console.log(`  ✅ doctor (id=${doctor.id.slice(0, 8)}…) is_published=${targetValue}`);
+  if (PUBLISH) {
+    console.log('\n  ⚠ El seed ahora APARECE en el directorio público con prefix "[Test PRB]".');
+    console.log('  ⚠ Acordate de correr --unpublish (o --clean) cuando termines el smoke.');
+  }
+  process.exit(0);
 }
 
 // ─── MODE: --clean ───
