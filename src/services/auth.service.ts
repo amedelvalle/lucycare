@@ -281,26 +281,22 @@ export async function requestPasswordReset(
 }
 
 /**
- * Establecer una nueva contraseña usando la sesión de recuperación
- * activa (el usuario llegó vía el link del email y Supabase ya
- * inyectó la sesión temporal).
+ * Helper interno: setea password en la sesión activa.
  *
- * Devuelve error si:
- * - No hay sesión activa (el link expiró o el usuario lo abrió mal).
- * - El password no cumple políticas mínimas (Supabase responde con error).
+ * Es la misma operación tanto para "vine de un link de recovery" como
+ * para "estoy logueado por OTP y quiero crear mi password ahora dentro
+ * del flujo de Reclamar perfil". La única diferencia es el copy del
+ * error cuando no hay sesión, que cada wrapper aporta.
  */
-export async function setPasswordFromRecovery(
+async function setPasswordOnActiveSession(
   newPassword: string,
+  noSessionError: string,
 ): Promise<{ success: boolean; error?: string }> {
-  // Verificar que estamos en una sesión de recuperación válida
   const {
     data: { session },
   } = await supabase.auth.getSession()
   if (!session?.user) {
-    return {
-      success: false,
-      error: 'Tu link de recuperación expiró o no es válido. Solicitá uno nuevo.',
-    }
+    return { success: false, error: noSessionError }
   }
 
   const { error } = await supabase.auth.updateUser({ password: newPassword })
@@ -312,6 +308,63 @@ export async function setPasswordFromRecovery(
   }
 
   return { success: true }
+}
+
+/**
+ * Establecer una nueva contraseña usando la sesión de recuperación
+ * activa (el usuario llegó vía el link del email y Supabase ya
+ * inyectó la sesión temporal).
+ */
+export async function setPasswordFromRecovery(
+  newPassword: string,
+): Promise<{ success: boolean; error?: string }> {
+  return setPasswordOnActiveSession(
+    newPassword,
+    'Tu link de recuperación expiró o no es válido. Solicitá uno nuevo.',
+  )
+}
+
+/**
+ * Establecer una contraseña usando la sesión OTP activa, dentro del
+ * flujo de Reclamar perfil (Fase 4 PR-B). El médico ya validó
+ * identidad (phone + license) en el reclamo previo; acá solo agregamos
+ * password al `auth.users` que ya existe.
+ */
+export async function setPasswordFromClaim(
+  newPassword: string,
+): Promise<{ success: boolean; error?: string }> {
+  return setPasswordOnActiveSession(
+    newPassword,
+    'No pudimos confirmar tu sesión. Cerrá el modal, refrescá la página y volvé a intentar.',
+  )
+}
+
+/**
+ * Devuelve el email registrado en `profiles.email` del usuario
+ * actual (self-select). Útil para mostrar el destino del link de
+ * reset en el step "Crear contraseña" del Reclamar perfil.
+ *
+ * Devuelve `null` si no hay sesión o si el profile no tiene email.
+ * El acceso está habilitado por la policy `profiles_self_select`
+ * (`auth.uid() = id`) — sin filtrado de columnas.
+ */
+export async function getMyProfileEmail(): Promise<string | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.user) return null
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', session.user.id)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[getMyProfileEmail] error (silenciado):', error.message)
+    return null
+  }
+  return data?.email ?? null
 }
 
 /**
