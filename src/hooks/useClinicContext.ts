@@ -29,6 +29,13 @@ export interface ClinicContext {
   doctorId: string;
   doctorName: string | null;
   doctorIsOperational: boolean;
+  /**
+   * `lucy_status` del doctor activo. Usado por `PanelLayout` para
+   * distinguir "recién reclamado, esperando habilitación" (claimed +
+   * !is_operational) de "suspendido por admin" (booking_enabled o
+   * verified + !is_operational). `null` para asistente.
+   */
+  doctorLucyStatus: string | null;
   availableDoctors: DoctorOption[];
 }
 
@@ -70,7 +77,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
   if (profile.role === 'doctor') {
     const { data: doctor, error } = await supabase
       .from('doctors')
-      .select('id, clinic_id, is_operational, profiles!inner(full_name)')
+      .select('id, clinic_id, is_operational, lucy_status, profiles!inner(full_name)')
       .eq('profile_id', user.id)
       .single();
 
@@ -86,6 +93,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
       doctorId: doctor.id,
       doctorName: doctorAny.profiles?.full_name ?? null,
       doctorIsOperational: doctorAny.is_operational !== false,
+      doctorLucyStatus: doctorAny.lucy_status ?? null,
       availableDoctors: [],
     };
   }
@@ -134,6 +142,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
       doctorId: active.id,
       doctorName: active.full_name,
       doctorIsOperational: true, // asistente no se ve afectada en el panel
+      doctorLucyStatus: null,
       availableDoctors,
     };
   }
