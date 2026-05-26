@@ -323,14 +323,26 @@ export default function ClaimProfileModal({
             <h2 className="text-xl font-semibold text-gray-900">Reclamar perfil</h2>
             <p className="text-sm text-gray-600 mt-1">{doctorName}</p>
           </div>
-          <button
-            onClick={onClose}
-            type="button"
-            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full cursor-pointer"
-            aria-label="Cerrar"
-          >
-            <i className="ri-close-line text-xl text-gray-700"></i>
-          </button>
+          {/*
+            Step `password` oculta la X intencionalmente: el claim ya
+            quedó persistido en DB (RPC atómica), y la decisión de
+            producto es que el flujo cierre con email/password
+            activado. Cerrar acá equivaldría a "lo hago después", que
+            no es una opción. El usuario sale por una de las dos
+            sub-opciones (crear ahora / link por email), o por
+            refrescar manualmente (caso ya cubierto: puede usar
+            "Olvidé contraseña" desde el login).
+          */}
+          {step !== 'password' && (
+            <button
+              onClick={onClose}
+              type="button"
+              className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full cursor-pointer"
+              aria-label="Cerrar"
+            >
+              <i className="ri-close-line text-xl text-gray-700"></i>
+            </button>
+          )}
         </div>
 
         {/* Progress */}
@@ -536,8 +548,8 @@ export default function ClaimProfileModal({
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Creá tu contraseña</h3>
                 <p className="text-sm text-gray-600">
-                  Listo, tu perfil quedó reclamado. Para que puedas entrar después aunque no tengas el teléfono a mano,
-                  configurá tu contraseña ahora.
+                  Listo, tu perfil quedó reclamado. Elegí una de las dos opciones para terminar de activar tu acceso —
+                  necesitamos que puedas entrar después aunque no tengas el teléfono a mano.
                 </p>
               </div>
 
