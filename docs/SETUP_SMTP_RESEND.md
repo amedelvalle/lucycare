@@ -10,27 +10,25 @@
 > Este PR es **documental y de checklist**, sin código. La integración
 > con Resend + Supabase la ejecuta el owner desde los dashboards.
 
-## Estado actual del setup (al momento del PR)
+## Estado actual del setup
 
-> Importante: **la integración real todavía NO está ejecutada.** Este
-> documento describe el procedimiento a seguir. Los valores concretos
-> (dominio, sender, fecha) se llenan en la sección 8 **después** de que
-> el owner haga el setup.
+> Confirmado por el owner el **2026-05-26**: integración operativa
+> Resend + Supabase Auth ejecutada y validada con reset por email real.
 
 | Item | Estado |
 |---|---|
 | Documentación de procedimiento | ✅ creada en este PR |
-| Cuenta Resend | ⏳ pendiente |
-| Dominio o subdominio (`mail.lucycare.com` es **objetivo propuesto**, aún no comprado/verificado) | ⏳ pendiente |
-| Registros DNS (SPF / DKIM / DMARC) | ⏳ pendiente |
-| API key Resend con `sending access` | ⏳ pendiente |
-| SMTP custom configurado en Supabase Dashboard | ⏳ pendiente |
-| Smoke de reset por email end-to-end | ⏳ pendiente |
-| Smoke de capacidad (5 emails seguidos) | ⏳ pendiente |
+| Cuenta Resend | ✅ creada |
+| Dominio `lucycare.app` verificado en Resend | ✅ verificado |
+| Registros DNS (SPF / DKIM / DMARC) en Cloudflare | ✅ configurados |
+| API key Resend con `sending access` | ✅ creada (guardada fuera del repo) |
+| SMTP custom configurado en Supabase Dashboard | ✅ activo |
+| Smoke de reset por email end-to-end | ✅ OK 2026-05-26 (sender `LucyCare`, link abrió, cambio de pass, login con pass nueva) |
+| Smoke de capacidad (5 emails seguidos) | ⏳ no ejecutado explícitamente (no bloqueante — rate limit builtin de ~4/h ya no aplica con SMTP externo) |
 
-Cuando todos esos ítems pasen a ✅, completar la sección 8 con los
-valores reales y abrir un follow-up al Security Gate cerrando el
-Hallazgo #6.
+Detalle de la configuración real en la **sección 8**. El Hallazgo #6
+de `docs/SECURITY_GATE_PILOTO.md` queda cerrado para la parte de reset
+por email (smoke de capacidad pendiente como verificación opcional).
 
 ---
 
@@ -136,18 +134,17 @@ Resend requiere un dominio verificado para mandar desde
 `algo@tudominio.com`. Sin dominio verificado, los envíos van desde
 `onboarding@resend.dev`, lo cual no sirve para piloto real.
 
-> ⚠️ Hoy LucyCare está sirviendo desde `lucycare.vercel.app`. El
-> dominio propio aún no está comprado/configurado. Los nombres como
-> `mail.lucycare.com` que aparecen abajo son **propuestos**, no
-> existen todavía. El owner define el dominio real al momento del
-> setup y lo registra en la sección 8.
+> ✅ **Decisión tomada en el setup real:** se usa el dominio
+> `lucycare.app` (verificado en Resend, DNS en Cloudflare). Las menciones
+> a otros nombres (ej. `mail.lucycare.com`) en versiones anteriores de
+> este doc eran propuestas — el dominio en uso es `lucycare.app`.
 
-**Opciones (a decidir al momento del setup):**
+**Opciones (referencia histórica del proceso de decisión):**
 
 | Opción | Cuándo usar |
 |---|---|
-| Dominio principal (ej. `lucycare.com`) | Si el owner compró el dominio y controla DNS |
-| Subdominio (ej. `mail.lucycare.com`) | Recomendado — aísla la reputación del subdominio sin afectar otros usos del dominio principal |
+| Dominio principal (ej. `lucycare.app` — **elegido**) | Si el owner controla DNS y quiere mandar directo desde el dominio raíz |
+| Subdominio (ej. `mail.lucycare.app`) | Aísla la reputación del subdominio sin afectar otros usos del dominio principal |
 | Sin dominio propio (`onboarding@resend.dev`) | Solo para pruebas internas, **no aceptable para piloto público** |
 
 **Recomendación operativa:** usar **subdominio** (`mail.<dominio>` o
@@ -356,22 +353,25 @@ siguiente. Si uno falla, no avanzar.
 
 ## 8. Estado real de configuración
 
-> El owner completa esta sección **después** de ejecutar el setup,
-> dentro del mismo PR antes del merge.
+> Completado por el owner tras ejecutar el setup. Confirmado el
+> **2026-05-26**. No se registran secretos (API key, password SMTP) —
+> viven en Supabase Dashboard y en el password manager del owner.
 
 | Campo | Valor |
 |---|---|
-| Fecha de configuración | _pendiente_ |
-| Plan Resend | _pendiente_ (Free / Pro) |
-| Dominio o subdominio verificado | _pendiente_ (ej. `mail.lucycare.com`) |
-| Sender email | _pendiente_ (ej. `no-reply@mail.lucycare.com`) |
-| Sender name | `LucyCare` |
-| Reply-To configurado | _pendiente_ (sí / no, valor si aplica) |
-| SMTP custom activado en Supabase | _pendiente_ (sí / no) |
-| Test SMTP al guardar | _pendiente_ (OK / KO) |
-| Smoke 7.2 reset end-to-end | _pendiente_ (OK / KO + fecha) |
-| Smoke 7.3 capacidad 5 emails | _pendiente_ (OK / KO + fecha) |
-| Pendientes operativos | _pendiente_ |
+| Fecha de configuración | 2026-05-26 |
+| Plan Resend | no documentado en repo (revisar dashboard Resend) |
+| Dominio verificado | `lucycare.app` |
+| DNS | Cloudflare — SPF + DKIM + DMARC configurados |
+| Sender name | `LucyCare` (confirmado en smoke: "el correo llegó desde LucyCare") |
+| Sender email exacto | no documentado en repo (revisar Supabase → Auth → SMTP Settings) |
+| Reply-To configurado | no documentado |
+| API key Resend | creada con permisos `Sending access`, guardada en password manager del owner |
+| SMTP custom activado en Supabase | ✅ sí |
+| Test SMTP al guardar | ✅ OK |
+| Smoke 7.2 reset end-to-end | ✅ OK 2026-05-26 — reset enviado, recibido, link abrió, cambio de contraseña OK, login con nueva contraseña OK |
+| Smoke 7.3 capacidad 5 emails | ⏳ no ejecutado explícitamente — opcional, no bloqueante |
+| Pendientes operativos | (1) monitorear bounce/complaint en dashboard Resend durante el piloto. (2) opcional: smoke 7.3 si se quiere validación formal de capacidad. (3) cuando se decida `Reply-To`, registrarlo aquí. |
 
 ## 9. Rollback
 

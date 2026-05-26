@@ -16,7 +16,7 @@ que cerrar antes del go-live.
 | #3 — `reviews` no se escriben en `audit_log` | ⚠ Medio | **Resuelto en este PR** (migración `s7_15`) |
 | #4 — Sin rate limit propio en `claim_doctor_profile` | ⚠ Bajo | Doc + PR post-piloto |
 | #5 — 12 médicos seed con email placeholder | ⚠ Bajo | Limpieza de datos antes de Fase 4 |
-| #6 — SMTP builtin con rate limit ~4 emails/h | ⚠ Medio | PR #46 deja **documentación lista ✅**. Configuración Resend/Supabase **pendiente ⏳**. Prueba real de reset por email **pendiente ⏳**. Ver [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md). |
+| #6 — SMTP builtin con rate limit ~4 emails/h | ⚠ Medio | **✅ Resuelto** (PR #46 + setup operativo 2026-05-26). Resend con dominio `lucycare.app` verificado, SMTP custom activo en Supabase, smoke de reset por email validado end-to-end. Ver [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md). |
 | 17 verificaciones positivas | ✅ OK | — |
 
 ---
@@ -335,14 +335,14 @@ El reset por email (Fase 4 PR-A, PR #39) está live contra el SMTP **builtin** d
 
 **Fix:** configurar **Resend** como SMTP custom en Supabase Auth.
 
-**Estado del PR #46 (documental):**
-- ✅ Procedimiento documentado en [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md).
-- ⏳ Configuración real en Resend + Supabase: pendiente (owner ejecuta).
-- ⏳ Smoke real de reset por email con SMTP externo: pendiente.
+**Estado (cerrado 2026-05-26):**
+- ✅ Procedimiento documentado en [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md) (PR #46).
+- ✅ Configuración real ejecutada: dominio `lucycare.app` verificado en Resend, DNS en Cloudflare (SPF/DKIM/DMARC), API key con `Sending access` creada, SMTP custom activo en Supabase Auth.
+- ✅ Smoke real de reset por email con SMTP externo: enviado, recibido desde `LucyCare`, link abrió en `/reset-password`, cambio de contraseña OK, login con nueva contraseña OK.
 
-El hallazgo **no se considera cerrado** hasta que los tres ítems estén ✅.
+Smoke opcional pendiente (no bloqueante): capacidad 5 emails seguidos (sección 7.3 del setup doc). El rate limit builtin de ~4/h **ya no aplica** con SMTP externo activo.
 
-**Para piloto:** **OBLIGATORIO antes de exponer reset por email a usuarios reales.** Hoy funciona en QA porque son pocos requests.
+**Para piloto:** ✅ Listo. Reset por email puede exponerse a usuarios reales.
 
 ### Otros observados (no acción inmediata)
 
