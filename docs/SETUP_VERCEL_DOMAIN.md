@@ -324,7 +324,7 @@ siguiente.
 | Supabase Site URL | ✅ `https://lucycare.app` |
 | Supabase Redirect URLs | ✅ incluye `https://lucycare.app/**`, `https://www.lucycare.app/**`, `https://lucycare.vercel.app/**`, + previews de Vercel preexistentes |
 | Smoke browser `https://lucycare.app` | ✅ producción carga correctamente |
-| Smoke reset por email con dominio nuevo | ✅ OK — correo recibido, link apunta a `lucycare.app/reset-password`, cambio de contraseña OK, login con nueva contraseña OK |
+| Smoke reset por email con dominio nuevo | ✅ OK — correo recibido desde `LucyCare` (sender Resend), link abre pantalla "Nueva contraseña" en `lucycare.app/reset-password`, cambio de contraseña OK, login posterior OK |
 | Pendientes operativos | (a) **No** desactivar `lucycare.vercel.app`. (b) Refresh documental separado para los docs que aún mencionan `lucycare.vercel.app` como URL principal (ver §11). (c) Limpieza diferida opcional de §5.6 (quitar `lucycare.vercel.app/**` de Redirect URLs cuando no haya links viejos en circulación). |
 
 ## 9. Rollback
