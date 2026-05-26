@@ -25,7 +25,7 @@
   - PR #42 Análisis paciente global (doc + decisiones DA1-DA4).
   - PR #43 Lista de espera real + badge admin (s7_18, s7_19).
   - PR #44 Paciente Global Fase 1 (s7_20).
-  - PR #46 SMTP externo Resend + reset por email validado (doc + setup operativo 2026-05-26, dominio `lucycare.app`).
+  - PR #46 SMTP externo Resend + reset por email validado (doc + setup operativo 2026-05-26, dominio `lucycare.app` **comprado en Cloudflare**, DNS email — SPF/DKIM/DMARC — gestionado ahí mismo).
 - **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
@@ -91,7 +91,8 @@ Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 - RLS hardening de `profiles`: anon solo (id, full_name, avatar_url) de médicos publicados.
 - audit_log con coverage: claim, avatar, admin edits, reviews, waitlist, paciente global.
 - Modales sensibles no cierran al click outside.
-- SMTP transaccional con Resend (dominio `lucycare.app`, DNS Cloudflare, SMTP custom en Supabase Auth). Hallazgo #6 del Security Gate ✅ cerrado en PR #46.
+- SMTP transaccional con Resend (dominio `lucycare.app` comprado en Cloudflare, DNS gestionado ahí, SMTP custom en Supabase Auth). Hallazgo #6 del Security Gate ✅ cerrado en PR #46.
+- Producción aún en `lucycare.vercel.app`. Cambio a `https://lucycare.app` queda como próximo paso operativo (PR separado).
 
 ### Cuenta demo oficial — Camilo
 Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla activa para validar todos los flujos del médico operativo real.
@@ -123,7 +124,8 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ### 4.0 Próxima prioridad recomendada
 
-**Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Es el siguiente paso lógico ahora que SMTP transaccional ya está estable.
+1. **Configurar dominio público en Vercel** (operativo, no código): `lucycare.app` ya está comprado en Cloudflare; falta agregarlo como dominio principal en Vercel, configurar DNS web (sin tocar los registros de email de Resend), validar SSL, y actualizar Supabase Auth → URL Configuration. PR separado con doc `docs/SETUP_VERCEL_DOMAIN.md` siguiendo el patrón de `SETUP_SMTP_RESEND.md`.
+2. **Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Después del dominio Vercel, porque PR-B toca templates/UX donde el dominio importa.
 
 ### 4.1 Pre-piloto público (operativo, no código)
 
@@ -188,6 +190,7 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 **Docs (siempre leer antes de codear según el objetivo del día):**
 - `CLAUDE.md` — guía rápida + sistema de diseño + tablero de decisiones.
 - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — este documento.
+- `docs/HANDOFF_TOMA_DECISIONES_2.md` — handoff corto: decisiones cerradas + infra + próximos pasos.
 - `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
 - `docs/SECURITY_GATE_PILOTO.md` — auditoría de seguridad pre-piloto.
 - `docs/CUENTA_DEMO_CAMILO.md` — cuenta demo oficial.
