@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-26** (post-PR #50 — Fase 4 PR-B live).
+> **Snapshot 2026-05-26** (post-PR #53 — mitigación flujo público "Soy médico" live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -23,8 +23,11 @@
 - **PR #48** ✅ mergeado — dominio público `lucycare.app` live en Vercel + Cloudflare DNS + Supabase Site URL + reset email validado end-to-end.
 - **PR #49** ✅ mergeado — refresh documental post-#48 (CLAUDE.md / HANDOFFs / FASE_4_AUTH / SETUP_SMTP_RESEND / PLAN_PILOTO actualizados a `lucycare.app` con `vercel.app` como fallback).
 - **PR #50** ✅ mergeado — Fase 4 PR-B: password en flujo de Reclamar perfil. Step obligatorio post-claim con dos caminos (crear ahora / recibir link por email). Sin migración. Incluye fix de copy "Perfil reclamado" diferenciado de "Cuenta suspendida" en `PanelLayout` + guard contra flash al cargar el contexto.
+- **PR #51** ✅ mergeado — refresh documental post-#50.
+- **PR #52** ✅ mergeado — análisis del flujo "Solicitar afiliación" (`docs/ANALISIS_AFILIACION_MEDICO.md`). 10 secciones, hallazgo R8 documentado (auto-registro inseguro en home), 10 preguntas de decisión Q1-Q10 pendientes.
+- **PR #53** ✅ mergeado — mitigación inmediata del hallazgo R8. El `DoctorRegistrationModal` legacy + `registerDoctor` service ya no se importan desde código activo. Reemplazado en home por `DoctorInterestModal` (solo captura de interés vía WhatsApp). Cero persistencia en DB validado con script de diagnóstico previo al merge.
 
-`main` HEAD esperado tras PR #50: `a2b1f96` o posterior, snapshot 2026-05-26, PRs #1–#50.
+`main` HEAD esperado tras PR #53: `f7fa227` o posterior, snapshot 2026-05-26, PRs #1–#53.
 
 ## 2. Infraestructura actual
 
@@ -72,6 +75,14 @@
 - Smoke real validado el 2026-05-26: reset email recibido desde `LucyCare`, link abrió `/reset-password`, cambio de contraseña OK, login con contraseña nueva OK.
 - Hallazgo #6 del Security Gate cerrado.
 
+### Afiliación de médicos nuevos (PRs #52 + #53)
+
+- **Regla cerrada (no reabrir):** ningún flujo público debe crear médicos `claimed` automáticamente. La identidad del médico se valida por LucyAdmin antes de existir en `doctors`.
+- **Mitigación temporal (live desde PR #53):** botón "Soy médico, quiero aparecer" en home → `DoctorInterestModal` con CTA WhatsApp prefilled. **No persiste nada en DB.**
+- **`DoctorRegistrationModal` + `registerDoctor` service:** marcados `@deprecated`. Archivos conservados solo para historial git y referencia para el flujo formal futuro. **Prohibido importarlos desde código nuevo.**
+- **Flujo formal pendiente:** diseñar "Solicitar afiliación médica" con (a) tabla `doctor_affiliation_requests` para el lead, (b) bandeja `/admin/afiliaciones` para LucyAdmin, (c) RPC `admin_approve_affiliation_request` que crea el `doctors` row en `listed_only`, (d) médico aprobado entra al flujo de Reclamar perfil existente (PR #32 + PR #50, sin código nuevo). Detalle: `docs/ANALISIS_AFILIACION_MEDICO.md`.
+- **Antes de implementar:** cerrar Q1-Q10 del §10 del análisis.
+
 ### Auth Fase 4 PR-B — password en Reclamar perfil (PR #50)
 
 - Step obligatorio "Contraseña" tras un claim exitoso. Sin botón "Lo hago después", sin X visible durante el step, sin Esc, sin click-outside-closes.
@@ -102,24 +113,23 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Análisis "Solicitar afiliación" (próxima prioridad)
+### 5.1 Cerrar Q1-Q10 del análisis de afiliación (próxima prioridad)
 
-Distinto a **Reclamar perfil** (que asume el médico ya está `listed_only` en el directorio, importado vía `import-doctors.mjs`). El caso nuevo: **médico que NO existe aún** en LucyCare — no fue importado, no tenemos phone/license/email para validar automáticamente.
+El análisis ya está en main (PR #52). La mitigación del flujo viejo ya está en main (PR #53). Lo que falta son **decisiones de producto del owner** para armar el plan operativo del PR funcional.
 
-Producto que entrega: `docs/ANALISIS_AFILIACION_MEDICO.md` con:
+Preguntas pendientes en `docs/ANALISIS_AFILIACION_MEDICO.md` §10:
+- Q1. Qué hacer con `DoctorRegistrationModal` legacy (default sugerido: deprecar — **ya aplicado parcialmente** por PR #53).
+- Q2. Credencial obligatoria u opcional.
+- Q3. Comunicación al médico tras aprobación (manual vs automática).
+- Q4. Soporte para lead abandonado.
+- Q5. Creación de `clinics` al aprobar (auto vs admin elige).
+- Q6. Mostrar estado al médico que vuelve al sitio.
+- Q7. Rate limit.
+- Q8. Consentimiento LOPD.
+- Q9. Permisos `/admin/afiliaciones`.
+- Q10. Cuándo abrir el PR (antes vs después del piloto).
 
-1. Problema.
-2. Objetivo comercial.
-3. Riesgos de seguridad.
-4. Diferencia entre "Reclamar perfil" y "Solicitar afiliación".
-5. Opciones de UX.
-6. Estados posibles del médico/lead.
-7. Qué valida LucyAdmin.
-8. Qué no debe pasar automáticamente.
-9. Recomendación de MVP.
-10. Preguntas de decisión antes de implementar.
-
-**No codificar todavía.** Solo análisis. Después decidimos scope del primer PR.
+Con esas respuestas, armo `docs/PLAN_AFILIACION_*.md` con scope concreto del PR funcional (RPCs, RLS, schema final, UI).
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 

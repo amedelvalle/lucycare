@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `a2b1f96` o posterior. **PRs #1–#50 mergeados.**
+- **HEAD esperado en `main`:** `f7fa227` o posterior. **PRs #1–#53 mergeados.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#50):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#53):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -30,6 +30,8 @@
   - PR #48 Dominio público `lucycare.app` live en Vercel (setup operativo 2026-05-26, DNS en Cloudflare con CNAME flattening en apex, `www` → apex 308, Supabase Site URL actualizado, reset por email validado end-to-end).
   - PR #49 Refresh documental post-#48 — `lucycare.app` como dominio principal en CLAUDE.md / HANDOFFs / FASE_4_AUTH / SETUP_SMTP_RESEND / PLAN_PILOTO.
   - PR #50 Password en flujo de Reclamar perfil (Fase 4 PR-B, step obligatorio post-claim, dos caminos: crear ahora / recibir link por email; copy "Perfil reclamado" diferenciado de "Cuenta suspendida"; sin migración).
+  - PR #52 Análisis del flujo "Solicitar afiliación" (`docs/ANALISIS_AFILIACION_MEDICO.md`, 10 secciones + Q1-Q10 pendientes de decisión).
+  - PR #53 Mitigación del flujo público "Soy médico" (cierra Hallazgo #7 del Security Gate). Reemplaza el `DoctorRegistrationModal` legacy (auto-creaba doctor `claimed` sin validar identidad) por un `DoctorInterestModal` que solo invita a contactar por WhatsApp. Cero persistencia en DB. `registerDoctor` service y modal legacy marcados `@deprecated`.
 - **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
@@ -89,6 +91,7 @@ Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 - Médico/Admin: OTP **+** email/password (PR #39 ✅).
 - Reset por email vía Supabase (PR #39 ✅).
 - Activación de password en flujo de Reclamar perfil (PR #50 ✅ — paso obligatorio post-claim).
+- **Ningún flujo público auto-crea médicos `claimed`** (PR #53 ✅). El antiguo "Soy médico" → form de 6 pasos quedó deprecado. Hoy es CTA "Soy médico, quiero aparecer" → WhatsApp; el alta real la maneja LucyAdmin tras validación manual (futuro: tabla `doctor_affiliation_requests` per PR #52).
 
 ### Seguridad (firmado en `docs/SECURITY_GATE_PILOTO.md`)
 - `service_role` rotado en PR #36 + invalidado el JWT legacy. Scripts leen `.env.local`.
@@ -128,9 +131,13 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ### 4.0 Próxima prioridad recomendada
 
-**Análisis del flujo "Solicitar afiliación"** (médico que **no existe aún** en el directorio — no fue importado, no tenemos phone/license para validarlo automáticamente). Distinto a "Reclamar perfil" (que asume el médico ya está listed_only en el catálogo).
+**Cerrar las preguntas Q1-Q10** de `docs/ANALISIS_AFILIACION_MEDICO.md` §10 → armar plan operativo del PR funcional de "Solicitar afiliación".
 
-Producto que entrega: `docs/ANALISIS_AFILIACION_MEDICO.md` con problema, objetivo comercial, riesgos de seguridad, diferencia con reclamo, opciones de UX, estados del médico/lead, qué valida LucyAdmin, qué NO debe pasar automáticamente, recomendación de MVP, preguntas de decisión pendientes. **No codificar todavía.**
+Estado actual del eje afiliación:
+- ✅ Análisis ya está en main (PR #52).
+- ✅ Mitigación de seguridad del flujo viejo cerrada (PR #53 — `DoctorRegistrationModal` legacy desactivado, reemplazado por captura de interés vía WhatsApp).
+- ⏳ **Falta**: decisiones de producto del owner (Q1-Q10 §10 del análisis).
+- ⏳ **Después**: plan operativo (`docs/PLAN_AFILIACION_*.md` o similar) y luego el PR funcional con tabla `doctor_affiliation_requests` + bandeja `/admin/afiliaciones` + RPC `admin_approve_affiliation_request`.
 
 ### 4.1 Pre-piloto público (operativo, no código)
 
@@ -206,6 +213,7 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 - `docs/ANALISIS_AUTH_MEDICO.md` — plan auth (PR-A ✅, PR-B en cola).
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial directorio.
 - `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de paciente (Fase 1 ✅).
+- `docs/ANALISIS_AFILIACION_MEDICO.md` — análisis del flujo "Solicitar afiliación" (médicos no importados). Q1-Q10 pendientes de decisión.
 - `docs/PLAN_PILOTO_5_MEDICOS.md` — checklist piloto.
 
 **Migraciones Sprint 7 + pre-piloto (todas aplicadas):**
@@ -284,12 +292,11 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#50 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live. Fase 4 PR-B (password en Reclamar perfil) ✅ live.
+Estado: PRs #1–#53 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live. Fase 4 PR-B (password en Reclamar perfil) ✅ live. Mitigación del flujo público "Soy médico" ✅ live (PR #53 — solo captura de interés vía WhatsApp).
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-  - Análisis del flujo "Solicitar afiliación" (médico que NO existe
-    en el directorio aún) — `docs/ANALISIS_AFILIACION_MEDICO.md`.
-    NO codificar todavía;
+  - Cerrar Q1-Q10 de `docs/ANALISIS_AFILIACION_MEDICO.md` §10 y
+    armar plan operativo del PR funcional de afiliación;
 
   otras opciones en cola:
   - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);

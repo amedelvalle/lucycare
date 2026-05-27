@@ -17,6 +17,7 @@ que cerrar antes del go-live.
 | #4 — Sin rate limit propio en `claim_doctor_profile` | ⚠ Bajo | Doc + PR post-piloto |
 | #5 — 12 médicos seed con email placeholder | ⚠ Bajo | Limpieza de datos antes de Fase 4 |
 | #6 — SMTP builtin con rate limit ~4 emails/h | ⚠ Medio | **✅ Resuelto** (PR #46 + setup operativo 2026-05-26). Resend con dominio `lucycare.app` verificado, SMTP custom activo en Supabase, smoke de reset por email validado end-to-end. Ver [`docs/SETUP_SMTP_RESEND.md`](SETUP_SMTP_RESEND.md). |
+| #7 — Flujo público "Soy médico" creaba doctores `claimed` sin validar identidad | 🚨 Alta | **✅ Resuelto** (PR #53, 2026-05-26). Detectado en auditoría del análisis de afiliación (PR #52). Ver detalle abajo. |
 | 17 verificaciones positivas | ✅ OK | — |
 
 ---
@@ -343,6 +344,39 @@ El reset por email (Fase 4 PR-A, PR #39) está live contra el SMTP **builtin** d
 Smoke opcional pendiente (no bloqueante): capacidad 5 emails seguidos (sección 7.3 del setup doc). El rate limit builtin de ~4/h **ya no aplica** con SMTP externo activo.
 
 **Para piloto:** ✅ Listo. Reset por email puede exponerse a usuarios reales.
+
+### Hallazgo #7 — Flujo público "Soy médico" creaba doctores sin validar identidad
+
+**Detectado en la auditoría previa al análisis de afiliación** (PR #52, 2026-05-26). No estaba cubierto en la revisión original del Security Gate (PR #35) porque la auditoría se enfocó en flujos de pacientes y reclamo, no en el `DoctorRegistrationModal` legacy del home.
+
+**Vector / impacto:**
+
+El botón "Soy médico" en home (`src/pages/home/page.tsx:152`) abría `DoctorRegistrationModal` (form de 6 pasos: OTP + datos personales + profesional + ubicación + servicios + disponibilidad). El submit llamaba a `registerDoctor()` que en una sola transacción persistía:
+
+- `profiles` con `role='doctor'`.
+- `clinics` con la información tipeada.
+- `clinic_members` como `owner`.
+- `doctors` con **`lucy_status='claimed'` directo** (sin pasar por `listed_only`), `is_published=false`, `is_verified=false`, `booking_enabled=false`.
+- `services` (los que el usuario eligió).
+- `availability_rules` (los días/horas tipeados).
+
+**Sin validación de identidad en ningún paso:** la licencia/JVPM se aceptaba tal cual. Cualquiera con un OTP de teléfono real podía crear un `doctors` row con nombre y licencia inventados. Mitigado parcialmente solo por `is_published=false` (no aparecía en directorio público), pero el record existía en DB y si admin lo publicaba sin verificar la identidad, se volvía real. Vector de fraude / suplantación documentado.
+
+**Fix (PR #53):**
+
+- **Frontend**: el botón "Soy médico" ahora abre `DoctorInterestModal` — modal informativo sin form, sin backend, sin persistencia en DB. Único CTA: WhatsApp con mensaje prefillado.
+- **Archivos legacy** (`DoctorRegistrationModal.tsx`, `doctorRegistration.service.ts`) **marcados `@deprecated`** en repo. No se importan desde código activo. Verificado con grep y con build (bundle bajó 18 KB por tree-shaking).
+- **Evidencia post-smoke**: script de diagnóstico cruzado verificó que tras el smoke del flujo nuevo, **NO se crearon filas** en `doctors`, `profiles` (role=doctor), `clinics`, `clinic_members`, `services` ni `availability_rules`.
+
+**Recomendación pendiente:**
+
+Diseñar e implementar el flujo formal de **"Solicitar afiliación médica"** (`docs/ANALISIS_AFILIACION_MEDICO.md`):
+- Lead en tabla nueva `doctor_affiliation_requests`.
+- Bandeja `/admin/afiliaciones` con triage manual de LucyAdmin.
+- RPC `admin_approve_affiliation_request` que crea el `doctors` row en `listed_only`.
+- Médico aprobado entra al flujo de Reclamar perfil existente (PR #32 + PR #50).
+
+**Para piloto:** ✅ La mitigación de PR #53 es suficiente. El piloto de 5 médicos se cubre con `scripts/import-doctors.mjs` (creación curada por admin); el flujo formal de afiliación se implementa post-piloto cuando se quiera escalar.
 
 ### Otros observados (no acción inmediata)
 
