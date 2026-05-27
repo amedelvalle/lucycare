@@ -45,11 +45,11 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-26)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `6046d6c` o posterior. **PRs #1–#56 mergeados**.
+- **HEAD esperado:** `f427ed3` o posterior. **PRs #1–#58 mergeados**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
-- **Pre-piloto (PRs #32–#56):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", **Afiliación médica Fase 1 (captura de leads + bandeja admin, sin auto-creación de doctores)**.
-- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_21`. Verificables con `node scripts/check-s7_NN.mjs`.
+- **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_23`. Verificables con `node scripts/check-s7_NN.mjs`.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
 - **Deploy:** Vercel auto-deploy desde `main`. `gh` CLI autenticado.
@@ -84,7 +84,8 @@ squash-merge, la rama puede borrarse.
 - Reset de password por email (PR #39 ✅).
 - Activación de password dentro del flujo de Reclamar perfil (PR #50 ✅ — paso obligatorio post-claim con dos caminos: crear ahora / recibir link por email).
 - **Ningún flujo público crea médicos `claimed` automáticamente** (PR #53 cerró esa puerta). Quien quiera afiliarse llena el formulario `/admin/afiliaciones` (PR #56 Fase 1) → LucyAdmin valida → en Fase 2 crea el `doctors` row como `listed_only` → médico hace el reclamo estándar (PR #32 + PR #50).
-- **Afiliación Fase 1** (PR #56): captura de leads en `doctor_affiliation_requests` con bandeja admin para triage. NO crea doctor/profile/clinic todavía. Conversión lead → doctor queda para Fase 2 (RPC `admin_approve_and_create_doctor` aún por implementar).
+- **Afiliación Fase 1** (PR #56): captura de leads en `doctor_affiliation_requests` con bandeja admin para triage.
+- **Afiliación Fase 2** (PR #58 + migraciones s7_22 y s7_23): RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción crea `auth.users` dormant + `profile` + `clinics` + `clinic_members` (owner) + `doctors` en `lucy_status='listed_only'` con flags conservadores (`is_published=false`, `is_operational=false`, `booking_enabled=false`). Email override solo aceptado si el lead no trajo email (regla server-side en s7_23). UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form de overrides + pantalla éxito con link a ficha admin (no perfil público — el doctor no está publicado). El médico creado entra al flujo de Reclamar perfil estándar (PR #32 + #50) sin código nuevo del lado del médico.
 
 ### Ejes del médico (independientes)
 - `lucy_status` enum: `listed_only | claimed | booking_enabled | verified`.
@@ -225,7 +226,7 @@ Encuesta post-cita con token único, NPS, score público ajustado bayesianamente
 ### Sprint 7 — Admin SaaS + Robustez ✅ (PRs #16–#30)
 Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios). Robustez pacientes (document_number nullable, dedup teléfono, normalización SV, validación DUI).
 
-### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#56)
+### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#58)
 - **Reclamo seguro** (PR #32, s7_13).
 - **Estabilización supabase-js lock** (PR #33).
 - **Foto de perfil** (PR #34, s7_14).
@@ -244,12 +245,20 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Password en flujo de Reclamar perfil** (PR #50, Fase 4 PR-B — step obligatorio post-claim, dos caminos: crear ahora / recibir link por email; copy "Perfil reclamado" diferenciado de "Cuenta suspendida"; sin migración).
 - **Análisis del flujo "Solicitar afiliación"** (PR #52, `docs/ANALISIS_AFILIACION_MEDICO.md` — 10 secciones, 10 preguntas de decisión pendientes Q1-Q10).
 - **Mitigación del flujo público "Soy médico"** (PR #53, Hallazgo #7 del Security Gate). El `DoctorRegistrationModal` legacy + `registerDoctor` service creaban automáticamente profile/clinic/clinic_member/doctor con `lucy_status='claimed'` directo, sin validación de identidad. **Neutralizado**: el botón abrió `DoctorInterestModal` (WhatsApp-only) como mitigación temporal. Sin persistencia en DB. Archivos legacy marcados `@deprecated`.
-- **Afiliación Fase 1 — captura de leads + bandeja admin** (PR #56, `s7_21`). Reemplaza al `DoctorInterestModal` por `AffiliationRequestModal` con formulario completo. Persiste leads en `doctor_affiliation_requests` con RLS estricto, rate limit 1/IP/24h, UNIQUE phone activo. Bandeja `/admin/afiliaciones` con triage (in_review / approved / rejected) + badge en sidebar. **No crea doctor/profile/clinic todavía** — conversión queda para Fase 2.
+- **Afiliación Fase 1 — captura de leads + bandeja admin** (PR #56, `s7_21`). Reemplaza al `DoctorInterestModal` por `AffiliationRequestModal` con formulario completo. Persiste leads en `doctor_affiliation_requests` con RLS estricto, rate limit 1/IP/24h, UNIQUE phone activo. Bandeja `/admin/afiliaciones` con triage (in_review / approved / rejected) + badge en sidebar. No crea doctor/profile/clinic todavía.
+- **Afiliación Fase 2 — convertir lead aprobado en doctor `listed_only`** (PR #58, `s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` crea auth.users dormant + profile + clinic + doctor en una transacción. Email override aceptado solo si lead no trajo email. UI: botón "Crear médico" en modal admin + pantalla éxito con link a ficha admin. Smoke OK hasta ficha admin. Claim end-to-end del médico creado vía Fase 2 **pendiente de validar** con un test phone real del médico (no del paciente smoke).
 
 ## Próximas fases (en cola)
 
 ### Próxima prioridad recomendada
-**Afiliación Fase 2** — RPC `admin_approve_and_create_doctor(request_id, overrides)` que en una transacción atómica crea `profiles` huérfano + `clinics` auto + `doctors` en `listed_only` desde un lead aprobado. UI admin con botón "Aprobar y crear médico" en `AdminAffiliationDetailModal`. Mismo patrón que `import-doctors.mjs`. El médico aprobado entra al flujo de Reclamar perfil existente (PR #32 + PR #50). Plan detallado en `docs/PLAN_AFILIACION_MEDICO.md` §9.
+**Smoke claim end-to-end del médico creado vía Fase 2** — usar un test phone real del médico (no el del paciente smoke) para validar que el doctor `listed_only` recién creado se puede reclamar correctamente vía PR #32 + #50. Sin código, solo smoke operativo.
+
+Después: opciones en cola (no bloqueantes para piloto):
+- Vista global `/admin/lista-espera` cross-médicos con filtros.
+- Sección "Lista de espera" en panel del médico.
+- Paciente Global Fase 2 (perfil extendido con DUI/DOB/dpto/muni).
+- Pendientes legales/diseño del médico (DUI + TOS pre-verificación) — `docs/PLAN_AFILIACION_MEDICO.md §11.bis`.
+- Admin SaaS B4 (disponibilidad desde admin).
 
 ### Pre-piloto público (operativo, no código)
 1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
@@ -369,6 +378,8 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+f427ed3 feat(afiliacion): Fase 2 — convertir lead aprobado en doctor listed_only (#58)
+c69ea91 docs: refresh post-PR #56 — Afiliación Fase 1 live (#57)
 6046d6c feat(afiliacion): Fase 1 — captura de leads + bandeja admin (#56)
 269131e docs: plan operativo del flujo Solicitar afiliación médica (#55)
 1bd9774 docs: refresh post-PR #53 — mitigación flujo "Soy médico" (#54)
@@ -427,18 +438,18 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#56 mergeados, migraciones hasta s7_21. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura leads + bandeja admin, sin auto-creación).
+Estado: PRs #1–#58 mergeados, migraciones hasta s7_23. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura) + Fase 2 ✅ (admin convierte lead en doctor `listed_only` con email override).
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-                   Afiliación Fase 2 — RPC admin_approve_and_create_doctor
-                   + UI admin para convertir lead aprobado en doctor
-                   listed_only. Plan en docs/PLAN_AFILIACION_MEDICO.md §9;
+                   Smoke operativo del claim end-to-end de un médico
+                   creado vía Fase 2 (con test phone real del médico,
+                   no del paciente smoke);
 
                    otras en cola:
-                   - Fase 2 Paciente Global perfil extendido;
-                   - vista global /admin/lista-espera;
-                   - Fase 3 Paciente Global read-only datos del médico;
-                   - Admin SaaS B4 disponibilidad desde admin;
+                   - vista global /admin/lista-espera cross-médicos;
+                   - Paciente Global Fase 2 (DUI/DOB/dpto/muni);
+                   - DUI + TOS del médico pre-verificación (PLAN_AFILIACION §11.bis);
+                   - Admin SaaS B4 (disponibilidad desde admin);
                    - smoke 7.3 opcional capacidad SMTP;
                    - etc.]___
 ```
