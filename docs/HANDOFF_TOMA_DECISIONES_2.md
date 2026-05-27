@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-26** (post-PR #53 — mitigación flujo público "Soy médico" live).
+> **Snapshot 2026-05-27** (post-PR #56 — Afiliación Fase 1 live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -24,10 +24,13 @@
 - **PR #49** ✅ mergeado — refresh documental post-#48 (CLAUDE.md / HANDOFFs / FASE_4_AUTH / SETUP_SMTP_RESEND / PLAN_PILOTO actualizados a `lucycare.app` con `vercel.app` como fallback).
 - **PR #50** ✅ mergeado — Fase 4 PR-B: password en flujo de Reclamar perfil. Step obligatorio post-claim con dos caminos (crear ahora / recibir link por email). Sin migración. Incluye fix de copy "Perfil reclamado" diferenciado de "Cuenta suspendida" en `PanelLayout` + guard contra flash al cargar el contexto.
 - **PR #51** ✅ mergeado — refresh documental post-#50.
-- **PR #52** ✅ mergeado — análisis del flujo "Solicitar afiliación" (`docs/ANALISIS_AFILIACION_MEDICO.md`). 10 secciones, hallazgo R8 documentado (auto-registro inseguro en home), 10 preguntas de decisión Q1-Q10 pendientes.
-- **PR #53** ✅ mergeado — mitigación inmediata del hallazgo R8. El `DoctorRegistrationModal` legacy + `registerDoctor` service ya no se importan desde código activo. Reemplazado en home por `DoctorInterestModal` (solo captura de interés vía WhatsApp). Cero persistencia en DB validado con script de diagnóstico previo al merge.
+- **PR #52** ✅ mergeado — análisis del flujo "Solicitar afiliación". 10 secciones, hallazgo R8 documentado (auto-registro inseguro en home).
+- **PR #53** ✅ mergeado — mitigación inmediata del hallazgo R8. Sin persistencia en DB.
+- **PR #54** ✅ mergeado — refresh documental post-#53 (Hallazgo #7 cerrado en Security Gate).
+- **PR #55** ✅ mergeado — plan operativo `docs/PLAN_AFILIACION_MEDICO.md` (Fase 1 + Fase 2).
+- **PR #56** ✅ mergeado — **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` + RPCs anon/admin + bandeja admin con triage. Validación de Lectura A (mínimo name+phone+LOPD). Smoke completo OK (check-s7_21 16/16, smoke admin OK). NO crea doctor/profile/clinic; conversión queda para Fase 2.
 
-`main` HEAD esperado tras PR #53: `f7fa227` o posterior, snapshot 2026-05-26, PRs #1–#53.
+`main` HEAD esperado tras PR #56: `6046d6c` o posterior, snapshot 2026-05-27, PRs #1–#56.
 
 ## 2. Infraestructura actual
 
@@ -75,13 +78,13 @@
 - Smoke real validado el 2026-05-26: reset email recibido desde `LucyCare`, link abrió `/reset-password`, cambio de contraseña OK, login con contraseña nueva OK.
 - Hallazgo #6 del Security Gate cerrado.
 
-### Afiliación de médicos nuevos (PRs #52 + #53)
+### Afiliación de médicos nuevos (PRs #52 + #53 + #55 + #56)
 
 - **Regla cerrada (no reabrir):** ningún flujo público debe crear médicos `claimed` automáticamente. La identidad del médico se valida por LucyAdmin antes de existir en `doctors`.
-- **Mitigación temporal (live desde PR #53):** botón "Soy médico, quiero aparecer" en home → `DoctorInterestModal` con CTA WhatsApp prefilled. **No persiste nada en DB.**
-- **`DoctorRegistrationModal` + `registerDoctor` service:** marcados `@deprecated`. Archivos conservados solo para historial git y referencia para el flujo formal futuro. **Prohibido importarlos desde código nuevo.**
-- **Flujo formal pendiente:** diseñar "Solicitar afiliación médica" con (a) tabla `doctor_affiliation_requests` para el lead, (b) bandeja `/admin/afiliaciones` para LucyAdmin, (c) RPC `admin_approve_affiliation_request` que crea el `doctors` row en `listed_only`, (d) médico aprobado entra al flujo de Reclamar perfil existente (PR #32 + PR #50, sin código nuevo). Detalle: `docs/ANALISIS_AFILIACION_MEDICO.md`.
-- **Antes de implementar:** cerrar Q1-Q10 del §10 del análisis.
+- **Decisiones Q1-Q10 cerradas** (PR #55, plan operativo). Lectura A confirmada: mínimo absoluto del form = name + phone + LOPD; license/email/especialidad son recomendados pero no bloqueantes; lead sin esos campos entra con `incomplete=true`.
+- **Fase 1 ✅ live (PR #56):** `AffiliationRequestModal` en home reemplaza al `DoctorInterestModal` legacy. Persiste leads en `doctor_affiliation_requests` (`s7_21`) con RLS estricto, UNIQUE phone activo, rate limit 1/IP/24h. Bandeja `/admin/afiliaciones` con triage (in_review / approved / rejected). Página `/privacidad` MVP. Sin auto-creación de doctores.
+- **Archivos legacy:** `DoctorRegistrationModal`, `registerDoctor` service y `DoctorInterestModal` quedan `@deprecated`. **Prohibido importarlos desde código nuevo.**
+- **Fase 2 pendiente:** RPC `admin_approve_and_create_doctor` que en una transacción crea profile huérfano + clinic + doctor en `listed_only`. Botón "Aprobar y crear médico" en `AdminAffiliationDetailModal`. Médico aprobado entra al flujo de Reclamar perfil existente. Plan completo en `docs/PLAN_AFILIACION_MEDICO.md` §9.
 
 ### Auth Fase 4 PR-B — password en Reclamar perfil (PR #50)
 
@@ -113,23 +116,22 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Cerrar Q1-Q10 del análisis de afiliación (próxima prioridad)
+### 5.1 Afiliación Fase 2 (próxima prioridad)
 
-El análisis ya está en main (PR #52). La mitigación del flujo viejo ya está en main (PR #53). Lo que falta son **decisiones de producto del owner** para armar el plan operativo del PR funcional.
+Fase 1 ya está live (PR #56). Próximo paso: convertir un lead aprobado en un `doctors` row real.
 
-Preguntas pendientes en `docs/ANALISIS_AFILIACION_MEDICO.md` §10:
-- Q1. Qué hacer con `DoctorRegistrationModal` legacy (default sugerido: deprecar — **ya aplicado parcialmente** por PR #53).
-- Q2. Credencial obligatoria u opcional.
-- Q3. Comunicación al médico tras aprobación (manual vs automática).
-- Q4. Soporte para lead abandonado.
-- Q5. Creación de `clinics` al aprobar (auto vs admin elige).
-- Q6. Mostrar estado al médico que vuelve al sitio.
-- Q7. Rate limit.
-- Q8. Consentimiento LOPD.
-- Q9. Permisos `/admin/afiliaciones`.
-- Q10. Cuándo abrir el PR (antes vs después del piloto).
+Plan detallado en `docs/PLAN_AFILIACION_MEDICO.md` §9. Resumen:
+- RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción atómica:
+  - Crea `profiles` huérfano (sin auth.users; mismo patrón que `import-doctors.mjs`).
+  - Crea `clinics` con nombre del lead o override.
+  - Crea `doctors` con `lucy_status='listed_only'`, `is_published=false`, `is_operational=false`, `booking_enabled=false`.
+  - Vincula `doctor_id` + `clinic_id` en el lead.
+- UI: botón "Aprobar y crear médico" en `AdminAffiliationDetailModal` (visible cuando status=in_review o approved sin doctor_id). Modal de confirmación con form pre-rellenado para que admin pueda ajustar nombre/especialidad/clínica.
+- Audit log con `edited_via='admin'`.
+- Comunicación al médico sigue manual (Q3).
+- Cero código nuevo del lado del médico: una vez creado en `listed_only`, entra al flujo de Reclamar perfil + Fase 4 PR-B ya existentes.
 
-Con esas respuestas, armo `docs/PLAN_AFILIACION_*.md` con scope concreto del PR funcional (RPCs, RLS, schema final, UI).
+Tamaño estimado: 2-3 días (1 migración corta o solo CREATE FUNCTION + UI chica en admin).
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 
