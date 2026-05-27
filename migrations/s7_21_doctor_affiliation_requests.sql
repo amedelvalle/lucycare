@@ -51,8 +51,11 @@ CREATE TABLE IF NOT EXISTS doctor_affiliation_requests (
   specialty_id uuid REFERENCES specialties(id) ON DELETE SET NULL,
   specialty_other text,
   license_number text,
-  department_id uuid REFERENCES departments(id) ON DELETE SET NULL,
-  municipality_id uuid REFERENCES municipalities(id) ON DELETE SET NULL,
+  -- OJO: departments.id y municipalities.id son `text` (códigos cortos
+  -- como 'AH', 'AH-01'), no uuid. Verificado contra schema real
+  -- 2026-05-26.
+  department_id text REFERENCES departments(id) ON DELETE SET NULL,
+  municipality_id text REFERENCES municipalities(id) ON DELETE SET NULL,
   address_line text,
   clinic_name text,
   message text CHECK (length(coalesce(message, '')) <= 500),
@@ -194,8 +197,8 @@ CREATE OR REPLACE FUNCTION submit_affiliation_request(
   p_specialty_id   uuid DEFAULT NULL,
   p_specialty_other text DEFAULT NULL,
   p_license_number text DEFAULT NULL,
-  p_department_id  uuid DEFAULT NULL,
-  p_municipality_id uuid DEFAULT NULL,
+  p_department_id  text DEFAULT NULL,  -- text por schema real
+  p_municipality_id text DEFAULT NULL, -- text por schema real
   p_address_line   text DEFAULT NULL,
   p_clinic_name    text DEFAULT NULL,
   p_message        text DEFAULT NULL
@@ -294,7 +297,7 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION submit_affiliation_request(
-  text, text, text, text, uuid, text, text, uuid, uuid, text, text, text
+  text, text, text, text, uuid, text, text, text, text, text, text, text
 ) TO anon, authenticated;
 
 -- ─── 8. RPCs admin ──────────────────────────────────────────
