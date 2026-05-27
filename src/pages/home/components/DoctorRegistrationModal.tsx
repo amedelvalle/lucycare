@@ -1,3 +1,18 @@
+/**
+ * @deprecated NO USAR. Este modal quedó deshabilitado el 2026-05-26
+ * como mitigación de seguridad (ver `docs/ANALISIS_AFILIACION_MEDICO.md`
+ * §1.3 y §4 R8).
+ *
+ * Permitía auto-registro de médicos con licencia auto-declarada,
+ * creando `doctors` con `lucy_status='claimed'` directo y sin
+ * validación de identidad. Reemplazado en home por `DoctorInterestModal`
+ * (solo captura de interés vía WhatsApp, sin crear nada en DB).
+ *
+ * El archivo se conserva por historial git + referencia para el flujo
+ * futuro "Solicitar afiliación" (lead + bandeja admin). NO importar
+ * este componente desde ningún lugar nuevo.
+ */
+
 import { useState, useEffect } from 'react';
 import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory';
 import { sendOtp, verifyOtp } from '../../../services/auth.service';

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getAllDoctorRatingStats } from '../../services/reviews.service';
 import SearchSection from './components/SearchSection';
 import DoctorCard from './components/DoctorCard';
-import DoctorRegistrationModal from './components/DoctorRegistrationModal';
+import DoctorInterestModal from './components/DoctorInterestModal';
 import LoginModal from '../doctor-detail/components/LoginModal';
 import PatientAccountMenu from '../../components/PatientAccountMenu';
 import { useDoctors } from '../../hooks/useDirectory';
@@ -15,7 +15,7 @@ import type { DirectoryFilters } from '../../types/directory.types';
 
 export default function Home() {
   const navigate = useNavigate();
-  const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+  const [showInterestModal, setShowInterestModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
@@ -146,10 +146,15 @@ export default function Home() {
               </button>
             )}
             <button
-              onClick={() => setShowRegistrationModal(true)}
+              onClick={() => setShowInterestModal(true)}
+              title="Soy médico y quiero aparecer en Lucy"
               className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
             >
-              Soy médico
+              {/* Etiqueta corta en mobile, completa en desktop.
+                  El modal mantiene la copy completa "Soy médico,
+                  quiero aparecer en Lucy". */}
+              <span className="md:hidden">Soy médico</span>
+              <span className="hidden md:inline">Soy médico, quiero aparecer</span>
             </button>
           </nav>
         </div>
@@ -376,8 +381,8 @@ export default function Home() {
       />
 
       {/* Registration Modal */}
-      {showRegistrationModal && (
-        <DoctorRegistrationModal onClose={() => setShowRegistrationModal(false)} />
+      {showInterestModal && (
+        <DoctorInterestModal onClose={() => setShowInterestModal(false)} />
       )}
     </div>
   );
