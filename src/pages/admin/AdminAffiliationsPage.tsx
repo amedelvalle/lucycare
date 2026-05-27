@@ -5,6 +5,7 @@ import {
   type AffiliationRequestRow,
   type AffiliationStatus,
 } from '../../services/affiliation.service'
+import { getSessionWithTimeout } from '../../lib/session'
 import AdminAffiliationDetailModal from './components/AdminAffiliationDetailModal'
 
 const PAGE_SIZE = 25
@@ -47,6 +48,23 @@ export default function AdminAffiliationsPage() {
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // Gate de auth-ready: el cliente supabase-js a veces no tiene el
+  // access token hidratado en el primer tick post-mount. Si la query
+  // corre antes, el RPC sale sin Authorization → is_admin() devuelve
+  // false → "No autorizado" → React Query queda con error sin retry
+  // inmediato. Esperamos a `getSessionWithTimeout` (mismo patrón que
+  // claim) antes de habilitar la query.
+  const [authReady, setAuthReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const tok = await getSessionWithTimeout(3000)
+      if (cancelled) return
+      if (tok) setAuthReady(true)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   // Debounce search
   useEffect(() => {
     const id = setTimeout(() => {
@@ -77,8 +95,10 @@ export default function AdminAffiliationsPage() {
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       }),
+    enabled: authReady,
     placeholderData: (prev) => prev,
     refetchInterval: 60_000,
+    retry: 1,
   })
 
   const rows = data?.rows ?? []
@@ -151,7 +171,7 @@ export default function AdminAffiliationsPage() {
 
       {/* Tabla */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        {isLoading ? (
+        {!authReady || isLoading ? (
           <div className="p-8 text-center text-gray-500 text-sm">Cargando…</div>
         ) : error ? (
           <div className="p-8 text-center text-red-700 text-sm">

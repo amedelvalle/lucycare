@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { signOut } from '../../services/auth.service';
+import { getSessionWithTimeout } from '../../lib/session';
 import { adminCountAffiliationPending } from '../../services/affiliation.service';
 
 interface NavItem {
@@ -43,10 +45,26 @@ export default function AdminLayout() {
     navigate('/');
   };
 
+  // Gate de auth-ready: misma razón que AdminAffiliationsPage. El
+  // RPC admin_count_affiliation_pending retorna 0 silencioso para no-
+  // admin, así que el fallo no rompe nada visible, pero igual evitamos
+  // el call inútil y aseguramos que el primer fetch sea con sesión.
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tok = await getSessionWithTimeout(3000);
+      if (cancelled) return;
+      if (tok) setAuthReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Conteo de afiliaciones pendientes para el badge. Refresca cada 60s.
   const affiliationPendingQ = useQuery({
     queryKey: ['admin-affiliation-pending-count'],
     queryFn: adminCountAffiliationPending,
+    enabled: authReady,
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
