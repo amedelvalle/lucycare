@@ -1,6 +1,26 @@
 /**
+ * @deprecated NO USAR. Este servicio quedó deshabilitado el
+ * 2026-05-26 como mitigación de seguridad (ver
+ * `docs/ANALISIS_AFILIACION_MEDICO.md` §1.3 y §4 R8).
+ *
+ * Permitía que cualquier usuario con un OTP de teléfono se registrara
+ * como médico con `lucy_status='claimed'` directo, sin validación de
+ * identidad (la licencia se aceptaba tal cual). Mitigado parcialmente
+ * por `is_published=false` de default.
+ *
+ * Reemplazado en el frontend por `DoctorInterestModal` — solo captura
+ * de interés vía WhatsApp, sin crear nada en DB.
+ *
+ * El archivo se conserva por:
+ *   - Historial de git.
+ *   - Referencia para el futuro flujo "Solicitar afiliación" que sí
+ *     creará leads en `doctor_affiliation_requests` y, tras
+ *     aprobación admin, crear el `doctors` row vía RPC dedicada.
+ *
+ * NO importar este service desde ningún componente nuevo.
+ *
  * Servicio de registro de médico — conecta el formulario de 5 pasos a Supabase.
- * 
+ *
  * Flujo:
  * 1. Registrar usuario con OTP (auth.service.ts)
  * 2. Actualizar profile con rol 'doctor' y datos personales
