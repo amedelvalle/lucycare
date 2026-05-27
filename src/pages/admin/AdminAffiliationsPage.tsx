@@ -223,9 +223,14 @@ export default function AdminAffiliationsPage() {
                         <span className={`inline-flex w-fit px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>
                           {STATUS_LABEL[r.status]}
                         </span>
-                        {r.incomplete && (
+                        {r.incomplete && !r.doctorId && (
                           <span className="inline-flex items-center gap-1 text-[11px] text-amber-700">
-                            <i className="ri-error-warning-line" /> incompleto
+                            <i className="ri-error-warning-line" /> Datos por completar
+                          </span>
+                        )}
+                        {r.doctorId && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+                            <i className="ri-stethoscope-line" /> Médico creado
                           </span>
                         )}
                       </div>

@@ -601,6 +601,40 @@ Estas pueden cerrarse durante la implementación o quedar como follow-up:
 - **TTL para `expired`**: cron / Edge Function para auto-expirar leads >30 días sin movimiento. **Default**: no en MVP; admin puede archivar manualmente.
 - **hCaptcha / Turnstile**: **default** no en MVP. Si rate limit + UNIQUE no alcanza, agregar después.
 
+## 11.bis Pendientes legales / diseño (post-Fase 2)
+
+Definidos durante el smoke de PR #58 (post-merge Fase 2). Quedan
+fuera de scope técnico de los PRs de afiliación; requieren input
+legal/diseño antes de implementar.
+
+### A. DUI / documento de identidad del médico
+
+- Hoy capturamos solo phone + license. Para verificación oficial robusta
+  y cumplimiento de directorio médico curado, agregar:
+  - Campo `dui` o `document_number` en `doctor_affiliation_requests`.
+  - Validación de formato (DUI SV: `00000000-0`).
+  - Upload de foto del DUI (Storage bucket `affiliation_documents` privado).
+- Decisión pendiente: ¿es obligatorio en form público o solo cuando
+  admin pide al médico durante la validación manual?
+
+### B. Aceptación formal de términos del médico
+
+- Hoy el médico acepta TOS implícitamente cuando reclama su perfil
+  (`tos_accepted_at` + `tos_version` en `doctors`, via PR #32).
+- Antes de la **verificación oficial** (`lucy_status='verified'`),
+  el médico debería aceptar un TOS médico específico (responsabilidad
+  clínica, código de conducta, política de cancelaciones, etc.).
+- Diseñar el flow: ¿modal post-reclamo? ¿paso del onboarding admin?
+- Persistir versión del TOS médico distinto del TOS de paciente y del
+  TOS del reclamo.
+
+### C. Verificación cruzada con fuente oficial
+
+- Idealmente integración con JVPM (Junta de Vigilancia de la Profesión
+  Médica de El Salvador) o equivalente para validar license_number
+  programáticamente. Hoy es 100% manual por LucyAdmin.
+- Sin API pública conocida; explorar scraping ético o convenio.
+
 ## 12. Coordinación con otros docs
 
 - `docs/ANALISIS_AFILIACION_MEDICO.md` — análisis original. Este plan implementa Opción A §5.

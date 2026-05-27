@@ -1,12 +1,16 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
   adminMarkInReview,
   adminRejectAffiliationRequest,
   adminMarkApprovedPendingCreation,
+  adminApproveAndCreateDoctor,
   type AffiliationRequestRow,
   type AffiliationStatus,
+  type ApproveAndCreateResult,
 } from '../../../services/affiliation.service'
+import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory'
 
 interface Props {
   requestId: string
@@ -31,6 +35,8 @@ const STATUS_COLOR: Record<AffiliationStatus, string> = {
   expired: 'bg-gray-100 text-gray-600',
 }
 
+const SPECIALTY_OTHER_SENTINEL = '__other__'
+
 export default function AdminAffiliationDetailModal({
   requestId,
   row,
@@ -41,6 +47,27 @@ export default function AdminAffiliationDetailModal({
   const [actionError, setActionError] = useState<string | null>(null)
   const [rejectMode, setRejectMode] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
+
+  // ─── Fase 2: sub-modo "Crear médico" ─────────────────────────
+  const [createMode, setCreateMode] = useState(false)
+  const [createConfirmed, setCreateConfirmed] = useState(false)
+  const [createdResult, setCreatedResult] = useState<ApproveAndCreateResult | null>(null)
+
+  // Overrides para la RPC (pre-rellenados desde el lead cuando entra
+  // al sub-modo). Phone NUNCA se sobreescribe — es identidad validada
+  // via OTP en el reclamo. Email se acepta como override SOLO si el
+  // lead no trajo email; el RPC server-side aplica esa regla.
+  const [ovFullName, setOvFullName] = useState('')
+  const [ovEmail, setOvEmail] = useState('')
+  const [ovSpecialtyId, setOvSpecialtyId] = useState('')
+  const [ovClinicName, setOvClinicName] = useState('')
+  const [ovAddressLine, setOvAddressLine] = useState('')
+  const [ovDepartmentId, setOvDepartmentId] = useState('')
+  const [ovMunicipalityId, setOvMunicipalityId] = useState('')
+
+  const { data: specialties = [] } = useSpecialties()
+  const { data: departments = [] } = useDepartments()
+  const { data: municipalities = [] } = useMunicipalities(ovDepartmentId || undefined)
 
   const inReviewMut = useMutation({
     mutationFn: () => adminMarkInReview(requestId, notes.trim() || null),
@@ -60,13 +87,66 @@ export default function AdminAffiliationDetailModal({
     onError: (e: Error) => setActionError(e.message),
   })
 
+  const createMut = useMutation({
+    mutationFn: () =>
+      adminApproveAndCreateDoctor(requestId, {
+        fullName: ovFullName,
+        // Solo enviamos email override si el lead NO trajo email (sino
+        // el RPC lo ignora por regla de identidad — pero ahorramos un
+        // viaje de datos sensibles).
+        email: !row?.email ? ovEmail : null,
+        specialtyId: ovSpecialtyId && ovSpecialtyId !== SPECIALTY_OTHER_SENTINEL ? ovSpecialtyId : null,
+        clinicName: ovClinicName,
+        addressLine: ovAddressLine,
+        departmentId: ovDepartmentId,
+        municipalityId: ovMunicipalityId,
+      }),
+    onSuccess: (result) => {
+      setCreatedResult(result)
+      setCreateMode(false)
+      // NO llamamos a onActionComplete acá inmediatamente porque
+      // queremos mostrar la pantalla de éxito con el doctor_id.
+      // El usuario ve el resultado y cierra manualmente, lo cual
+      // disparará el refetch de la lista via onClose flow.
+    },
+    onError: (e: Error) => setActionError(e.message),
+  })
+
   if (!row) return null
 
   const canMarkInReview = row.status === 'pending'
   const canApprove = row.status === 'pending' || row.status === 'in_review'
   const canReject = row.status === 'pending' || row.status === 'in_review'
+  const canCreateDoctor = row.status === 'approved' && !row.doctorId && !createdResult
 
-  const loading = inReviewMut.isPending || approveMut.isPending || rejectMut.isPending
+  // Pre-rellenar overrides al abrir el sub-modo
+  const enterCreateMode = () => {
+    setActionError(null)
+    setOvFullName(row.fullName)
+    setOvEmail('') // editable solo si lead.email is null
+    setOvSpecialtyId(
+      row.specialtyId ?? (row.specialtyOther ? SPECIALTY_OTHER_SENTINEL : ''),
+    )
+    setOvClinicName(row.clinicName ?? '')
+    setOvAddressLine(row.addressLine ?? '')
+    // Department/municipality IDs no están en el row tipo — quedan vacíos
+    // a menos que admin los elija acá explícitamente.
+    setOvDepartmentId('')
+    setOvMunicipalityId('')
+    setCreateConfirmed(false)
+    setCreateMode(true)
+  }
+
+  const handleCloseAfterCreate = () => {
+    setCreatedResult(null)
+    onActionComplete() // refresca lista
+  }
+
+  const loading =
+    inReviewMut.isPending ||
+    approveMut.isPending ||
+    rejectMut.isPending ||
+    createMut.isPending
 
   return (
     <div
@@ -85,9 +165,14 @@ export default function AdminAffiliationDetailModal({
               <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[row.status]}`}>
                 {STATUS_LABEL[row.status]}
               </span>
-              {row.incomplete && (
+              {row.incomplete && !row.doctorId && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-700">
-                  <i className="ri-error-warning-line" /> faltan datos
+                  <i className="ri-error-warning-line" /> Datos por completar
+                </span>
+              )}
+              {row.doctorId && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+                  <i className="ri-stethoscope-line" /> Médico creado
                 </span>
               )}
               <span className="text-xs text-gray-500">
@@ -174,8 +259,243 @@ export default function AdminAffiliationDetailModal({
             </section>
           )}
 
-          {/* Acciones */}
-          {!rejectMode && (canMarkInReview || canApprove || canReject) && (
+          {/* ───── Pantalla de éxito post-creación ───── */}
+          {createdResult && (
+            <section className="border-t border-gray-200 pt-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i className="ri-check-line text-2xl text-emerald-700" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-emerald-900">Médico creado en estado listed_only</p>
+                    <p className="text-sm text-emerald-800 mt-1">
+                      Se creó el perfil en <code className="text-xs bg-white px-1 rounded">doctors</code> con todos
+                      los flags conservadores: <strong>no publicado</strong>, <strong>no operativo</strong>,
+                      <strong>sin agenda</strong>. El médico debe reclamarlo via OTP+licencia para activarlo.
+                    </p>
+                    <div className="mt-3 text-xs text-emerald-900 space-y-1 break-all">
+                      <div>doctor_id: <code className="bg-white px-1 rounded">{createdResult.doctorId}</code></div>
+                      <div>clinic_id: <code className="bg-white px-1 rounded">{createdResult.clinicId}</code></div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link
+                        to={`/admin/medicos/${createdResult.doctorId}`}
+                        className="px-3 py-1.5 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
+                      >
+                        Ver ficha admin
+                      </Link>
+                      <button
+                        onClick={handleCloseAfterCreate}
+                        className="px-3 py-1.5 text-xs text-emerald-900 underline hover:text-emerald-700"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                    <p className="text-xs text-emerald-700 mt-2 italic">
+                      <strong>Aún no publicado</strong> — el perfil público (<code>/doctor/{createdResult.doctorId.slice(0, 8)}…</code>)
+                      no es visible hasta que LucyAdmin lo publique manualmente desde la ficha admin.
+                      Para que el médico reclame su perfil, pasale el link público igual:
+                      cuando se publique, ya lo tiene a mano.
+                    </p>
+                    <p className="text-xs text-emerald-700 mt-1 italic">
+                      No se notificó automáticamente al médico. Contactalo por WhatsApp/email.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ───── Sub-modo "Crear médico" (form de overrides) ───── */}
+          {createMode && !createdResult && (
+            <section className="border-t border-gray-200 pt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Crear médico en <code className="text-xs bg-gray-100 px-1 rounded">listed_only</code>
+              </h3>
+              <p className="text-xs text-gray-600 mb-3">
+                Esto crea <code className="bg-gray-100 px-1 rounded">auth.users</code> (dormant, sin
+                password), <code className="bg-gray-100 px-1 rounded">profiles</code>,
+                <code className="bg-gray-100 px-1 rounded">clinics</code> y
+                <code className="bg-gray-100 px-1 rounded">doctors</code> en una sola transacción.
+                <strong> El médico queda no publicado, no operativo, sin agenda.</strong> Después
+                debe reclamarlo via el flujo público de OTP+licencia.
+                Phone y email del lead NO se editan acá.
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Nombre público del médico <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={ovFullName}
+                    onChange={(e) => setOvFullName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                {/* Email: si lead lo trajo, read-only. Si no, editable con warning. */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Email del médico
+                  </label>
+                  {row.email ? (
+                    <>
+                      <input
+                        type="email"
+                        value={row.email}
+                        readOnly
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        El email del lead no se modifica desde acá. Para cambiarlo, el médico
+                        usa /panel/cuenta después de reclamar (Fase Auth post-piloto).
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="email"
+                        value={ovEmail}
+                        onChange={(e) => setOvEmail(e.target.value)}
+                        placeholder="email@dominio.com"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                      <p className="text-xs text-amber-700 mt-1">
+                        ⚠️ El lead no trajo email. Si lo dejás vacío, el médico solo podrá
+                        recuperar acceso por teléfono; reset por email no estará disponible.
+                        Ingresalo ahora si lo conocés de la validación manual.
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Especialidad</label>
+                  <select
+                    value={ovSpecialtyId}
+                    onChange={(e) => setOvSpecialtyId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white"
+                  >
+                    <option value="">— Sin asignar —</option>
+                    {(specialties as Array<{ id: string; name: string }>).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {row.specialtyOther && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      El médico declaró “{row.specialtyOther}” en su solicitud. Asigná la mejor coincidencia
+                      del catálogo o dejá sin asignar para configurar después.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Nombre de la clínica</label>
+                  <input
+                    type="text"
+                    value={ovClinicName}
+                    onChange={(e) => setOvClinicName(e.target.value)}
+                    placeholder="Si lo dejás vacío, se crea como “Consultorio Dr. …”"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Dirección</label>
+                  <input
+                    type="text"
+                    value={ovAddressLine}
+                    onChange={(e) => setOvAddressLine(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Departamento</label>
+                    <select
+                      value={ovDepartmentId}
+                      onChange={(e) => { setOvDepartmentId(e.target.value); setOvMunicipalityId('') }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white"
+                    >
+                      <option value="">—</option>
+                      {(departments as Array<{ id: string; name: string }>).map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Municipio</label>
+                    <select
+                      value={ovMunicipalityId}
+                      onChange={(e) => setOvMunicipalityId(e.target.value)}
+                      disabled={!ovDepartmentId}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">—</option>
+                      {(municipalities as Array<{ id: string; name: string }>).map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Checkbox de confirmación obligatorio antes de submit */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <label className="flex items-start gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={createConfirmed}
+                      onChange={(e) => setCreateConfirmed(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-emerald-700 rounded cursor-pointer flex-shrink-0"
+                    />
+                    <span className="text-amber-900">
+                      Confirmo que validé la identidad del médico. Se creará un auth.users dormant + profile
+                      + clinic + doctor en listed_only (sin publicar, sin agenda, sin verified).
+                    </span>
+                  </label>
+                </div>
+
+                {actionError && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">{actionError}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => { setActionError(null); createMut.mutate() }}
+                    disabled={
+                      loading ||
+                      !createConfirmed ||
+                      ovFullName.trim().length === 0
+                    }
+                    className="px-4 py-2 text-sm font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {createMut.isPending ? 'Creando…' : 'Crear médico'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCreateMode(false)
+                      setCreateConfirmed(false)
+                      setActionError(null)
+                    }}
+                    disabled={loading}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ───── Acciones estándar ───── */}
+          {!rejectMode && !createMode && !createdResult &&
+            (canMarkInReview || canApprove || canReject || canCreateDoctor) && (
             <section className="border-t border-gray-200 pt-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Acción</h3>
 
@@ -215,7 +535,7 @@ export default function AdminAffiliationDetailModal({
                     onClick={() => {
                       if (
                         !confirm(
-                          'Marcar como aprobado. Esto NO crea el médico todavía — solo señala que validaste el lead. Tenés que crear el doctor en doctors manualmente (Fase 2 pendiente) y avisar al médico por WhatsApp/email. ¿Continuar?',
+                          'Marcar como aprobado validará el lead pero NO crea el médico todavía. Después podrás usar "Crear médico" para generar el doctor en listed_only. ¿Continuar?',
                         )
                       ) return
                       setActionError(null)
@@ -224,7 +544,16 @@ export default function AdminAffiliationDetailModal({
                     disabled={loading}
                     className="px-4 py-2 text-sm font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50"
                   >
-                    {approveMut.isPending ? 'Guardando…' : 'Marcar aprobado (sin crear doctor)'}
+                    {approveMut.isPending ? 'Guardando…' : 'Marcar aprobado'}
+                  </button>
+                )}
+                {canCreateDoctor && (
+                  <button
+                    onClick={enterCreateMode}
+                    disabled={loading}
+                    className="px-4 py-2 text-sm font-medium bg-purple-700 text-white rounded-lg hover:bg-purple-800 disabled:opacity-50"
+                  >
+                    Crear médico
                   </button>
                 )}
                 {canReject && (
@@ -236,6 +565,32 @@ export default function AdminAffiliationDetailModal({
                     Rechazar
                   </button>
                 )}
+              </div>
+            </section>
+          )}
+
+          {/* ───── Mensaje cuando el lead ya tiene doctor vinculado ───── */}
+          {row.status === 'approved' && row.doctorId && !createdResult && (
+            <section className="border-t border-gray-200 pt-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+                <p className="font-medium text-gray-900 flex items-center gap-2">
+                  <i className="ri-information-line text-gray-600" />
+                  Esta solicitud ya tiene un médico vinculado.
+                </p>
+                <p className="text-xs text-gray-600 mt-1 break-all">
+                  doctor_id: <code className="bg-white px-1 rounded">{row.doctorId}</code>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Link
+                    to={`/admin/medicos/${row.doctorId}`}
+                    className="px-3 py-1.5 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
+                  >
+                    Ver ficha admin
+                  </Link>
+                </div>
+                <p className="text-xs text-gray-500 mt-2 italic">
+                  El perfil público no es visible hasta que LucyAdmin lo publique desde la ficha admin.
+                </p>
               </div>
             </section>
           )}
@@ -278,7 +633,14 @@ export default function AdminAffiliationDetailModal({
             </section>
           )}
 
-          {!canMarkInReview && !canApprove && !canReject && (
+          {!canMarkInReview &&
+            !canApprove &&
+            !canReject &&
+            !canCreateDoctor &&
+            !createMode &&
+            !rejectMode &&
+            !createdResult &&
+            !(row.status === 'approved' && row.doctorId) && (
             <div className="text-sm text-gray-500 italic text-center py-2">
               No hay acciones disponibles para una solicitud en estado &laquo;{STATUS_LABEL[row.status]}&raquo;.
             </div>

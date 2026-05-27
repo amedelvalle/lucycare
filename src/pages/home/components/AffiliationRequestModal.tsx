@@ -17,7 +17,7 @@
  * contactaremos."
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory'
 import { submitAffiliationRequest } from '../../../services/affiliation.service'
 
@@ -61,15 +61,12 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
   const { data: departments = [] } = useDepartments()
   const { data: municipalities = [] } = useMunicipalities(departmentId || undefined)
 
-  // Esc para cerrar (modal puede cerrarse libremente — es informativo,
-  // sin "trabajo en progreso" persistido server-side hasta submit).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [loading, onClose])
+  // Regla general del proyecto: modales con formulario / datos
+  // parcialmente digitados no se cierran por click outside ni Esc.
+  // Solo se cierran con la X del header o un botón explícito.
+  // Mismo patrón que ClaimProfileModal / AdminAffiliationDetailModal /
+  // LoginModal / WaitlistModal.
+  // (Sin handler de Escape.)
 
   const handlePhoneChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 8)
@@ -130,13 +127,12 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
 
   return (
     <div
+      // Backdrop NO cierra. Solo X del header o botón "Volver al inicio"
+      // tras el submit. Si hubo datos digitados, perderlos por error
+      // al clickar fuera sería pésima UX.
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={() => { if (!loading) onClose() }}
     >
-      <div
-        className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="pr-4">

@@ -233,3 +233,65 @@ export async function adminCountAffiliationPending(): Promise<number> {
   if (error) return 0
   return Number(data ?? 0)
 }
+
+// ─── Fase 2: aprobar y crear médico ───
+
+/**
+ * Overrides aceptados por `admin_approve_and_create_doctor`.
+ * Phone NUNCA se sobreescribe (identidad del lead, ya validada via OTP
+ * cuando el médico reclame). Email solo se acepta como override si el
+ * lead NO trajo email (regla server-side en s7_23) — si el lead sí
+ * tenía email, el RPC lo ignora silenciosamente.
+ */
+export interface ApproveAndCreateOverrides {
+  fullName?: string | null
+  email?: string | null
+  specialtyId?: string | null
+  clinicName?: string | null
+  addressLine?: string | null
+  departmentId?: string | null
+  municipalityId?: string | null
+}
+
+export interface ApproveAndCreateResult {
+  doctorId: string
+  clinicId: string
+  profileId: string
+  /** True si el RPC aceptó el email del override (porque lead no tenía). */
+  emailViaOverride?: boolean
+}
+
+export async function adminApproveAndCreateDoctor(
+  requestId: string,
+  overrides: ApproveAndCreateOverrides = {},
+): Promise<ApproveAndCreateResult> {
+  // Construir el payload de overrides en snake_case que espera el RPC.
+  // Solo incluimos las claves no vacías para que el plpgsql aplique
+  // COALESCE(override > lead).
+  const payload: Record<string, string> = {}
+  if (overrides.fullName && overrides.fullName.trim()) payload.full_name = overrides.fullName.trim()
+  if (overrides.email && overrides.email.trim()) payload.email = overrides.email.trim()
+  if (overrides.specialtyId) payload.specialty_id = overrides.specialtyId
+  if (overrides.clinicName && overrides.clinicName.trim()) payload.clinic_name = overrides.clinicName.trim()
+  if (overrides.addressLine && overrides.addressLine.trim()) payload.address_line = overrides.addressLine.trim()
+  if (overrides.departmentId) payload.department_id = overrides.departmentId
+  if (overrides.municipalityId) payload.municipality_id = overrides.municipalityId
+
+  const { data, error } = await supabase.rpc('admin_approve_and_create_doctor', {
+    p_request_id: requestId,
+    p_overrides: payload,
+  })
+  if (error) throw new Error(error.message)
+  const row = data as {
+    doctor_id: string
+    clinic_id: string
+    profile_id: string
+    email_via_override?: boolean
+  }
+  return {
+    doctorId: row.doctor_id,
+    clinicId: row.clinic_id,
+    profileId: row.profile_id,
+    emailViaOverride: !!row.email_via_override,
+  }
+}
