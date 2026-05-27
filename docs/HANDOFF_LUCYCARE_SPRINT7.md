@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `6046d6c` o posterior. **PRs #1–#56 mergeados.**
+- **HEAD esperado en `main`:** `f427ed3` o posterior. **PRs #1–#58 mergeados.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#56):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#58):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -34,8 +34,10 @@
   - PR #53 Mitigación del flujo público "Soy médico" (cierra Hallazgo #7 del Security Gate). Reemplaza el `DoctorRegistrationModal` legacy (auto-creaba doctor `claimed` sin validar identidad) por un `DoctorInterestModal` (mitigación temporal). Cero persistencia en DB. `registerDoctor` service y modal legacy marcados `@deprecated`.
   - PR #54 Refresh documental post-#53 (registra mitigación + Hallazgo #7 en `SECURITY_GATE_PILOTO.md`).
   - PR #55 Plan operativo `docs/PLAN_AFILIACION_MEDICO.md` (Fase 1 + Fase 2).
-  - PR #56 **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` con RLS estricto + `incomplete` GENERATED. RPC pública `submit_affiliation_request` con rate limit 1/IP/24h y UNIQUE phone activo. RPCs admin para triage (in_review/approved/rejected). Frontend: `AffiliationRequestModal` reemplaza al interest legacy. Bandeja `/admin/afiliaciones` con filtros + badge sidebar. Página `/privacidad` MVP. NO crea doctor/profile/clinic — conversión queda para Fase 2.
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_21`.
+  - PR #56 **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` con RLS estricto + `incomplete` GENERATED. RPC pública `submit_affiliation_request` con rate limit 1/IP/24h y UNIQUE phone activo. RPCs admin para triage (in_review/approved/rejected). Frontend: `AffiliationRequestModal` reemplaza al interest legacy. Bandeja `/admin/afiliaciones` con filtros + badge sidebar. Página `/privacidad` MVP. No crea doctor/profile/clinic.
+  - PR #57 Refresh documental post-PR #56.
+  - PR #58 **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción crea auth.users dormant + profile (UPSERT defensivo coexiste con trigger `handle_new_user`) + clinic + clinic_member (owner) + doctor en `lucy_status='listed_only'` con flags conservadores en false. Email override aceptado solo si lead no trajo email (regla server-side en s7_23). UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form de overrides + checkbox confirm + pantalla de éxito con doctor_id + link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" reemplazado por "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin. **Pendiente**: validar claim end-to-end del médico creado con test phone real del médico.
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_23`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
   - Otros 4 (Gina, Abraham, German, Elena): publicados sin agenda en línea, captados por el directorio informativo.
@@ -134,21 +136,12 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ### 4.0 Próxima prioridad recomendada
 
-**Afiliación Fase 2** — conversión lead → doctor. Plan detallado en `docs/PLAN_AFILIACION_MEDICO.md` §9.
-
-Scope:
-- RPC `admin_approve_and_create_doctor(p_request_id, p_overrides jsonb)` que en una transacción atómica:
-  - Crea `profiles` huérfano (sin `auth.users` — el médico lo crea cuando hace OTP en el reclamo, mismo patrón que `import-doctors.mjs`).
-  - Crea `clinics` con nombre del lead o override admin.
-  - Crea `doctors` con `lucy_status='listed_only'`, `is_published=false`, `is_operational=false`, `booking_enabled=false`.
-  - Vincula `doctor_id` + `clinic_id` en el lead.
-  - Audit log con `edited_via='admin'`.
-- UI admin: botón "Aprobar y crear médico" en `AdminAffiliationDetailModal` (visible si status=in_review o approved sin doctor_id). Form de overrides pre-rellenado.
-- Médico aprobado entra al flujo de Reclamar perfil + Fase 4 PR-B ya existentes. **Cero código nuevo del lado del médico.**
+**Smoke operativo del claim end-to-end** del médico creado vía Fase 2 — usar un test phone real del médico (no el del paciente smoke). Sin código, validación de que el doctor `listed_only` recién creado se puede reclamar correctamente vía PR #32 + #50.
 
 Estado actual del eje afiliación:
-- ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56).
-- ⏳ Fase 2 conversión.
+- ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56), Fase 2 conversión (PR #58).
+- ⏳ Smoke operativo claim end-to-end.
+- ⏳ Pendientes legal/diseño: DUI + TOS médico pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 
 ### 4.1 Pre-piloto público (operativo, no código)
 
@@ -304,12 +297,11 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#56 mergeados, migraciones hasta s7_21. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura de leads en `doctor_affiliation_requests` + bandeja `/admin/afiliaciones`, sin auto-creación de doctores).
+Estado: PRs #1–#58 mergeados, migraciones hasta s7_23. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura) + Fase 2 ✅ (admin convierte lead en doctor `listed_only` con email override).
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-  - Afiliación Fase 2 — RPC admin_approve_and_create_doctor + UI
-    admin para convertir lead aprobado en doctor listed_only.
-    Plan en `docs/PLAN_AFILIACION_MEDICO.md` §9;
+  - Smoke operativo del claim end-to-end del médico creado vía
+    Fase 2 (test phone real del médico, no del paciente);
 
   otras opciones en cola:
   - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);

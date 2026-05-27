@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-27** (post-PR #56 — Afiliación Fase 1 live).
+> **Snapshot 2026-05-27** (post-PR #58 — Afiliación Fase 2 live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -28,9 +28,11 @@
 - **PR #53** ✅ mergeado — mitigación inmediata del hallazgo R8. Sin persistencia en DB.
 - **PR #54** ✅ mergeado — refresh documental post-#53 (Hallazgo #7 cerrado en Security Gate).
 - **PR #55** ✅ mergeado — plan operativo `docs/PLAN_AFILIACION_MEDICO.md` (Fase 1 + Fase 2).
-- **PR #56** ✅ mergeado — **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` + RPCs anon/admin + bandeja admin con triage. Validación de Lectura A (mínimo name+phone+LOPD). Smoke completo OK (check-s7_21 16/16, smoke admin OK). NO crea doctor/profile/clinic; conversión queda para Fase 2.
+- **PR #56** ✅ mergeado — **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` + RPCs anon/admin + bandeja admin con triage. Validación de Lectura A (mínimo name+phone+LOPD). Smoke completo OK. No crea doctor/profile/clinic.
+- **PR #57** ✅ mergeado — refresh documental post-#56.
+- **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 
-`main` HEAD esperado tras PR #56: `6046d6c` o posterior, snapshot 2026-05-27, PRs #1–#56.
+`main` HEAD esperado tras PR #58: `f427ed3` o posterior, snapshot 2026-05-27, PRs #1–#58.
 
 ## 2. Infraestructura actual
 
@@ -83,8 +85,10 @@
 - **Regla cerrada (no reabrir):** ningún flujo público debe crear médicos `claimed` automáticamente. La identidad del médico se valida por LucyAdmin antes de existir en `doctors`.
 - **Decisiones Q1-Q10 cerradas** (PR #55, plan operativo). Lectura A confirmada: mínimo absoluto del form = name + phone + LOPD; license/email/especialidad son recomendados pero no bloqueantes; lead sin esos campos entra con `incomplete=true`.
 - **Fase 1 ✅ live (PR #56):** `AffiliationRequestModal` en home reemplaza al `DoctorInterestModal` legacy. Persiste leads en `doctor_affiliation_requests` (`s7_21`) con RLS estricto, UNIQUE phone activo, rate limit 1/IP/24h. Bandeja `/admin/afiliaciones` con triage (in_review / approved / rejected). Página `/privacidad` MVP. Sin auto-creación de doctores.
+- **Fase 2 ✅ live (PR #58):** RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` en `s7_22` + `s7_23`. Crea en una transacción: auth.users dormant (sin password, sin confirmar) + profile (UPSERT defensivo coexiste con trigger `handle_new_user`) + clinic + clinic_member (owner) + doctor en `lucy_status='listed_only'` con todos los flags conservadores en false. Email override solo si lead no trajo email. UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form overrides + checkbox de confirmación obligatorio + pantalla éxito con `doctor_id` y link a ficha admin. Smoke OK hasta ficha admin.
 - **Archivos legacy:** `DoctorRegistrationModal`, `registerDoctor` service y `DoctorInterestModal` quedan `@deprecated`. **Prohibido importarlos desde código nuevo.**
-- **Fase 2 pendiente:** RPC `admin_approve_and_create_doctor` que en una transacción crea profile huérfano + clinic + doctor en `listed_only`. Botón "Aprobar y crear médico" en `AdminAffiliationDetailModal`. Médico aprobado entra al flujo de Reclamar perfil existente. Plan completo en `docs/PLAN_AFILIACION_MEDICO.md` §9.
+- **Pendiente operativo:** smoke claim end-to-end del médico creado vía Fase 2 con test phone real del médico (no del paciente smoke). El claim usa el flujo de Reclamar perfil estándar (PR #32 + #50), sin código nuevo.
+- **Pendientes legal/diseño** (post-piloto, `docs/PLAN_AFILIACION_MEDICO.md §11.bis`): DUI/documento del médico, aceptación formal de TOS médico pre-verificación, verificación cruzada con fuente oficial (JVPM).
 
 ### Auth Fase 4 PR-B — password en Reclamar perfil (PR #50)
 
@@ -116,22 +120,18 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Afiliación Fase 2 (próxima prioridad)
+### 5.1 Smoke operativo del claim end-to-end (próxima prioridad)
 
-Fase 1 ya está live (PR #56). Próximo paso: convertir un lead aprobado en un `doctors` row real.
+Fase 1 + Fase 2 ya están live. El gap restante para cerrar el eje afiliación: validar operativamente que un médico creado vía Fase 2 puede ejecutar el flujo de Reclamar perfil sin tropezar.
 
-Plan detallado en `docs/PLAN_AFILIACION_MEDICO.md` §9. Resumen:
-- RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción atómica:
-  - Crea `profiles` huérfano (sin auth.users; mismo patrón que `import-doctors.mjs`).
-  - Crea `clinics` con nombre del lead o override.
-  - Crea `doctors` con `lucy_status='listed_only'`, `is_published=false`, `is_operational=false`, `booking_enabled=false`.
-  - Vincula `doctor_id` + `clinic_id` en el lead.
-- UI: botón "Aprobar y crear médico" en `AdminAffiliationDetailModal` (visible cuando status=in_review o approved sin doctor_id). Modal de confirmación con form pre-rellenado para que admin pueda ajustar nombre/especialidad/clínica.
-- Audit log con `edited_via='admin'`.
-- Comunicación al médico sigue manual (Q3).
-- Cero código nuevo del lado del médico: una vez creado en `listed_only`, entra al flujo de Reclamar perfil + Fase 4 PR-B ya existentes.
+Plan:
+- Crear un lead vía form público (sin email para validar el path completo).
+- Aprobar + "Crear médico" desde admin, ingresando un test phone que tengamos configurado en Supabase (no el del paciente smoke).
+- Desde el browser con ese test phone: ir a `/doctor/{id}` (admin debe publicarlo primero o usar el enlace directo si funciona con `is_published=false`).
+- Ejecutar OTP + license + LOPD + crear password.
+- Verificar que el doctor pasa a `lucy_status='claimed'` y el médico puede entrar al panel.
 
-Tamaño estimado: 2-3 días (1 migración corta o solo CREATE FUNCTION + UI chica en admin).
+No requiere código. Solo smoke operativo con test phone real.
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 
