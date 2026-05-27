@@ -28,6 +28,8 @@ import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
 import AdminDoctorEditPage from "../pages/admin/AdminDoctorEditPage";
+import AdminAffiliationsPage from "../pages/admin/AdminAffiliationsPage";
+import PrivacidadPage from "../pages/privacidad/page";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
 
@@ -47,6 +49,10 @@ const routes: RouteObject[] = [
   {
     path: "/reset-password",
     element: <ResetPasswordPage />,
+  },
+  {
+    path: "/privacidad",
+    element: <PrivacidadPage />,
   },
   {
     path: "/paciente/mis-atenciones",
@@ -75,6 +81,10 @@ const routes: RouteObject[] = [
       {
         path: "medicos/:id",
         element: <AdminDoctorEditPage />,
+      },
+      {
+        path: "afiliaciones",
+        element: <AdminAffiliationsPage />,
       },
     ],
   },

@@ -1,10 +1,39 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { signOut } from '../../services/auth.service';
+import { adminCountAffiliationPending } from '../../services/affiliation.service';
 
-const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: string;
+  end?: boolean;
+  /**
+   * Si está definido, se renderiza el contador como badge a la derecha.
+   * El badge solo aparece si el valor es > 0.
+   */
+  badgeQueryKey?: string;
+}
+
+const NAV: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: 'ri-dashboard-line', end: true },
-  { to: '/admin/medicos', label: 'Médicos', icon: 'ri-stethoscope-line', end: false },
+  { to: '/admin/medicos', label: 'Médicos', icon: 'ri-stethoscope-line' },
+  {
+    to: '/admin/afiliaciones',
+    label: 'Afiliaciones',
+    icon: 'ri-mail-add-line',
+    badgeQueryKey: 'admin-affiliation-pending-count',
+  },
 ];
+
+function NavBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-semibold bg-red-600 text-white rounded-full">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -13,6 +42,15 @@ export default function AdminLayout() {
     await signOut();
     navigate('/');
   };
+
+  // Conteo de afiliaciones pendientes para el badge. Refresca cada 60s.
+  const affiliationPendingQ = useQuery({
+    queryKey: ['admin-affiliation-pending-count'],
+    queryFn: adminCountAffiliationPending,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const affiliationPending = affiliationPendingQ.data ?? 0;
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -34,7 +72,10 @@ export default function AdminLayout() {
               }
             >
               <i className={`${n.icon} text-lg`} />
-              {n.label}
+              <span>{n.label}</span>
+              {n.badgeQueryKey === 'admin-affiliation-pending-count' && (
+                <NavBadge count={affiliationPending} />
+              )}
             </NavLink>
           ))}
         </nav>

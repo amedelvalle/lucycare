@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getAllDoctorRatingStats } from '../../services/reviews.service';
 import SearchSection from './components/SearchSection';
 import DoctorCard from './components/DoctorCard';
-import DoctorInterestModal from './components/DoctorInterestModal';
+import AffiliationRequestModal from './components/AffiliationRequestModal';
 import LoginModal from '../doctor-detail/components/LoginModal';
 import PatientAccountMenu from '../../components/PatientAccountMenu';
 import { useDoctors } from '../../hooks/useDirectory';
@@ -15,7 +15,7 @@ import type { DirectoryFilters } from '../../types/directory.types';
 
 export default function Home() {
   const navigate = useNavigate();
-  const [showInterestModal, setShowInterestModal] = useState(false);
+  const [showAffiliationModal, setShowAffiliationModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
@@ -146,7 +146,7 @@ export default function Home() {
               </button>
             )}
             <button
-              onClick={() => setShowInterestModal(true)}
+              onClick={() => setShowAffiliationModal(true)}
               title="Soy médico y quiero aparecer en Lucy"
               className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
             >
@@ -381,8 +381,8 @@ export default function Home() {
       />
 
       {/* Registration Modal */}
-      {showInterestModal && (
-        <DoctorInterestModal onClose={() => setShowInterestModal(false)} />
+      {showAffiliationModal && (
+        <AffiliationRequestModal onClose={() => setShowAffiliationModal(false)} />
       )}
     </div>
   );
