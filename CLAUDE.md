@@ -45,10 +45,10 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-26)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `a2b1f96` o posterior. **PRs #1–#50 mergeados**.
+- **HEAD esperado:** `f7fa227` o posterior. **PRs #1–#53 mergeados**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
-- **Pre-piloto (PRs #32–#50):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y **PR-B**), Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil.
+- **Pre-piloto (PRs #32–#53):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (**5 hallazgos cerrados**), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, **mitigación del flujo público "Soy médico"** (auto-registro inseguro deshabilitado, reemplazado por captura de interés vía WhatsApp).
 - **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`. Verificables con `node scripts/check-s7_NN.mjs`.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
@@ -83,6 +83,7 @@ squash-merge, la rama puede borrarse.
 - Email + password como **segunda opción** para médico/admin (PR #39 ✅).
 - Reset de password por email (PR #39 ✅).
 - Activación de password dentro del flujo de Reclamar perfil (PR #50 ✅ — paso obligatorio post-claim con dos caminos: crear ahora / recibir link por email).
+- **Ningún flujo público crea médicos `claimed` automáticamente** (PR #53 cerró esa puerta). Quien quiera afiliarse contacta por WhatsApp; LucyAdmin valida y crea el `doctors` row como `listed_only` para que después el médico haga el reclamo estándar (PR #32 + PR #50).
 
 ### Ejes del médico (independientes)
 - `lucy_status` enum: `listed_only | claimed | booking_enabled | verified`.
@@ -223,7 +224,7 @@ Encuesta post-cita con token único, NPS, score público ajustado bayesianamente
 ### Sprint 7 — Admin SaaS + Robustez ✅ (PRs #16–#30)
 Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios). Robustez pacientes (document_number nullable, dedup teléfono, normalización SV, validación DUI).
 
-### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#50)
+### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#53)
 - **Reclamo seguro** (PR #32, s7_13).
 - **Estabilización supabase-js lock** (PR #33).
 - **Foto de perfil** (PR #34, s7_14).
@@ -240,11 +241,13 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **SMTP externo Resend + reset por email validado** (PR #46, doc + setup operativo 2026-05-26, dominio `lucycare.app`).
 - **Dominio público `lucycare.app` live en Vercel** (PR #48, setup operativo 2026-05-26, DNS en Cloudflare, www→apex 308, Supabase Site URL + reset email validados).
 - **Password en flujo de Reclamar perfil** (PR #50, Fase 4 PR-B — step obligatorio post-claim, dos caminos: crear ahora / recibir link por email; copy "Perfil reclamado" diferenciado de "Cuenta suspendida"; sin migración).
+- **Análisis del flujo "Solicitar afiliación"** (PR #52, `docs/ANALISIS_AFILIACION_MEDICO.md` — 10 secciones, 10 preguntas de decisión pendientes Q1-Q10).
+- **Mitigación del flujo público "Soy médico"** (PR #53, Hallazgo #7 del Security Gate). El `DoctorRegistrationModal` legacy + `registerDoctor` service creaban automáticamente profile/clinic/clinic_member/doctor con `lucy_status='claimed'` directo, sin validación de identidad. **Neutralizado**: ahora el botón abre `DoctorInterestModal` que solo invita a contactar por WhatsApp con datos. Sin persistencia en DB. Archivos legacy marcados `@deprecated`.
 
 ## Próximas fases (en cola)
 
 ### Próxima prioridad recomendada
-**Análisis del flujo "Solicitar afiliación"** — médicos que NO existen aún en el directorio (no fueron importados, no tenemos phone/license para validarlos). Distinto a "Reclamar perfil" que asume el médico ya está listed_only. Antes de codificar, abrir `docs/ANALISIS_AFILIACION_MEDICO.md` con: problema, objetivo comercial, riesgos de seguridad, diferencia con reclamo, opciones UX, estados del lead, qué valida LucyAdmin, qué NO automatizar, MVP, preguntas pendientes.
+**Cerrar las preguntas Q1-Q10** de `docs/ANALISIS_AFILIACION_MEDICO.md` §10 antes de diseñar el PR funcional de "Solicitar afiliación". El análisis ya está en main (PR #52) y la mitigación de seguridad del flujo viejo ya quedó cerrada (PR #53). Lo que falta son **decisiones de producto** del owner para armar el plan operativo del PR.
 
 ### Pre-piloto público (operativo, no código)
 1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
@@ -364,6 +367,9 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+f7fa227 fix(security): neutralizar flujo "Soy médico" — reemplaza por captura de interés (#53)
+e1db56c docs: análisis del flujo "Solicitar afiliación" del médico (#52)
+e66be15 docs: refresh post-PR #50 — Fase 4 PR-B completada (#51)
 a2b1f96 feat(auth): password en flujo de Reclamar perfil (Fase 4 PR-B) (#50)
 813c2a2 docs: refresh post-PR #48 — lucycare.app como dominio público principal (#49)
 d61ae3f chore(infra): configurar dominio público lucycare.app (#48)
@@ -416,12 +422,12 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#50 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live (Vercel + Cloudflare, `vercel.app` queda como fallback, previews en `lucycare-git-*.vercel.app`). Fase 4 PR-B (password en Reclamar perfil) ✅ live.
+Estado: PRs #1–#53 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live (Vercel + Cloudflare, `vercel.app` queda como fallback). Fase 4 PR-B (password en Reclamar perfil) ✅ live. Flujo público "Soy médico" ✅ mitigado (PR #53 — solo captura de interés vía WhatsApp).
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-                   Análisis del flujo "Solicitar afiliación"
-                   (médicos que NO existen aún en directorio) —
-                   abrir docs/ANALISIS_AFILIACION_MEDICO.md;
+                   Cerrar Q1-Q10 de docs/ANALISIS_AFILIACION_MEDICO.md
+                   §10 → armar plan operativo del PR funcional de
+                   "Solicitar afiliación";
 
                    otras en cola:
                    - Fase 2 Paciente Global perfil extendido;
