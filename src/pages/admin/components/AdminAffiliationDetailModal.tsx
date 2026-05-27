@@ -54,8 +54,11 @@ export default function AdminAffiliationDetailModal({
   const [createdResult, setCreatedResult] = useState<ApproveAndCreateResult | null>(null)
 
   // Overrides para la RPC (pre-rellenados desde el lead cuando entra
-  // al sub-modo). Phone y email NUNCA se sobreescriben — son identidad.
+  // al sub-modo). Phone NUNCA se sobreescribe — es identidad validada
+  // via OTP en el reclamo. Email se acepta como override SOLO si el
+  // lead no trajo email; el RPC server-side aplica esa regla.
   const [ovFullName, setOvFullName] = useState('')
+  const [ovEmail, setOvEmail] = useState('')
   const [ovSpecialtyId, setOvSpecialtyId] = useState('')
   const [ovClinicName, setOvClinicName] = useState('')
   const [ovAddressLine, setOvAddressLine] = useState('')
@@ -88,6 +91,10 @@ export default function AdminAffiliationDetailModal({
     mutationFn: () =>
       adminApproveAndCreateDoctor(requestId, {
         fullName: ovFullName,
+        // Solo enviamos email override si el lead NO trajo email (sino
+        // el RPC lo ignora por regla de identidad — pero ahorramos un
+        // viaje de datos sensibles).
+        email: !row?.email ? ovEmail : null,
         specialtyId: ovSpecialtyId && ovSpecialtyId !== SPECIALTY_OTHER_SENTINEL ? ovSpecialtyId : null,
         clinicName: ovClinicName,
         addressLine: ovAddressLine,
@@ -116,6 +123,7 @@ export default function AdminAffiliationDetailModal({
   const enterCreateMode = () => {
     setActionError(null)
     setOvFullName(row.fullName)
+    setOvEmail('') // editable solo si lead.email is null
     setOvSpecialtyId(
       row.specialtyId ?? (row.specialtyOther ? SPECIALTY_OTHER_SENTINEL : ''),
     )
@@ -157,9 +165,14 @@ export default function AdminAffiliationDetailModal({
               <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[row.status]}`}>
                 {STATUS_LABEL[row.status]}
               </span>
-              {row.incomplete && (
+              {row.incomplete && !row.doctorId && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-700">
-                  <i className="ri-error-warning-line" /> faltan datos
+                  <i className="ri-error-warning-line" /> Datos por completar
+                </span>
+              )}
+              {row.doctorId && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+                  <i className="ri-stethoscope-line" /> Médico creado
                 </span>
               )}
               <span className="text-xs text-gray-500">
@@ -270,16 +283,8 @@ export default function AdminAffiliationDetailModal({
                         to={`/admin/medicos/${createdResult.doctorId}`}
                         className="px-3 py-1.5 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
                       >
-                        Editar en admin
+                        Ver ficha admin
                       </Link>
-                      <a
-                        href={`/doctor/${createdResult.doctorId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 text-xs font-medium bg-white text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50"
-                      >
-                        Ver perfil público
-                      </a>
                       <button
                         onClick={handleCloseAfterCreate}
                         className="px-3 py-1.5 text-xs text-emerald-900 underline hover:text-emerald-700"
@@ -288,9 +293,13 @@ export default function AdminAffiliationDetailModal({
                       </button>
                     </div>
                     <p className="text-xs text-emerald-700 mt-2 italic">
-                      No se notificó automáticamente al médico. Contactalo por WhatsApp/email con el link a
-                      <code className="bg-white px-1 rounded mx-1">{`/doctor/${createdResult.doctorId}`}</code>
-                      para que reclame su perfil.
+                      <strong>Aún no publicado</strong> — el perfil público (<code>/doctor/{createdResult.doctorId.slice(0, 8)}…</code>)
+                      no es visible hasta que LucyAdmin lo publique manualmente desde la ficha admin.
+                      Para que el médico reclame su perfil, pasale el link público igual:
+                      cuando se publique, ya lo tiene a mano.
+                    </p>
+                    <p className="text-xs text-emerald-700 mt-1 italic">
+                      No se notificó automáticamente al médico. Contactalo por WhatsApp/email.
                     </p>
                   </div>
                 </div>
@@ -325,6 +334,42 @@ export default function AdminAffiliationDetailModal({
                     onChange={(e) => setOvFullName(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
                   />
+                </div>
+
+                {/* Email: si lead lo trajo, read-only. Si no, editable con warning. */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Email del médico
+                  </label>
+                  {row.email ? (
+                    <>
+                      <input
+                        type="email"
+                        value={row.email}
+                        readOnly
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        El email del lead no se modifica desde acá. Para cambiarlo, el médico
+                        usa /panel/cuenta después de reclamar (Fase Auth post-piloto).
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="email"
+                        value={ovEmail}
+                        onChange={(e) => setOvEmail(e.target.value)}
+                        placeholder="email@dominio.com"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                      <p className="text-xs text-amber-700 mt-1">
+                        ⚠️ El lead no trajo email. Si lo dejás vacío, el médico solo podrá
+                        recuperar acceso por teléfono; reset por email no estará disponible.
+                        Ingresalo ahora si lo conocés de la validación manual.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div>
@@ -540,17 +585,12 @@ export default function AdminAffiliationDetailModal({
                     to={`/admin/medicos/${row.doctorId}`}
                     className="px-3 py-1.5 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
                   >
-                    Editar en admin
+                    Ver ficha admin
                   </Link>
-                  <a
-                    href={`/doctor/${row.doctorId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1.5 text-xs font-medium bg-white text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50"
-                  >
-                    Ver perfil público
-                  </a>
                 </div>
+                <p className="text-xs text-gray-500 mt-2 italic">
+                  El perfil público no es visible hasta que LucyAdmin lo publique desde la ficha admin.
+                </p>
               </div>
             </section>
           )}

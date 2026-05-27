@@ -238,11 +238,14 @@ export async function adminCountAffiliationPending(): Promise<number> {
 
 /**
  * Overrides aceptados por `admin_approve_and_create_doctor`.
- * Phone y email NUNCA se sobreescriben (son identidad del lead);
- * llegan tal cual al `auth.users` y `profile`.
+ * Phone NUNCA se sobreescribe (identidad del lead, ya validada via OTP
+ * cuando el médico reclame). Email solo se acepta como override si el
+ * lead NO trajo email (regla server-side en s7_23) — si el lead sí
+ * tenía email, el RPC lo ignora silenciosamente.
  */
 export interface ApproveAndCreateOverrides {
   fullName?: string | null
+  email?: string | null
   specialtyId?: string | null
   clinicName?: string | null
   addressLine?: string | null
@@ -254,6 +257,8 @@ export interface ApproveAndCreateResult {
   doctorId: string
   clinicId: string
   profileId: string
+  /** True si el RPC aceptó el email del override (porque lead no tenía). */
+  emailViaOverride?: boolean
 }
 
 export async function adminApproveAndCreateDoctor(
@@ -265,6 +270,7 @@ export async function adminApproveAndCreateDoctor(
   // COALESCE(override > lead).
   const payload: Record<string, string> = {}
   if (overrides.fullName && overrides.fullName.trim()) payload.full_name = overrides.fullName.trim()
+  if (overrides.email && overrides.email.trim()) payload.email = overrides.email.trim()
   if (overrides.specialtyId) payload.specialty_id = overrides.specialtyId
   if (overrides.clinicName && overrides.clinicName.trim()) payload.clinic_name = overrides.clinicName.trim()
   if (overrides.addressLine && overrides.addressLine.trim()) payload.address_line = overrides.addressLine.trim()
@@ -276,10 +282,16 @@ export async function adminApproveAndCreateDoctor(
     p_overrides: payload,
   })
   if (error) throw new Error(error.message)
-  const row = data as { doctor_id: string; clinic_id: string; profile_id: string }
+  const row = data as {
+    doctor_id: string
+    clinic_id: string
+    profile_id: string
+    email_via_override?: boolean
+  }
   return {
     doctorId: row.doctor_id,
     clinicId: row.clinic_id,
     profileId: row.profile_id,
+    emailViaOverride: !!row.email_via_override,
   }
 }
