@@ -1,20 +1,12 @@
 /**
- * Modal de interés para médicos que quieren aparecer en Lucy.
+ * @deprecated Reemplazado por `AffiliationRequestModal` (Afiliación
+ * Fase 1) que persiste el lead en `doctor_affiliation_requests` y
+ * captura datos estructurados (nombre, phone, email, license,
+ * especialidad, etc.).
  *
- * REEMPLAZA temporalmente al flujo de auto-registro
- * (DoctorRegistrationModal + registerDoctor service), que tenía
- * problemas de identidad: creaba `doctors` con `lucy_status='claimed'`
- * sin validar identidad del médico. Ver
- * `docs/ANALISIS_AFILIACION_MEDICO.md` §1.3 (hallazgo R8).
- *
- * Este modal es SOLO informativo:
- *   - No crea profile / doctor / clinic / clinic_member.
- *   - No persiste nada en DB.
- *   - Solo invita al médico a contactar por WhatsApp con sus datos.
- *
- * Cuando se construya el flujo real de "Solicitar afiliación"
- * (tabla doctor_affiliation_requests + bandeja admin), reemplazar
- * este modal por el formulario correspondiente.
+ * Este modal era una mitigación intermedia post-PR #53: solo invitaba
+ * a contactar por WhatsApp, sin captura estructurada. Se conserva por
+ * historial git. NO importar desde código nuevo.
  */
 
 interface DoctorInterestModalProps {
