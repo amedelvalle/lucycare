@@ -16,8 +16,16 @@
  *
  * Uso: node scripts/check-s7_21.mjs
  *
+ * Nota sobre rate limit: la RPC limita a 1 solicitud por IP/24h. El
+ * check script corre múltiples submits desde la misma IP en segundos,
+ * lo cual dispararía el límite. Para eludirlo legítimamente, después
+ * de cada submit exitoso el check setea `ip_address=NULL` via
+ * service_role en la fila recién creada, sacándola del conteo de
+ * rate limit (el WHERE chequea `ip_address = v_ip`). La RPC sigue
+ * intacta; el rate limit funciona en producción real.
+ *
  * Cleanup: borra al final las filas creadas durante el smoke
- *          (filtradas por user_agent='check-s7_21').
+ *          (filtradas por full_name LIKE '[check-s7_21]%').
  */
 import { supabaseAdmin as svc } from './_lib/supabase-admin.mjs';
 import { supabaseAnon as anon } from './_lib/supabase-anon.mjs';
@@ -35,6 +43,17 @@ const TEST_NAME_PREFIX = '[check-s7_21]';
 const baseTs = String(Date.now()).slice(-6);
 const PHONE_INCOMPLETE = '5037' + baseTs;        // lead mínimo
 const PHONE_COMPLETE   = '5037' + (parseInt(baseTs) + 1).toString().slice(-6);
+
+// Helper: limpiar el ip_address de filas previas para eludir el rate
+// limit (1 solicitud/IP/24h). El rate limit cuenta filas con ip = v_ip
+// en últimas 24h; poniéndolo a NULL las saca del conteo sin borrarlas
+// (preserva el test de UNIQUE por phone).
+async function clearIpFromCheckRows() {
+  await svc
+    .from('doctor_affiliation_requests')
+    .update({ ip_address: null })
+    .like('full_name', `${TEST_NAME_PREFIX}%`);
+}
 
 // 1. Tabla existe (vía service_role)
 {
@@ -79,6 +98,8 @@ let minLeadId = null;
   if (!SPEC_ID) {
     fail('no hay specialties en DB para probar lead completo');
   } else {
+    // Eludir rate limit: ip_address=NULL en filas de check previas.
+    await clearIpFromCheckRows();
     const { data, error } = await anon.rpc('submit_affiliation_request', {
       p_full_name: `${TEST_NAME_PREFIX} Lead completo`,
       p_phone: PHONE_COMPLETE,
@@ -144,6 +165,9 @@ let minLeadId = null;
 
 // 6. UNIQUE por phone normalizado — segundo submit con mismo phone
 {
+  // Eludir rate limit antes del intento (preservando el lead anterior
+  // para que UNIQUE dispare).
+  await clearIpFromCheckRows();
   const { data, error } = await anon.rpc('submit_affiliation_request', {
     p_full_name: `${TEST_NAME_PREFIX} Duplicado`,
     p_phone: PHONE_INCOMPLETE, // mismo phone del lead mínimo
