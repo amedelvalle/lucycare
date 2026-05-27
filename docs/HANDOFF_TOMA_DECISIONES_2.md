@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-26** (post-PR #48 — dominio público live).
+> **Snapshot 2026-05-26** (post-PR #50 — Fase 4 PR-B live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -21,8 +21,10 @@
 - **PR #46** ✅ mergeado — SMTP externo Resend + Supabase Auth SMTP custom validado end-to-end.
 - **PR #47** ✅ mergeado — refresh documental post-Resend (incluye este archivo).
 - **PR #48** ✅ mergeado — dominio público `lucycare.app` live en Vercel + Cloudflare DNS + Supabase Site URL + reset email validado end-to-end.
+- **PR #49** ✅ mergeado — refresh documental post-#48 (CLAUDE.md / HANDOFFs / FASE_4_AUTH / SETUP_SMTP_RESEND / PLAN_PILOTO actualizados a `lucycare.app` con `vercel.app` como fallback).
+- **PR #50** ✅ mergeado — Fase 4 PR-B: password en flujo de Reclamar perfil. Step obligatorio post-claim con dos caminos (crear ahora / recibir link por email). Sin migración. Incluye fix de copy "Perfil reclamado" diferenciado de "Cuenta suspendida" en `PanelLayout` + guard contra flash al cargar el contexto.
 
-`main` HEAD esperado tras PR #48: `d61ae3f` o posterior, snapshot 2026-05-26, PRs #1–#48.
+`main` HEAD esperado tras PR #50: `a2b1f96` o posterior, snapshot 2026-05-26, PRs #1–#50.
 
 ## 2. Infraestructura actual
 
@@ -70,6 +72,17 @@
 - Smoke real validado el 2026-05-26: reset email recibido desde `LucyCare`, link abrió `/reset-password`, cambio de contraseña OK, login con contraseña nueva OK.
 - Hallazgo #6 del Security Gate cerrado.
 
+### Auth Fase 4 PR-B — password en Reclamar perfil (PR #50)
+
+- Step obligatorio "Contraseña" tras un claim exitoso. Sin botón "Lo hago después", sin X visible durante el step, sin Esc, sin click-outside-closes.
+- Dos opciones:
+  - **Primaria:** "Crear contraseña ahora" → `PUT /auth/v1/user` con fetch directo (no usa wrapper de supabase-js para evitar hang). Timeout 8s, errores mapeados (401 sesión expiró, 422 password débil, etc.).
+  - **Secundaria:** "Recibir link por email" → muestra el email del profile, fallback amber si no hay. Usa `requestPasswordReset`.
+- Banner success diferenciado por outcome (emerald `password_set` / blue `email_sent`).
+- Copy de PanelLayout diferencia "Perfil reclamado" (listed_only/claimed + !is_operational) de "Cuenta suspendida" (booking_enabled/verified + !is_operational).
+- Guard contra flash del panel al hacer login post-claim (espera tanto `user` como `ctx` antes de renderizar).
+- Sin migración. Sin tocar templates de email, paciente, lista de espera ni dominio.
+
 ### Reglas operativas que se mantienen
 
 - **No guardar secretos** (API keys, SMTP password, service_role, credenciales de Vercel/Cloudflare/Resend/Supabase) en repo, docs, commits, ni chat.
@@ -89,15 +102,24 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Auth Fase 4 PR-B (próxima prioridad)
+### 5.1 Análisis "Solicitar afiliación" (próxima prioridad)
 
-- Integrar email+password dentro del flujo de **Reclamar perfil**.
-- Después del match phone+license, ofrecer al médico:
-  - Opción A: "Recibir link por email para crear contraseña" (manda reset link al `profile.email`).
-  - Opción B: "Crear contraseña ahora" (médico ya logueado vía OTP, password directo).
-- Detalle en `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+Distinto a **Reclamar perfil** (que asume el médico ya está `listed_only` en el directorio, importado vía `import-doctors.mjs`). El caso nuevo: **médico que NO existe aún** en LucyCare — no fue importado, no tenemos phone/license/email para validar automáticamente.
 
-Ahora se puede arrancar: el dominio público y SMTP transaccional están estables (los reset links salen apuntando a `https://lucycare.app`).
+Producto que entrega: `docs/ANALISIS_AFILIACION_MEDICO.md` con:
+
+1. Problema.
+2. Objetivo comercial.
+3. Riesgos de seguridad.
+4. Diferencia entre "Reclamar perfil" y "Solicitar afiliación".
+5. Opciones de UX.
+6. Estados posibles del médico/lead.
+7. Qué valida LucyAdmin.
+8. Qué no debe pasar automáticamente.
+9. Recomendación de MVP.
+10. Preguntas de decisión antes de implementar.
+
+**No codificar todavía.** Solo análisis. Después decidimos scope del primer PR.
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 

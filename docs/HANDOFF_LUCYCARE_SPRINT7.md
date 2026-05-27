@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `d61ae3f` o posterior. **PRs #1–#48 mergeados.**
+- **HEAD esperado en `main`:** `a2b1f96` o posterior. **PRs #1–#50 mergeados.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#48):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#50):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -28,6 +28,8 @@
   - PR #46 SMTP externo Resend + reset por email validado (doc + setup operativo 2026-05-26, dominio `lucycare.app` **comprado en Cloudflare**, DNS email — SPF/DKIM/DMARC — gestionado ahí mismo).
   - PR #47 Refresh documental post-Resend (`HANDOFF_TOMA_DECISIONES_2.md` + actualizaciones en CLAUDE.md / HANDOFF).
   - PR #48 Dominio público `lucycare.app` live en Vercel (setup operativo 2026-05-26, DNS en Cloudflare con CNAME flattening en apex, `www` → apex 308, Supabase Site URL actualizado, reset por email validado end-to-end).
+  - PR #49 Refresh documental post-#48 — `lucycare.app` como dominio principal en CLAUDE.md / HANDOFFs / FASE_4_AUTH / SETUP_SMTP_RESEND / PLAN_PILOTO.
+  - PR #50 Password en flujo de Reclamar perfil (Fase 4 PR-B, step obligatorio post-claim, dos caminos: crear ahora / recibir link por email; copy "Perfil reclamado" diferenciado de "Cuenta suspendida"; sin migración).
 - **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
@@ -86,7 +88,7 @@ Scripts admin lo cargan automáticamente vía `scripts/_lib/env.mjs`.
 - Paciente: OTP por SMS (default).
 - Médico/Admin: OTP **+** email/password (PR #39 ✅).
 - Reset por email vía Supabase (PR #39 ✅).
-- Activación de password en flujo de Reclamar perfil: **pendiente PR-B**.
+- Activación de password en flujo de Reclamar perfil (PR #50 ✅ — paso obligatorio post-claim).
 
 ### Seguridad (firmado en `docs/SECURITY_GATE_PILOTO.md`)
 - `service_role` rotado en PR #36 + invalidado el JWT legacy. Scripts leen `.env.local`.
@@ -126,7 +128,9 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ### 4.0 Próxima prioridad recomendada
 
-**Fase 4 PR-B — password en flujo de Reclamar perfil** (ver §4.2). Es el siguiente paso lógico ahora que el dominio público y el SMTP transaccional están estables.
+**Análisis del flujo "Solicitar afiliación"** (médico que **no existe aún** en el directorio — no fue importado, no tenemos phone/license para validarlo automáticamente). Distinto a "Reclamar perfil" (que asume el médico ya está listed_only en el catálogo).
+
+Producto que entrega: `docs/ANALISIS_AFILIACION_MEDICO.md` con problema, objetivo comercial, riesgos de seguridad, diferencia con reclamo, opciones de UX, estados del médico/lead, qué valida LucyAdmin, qué NO debe pasar automáticamente, recomendación de MVP, preguntas de decisión pendientes. **No codificar todavía.**
 
 ### 4.1 Pre-piloto público (operativo, no código)
 
@@ -134,13 +138,14 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 2. **Smoke 7.3 opcional** — validar capacidad con 5 resets seguidos. No bloqueante: rate limit builtin ya no aplica.
 3. **Cleanup test patients Fase 1** cuando termine validación (`node scripts/setup-test-patient.mjs --clean`).
 
-### 4.2 Auth — Fase 4 PR-B
+### 4.2 Auth — Fase 4 (estado)
 
-Integrar email+password dentro del flujo de Reclamar perfil. Después del match phone+license, ofrecer:
-- Opción A: "Recibir link por email para crear contraseña".
-- Opción B: "Crear contraseña ahora".
+- ✅ **PR-A** (PR #39): login email/password + reset por email.
+- ✅ **PR-B** (PR #50): step obligatorio post-claim con dos caminos — "Crear contraseña ahora" (primario, fetch directo a `PUT /auth/v1/user`) o "Recibir link por email" (muestra email del profile + fallback amber).
 
-Detalles en `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+Próximas fases (no urgentes para piloto):
+- **Fase 2**: self-service de cambio de email/teléfono desde `/panel/cuenta`.
+- **Fase 3**: 2FA opcional (TOTP).
 
 ### 4.3 Paciente Global — Fases 2-5
 
@@ -279,10 +284,12 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#48 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live (Vercel + Cloudflare).
+Estado: PRs #1–#50 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live. Fase 4 PR-B (password en Reclamar perfil) ✅ live.
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-  - Fase 4 PR-B password en flujo de Reclamar perfil;
+  - Análisis del flujo "Solicitar afiliación" (médico que NO existe
+    en el directorio aún) — `docs/ANALISIS_AFILIACION_MEDICO.md`.
+    NO codificar todavía;
 
   otras opciones en cola:
   - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);

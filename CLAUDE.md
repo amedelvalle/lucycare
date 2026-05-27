@@ -45,10 +45,10 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-26)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `d61ae3f` o posterior. **PRs #1–#48 mergeados**.
+- **HEAD esperado:** `a2b1f96` o posterior. **PRs #1–#50 mergeados**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
-- **Pre-piloto (PRs #32–#48):** ✅ reclamo seguro, foto perfil, auth email+password, Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`.
+- **Pre-piloto (PRs #32–#50):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y **PR-B**), Security Gate (4 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil.
 - **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_20`. Verificables con `node scripts/check-s7_NN.mjs`.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
@@ -82,7 +82,7 @@ squash-merge, la rama puede borrarse.
 - OTP por SMS con Twilio para todos (paciente, médico, asistente, admin).
 - Email + password como **segunda opción** para médico/admin (PR #39 ✅).
 - Reset de password por email (PR #39 ✅).
-- Activación de password dentro del flujo de Reclamar perfil: **pendiente Fase 4 PR-B**.
+- Activación de password dentro del flujo de Reclamar perfil (PR #50 ✅ — paso obligatorio post-claim con dos caminos: crear ahora / recibir link por email).
 
 ### Ejes del médico (independientes)
 - `lucy_status` enum: `listed_only | claimed | booking_enabled | verified`.
@@ -223,7 +223,7 @@ Encuesta post-cita con token único, NPS, score público ajustado bayesianamente
 ### Sprint 7 — Admin SaaS + Robustez ✅ (PRs #16–#30)
 Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios). Robustez pacientes (document_number nullable, dedup teléfono, normalización SV, validación DUI).
 
-### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#48)
+### Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#50)
 - **Reclamo seguro** (PR #32, s7_13).
 - **Estabilización supabase-js lock** (PR #33).
 - **Foto de perfil** (PR #34, s7_14).
@@ -231,7 +231,7 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Rotar service_role + ENV vars** (PR #36).
 - **RLS hardening profiles** (PR #37, s7_16, s7_16b).
 - **Desactivar seed *.lucycare.test** (PR #38, s7_17).
-- **Auth email + password + reset por email** (PR #39).
+- **Auth email + password + reset por email** (PR #39, Fase 4 PR-A).
 - **LoginModal no cierra al click outside** (PR #40).
 - **Directorio informativo + copy ES** (PR #41).
 - **Análisis paciente global + decisiones** (PR #42).
@@ -239,18 +239,21 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Paciente Global Fase 1** (PR #44, s7_20).
 - **SMTP externo Resend + reset por email validado** (PR #46, doc + setup operativo 2026-05-26, dominio `lucycare.app`).
 - **Dominio público `lucycare.app` live en Vercel** (PR #48, setup operativo 2026-05-26, DNS en Cloudflare, www→apex 308, Supabase Site URL + reset email validados).
+- **Password en flujo de Reclamar perfil** (PR #50, Fase 4 PR-B — step obligatorio post-claim, dos caminos: crear ahora / recibir link por email; copy "Perfil reclamado" diferenciado de "Cuenta suspendida"; sin migración).
 
 ## Próximas fases (en cola)
 
 ### Próxima prioridad recomendada
-1. **Fase 4 PR-B — password en flujo de Reclamar perfil.** Ahora que el dominio público y el reset por email están estables, queda activar la creación de password durante el claim. Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+**Análisis del flujo "Solicitar afiliación"** — médicos que NO existen aún en el directorio (no fueron importados, no tenemos phone/license para validarlos). Distinto a "Reclamar perfil" que asume el médico ya está listed_only. Antes de codificar, abrir `docs/ANALISIS_AFILIACION_MEDICO.md` con: problema, objetivo comercial, riesgos de seguridad, diferencia con reclamo, opciones UX, estados del lead, qué valida LucyAdmin, qué NO automatizar, MVP, preguntas pendientes.
 
 ### Pre-piloto público (operativo, no código)
 1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
 2. **Cleanup test patients Fase 1** cuando termine la validación (`node scripts/setup-test-patient.mjs --clean`).
 
 ### Fase 4 — Auth robusta del médico
-- **PR-B**: integrar email+password dentro del flujo de Reclamar perfil. Opción "crear password ahora" o "recibir link por email después". Ver `docs/ANALISIS_AUTH_MEDICO.md` Fase 1 PR-B.
+- ✅ **PR-A** (PR #39): login email/password + reset por email.
+- ✅ **PR-B** (PR #50): password en flujo de Reclamar perfil.
+- Próximo (post-piloto): Fase 2 self-service de cambio de email/teléfono. Fase 3 2FA opcional. Ver `docs/ANALISIS_AUTH_MEDICO.md`.
 
 ### Paciente Global (post Fase 1)
 - **Fase 2**: perfil paciente extendido con DUI, DOB, género, dpto, muni.
@@ -361,6 +364,8 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+a2b1f96 feat(auth): password en flujo de Reclamar perfil (Fase 4 PR-B) (#50)
+813c2a2 docs: refresh post-PR #48 — lucycare.app como dominio público principal (#49)
 d61ae3f chore(infra): configurar dominio público lucycare.app (#48)
 518b84e docs(project): registrar SMTP externo Resend como configurado (#47)
 f7797a5 docs(auth): documentar setup SMTP externo con Resend (#46)
@@ -411,15 +416,18 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#48 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live en Vercel (DNS Cloudflare, `vercel.app` queda como fallback, previews en `lucycare-git-*.vercel.app`).
+Estado: PRs #1–#50 mergeados, migraciones hasta s7_20. SMTP externo Resend ✅ live. Dominio público `https://lucycare.app` ✅ live (Vercel + Cloudflare, `vercel.app` queda como fallback, previews en `lucycare-git-*.vercel.app`). Fase 4 PR-B (password en Reclamar perfil) ✅ live.
 
 Hoy hacemos: ___[próxima prioridad recomendada:
-                   Fase 4 PR-B — password en flujo Reclamar perfil;
+                   Análisis del flujo "Solicitar afiliación"
+                   (médicos que NO existen aún en directorio) —
+                   abrir docs/ANALISIS_AFILIACION_MEDICO.md;
 
                    otras en cola:
                    - Fase 2 Paciente Global perfil extendido;
                    - vista global /admin/lista-espera;
                    - Fase 3 Paciente Global read-only datos del médico;
+                   - Admin SaaS B4 disponibilidad desde admin;
                    - smoke 7.3 opcional capacidad SMTP;
                    - etc.]___
 ```
