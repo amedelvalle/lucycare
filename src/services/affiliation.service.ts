@@ -33,7 +33,9 @@ export interface AffiliationRequestRow {
   specialtyName: string | null
   specialtyOther: string | null
   licenseNumber: string | null
+  departmentId: string | null
   departmentName: string | null
+  municipalityId: string | null
   municipalityName: string | null
   addressLine: string | null
   clinicName: string | null
@@ -178,7 +180,9 @@ function mapRow(r: Record<string, unknown>): AffiliationRequestRow {
     specialtyName: (r.specialty_name as string) ?? null,
     specialtyOther: (r.specialty_other as string) ?? null,
     licenseNumber: (r.license_number as string) ?? null,
+    departmentId: (r.department_id as string) ?? null,
     departmentName: (r.department_name as string) ?? null,
+    municipalityId: (r.municipality_id as string) ?? null,
     municipalityName: (r.municipality_name as string) ?? null,
     addressLine: (r.address_line as string) ?? null,
     clinicName: (r.clinic_name as string) ?? null,

@@ -129,10 +129,12 @@ export default function AdminAffiliationDetailModal({
     )
     setOvClinicName(row.clinicName ?? '')
     setOvAddressLine(row.addressLine ?? '')
-    // Department/municipality IDs no están en el row tipo — quedan vacíos
-    // a menos que admin los elija acá explícitamente.
-    setOvDepartmentId('')
-    setOvMunicipalityId('')
+    // Precargar la ubicación estructurada que ya trajo el lead (s7_24
+    // expone department_id/municipality_id en el RPC de listado). Así
+    // el admin no ve los selects vacíos ni los pisa por error. Si el
+    // lead no trajo ubicación, quedan vacíos.
+    setOvDepartmentId(row.departmentId ?? '')
+    setOvMunicipalityId(row.municipalityId ?? '')
     setCreateConfirmed(false)
     setCreateMode(true)
   }

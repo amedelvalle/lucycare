@@ -30,7 +30,7 @@ export default function PanelLayout() {
   const navigate = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: ctx } = useClinicContext();
+  const { data: ctx, isError: ctxError, refetch: refetchCtx } = useClinicContext();
 
   useEffect(() => {
     getCurrentAuthUser().then((u) => {
@@ -58,10 +58,37 @@ export default function PanelLayout() {
   // `ctx === undefined` y el check `ctx?.role === 'doctor' && ...`
   // evaluaba false → se caía al render del panel completo.
   //
-  // Nota: si `useClinicContext` falla (retry agotado) el spinner queda
-  // permanente. Es una limitación pre-existente del panel; manejo de
-  // error de contexto queda como follow-up.
-  if (!user || !ctx) {
+  // Auth aún cargando → spinner.
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+
+  // Contexto de clínica todavía no disponible. Antes, si
+  // `useClinicContext` fallaba (retry de react-query agotado), el
+  // spinner quedaba colgado para siempre y el médico debía refrescar
+  // a mano. Ahora distinguimos error (mostramos "Reintentar") de
+  // carga en curso (spinner).
+  if (!ctx) {
+    if (ctxError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center bg-gray-50">
+          <i className="ri-wifi-off-line text-3xl text-gray-400" />
+          <p className="text-sm text-gray-600 max-w-xs">
+            No pudimos cargar tu panel. Revisá tu conexión e intentá de nuevo.
+          </p>
+          <button
+            onClick={() => refetchCtx()}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800"
+          >
+            Reintentar
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
@@ -77,17 +104,36 @@ export default function PanelLayout() {
   //   - booking_enabled / verified + !is_operational → admin lo
   //     suspendió. Copy original ("cuenta suspendida").
   if (ctx?.role === 'doctor' && ctx.doctorIsOperational === false) {
-    const isPendingHabilitation =
-      ctx.doctorLucyStatus === 'listed_only' || ctx.doctorLucyStatus === 'claimed';
-    const title = isPendingHabilitation ? 'Perfil reclamado' : 'Cuenta suspendida';
-    const description = isPendingHabilitation
-      ? 'Tu perfil ya fue reclamado. Estamos revisando tu habilitación para activar el panel completo. Te avisamos en cuanto esté listo.'
-      : 'Tu cuenta está pausada temporalmente por el administrador. No podés atender citas ni firmar consultas hasta que se reactive. Tu data histórica se conserva.';
-    const iconClass = isPendingHabilitation
+    // Tres estados visibles cuando el médico no es operativo:
+    //   - listed_only → todavía NO reclamó. Tras s7_24 esto no debería
+    //     ocurrir (el profile queda role='patient' pre-claim y no entra
+    //     al panel), pero el copy es honesto si llegara igual.
+    //   - claimed     → reclamó, esperando habilitación de LucyAdmin.
+    //   - booking_enabled / verified → admin lo suspendió.
+    const variant =
+      ctx.doctorLucyStatus === 'listed_only'
+        ? 'pending_claim'
+        : ctx.doctorLucyStatus === 'claimed'
+          ? 'claimed_waiting'
+          : 'suspended';
+    const title =
+      variant === 'pending_claim'
+        ? 'Perfil pendiente de reclamo'
+        : variant === 'claimed_waiting'
+          ? 'Perfil reclamado'
+          : 'Cuenta suspendida';
+    const description =
+      variant === 'pending_claim'
+        ? 'Tu perfil todavía no fue reclamado. Reclamalo desde tu perfil público para activar tu cuenta.'
+        : variant === 'claimed_waiting'
+          ? 'Tu perfil ya fue reclamado. Estamos revisando tu habilitación para activar el panel completo. Te avisamos en cuanto esté listo.'
+          : 'Tu cuenta está pausada temporalmente por el administrador. No podés atender citas ni firmar consultas hasta que se reactive. Tu data histórica se conserva.';
+    const isPositive = variant !== 'suspended';
+    const iconClass = isPositive
       ? 'ri-time-line text-2xl text-emerald-700'
       : 'ri-pause-circle-line text-2xl text-amber-600';
-    const iconBg = isPendingHabilitation ? 'bg-emerald-100' : 'bg-amber-100';
-    const borderClass = isPendingHabilitation ? 'border-emerald-200' : 'border-amber-200';
+    const iconBg = isPositive ? 'bg-emerald-100' : 'bg-amber-100';
+    const borderClass = isPositive ? 'border-emerald-200' : 'border-amber-200';
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
         <div className={`bg-white border ${borderClass} rounded-2xl p-6 max-w-md text-center shadow-sm`}>
