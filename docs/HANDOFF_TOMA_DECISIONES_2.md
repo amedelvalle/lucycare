@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-27** (post-PR #58 — Afiliación Fase 2 live).
+> **Snapshot 2026-05-27** (post-PR #59 — handoff de ventana, Afiliación Fase 2 live, smoke end-to-end pendiente).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -31,8 +31,9 @@
 - **PR #56** ✅ mergeado — **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` + RPCs anon/admin + bandeja admin con triage. Validación de Lectura A (mínimo name+phone+LOPD). Smoke completo OK. No crea doctor/profile/clinic.
 - **PR #57** ✅ mergeado — refresh documental post-#56.
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
+- **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado tras PR #58: `f427ed3` o posterior, snapshot 2026-05-27, PRs #1–#58.
+`main` HEAD esperado tras PR #59: `8ec813c` o posterior, snapshot 2026-05-27, PRs #1–#59. Migraciones aplicadas hasta `s7_23`.
 
 ## 2. Infraestructura actual
 
@@ -120,16 +121,26 @@
 
 ## 5. Pendientes inmediatos
 
-### 5.1 Smoke operativo del claim end-to-end (próxima prioridad)
+### 5.1 SMOKE END-TO-END DE AFILIACIÓN (próxima prioridad — NO codificar hasta cerrarlo)
 
 Fase 1 + Fase 2 ya están live. El gap restante para cerrar el eje afiliación: validar operativamente que un médico creado vía Fase 2 puede ejecutar el flujo de Reclamar perfil sin tropezar.
 
-Plan:
-- Crear un lead vía form público (sin email para validar el path completo).
-- Aprobar + "Crear médico" desde admin, ingresando un test phone que tengamos configurado en Supabase (no el del paciente smoke).
-- Desde el browser con ese test phone: ir a `/doctor/{id}` (admin debe publicarlo primero o usar el enlace directo si funciona con `is_published=false`).
-- Ejecutar OTP + license + LOPD + crear password.
-- Verificar que el doctor pasa a `lucy_status='claimed'` y el médico puede entrar al panel.
+**Pasos (orden estricto):**
+1. Crear lead desde "Soy médico, quiero aparecer" (form público).
+2. Admin (`50378056365` / `123456`) → `/admin/afiliaciones` → **aprobar** la solicitud.
+3. Admin → **"Crear médico"** → confirmar que queda `listed_only`, no publicado, no operativo, sin agenda.
+4. Admin **publica temporalmente** (`is_published=true` desde ficha admin) para que el perfil público cargue.
+5. Médico **reclama perfil** con: teléfono + OTP + licencia/JVPM + aceptación de términos + creación de contraseña.
+6. Verificar que termina en "**Perfil reclamado**" y puede entrar al panel (pantalla "Perfil reclamado", NO "Cuenta suspendida").
+7. Dev verifica DB: `lucy_status='claimed'`, `tos_accepted_at` seteado, `encrypted_password` seteado si creó password, `audit_log` con `edited_via='claim_self_service'`.
+8. **Cleanup** de lead/doctor/clinic/auth.user de smoke.
+
+**⚠️ Advertencias críticas:**
+- **NO usar el teléfono test del paciente** (`50375000001`). El teléfono del smoke médico debe ser el mismo que queda guardado al crear el médico desde la solicitud.
+- **NO hacer OTP con el teléfono del médico ANTES de que admin cree el doctor.** Supabase crearía un `auth.user` paciente (role=patient) con ese phone → la RPC `admin_approve_and_create_doctor` chocaría con el UNIQUE del phone → bloquea la creación. (Ya ocurrió una vez con `50375000099`; hubo que limpiar el residual con service_role antes de poder crear el médico.)
+- **Usar un Test Phone médico exclusivo** en Supabase Dashboard → Auth → Phone (ej. `50375000099` / OTP `123456`), distinto del de paciente.
+- **No confundir estados:** `listed_only` ≠ `claimed` ≠ `verified`. Afiliación crea `listed_only`; reclamar pasa a `claimed`; `verified` lo decide LucyAdmin.
+- **Crear médico desde afiliación NO debe** publicar, verificar, activar agenda ni volver operativo automáticamente.
 
 No requiere código. Solo smoke operativo con test phone real.
 
@@ -142,6 +153,18 @@ No requiere código. Solo smoke operativo con test phone real.
 
 ## 6. Backlog posterior
 
+### 6.1 Pendientes prioritarios a conservar (revisar tras el smoke de afiliación)
+- **Paciente Global / DUI:** DUI obligatorio o progresivo + identidad única del paciente (`docs/ANALISIS_PACIENTE_GLOBAL.md` Fase 2+).
+- **Ubicación estructurada Departamento/Municipio** en admin médico (el form de afiliación los captura, pero la ficha admin del médico no los edita de forma estructurada).
+- **Filtro "Ordenar por" del Home NO funciona** — bug funcional, revisar.
+- **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
+- **Mi equipo / invitados del médico** — máximo inicial sugerido **2 asistentes**.
+- **Catálogos personalizados por médico** para diagnósticos y medicamentos.
+- **Flujo legal/comercial de DUI médico, términos y aceptación formal** pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
+- **Manejo de email en afiliación/onboarding médico** (override ya existe en Fase 2; falta self-service de cambio post-reclamo).
+- **Error handling en PanelLayout / useClinicContext** — si `useClinicContext` falla (retry agotado), el spinner queda permanente.
+
+### 6.2 Otros backlog
 - Vista global `/admin/lista-espera` cross-médicos con filtros.
 - Sección "Lista de espera" en panel del médico (RLS ya permite, falta UI).
 - Perfil paciente extendido — Paciente Global Fase 2 (DUI, DOB, género, dpto, muni).
@@ -176,4 +199,27 @@ No requiere código. Solo smoke operativo con test phone real.
 - `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de paciente global.
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial directorio.
 - `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo.
+- `docs/ANALISIS_AFILIACION_MEDICO.md` — análisis del flujo "Solicitar afiliación" (Q1-Q10 cerradas).
+- `docs/PLAN_AFILIACION_MEDICO.md` — plan operativo Fase 1 + Fase 2 + §11.bis pendientes legales/diseño.
 - `docs/CUENTA_DEMO_CAMILO.md` — cuenta demo oficial.
+
+---
+
+## INSTRUCCIÓN PARA NUEVA VENTANA DE CONTEXTO
+
+Para continuar LucyCare, leer primero:
+1. `CLAUDE.md`
+2. `docs/HANDOFF_LUCYCARE_SPRINT7.md`
+3. `docs/HANDOFF_TOMA_DECISIONES_2.md`
+4. `docs/ANALISIS_AFILIACION_MEDICO.md`
+5. `docs/PLAN_AFILIACION_MEDICO.md`
+6. `docs/ANALISIS_PACIENTE_GLOBAL.md`
+7. `docs/SECURITY_GATE_PILOTO.md`
+
+Luego confirmar:
+- **HEAD actual** (esperado `8ec813c` o posterior).
+- **PRs mergeados hasta #59.**
+- **Migraciones aplicadas hasta `s7_23`.**
+- **Si el smoke end-to-end de afiliación ya fue realizado o sigue pendiente** (al cierre de esta ventana: PENDIENTE — ver §5.1).
+
+**No codificar nada hasta confirmar ese estado.**

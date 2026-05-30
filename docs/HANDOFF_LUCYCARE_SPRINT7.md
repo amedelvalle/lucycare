@@ -1,7 +1,7 @@
 # Handoff LucyCare — Pre-piloto (post Sprint 7)
 
 > Documento para retomar el proyecto en una nueva ventana sin depender
-> del chat previo. **Snapshot 2026-05-26.** Acompaña a `CLAUDE.md`
+> del chat previo. **Snapshot 2026-05-27.** Acompaña a `CLAUDE.md`
 > (guía rápida + sistema de diseño), `docs/ESTADO_TECNICO.md` (ER/BD)
 > y los análisis vivos en `docs/ANALISIS_*.md`.
 
@@ -9,9 +9,11 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `f427ed3` o posterior. **PRs #1–#58 mergeados.**
+- **HEAD esperado en `main`:** `8ec813c` o posterior. **PRs #1–#59 mergeados.**
+- **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
+- **Migraciones aplicadas hasta `s7_23`.**
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
-- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#58):**
+- **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#59):**
   - PR #32 Reclamo seguro (s7_13).
   - PR #33 Estabilización supabase-js lock no-op.
   - PR #34 Foto de perfil (s7_14).
@@ -134,13 +136,30 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 
 ## 4. Próximas fases (orden recomendado)
 
-### 4.0 Próxima prioridad recomendada
+### 4.0 Próxima prioridad recomendada — SMOKE END-TO-END DE AFILIACIÓN
 
-**Smoke operativo del claim end-to-end** del médico creado vía Fase 2 — usar un test phone real del médico (no el del paciente smoke). Sin código, validación de que el doctor `listed_only` recién creado se puede reclamar correctamente vía PR #32 + #50.
+**No abrir código nuevo hasta completar este smoke operativo.** Valida que el doctor `listed_only` creado vía Fase 2 (PR #58) se puede reclamar correctamente vía el flujo estándar (PR #32 + #50).
+
+**Pasos (en este orden estricto):**
+1. Crear lead desde "Soy médico, quiero aparecer" (form público).
+2. Admin (`50378056365` / `123456`) → `/admin/afiliaciones` → **aprobar** la solicitud.
+3. Admin → **"Crear médico"** → confirmar estado resultante: `listed_only`, no publicado, no operativo, sin agenda.
+4. Admin **publica temporalmente** el doctor (`is_published=true` desde ficha admin) para que el perfil público cargue.
+5. Médico **reclama perfil** con: teléfono + OTP + licencia/JVPM + aceptación de términos + creación de contraseña.
+6. Verificar que termina en "**Perfil reclamado**" y puede entrar al panel (pantalla "Perfil reclamado", NO "Cuenta suspendida").
+7. Dev verifica DB: `lucy_status='claimed'`, `tos_accepted_at` seteado, `encrypted_password` seteado si creó password, `audit_log` con `edited_via='claim_self_service'`.
+8. **Cleanup** de lead/doctor/clinic/auth.user de smoke.
+
+**⚠️ Advertencias críticas:**
+- **NO usar el teléfono test del paciente** (`50375000001`). El teléfono del smoke médico debe ser el mismo que queda guardado al crear el médico desde la solicitud.
+- **NO hacer OTP con el teléfono del médico ANTES de que admin cree el doctor.** Supabase crearía un `auth.user` paciente (role=patient) con ese phone y la RPC `admin_approve_and_create_doctor` chocaría con el UNIQUE del phone → bloquea la creación. (Ya pasó una vez con `50375000099`; hubo que limpiar el residual antes del smoke.)
+- **Usar un Test Phone médico exclusivo** en Supabase Dashboard → Auth → Phone (ej. `50375000099` / OTP `123456`), distinto del de paciente.
+- **No confundir estados:** `listed_only` ≠ `claimed` ≠ `verified`. Crear médico desde afiliación deja `listed_only`; reclamar lo pasa a `claimed`; `verified` lo decide LucyAdmin manualmente.
+- **Crear médico desde afiliación NO debe** publicar, verificar, activar agenda ni volver operativo automáticamente.
 
 Estado actual del eje afiliación:
-- ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56), Fase 2 conversión (PR #58).
-- ⏳ Smoke operativo claim end-to-end.
+- ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56), Fase 2 conversión (PR #58), refresh docs (PR #59).
+- ⏳ Smoke operativo claim end-to-end (este bloque).
 - ⏳ Pendientes legal/diseño: DUI + TOS médico pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 
 ### 4.1 Pre-piloto público (operativo, no código)
@@ -297,7 +316,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#58 mergeados, migraciones hasta s7_23. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura) + Fase 2 ✅ (admin convierte lead en doctor `listed_only` con email override).
+Estado: PRs #1–#59 mergeados (HEAD 8ec813c), migraciones hasta s7_23. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura) + Fase 2 ✅ (admin convierte lead en doctor `listed_only` con email override). Smoke end-to-end de afiliación: PENDIENTE.
 
 Hoy hacemos: ___[próxima prioridad recomendada:
   - Smoke operativo del claim end-to-end del médico creado vía
