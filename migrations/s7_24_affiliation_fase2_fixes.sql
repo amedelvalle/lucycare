@@ -253,7 +253,16 @@ GRANT EXECUTE ON FUNCTION admin_approve_and_create_doctor(uuid, jsonb) TO authen
 -- ─────────────────────────────────────────────────────────────
 -- (C) admin_list_affiliation_requests — agregar department_id +
 --     municipality_id al retorno (para precarga del modal admin).
+--
+-- NOTA: agregar columnas al RETURNS TABLE cambia el tipo de retorno,
+-- y CREATE OR REPLACE no permite eso ("cannot change return type of
+-- existing function"). Hay que DROP + CREATE. La firma de ARGUMENTOS
+-- no cambia, así que no afecta a callers ni GRANTs (se re-otorga abajo).
 -- ─────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS admin_list_affiliation_requests(
+  affiliation_status, boolean, text, int, int
+);
+
 CREATE OR REPLACE FUNCTION admin_list_affiliation_requests(
   p_status      affiliation_status DEFAULT NULL,
   p_incomplete  boolean DEFAULT NULL,
