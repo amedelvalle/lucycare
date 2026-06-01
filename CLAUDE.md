@@ -45,11 +45,12 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-27)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `b2decba` o posterior. **PRs #1–#59 + #61 mergeados** (#58 feat Afiliación Fase 2, #59 docs refresh, #61 fixes Fase 2 + `s7_24` post-smoke). **En curso:** PR #60 (este handoff de ventana).
+- **HEAD esperado:** `ed5721f` o posterior. **PRs #1–#64 mergeados** (#58 feat Afiliación Fase 2, #60 handoff, #61 fixes Fase 2 + `s7_24`, #62 análisis pagos SaaS, #63 fix orden Home, #64 ubicación estructurada admin + `s7_25`).
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
 - **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
-- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_24` (`s7_24` = fixes de Afiliación Fase 2, PR #61). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_25` (`s7_24` = fixes Afiliación Fase 2 / PR #61; `s7_25` = ubicación estructurada admin / PR #64). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Ubicación estructurada del médico (PR #64, `s7_25`) — live en producción:** LucyAdmin > Médicos > Editar > Clínica edita Departamento/Municipio con las listas jerárquicas del Home, guarda IDs en `clinics.department_id/municipality_id` (lo que filtra el directorio). Municipio depende del departamento; **obligatorios para médicos publicados/operativos** (enforcement server-side `P0004` + UI). Los 5 médicos publicados ya tienen ubicación estructurada.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
 - **Deploy:** Vercel auto-deploy desde `main`. `gh` CLI autenticado.
@@ -271,7 +272,7 @@ creó (confirmación visual del step "Contraseña creada").
 - **"Perfil reclamado" en el panel NO prueba el claim** (con el copy viejo aparecía también para `listed_only`). La prueba es `lucy_status='claimed'` en DB.
 - **`auth.admin.listUsers()` pagina mal** en este proyecto (bug GoTrue por fila corrupta en página 2). Para buscar/limpiar por phone, derivar el `auth.user.id` desde `profiles.id` (id compartido) y usar `getUserById`/`deleteUser`.
 
-PR #61 (fix + `s7_24`) ✅ mergeado (HEAD `b2decba`). Después: opciones en cola (no bloqueantes para piloto) — ver "Pendientes prioritarios a conservar" más abajo.
+PR #61 (fix + `s7_24`) ✅ mergeado (commit `b2decba`). Después: opciones en cola (no bloqueantes para piloto) — ver "Pendientes prioritarios a conservar" más abajo.
 
 ### Pre-piloto público (operativo, no código)
 1. **Smoke 7.3 opcional** — validar capacidad enviando 5 resets seguidos (no bloqueante, el rate limit builtin ya no aplica con SMTP externo).
@@ -403,6 +404,10 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+ed5721f feat(admin): ubicación estructurada (Depto/Municipio) en la ficha del médico (#64)
+685f0ec fix(directorio): quitar opción muerta "Más cercanos" del orden del Home (#63)
+c87e189 docs: análisis de pagos SaaS autoservicio (suscripción del médico) (#62)
+cda1556 docs: handoff de ventana — Afiliación Fase 2 + smoke end-to-end completado (#60)
 b2decba fix(afiliacion): Fase 2 — role=patient pre-claim + precarga ubicación + panel copy (#61)
 8ec813c docs: refresh post-PR #58 — Afiliación Fase 2 live (#59)
 f427ed3 feat(afiliacion): Fase 2 — convertir lead aprobado en doctor listed_only (#58)
@@ -465,7 +470,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#59 + #61 mergeados (HEAD b2decba), migraciones hasta s7_24 (aplicada en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ (captura) + Fase 2 ✅ (admin convierte lead en doctor `listed_only` con email override). Smoke end-to-end de afiliación ✅ COMPLETADO (2026-05-30) — detectó 4 bugs corregidos en PR #61 + `s7_24`. PR #60 (handoff) en curso.
+Estado: PRs #1–#64 mergeados (HEAD ed5721f), migraciones hasta s7_25 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅ + smoke end-to-end ✅. Ubicación estructurada admin ✅ live (PR #64, `s7_25`). Análisis de pagos SaaS ✅ doc base (PR #62, sin código).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ya cerrado):
                    - análisis de pagos SaaS autoservicio;
