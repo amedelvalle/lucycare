@@ -306,7 +306,7 @@ PR #61 (fix + `s7_24`) ✅ mergeado (HEAD `b2decba`). Después: opciones en cola
 Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 - **Paciente Global / DUI**: DUI obligatorio o progresivo + identidad única del paciente (continúa `docs/ANALISIS_PACIENTE_GLOBAL.md` Fase 2+).
 - **Ubicación estructurada Departamento/Municipio** en admin médico (hoy el form de afiliación los captura, pero la ficha admin del médico no los edita de forma estructurada).
-- **Filtro "Ordenar por" del Home NO funciona** — bug funcional, revisar.
+- **Filtro "Ordenar por" del Home** — ✅ corregido: la opción muerta "Más cercanos" se removió (no había lat/lng ni geolocalización; caía al orden default). Quedan "Disponibilidad/Mejor coincidencia" (orden server: booking_enabled→verified→created_at) y "Mejor valorados" (score ajustado), ambas funcionales. **Backlog:** reintroducir "Más cercanos" cuando exista lat/lng en `clinics` + ubicación del usuario + UX de permisos de geolocalización (no proxy por municipio — no es cercanía real).
 - **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
 - **Mi equipo / invitados del médico** — máximo inicial sugerido **2 asistentes**.
 - **Catálogos personalizados por médico** para diagnósticos y medicamentos.

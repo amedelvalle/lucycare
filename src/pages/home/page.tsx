@@ -24,7 +24,10 @@ export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
   const [onlineBookingOnly, setOnlineBookingOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'default' | 'mejor_valorados' | 'cercanos'>('default');
+  // "Más cercanos" se removió: no hay lat/lng de clínicas ni geolocalización
+  // del usuario, así que no había con qué ordenar (caía a orden default).
+  // Backlog: reintroducir cuando exista geo + UX de permisos de ubicación.
+  const [sortBy, setSortBy] = useState<'default' | 'mejor_valorados'>('default');
 
   const isAuthenticated = !!currentUser;
 
@@ -224,7 +227,6 @@ export default function Home() {
             >
               <option value="default">{searchTerm ? 'Mejor coincidencia' : 'Disponibilidad'}</option>
               <option value="mejor_valorados">Mejor valorados</option>
-              <option value="cercanos">Más cercanos</option>
             </select>
           </div>
         </div>
