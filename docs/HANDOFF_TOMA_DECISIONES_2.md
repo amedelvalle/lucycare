@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-05-30** (Afiliación Fase 2 live + smoke end-to-end ✅ completado; fixes post-smoke en PR #61 + `s7_24`).
+> **Snapshot 2026-06-01** (Afiliación Fase 2 + smoke ✅; fixes PR #61/`s7_24`; análisis pagos SaaS PR #62; fix orden Home PR #63; ubicación estructurada admin PR #64/`s7_25` ✅ live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `b2decba` o posterior, PRs #1–#59 + #61 mergeados. Migraciones hasta `s7_24` (en `main` vía PR #61, aplicada en Supabase). PR #60 (este handoff) en curso.
+`main` HEAD esperado: `ed5721f` o posterior, **PRs #1–#64 mergeados**. Migraciones hasta `s7_25` (aplicadas en Supabase). #62 análisis pagos (doc), #63 fix orden Home, #64 ubicación estructurada admin (`s7_25`, live).
 
 ## 2. Infraestructura actual
 
@@ -136,7 +136,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **"Perfil reclamado" en el panel NO prueba el claim** — la prueba es `lucy_status='claimed'` en DB.
 - **`auth.admin.listUsers()` pagina mal** (bug GoTrue, fila corrupta en pág. 2). Para buscar/limpiar por phone, derivar el `auth.user.id` desde `profiles.id` (id compartido) y usar `getUserById`/`deleteUser`.
 
-**Estado:** PR #61 (fix + `s7_24`) ✅ mergeado (HEAD `b2decba`), `s7_24` aplicada en Supabase. Falta mergear #60 (este handoff).
+**Estado:** PR #61 (fix + `s7_24`) ✅ mergeado, `s7_24` aplicada. Todos los PRs de la ventana (#60–#64) mergeados; HEAD `ed5721f`.
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 
@@ -149,8 +149,8 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 ### 6.1 Pendientes prioritarios a conservar (revisar tras el smoke de afiliación)
 - **Paciente Global / DUI:** DUI obligatorio o progresivo + identidad única del paciente (`docs/ANALISIS_PACIENTE_GLOBAL.md` Fase 2+).
-- **Ubicación estructurada Departamento/Municipio** en admin médico (el form de afiliación los captura, pero la ficha admin del médico no los edita de forma estructurada).
-- **Filtro "Ordenar por" del Home NO funciona** — bug funcional, revisar.
+- ~~**Ubicación estructurada Departamento/Municipio** en admin médico~~ → ✅ **hecho** (PR #64, `s7_25`): ficha admin edita Depto/Municipio con listas del Home, guarda IDs en `clinics`, obligatorios para publicados/operativos (P0004). Los 5 publicados ya cargados.
+- ~~**Filtro "Ordenar por" del Home NO funciona**~~ → ✅ **hecho** (PR #63): se quitó la opción muerta "Más cercanos"; quedan "Disponibilidad/Mejor coincidencia" y "Mejor valorados". Geo real (lat/lng + ubicación del usuario) queda como backlog futuro.
 - **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
 - **Mi equipo / invitados del médico** — máximo inicial sugerido **2 asistentes**.
 - **Catálogos personalizados por médico** para diagnósticos y medicamentos.
@@ -211,9 +211,10 @@ Para continuar LucyCare, leer primero:
 7. `docs/SECURITY_GATE_PILOTO.md`
 
 Luego confirmar:
-- **HEAD actual** (esperado `b2decba` o posterior).
+- **HEAD actual** (esperado `ed5721f` o posterior).
 - **PRs mergeados hasta #59.**
-- **Migraciones aplicadas hasta `s7_24`** (`s7_24` vía PR #61, aplicada en Supabase).
-- **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61 (✅ mergeado). PR #60 (este handoff) en curso.
+- **Migraciones aplicadas hasta `s7_25`** (`s7_24` vía PR #61; `s7_25` vía PR #64, aplicadas en Supabase).
+- **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61.
+- **Ubicación estructurada admin: ✅ live (PR #64, `s7_25`).** Los 5 médicos publicados tienen Depto/Municipio cargados.
 
 **No codificar nada hasta confirmar ese estado.**

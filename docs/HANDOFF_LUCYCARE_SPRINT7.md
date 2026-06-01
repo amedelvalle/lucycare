@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `b2decba` o posterior. **PRs #1–#59 + #61 mergeados** (#61 = fixes Afiliación Fase 2 + `s7_24`).
+- **HEAD esperado en `main`:** `ed5721f` o posterior. **PRs #1–#64 mergeados** (#61 fixes Fase 2 + `s7_24`; #62 análisis pagos; #63 fix orden Home; #64 ubicación estructurada admin + `s7_25`).
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
-- **Migraciones aplicadas hasta `s7_24`** (`s7_24` = fixes Afiliación Fase 2, PR #61).
+- **Migraciones aplicadas hasta `s7_25`** (`s7_24` fixes Fase 2 / PR #61; `s7_25` ubicación estructurada admin / PR #64).
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
 - **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#59):**
   - PR #32 Reclamo seguro (s7_13).
@@ -39,7 +39,7 @@
   - PR #56 **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` con RLS estricto + `incomplete` GENERATED. RPC pública `submit_affiliation_request` con rate limit 1/IP/24h y UNIQUE phone activo. RPCs admin para triage (in_review/approved/rejected). Frontend: `AffiliationRequestModal` reemplaza al interest legacy. Bandeja `/admin/afiliaciones` con filtros + badge sidebar. Página `/privacidad` MVP. No crea doctor/profile/clinic.
   - PR #57 Refresh documental post-PR #56.
   - PR #58 **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción crea auth.users dormant + profile (UPSERT defensivo coexiste con trigger `handle_new_user`) + clinic + clinic_member (owner) + doctor en `lucy_status='listed_only'` con flags conservadores en false. Email override aceptado solo si lead no trajo email (regla server-side en s7_23). UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form de overrides + checkbox confirm + pantalla de éxito con doctor_id + link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" reemplazado por "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin. **Pendiente**: validar claim end-to-end del médico creado con test phone real del médico.
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_24` (`s7_24` vía PR #61).
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_25` (`s7_24` vía PR #61; `s7_25` vía PR #64).
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
   - Otros 4 (Gina, Abraham, German, Elena): publicados sin agenda en línea, captados por el directorio informativo.
@@ -153,7 +153,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 Estado actual del eje afiliación:
 - ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56), Fase 2 conversión (PR #58), refresh docs (PR #59), **smoke end-to-end + fixes (PR #61 + `s7_24`)**.
-- ✅ PR #61 (fix + `s7_24`) mergeado (HEAD `b2decba`), `s7_24` aplicada en Supabase. ⏳ Mergear PR #60 (este handoff).
+- ✅ PR #61 (fix + `s7_24`), #60 (handoff), #62 (análisis pagos), #63 (fix orden Home), #64 (ubicación estructurada admin + `s7_25`) — todos mergeados. HEAD `ed5721f`.
 - ⏳ Pendientes legal/diseño: DUI + TOS médico pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 
 ### 4.1 Pre-piloto público (operativo, no código)
@@ -260,6 +260,7 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 - `s7_22_admin_approve_and_create_doctor.sql` (Afiliación Fase 2)
 - `s7_23_admin_approve_email_override.sql` (email override Fase 2)
 - `s7_24_affiliation_fase2_fixes.sql` (fixes post-smoke: role=patient pre-claim, clinic name, dept/muni en list RPC — PR #61)
+- `s7_25_admin_doctor_location.sql` (ubicación estructurada Depto/Municipio en ficha admin + regla P0004 — PR #64)
 
 **Scripts** (`/scripts/`):
 - `_lib/env.mjs`, `_lib/supabase-admin.mjs`, `_lib/supabase-anon.mjs` — infra.
@@ -314,7 +315,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#59 + #61 mergeados (HEAD b2decba), migraciones hasta s7_24 (aplicada en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅. Smoke end-to-end de afiliación ✅ COMPLETADO (2026-05-30) — 4 bugs corregidos en PR #61 + `s7_24`. PR #60 (este handoff) en curso.
+Estado: PRs #1–#64 mergeados (HEAD ed5721f), migraciones hasta s7_25 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅ + smoke ✅. Ubicación estructurada admin ✅ live (PR #64). Análisis pagos SaaS ✅ doc base (PR #62).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ✅ cerrado):
   - análisis de pagos SaaS autoservicio;
