@@ -96,6 +96,8 @@ export interface AdminDoctorDetail {
   clinicName: string;
   clinicAddress: string | null;
   clinicPhone: string | null;
+  clinicDepartmentId: string | null;
+  clinicMunicipalityId: string | null;
   isPublished: boolean;
   isOperational: boolean;
   lucyStatus: LucyStatus;
@@ -120,6 +122,8 @@ export async function getDoctorAdminDetail(doctorId: string): Promise<AdminDocto
     clinicName: (row.clinic_name as string) ?? '',
     clinicAddress: (row.clinic_address as string) ?? null,
     clinicPhone: (row.clinic_phone as string) ?? null,
+    clinicDepartmentId: (row.clinic_department_id as string) ?? null,
+    clinicMunicipalityId: (row.clinic_municipality_id as string) ?? null,
     isPublished: !!row.is_published,
     isOperational: !!row.is_operational,
     lucyStatus: row.lucy_status as LucyStatus,
@@ -145,12 +149,21 @@ export const updateDoctorProfile = (id: string, fullName: string, email: string 
     p_phone: phone,
   });
 
-export const updateDoctorClinic = (id: string, name: string, address: string | null, phone: string | null) =>
+export const updateDoctorClinic = (
+  id: string,
+  name: string,
+  address: string | null,
+  phone: string | null,
+  departmentId: string | null,
+  municipalityId: string | null,
+) =>
   rpc('admin_update_doctor_clinic', {
     p_doctor_id: id,
     p_name: name,
     p_address: address,
     p_phone: phone,
+    p_department_id: departmentId,
+    p_municipality_id: municipalityId,
   });
 
 export const updateDoctorInfo = (id: string, specialtyId: string | null, bio: string | null) =>

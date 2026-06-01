@@ -12,6 +12,7 @@ import AdminDoctorServicesSection from './components/AdminDoctorServicesSection'
 import AdminDoctorWaitlistSection from './components/AdminDoctorWaitlistSection';
 import AvatarUploader from '@/components/AvatarUploader';
 import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
+import { useDepartments, useMunicipalities } from '@/hooks/useDirectory';
 
 const inputCls =
   'w-full text-sm border border-gray-200 rounded-lg px-3 py-2 ' +
@@ -65,11 +66,22 @@ export default function AdminDoctorEditPage() {
 
   // ─── Estado por sección ──────────────────────────────────
   const [perfil, setPerfil] = useState({ full_name: '', email: '', phone: '' });
-  const [clinica, setClinica] = useState({ name: '', address: '', phone: '' });
+  const [clinica, setClinica] = useState({
+    name: '', address: '', phone: '', departmentId: '', municipalityId: '',
+  });
   const [info, setInfo] = useState({ specialty_id: '', bio: '' });
   const [savedPerfil, setSavedPerfil] = useState<number | null>(null);
   const [savedClinica, setSavedClinica] = useState<number | null>(null);
   const [savedInfo, setSavedInfo] = useState<number | null>(null);
+
+  // Catálogos jerárquicos (mismas listas que el Home/directorio).
+  const departmentsQ = useDepartments();
+  const municipalitiesQ = useMunicipalities(clinica.departmentId || null);
+
+  // Ubicación obligatoria si el médico está publicado u operativo (para
+  // que el filtro del Home tenga datos confiables). Espejo de la regla
+  // server-side en admin_update_doctor_clinic (P0004).
+  const locationRequired = !!(detailQ.data?.isPublished || detailQ.data?.isOperational);
 
   useEffect(() => {
     if (!detailQ.data) return;
@@ -82,6 +94,8 @@ export default function AdminDoctorEditPage() {
       name: detailQ.data.clinicName ?? '',
       address: detailQ.data.clinicAddress ?? '',
       phone: detailQ.data.clinicPhone ?? '',
+      departmentId: detailQ.data.clinicDepartmentId ?? '',
+      municipalityId: detailQ.data.clinicMunicipalityId ?? '',
     });
     setInfo({
       specialty_id: detailQ.data.specialtyId ?? '',
@@ -105,13 +119,19 @@ export default function AdminDoctorEditPage() {
     onSuccess: () => { setSavedPerfil(Date.now()); invalidate(); },
   });
   const mClinica = useMutation({
-    mutationFn: () =>
-      updateDoctorClinic(
+    mutationFn: () => {
+      if (locationRequired && (!clinica.departmentId || !clinica.municipalityId)) {
+        throw new Error('Departamento y Municipio son obligatorios para médicos publicados u operativos.');
+      }
+      return updateDoctorClinic(
         id!,
         clinica.name,
         clinica.address.trim() || null,
         clinica.phone.trim() || null,
-      ),
+        clinica.departmentId || null,
+        clinica.municipalityId || null,
+      );
+    },
     onSuccess: () => { setSavedClinica(Date.now()); invalidate(); },
   });
   const mInfo = useMutation({
@@ -224,6 +244,36 @@ export default function AdminDoctorEditPage() {
             onChange={(e) => setClinica({ ...clinica, address: e.target.value })}
           />
         </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Departamento" hint={locationRequired ? 'obligatorio' : undefined}>
+            <select
+              className={inputCls}
+              value={clinica.departmentId}
+              onChange={(e) =>
+                // Cambiar departamento resetea el municipio (jerárquico).
+                setClinica({ ...clinica, departmentId: e.target.value, municipalityId: '' })
+              }
+            >
+              <option value="">— Seleccioná —</option>
+              {(departmentsQ.data ?? []).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Municipio" hint={locationRequired ? 'obligatorio' : undefined}>
+            <select
+              className={inputCls}
+              value={clinica.municipalityId}
+              disabled={!clinica.departmentId}
+              onChange={(e) => setClinica({ ...clinica, municipalityId: e.target.value })}
+            >
+              <option value="">{clinica.departmentId ? '— Seleccioná —' : '— Elegí departamento primero —'}</option>
+              {(municipalitiesQ.data ?? []).map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
         <Field label="Teléfono de la clínica" hint="solo display; no es login">
           <input
             className={inputCls}
