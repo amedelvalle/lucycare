@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado tras PR #59: `8ec813c` o posterior, PRs #1–#59. Migraciones hasta `s7_23` en `main`; `s7_24` (fixes Fase 2) aplicada en Supabase, pendiente de mergear vía PR #61. En review: PR #60 (este handoff) + PR #61 (fix Fase 2).
+`main` HEAD esperado: `b2decba` o posterior, PRs #1–#59 + #61 mergeados. Migraciones hasta `s7_24` (en `main` vía PR #61, aplicada en Supabase). PR #60 (este handoff) en curso.
 
 ## 2. Infraestructura actual
 
@@ -136,7 +136,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **"Perfil reclamado" en el panel NO prueba el claim** — la prueba es `lucy_status='claimed'` en DB.
 - **`auth.admin.listUsers()` pagina mal** (bug GoTrue, fila corrupta en pág. 2). Para buscar/limpiar por phone, derivar el `auth.user.id` desde `profiles.id` (id compartido) y usar `getUserById`/`deleteUser`.
 
-**Estado:** PR #61 (fix + `s7_24`) abierto para review. Falta aplicar `s7_24` en Supabase si aún no está, y mergear #60 (handoff) + #61 (fix).
+**Estado:** PR #61 (fix + `s7_24`) ✅ mergeado (HEAD `b2decba`), `s7_24` aplicada en Supabase. Falta mergear #60 (este handoff).
 
 ### 5.2 Limpiezas operativas diferidas (no bloqueantes)
 
@@ -211,9 +211,9 @@ Para continuar LucyCare, leer primero:
 7. `docs/SECURITY_GATE_PILOTO.md`
 
 Luego confirmar:
-- **HEAD actual** (esperado `8ec813c` o posterior).
+- **HEAD actual** (esperado `b2decba` o posterior).
 - **PRs mergeados hasta #59.**
 - **Migraciones aplicadas hasta `s7_24`** (`s7_24` vía PR #61, aplicada en Supabase).
-- **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61. En review: PR #60 (handoff) + PR #61 (fix).
+- **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61 (✅ mergeado). PR #60 (este handoff) en curso.
 
 **No codificar nada hasta confirmar ese estado.**

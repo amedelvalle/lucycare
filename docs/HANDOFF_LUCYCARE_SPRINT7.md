@@ -9,7 +9,7 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `8ec813c` o posterior. **PRs #1–#59 mergeados.**
+- **HEAD esperado en `main`:** `b2decba` o posterior. **PRs #1–#59 + #61 mergeados** (#61 = fixes Afiliación Fase 2 + `s7_24`).
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
 - **Migraciones aplicadas hasta `s7_24`** (`s7_24` = fixes Afiliación Fase 2, PR #61).
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
@@ -153,7 +153,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 Estado actual del eje afiliación:
 - ✅ Análisis (PR #52), mitigación legacy (PR #53), Q1-Q10 cerradas, plan operativo (PR #55), Fase 1 captura+bandeja (PR #56), Fase 2 conversión (PR #58), refresh docs (PR #59), **smoke end-to-end + fixes (PR #61 + `s7_24`)**.
-- ⏳ Mergear PR #60 (handoff) + PR #61 (fix). Aplicar `s7_24` en Supabase si aún no.
+- ✅ PR #61 (fix + `s7_24`) mergeado (HEAD `b2decba`), `s7_24` aplicada en Supabase. ⏳ Mergear PR #60 (este handoff).
 - ⏳ Pendientes legal/diseño: DUI + TOS médico pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 
 ### 4.1 Pre-piloto público (operativo, no código)
@@ -314,10 +314,11 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#59 mergeados (HEAD 8ec813c), migraciones hasta s7_24. SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅. Smoke end-to-end de afiliación ✅ COMPLETADO (2026-05-30) — 4 bugs corregidos en PR #61 + `s7_24`. En review: PR #60 (handoff) + PR #61 (fix). Aplicar `s7_24` en Supabase si aún no.
+Estado: PRs #1–#59 + #61 mergeados (HEAD b2decba), migraciones hasta s7_24 (aplicada en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅. Smoke end-to-end de afiliación ✅ COMPLETADO (2026-05-30) — 4 bugs corregidos en PR #61 + `s7_24`. PR #60 (este handoff) en curso.
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ✅ cerrado):
-  - mergear PR #60 (handoff) + PR #61 (fix Fase 2 + s7_24);
+  - análisis de pagos SaaS autoservicio;
+  - mergear PR #60 (este handoff);
   - Fase 2 Paciente Global perfil extendido (DUI/DOB/dpto/muni);
   - vista global /admin/lista-espera cross-médicos;
   - Fase 3 Paciente Global read-only datos del médico;
