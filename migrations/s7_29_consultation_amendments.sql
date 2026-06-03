@@ -65,6 +65,30 @@ ALTER TABLE prescriptions
 -- Las recetas existentes quedan version=1, is_current=true (default). Las
 -- lecturas/impresión deberán filtrar is_current=true (B2/B3).
 
+-- ─── 2.bis Bypass controlado del guard de inmutabilidad ─────
+-- El trigger pre-existente prevent_signed_consultation_edit (BEFORE UPDATE
+-- ON consultations) bloquea TODO update de una consulta firmada — y los
+-- triggers corren aun dentro de RPC SECURITY DEFINER. Le agregamos un
+-- bypass por GUC de sesión `app.amending`: SOLO la RPC amend_consultation
+-- lo setea (transaction-local), para aplicar la corrección trazable.
+-- Cualquier otro UPDATE de una consulta firmada se sigue bloqueando (y la
+-- RLS de Etapa A ya filtra la fila firmada para `authenticated`, así que
+-- un cliente directo ni siquiera llega a este trigger).
+CREATE OR REPLACE FUNCTION prevent_signed_consultation_edit()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF current_setting('app.amending', true) = 'on' THEN
+    RETURN NEW;  -- corrección controlada vía amend_consultation()
+  END IF;
+  IF OLD.signed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'No se puede editar una consulta firmada. La consulta fue firmada el %', OLD.signed_at;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
 -- ─── 3. Helper: snapshot completo de la consulta ────────────
 CREATE OR REPLACE FUNCTION consultation_snapshot(p_consultation_id uuid)
 RETURNS jsonb
@@ -152,6 +176,10 @@ BEGIN
   -- ─── Snapshot ANTES (estado completo) ───
   v_before := consultation_snapshot(p_consultation_id);
 
+  -- Habilitar el bypass del guard de inmutabilidad SOLO para esta
+  -- transacción (lo lee prevent_signed_consultation_edit).
+  PERFORM set_config('app.amending', 'on', true);
+
   -- ─── Aplicar cambios de la consulta (solo whitelist) ───
   UPDATE consultations SET
     chief_complaint         = CASE WHEN p_consultation_changes ? 'chief_complaint'         THEN p_consultation_changes->>'chief_complaint'         ELSE chief_complaint END,
@@ -214,6 +242,10 @@ BEGIN
       RAISE EXCEPTION 'Operación de receta inválida: "%"', v_action USING ERRCODE = 'P0015';
     END IF;
   END LOOP;
+
+  -- Cerrar el bypass (los SELECT del snapshot/adenda no lo necesitan; igual
+  -- la GUC es transaction-local y se limpia al terminar la transacción).
+  PERFORM set_config('app.amending', 'off', true);
 
   -- ─── Snapshot DESPUÉS + adenda ───
   v_after := consultation_snapshot(p_consultation_id);
