@@ -45,11 +45,12 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-27)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `9f6c6bf` o posterior. **PRs #1–#67 mergeados** (#61 fixes Fase 2 + `s7_24`, #62 análisis pagos SaaS, #63 fix orden Home, #64 ubicación estructurada admin + `s7_25`, #66 análisis Mi equipo, #67 gate clínico asistente + `s7_26`).
+- **HEAD esperado:** `0abaf23` o posterior. **PRs #1–#70 mergeados** (#62 análisis pagos SaaS, #63 fix orden Home, #64 ubicación estructurada admin + `s7_25`, #66 análisis Mi equipo, #67 gate clínico asistente + `s7_26`, #70 Mi equipo Fase 1: límite de asistentes + `s7_27`).
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
 - **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
-- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_26` (`s7_24` = fixes Afiliación Fase 2 / PR #61; `s7_25` = ubicación estructurada admin / PR #64; `s7_26` = gate clínico del rol asistente / PR #67). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_27` (`s7_24` = fixes Afiliación Fase 2 / PR #61; `s7_25` = ubicación estructurada admin / PR #64; `s7_26` = gate clínico del rol asistente / PR #67; `s7_27` = límite de asistentes / PR #70). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Mi equipo Fase 1 — límite de asistentes (PR #70, `s7_27`) — activo:** plan base = 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). El conteo incluye **asistentes activos + invitaciones pendientes**. Enforcement **server-side validado**: trigger `BEFORE INSERT` en `clinic_invitations` (`P0001`) + revalidación en `accept_clinic_invitations`. UI `/panel/equipo` con contador `n/2` + botón deshabilitado al límite. El smoke destapó y **corrigió un bug pre-existente** en `accept_clinic_invitations` (cast `clinic_member_role::user_role` imposible → ahora `::text::user_role`; el accept nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` es el punto de enganche con `subscriptions`).
 - **Ubicación estructurada del médico (PR #64, `s7_25`) — live en producción:** LucyAdmin > Médicos > Editar > Clínica edita Departamento/Municipio con las listas jerárquicas del Home, guarda IDs en `clinics.department_id/municipality_id` (lo que filtra el directorio). Municipio depende del departamento; **obligatorios para médicos publicados/operativos** (enforcement server-side `P0004` + UI). Los 5 médicos publicados ya tienen ubicación estructurada.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
 - **Médicos en producción hoy:** 5 publicados, 1 con `booking_enabled=true` (Camilo). Los otros 4 son "informativos" (sin agenda en línea).
@@ -309,7 +310,7 @@ Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 - **Ubicación estructurada Departamento/Municipio** en admin médico — ✅ corregido (PR #64, `s7_25`): la ficha admin (Editar médico > Clínica) edita Depto/Municipio con las mismas listas jerárquicas del Home, guarda IDs en `clinics.department_id/municipality_id` (lo que filtra el Home), municipio depende del departamento, y son obligatorios para publicados/operativos (enforcement server-side P0004 + UI). Sin lat/lng.
 - **Filtro "Ordenar por" del Home** — ✅ corregido: la opción muerta "Más cercanos" se removió (no había lat/lng ni geolocalización; caía al orden default). Quedan "Disponibilidad/Mejor coincidencia" (orden server: booking_enabled→verified→created_at) y "Mejor valorados" (score ajustado), ambas funcionales. **Backlog:** reintroducir "Más cercanos" cuando exista lat/lng en `clinics` + ubicación del usuario + UX de permisos de geolocalización (no proxy por municipio — no es cercanía real).
 - **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
-- **Mi equipo / invitados del médico** — máximo inicial sugerido **2 asistentes**.
+- ~~**Mi equipo / invitados del médico** — máximo inicial **2 asistentes**~~ → ✅ **hecho (PR #70, `s7_27`)**: límite base 2 activo, conteo activos+pendientes, enforcement server-side (trigger + accept revalida), UI con contador `n/2`. Usuarios adicionales = add-on, pendiente de la fase de pagos. Fase 2 del análisis (expiración/reenvío de invitaciones) sigue en cola.
 - **Catálogos personalizados por médico** para diagnósticos y medicamentos.
 - **Flujo legal/comercial de DUI médico, términos y aceptación formal** pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 - **Manejo de email en afiliación/onboarding médico** (override ya existe en Fase 2; falta self-service de cambio post-reclamo, Fase Auth post-piloto).
@@ -405,6 +406,7 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+0abaf23 feat(equipo): límite de 2 asistentes incluidos (Mi equipo Fase 1) (#70)
 9f6c6bf feat(security): gate clínico del rol asistente — RLS doctor-scoped (Fase 0) (#67)
 1a2cc28 docs: análisis de Mi equipo / invitados del médico (#66)
 ed5721f feat(admin): ubicación estructurada (Depto/Municipio) en la ficha del médico (#64)
@@ -473,7 +475,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#67 mergeados (HEAD 9f6c6bf), migraciones hasta s7_26 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅ + smoke end-to-end ✅. Ubicación estructurada admin ✅ live (PR #64, `s7_25`). Análisis pagos SaaS ✅ doc base (PR #62). Análisis Mi equipo ✅ (PR #66) + gate clínico del asistente ✅ cerrado (PR #67, `s7_26`).
+Estado: PRs #1–#70 mergeados (HEAD 0abaf23), migraciones hasta s7_27 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅ + smoke end-to-end ✅. Ubicación estructurada admin ✅ live (PR #64). Análisis pagos SaaS ✅ doc base (PR #62). Análisis Mi equipo ✅ (PR #66) + gate clínico del asistente ✅ (PR #67, `s7_26`) + Mi equipo Fase 1 límite de 2 asistentes ✅ (PR #70, `s7_27`, enforcement server-side).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ya cerrado):
                    - análisis de pagos SaaS autoservicio;

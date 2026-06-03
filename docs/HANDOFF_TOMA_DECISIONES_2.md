@@ -33,7 +33,9 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `9f6c6bf` o posterior, **PRs #1–#67 mergeados**. Migraciones hasta `s7_26` (aplicadas en Supabase). #62 análisis pagos (doc), #63 fix orden Home, #64 ubicación estructurada admin (`s7_25`, live), #66 análisis Mi equipo, #67 gate clínico del asistente (`s7_26`).
+`main` HEAD esperado: `0abaf23` o posterior, **PRs #1–#70 mergeados**. Migraciones hasta `s7_27` (aplicadas en Supabase). #62 análisis pagos (doc), #63 fix orden Home, #64 ubicación admin (`s7_25`), #66 análisis Mi equipo, #67 gate clínico (`s7_26`), #70 Mi equipo Fase 1: límite de 2 asistentes (`s7_27`).
+
+**Mi equipo Fase 1 (PR #70, `s7_27`) — activo:** límite base 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). Conteo = activos + invitaciones pendientes. Enforcement **server-side validado**: trigger BEFORE INSERT en `clinic_invitations` (P0001) + revalidación en `accept_clinic_invitations`. UI con contador `n/2`. El smoke corrigió un **bug pre-existente** del accept (cast `clinic_member_role::user_role` → `::text::user_role`; nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` engancha con `subscriptions`).
 
 **Gate clínico del asistente (PR #67, `s7_26`) — cerrado:** el diagnóstico RLS mostró que la "deuda #1" estaba mal redactada — consultas/recetas/diagnósticos/**firma** ya estaban bloqueados para asistentes (`get_user_doctor_id()`=NULL). La fuga real era `consultation_family_history` + `vitals` (usaban `is_clinic_member`); `s7_26` las dejó doctor-scoped. Validado con smoke empírico. **Follow-up separado:** inmutabilidad RLS de consultas firmadas (no es del asistente).
 
@@ -154,7 +156,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - ~~**Ubicación estructurada Departamento/Municipio** en admin médico~~ → ✅ **hecho** (PR #64, `s7_25`): ficha admin edita Depto/Municipio con listas del Home, guarda IDs en `clinics`, obligatorios para publicados/operativos (P0004). Los 5 publicados ya cargados.
 - ~~**Filtro "Ordenar por" del Home NO funciona**~~ → ✅ **hecho** (PR #63): se quitó la opción muerta "Más cercanos"; quedan "Disponibilidad/Mejor coincidencia" y "Mejor valorados". Geo real (lat/lng + ubicación del usuario) queda como backlog futuro.
 - **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
-- **Mi equipo / invitados del médico** — máximo inicial sugerido **2 asistentes**.
+- ~~**Mi equipo / invitados del médico** — máximo 2 asistentes~~ → ✅ **hecho (PR #70, `s7_27`)**: límite base 2 activo (server-side). Fase 2 (expiración/reenvío) + add-on de adicionales (pagos) siguen en cola.
 - **Catálogos personalizados por médico** para diagnósticos y medicamentos.
 - **Flujo legal/comercial de DUI médico, términos y aceptación formal** pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 - **Manejo de email en afiliación/onboarding médico** (override ya existe en Fase 2; falta self-service de cambio post-reclamo).
@@ -213,9 +215,9 @@ Para continuar LucyCare, leer primero:
 7. `docs/SECURITY_GATE_PILOTO.md`
 
 Luego confirmar:
-- **HEAD actual** (esperado `9f6c6bf` o posterior).
+- **HEAD actual** (esperado `0abaf23` o posterior).
 - **PRs mergeados hasta #59.**
-- **Migraciones aplicadas hasta `s7_26`** (`s7_24` vía PR #61; `s7_25` vía PR #64; `s7_26` vía PR #67, aplicadas en Supabase).
+- **Migraciones aplicadas hasta `s7_27`** (`s7_24` vía PR #61; `s7_25` vía PR #64; `s7_26` vía PR #67; `s7_27` vía PR #70, aplicadas en Supabase).
 - **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61.
 - **Ubicación estructurada admin: ✅ live (PR #64, `s7_25`).** Los 5 médicos publicados tienen Depto/Municipio cargados.
 
