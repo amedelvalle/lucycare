@@ -41,23 +41,8 @@ export default function EquipoPage() {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Mi equipo</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Personas con acceso a tu clínica. Las asistentes pueden gestionar
-            citas y pacientes pero no firman consultas.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          leftIcon={<PlusIcon />}
-          onClick={() => setShowInvite(true)}
-        >
-          Invitar asistente
-        </Button>
-      </div>
+      {/* Header con contador de cupos */}
+      <TeamHeader clinicId={ctx.clinicId} onInvite={() => setShowInvite(true)} />
 
       <PendingInvitationsList clinicId={ctx.clinicId} />
 
@@ -77,6 +62,59 @@ export default function EquipoPage() {
 }
 
 // ─── Sub-secciones ────────────────────────────────────────────────────
+
+// Límite de asistentes incluidos en el plan base. Refleja
+// team_seat_limit() del backend (Fase 1 = fijo en 2). El servidor es la
+// fuente de verdad (trigger trg_enforce_team_seat_limit en s7_27); este
+// número solo alimenta el contador y el disable de la UI.
+const INCLUDED_ASSISTANTS = 2;
+
+function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => void }) {
+  const { data: members = [] } = useTeamMembers(clinicId);
+  const { data: pending = [] } = usePendingInvitations(clinicId);
+
+  // Conteo (D2): asistentes activos + invitaciones pendientes.
+  const activeAssistants = members.filter((m) => m.role === 'assistant' && m.is_active).length;
+  const used = activeAssistants + pending.length;
+  const atLimit = used >= INCLUDED_ASSISTANTS;
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Mi equipo</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Personas con acceso a tu clínica. Las asistentes pueden gestionar
+            citas y pacientes pero no firman consultas.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <Button
+            variant="primary"
+            leftIcon={<PlusIcon />}
+            onClick={onInvite}
+            disabled={atLimit}
+          >
+            Invitar asistente
+          </Button>
+          <span className="text-xs font-medium text-gray-600">
+            {used}/{INCLUDED_ASSISTANTS} asistentes usados
+          </span>
+        </div>
+      </div>
+
+      {atLimit && (
+        <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+          Tu plan incluye hasta {INCLUDED_ASSISTANTS} asistentes. Para sumar más vas a poder
+          contratar usuarios adicionales cuando habilitemos los planes.
+        </div>
+      )}
+      <p className="text-[11px] text-gray-400 mt-1.5">
+        El conteo incluye asistentes activos e invitaciones pendientes.
+      </p>
+    </div>
+  );
+}
 
 function PendingInvitationsList({ clinicId }: { clinicId: string }) {
   const { data: pending = [] } = usePendingInvitations(clinicId);

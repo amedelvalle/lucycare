@@ -127,6 +127,10 @@ export async function inviteMember(
     if (error.code === '23505') {
       throw new Error('Ya existe una invitación pendiente para este teléfono');
     }
+    // Límite de asientos alcanzado (trigger trg_enforce_team_seat_limit, s7_27)
+    if (error.code === 'P0001') {
+      throw new Error(error.message || 'Alcanzaste el máximo de asistentes de tu plan.');
+    }
     throw error;
   }
   return data;
