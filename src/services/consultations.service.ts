@@ -271,16 +271,15 @@ export async function signConsultation(consultationId: string): Promise<void> {
     throw new Error('Solo el médico tratante puede firmar una consulta.');
   }
 
-  // 1. Firmar la consulta
-  const { error: signErr } = await supabase
-    .from('consultations')
-    .update({
-      status: 'signed' as const,
-      signed_at: now,
-      updated_at: now,
-    })
-    .eq('id', consultationId)
-    .eq('status', 'draft'); // Defensa: solo si todavía es draft
+  // 1. Firmar la consulta — vía RPC SECURITY DEFINER (s7_28). El gate es
+  // server-side (solo el médico dueño puede firmar; rechaza si ya está
+  // firmada). El UPDATE directo de consultas firmadas quedó bloqueado por
+  // RLS para impedir edición silenciosa; la firma la hace la RPC, que al
+  // ser definer bypasea esa RLS. El sync cita→atendida lo dispara el
+  // trigger sync_appointment_on_sign (s6_02) con el UPDATE de la RPC.
+  const { error: signErr } = await supabase.rpc('sign_consultation', {
+    p_consultation_id: consultationId,
+  });
   if (signErr) throw signErr;
 
   // 2. Auto-transición de la cita asociada (best-effort, no rompe la firma si falla)
