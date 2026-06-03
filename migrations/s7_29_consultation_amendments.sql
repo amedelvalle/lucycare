@@ -214,7 +214,7 @@ BEGIN
         COALESCE(v_op->>'dosage', v_old.dosage),
         COALESCE(v_op->>'frequency', v_old.frequency),
         COALESCE(NULLIF(v_op->>'duration_value','')::int, v_old.duration_value),
-        COALESCE(v_op->>'duration_unit', v_old.duration_unit),
+        COALESCE(NULLIF(v_op->>'duration_unit','')::duration_unit, v_old.duration_unit),
         COALESCE(v_op->>'instructions', v_old.instructions),
         v_old.alternatives,                       -- se conserva (no se edita en B1)
         v_old.version + 1, true, v_old.id
@@ -230,7 +230,7 @@ BEGIN
       ) VALUES (
         p_consultation_id, (v_op->>'medication_id')::uuid,
         v_op->>'dosage', v_op->>'frequency',
-        NULLIF(v_op->>'duration_value','')::int, v_op->>'duration_unit',
+        NULLIF(v_op->>'duration_value','')::int, NULLIF(v_op->>'duration_unit','')::duration_unit,
         v_op->>'instructions', 1, true
       );
 
