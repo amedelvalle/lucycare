@@ -256,7 +256,7 @@ BEGIN
     snapshot_before, snapshot_after
   ) VALUES (
     p_consultation_id, v_version, v_reason, NULLIF(btrim(coalesce(p_reason_category,'')), ''),
-    v_doctor_id, v_before, v_after
+    auth.uid(), v_before, v_after   -- corrected_by = profile del médico (no doctors.id)
   ) RETURNING id INTO v_amend_id;
 
   -- ─── Audit ───
