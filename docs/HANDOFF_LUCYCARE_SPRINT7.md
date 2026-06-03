@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `cc71e0b` o posterior. **PRs #1–#74 mergeados** (#64 ubicación admin + `s7_25`; #66/#67 Mi equipo análisis + gate clínico `s7_26`; #70 Mi equipo Fase 1 límite asistentes + `s7_27`; #72 análisis correcciones; #73 plan Fase 0; #74 Etapa A inmutabilidad consultas firmadas + `s7_28`).
+- **HEAD esperado en `main`:** `da5bbab` o posterior. **PRs #1–#76 mergeados** (#67 gate clínico `s7_26`; #70 Mi equipo Fase 1 + `s7_27`; #72 análisis correcciones; #73 plan Fase 0; #74 Etapa A inmutabilidad + `s7_28`; #76 Etapa B1 corrección controlada + `s7_29`).
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
-- **Migraciones aplicadas hasta `s7_26`** (`s7_24` fixes Fase 2 / PR #61; `s7_25` ubicación admin / PR #64; `s7_26` gate clínico asistente / PR #67).
+- **Migraciones aplicadas hasta `s7_29`** (`s7_26` gate clínico / PR #67; `s7_27` límite asistentes / PR #70; `s7_28` inmutabilidad firmadas / PR #74; `s7_29` corrección controlada / PR #76).
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
 - **Pre-piloto — Bloqueantes cerrados ✅ (PRs #32–#59):**
   - PR #32 Reclamo seguro (s7_13).
@@ -39,7 +39,7 @@
   - PR #56 **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` con RLS estricto + `incomplete` GENERATED. RPC pública `submit_affiliation_request` con rate limit 1/IP/24h y UNIQUE phone activo. RPCs admin para triage (in_review/approved/rejected). Frontend: `AffiliationRequestModal` reemplaza al interest legacy. Bandeja `/admin/afiliaciones` con filtros + badge sidebar. Página `/privacidad` MVP. No crea doctor/profile/clinic.
   - PR #57 Refresh documental post-PR #56.
   - PR #58 **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción crea auth.users dormant + profile (UPSERT defensivo coexiste con trigger `handle_new_user`) + clinic + clinic_member (owner) + doctor en `lucy_status='listed_only'` con flags conservadores en false. Email override aceptado solo si lead no trajo email (regla server-side en s7_23). UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form de overrides + checkbox confirm + pantalla de éxito con doctor_id + link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" reemplazado por "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin. **Pendiente**: validar claim end-to-end del médico creado con test phone real del médico.
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_28` (`s7_25` vía PR #64; `s7_26` vía PR #67; `s7_27` vía PR #70; `s7_28` vía PR #74).
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_29` (`s7_26` vía PR #67; `s7_27` vía PR #70; `s7_28` vía PR #74; `s7_29` vía PR #76).
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
   - Otros 4 (Gina, Abraham, German, Elena): publicados sin agenda en línea, captados por el directorio informativo.
@@ -264,6 +264,7 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 - `s7_26_clinical_rls_assistant_gate.sql` (gate clínico del asistente: cfh + vitals doctor-scoped — PR #67)
 - `s7_27_team_seat_limit.sql` (límite de 2 asistentes: team_seat_limit/used + trigger + accept revalida; fix cast enum del accept — PR #70)
 - `s7_28_signed_consultation_immutability.sql` (inmutabilidad Etapa A: RPC sign_consultation + RLS endurecida signed_at IS NULL — PR #74)
+- `s7_29_consultation_amendments.sql` (corrección controlada Etapa B1: consultation_amendments + versionado recetas + RPC amend_consultation + bypass app.amending — PR #76)
 
 **Scripts** (`/scripts/`):
 - `_lib/env.mjs`, `_lib/supabase-admin.mjs`, `_lib/supabase-anon.mjs` — infra.
@@ -318,7 +319,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#74 mergeados (HEAD cc71e0b), migraciones hasta s7_28 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: análisis (#72) + plan (#73) + Etapa A inmutabilidad server-side ✅ (PR #74, s7_28) → ⏳ falta Etapa B (corrección controlada). Análisis pagos SaaS ✅ doc base (PR #62).
+Estado: PRs #1–#76 mergeados (HEAD da5bbab), migraciones hasta s7_29 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: Etapa A inmutabilidad ✅ (#74, s7_28) + Etapa B1 corrección controlada ✅ (#76, s7_29) → ⏳ B1.5 (diag/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida). Análisis pagos SaaS ✅ doc base (PR #62).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ✅ cerrado):
   - análisis de pagos SaaS autoservicio;
