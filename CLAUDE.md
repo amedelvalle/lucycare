@@ -45,11 +45,11 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-27)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `0abaf23` o posterior. **PRs #1–#70 mergeados** (#62 análisis pagos SaaS, #63 fix orden Home, #64 ubicación estructurada admin + `s7_25`, #66 análisis Mi equipo, #67 gate clínico asistente + `s7_26`, #70 Mi equipo Fase 1: límite de asistentes + `s7_27`).
+- **HEAD esperado:** `cc71e0b` o posterior. **PRs #1–#74 mergeados** (#64 ubicación admin + `s7_25`, #66 análisis Mi equipo, #67 gate clínico asistente + `s7_26`, #70 Mi equipo Fase 1 límite asistentes + `s7_27`, #72 análisis correcciones post-firma, #73 plan correcciones Fase 0, #74 inmutabilidad consultas firmadas Etapa A + `s7_28`).
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
 - **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
-- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_27` (`s7_24` = fixes Afiliación Fase 2 / PR #61; `s7_25` = ubicación estructurada admin / PR #64; `s7_26` = gate clínico del rol asistente / PR #67; `s7_27` = límite de asistentes / PR #70). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_28` (`s7_25` = ubicación admin / PR #64; `s7_26` = gate clínico asistente / PR #67; `s7_27` = límite de asistentes / PR #70; `s7_28` = inmutabilidad de consultas firmadas Etapa A / PR #74). Verificables con `node scripts/check-s7_NN.mjs`.
 - **Mi equipo Fase 1 — límite de asistentes (PR #70, `s7_27`) — activo:** plan base = 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). El conteo incluye **asistentes activos + invitaciones pendientes**. Enforcement **server-side validado**: trigger `BEFORE INSERT` en `clinic_invitations` (`P0001`) + revalidación en `accept_clinic_invitations`. UI `/panel/equipo` con contador `n/2` + botón deshabilitado al límite. El smoke destapó y **corrigió un bug pre-existente** en `accept_clinic_invitations` (cast `clinic_member_role::user_role` imposible → ahora `::text::user_role`; el accept nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` es el punto de enganche con `subscriptions`).
 - **Ubicación estructurada del médico (PR #64, `s7_25`) — live en producción:** LucyAdmin > Médicos > Editar > Clínica edita Departamento/Municipio con las listas jerárquicas del Home, guarda IDs en `clinics.department_id/municipality_id` (lo que filtra el directorio). Municipio depende del departamento; **obligatorios para médicos publicados/operativos** (enforcement server-side `P0004` + UI). Los 5 médicos publicados ya tienen ubicación estructurada.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
@@ -328,7 +328,7 @@ Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 ## Deudas técnicas conocidas (priorizadas)
 
 1. ~~**Asistente puede firmar consulta**~~ → ✅ **cerrado / reformulado (PR #67, `s7_26`).** El diagnóstico RLS (2026-06-01) mostró que la premisa era **inexacta**: `consultations`/`prescriptions`/`consultation_diagnoses` (y la **firma**) ya estaban bloqueadas para asistentes vía `doctor_id = get_user_doctor_id()` (= NULL para asistente). La fuga real estaba en **`consultation_family_history` y `vitals`** (usaban `is_clinic_member()`, true para cualquier miembro) → cerradas en `s7_26` (doctor-scoped). Validado con smoke empírico (asistente no lee ni escribe; médico dueño sin regresión).
-2. **Inmutabilidad server-side de consultas firmadas (follow-up nuevo)** — los UPDATE de `consultations`/`prescriptions`/`consultation_diagnoses` **no chequean `signed_at IS NULL`** en RLS; hoy la inmutabilidad depende de guards client-side. No es sobre el asistente (es el médico editando su propio firmado). Requiere cuidado: tocar el UPDATE de `consultations` mal hecho rompería la transición de firma (USING vs WITH CHECK). Análisis/PR propio.
+2. **Inmutabilidad server-side de consultas firmadas** — ✅ **cerrado parcialmente (Etapa A, PR #74, `s7_28`)**: ya **no hay edición silenciosa por API directa**. La firma pasó a la RPC `sign_consultation()` (gate médico dueño) y la RLS endurecida bloquea UPDATE/INSERT de `consultations`/`prescriptions`/`consultation_diagnoses`/`consultation_family_history` sobre consultas firmadas (validado con smoke). **NO es bloqueo absoluto final.** ⏳ **Falta Etapa B** (PR aparte) para habilitar **correcciones controladas**: `consultation_amendments` + snapshots antes/después + motivo obligatorio + versionado de recetas (v2/corrección) + audit, solo por el médico dueño. Análisis: `docs/ANALISIS_CORRECCIONES_CONSULTA_FIRMADA.md`; plan: `docs/PLAN_CORRECCIONES_FASE0.md`. **Objetivo funcional: no solo bloquear, sino permitir corregir de forma trazable.**
 3. **Inconsistencia visual** pantallas legacy (PacientesPage, AppointmentDetailPanel, BloqueosPage) — no usan `<Button>` reusable.
 3. **Sin sistema global de toasts** — `friendlyErrorMessage` ayuda, pero algunos flujos siguen sin feedback.
 4. **Print de receta minimalista** — sin logo de clínica, sin QR.
@@ -406,6 +406,7 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+cc71e0b feat(clinico): inmutabilidad server-side de consultas firmadas (Etapa A) (#74)
 0abaf23 feat(equipo): límite de 2 asistentes incluidos (Mi equipo Fase 1) (#70)
 9f6c6bf feat(security): gate clínico del rol asistente — RLS doctor-scoped (Fase 0) (#67)
 1a2cc28 docs: análisis de Mi equipo / invitados del médico (#66)
@@ -475,7 +476,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#70 mergeados (HEAD 0abaf23), migraciones hasta s7_27 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1 ✅ + Fase 2 ✅ + smoke end-to-end ✅. Ubicación estructurada admin ✅ live (PR #64). Análisis pagos SaaS ✅ doc base (PR #62). Análisis Mi equipo ✅ (PR #66) + gate clínico del asistente ✅ (PR #67, `s7_26`) + Mi equipo Fase 1 límite de 2 asistentes ✅ (PR #70, `s7_27`, enforcement server-side).
+Estado: PRs #1–#74 mergeados (HEAD cc71e0b), migraciones hasta s7_28 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: análisis ✅ (#72) + plan ✅ (#73) + **Etapa A inmutabilidad server-side ✅ (PR #74, `s7_28`)** → ⏳ falta Etapa B (corrección controlada / adendas). Análisis pagos SaaS ✅ doc base (PR #62).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ya cerrado):
                    - análisis de pagos SaaS autoservicio;
