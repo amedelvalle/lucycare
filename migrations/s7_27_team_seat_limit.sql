@@ -141,8 +141,11 @@ BEGIN
     VALUES (invitation.clinic_id, current_user_id, invitation.role, true)
     ON CONFLICT DO NOTHING;
 
+    -- Cast vía text: clinic_member_role y user_role son enums DISTINTOS;
+    -- Postgres no castea enum→enum directo. (Bug heredado de s5_07 que
+    -- nunca se ejecutó porque no había asistentes; corregido acá.)
     UPDATE profiles
-    SET role = invitation.role::user_role,
+    SET role = invitation.role::text::user_role,
         updated_at = now()
     WHERE id = current_user_id
       AND role = 'patient';
