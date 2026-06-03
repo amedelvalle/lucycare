@@ -33,7 +33,9 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `0abaf23` o posterior, **PRs #1–#70 mergeados**. Migraciones hasta `s7_27` (aplicadas en Supabase). #62 análisis pagos (doc), #63 fix orden Home, #64 ubicación admin (`s7_25`), #66 análisis Mi equipo, #67 gate clínico (`s7_26`), #70 Mi equipo Fase 1: límite de 2 asistentes (`s7_27`).
+`main` HEAD esperado: `cc71e0b` o posterior, **PRs #1–#74 mergeados**. Migraciones hasta `s7_28` (aplicadas en Supabase). #64 ubicación admin (`s7_25`), #66/#67 Mi equipo análisis + gate clínico (`s7_26`), #70 Mi equipo Fase 1 (`s7_27`), #72 análisis correcciones post-firma, #73 plan Fase 0, #74 Etapa A inmutabilidad consultas firmadas (`s7_28`).
+
+**Correcciones post-firma — Etapa A (PR #74, `s7_28`) — completada:** ya **no hay edición silenciosa por API** de consultas firmadas. Firma vía RPC `sign_consultation()` (gate médico dueño) + RLS endurecida (UPDATE/INSERT de consultations/prescriptions/diagnoses/cfh exige `signed_at IS NULL`). Sync cita→atendida y edición de borradores sin regresión (smoke OK). **NO es bloqueo absoluto final.** ⏳ **Etapa B** (siguiente, PR aparte) = corrección controlada: `consultation_amendments` + snapshots + motivo obligatorio + versionado de recetas (v2) + audit, solo médico dueño. Objetivo: permitir corregir de forma trazable, no solo bloquear. No dejar Etapa B muy lejos.
 
 **Mi equipo Fase 1 (PR #70, `s7_27`) — activo:** límite base 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). Conteo = activos + invitaciones pendientes. Enforcement **server-side validado**: trigger BEFORE INSERT en `clinic_invitations` (P0001) + revalidación en `accept_clinic_invitations`. UI con contador `n/2`. El smoke corrigió un **bug pre-existente** del accept (cast `clinic_member_role::user_role` → `::text::user_role`; nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` engancha con `subscriptions`).
 
@@ -215,9 +217,9 @@ Para continuar LucyCare, leer primero:
 7. `docs/SECURITY_GATE_PILOTO.md`
 
 Luego confirmar:
-- **HEAD actual** (esperado `0abaf23` o posterior).
+- **HEAD actual** (esperado `cc71e0b` o posterior).
 - **PRs mergeados hasta #59.**
-- **Migraciones aplicadas hasta `s7_27`** (`s7_24` vía PR #61; `s7_25` vía PR #64; `s7_26` vía PR #67; `s7_27` vía PR #70, aplicadas en Supabase).
+- **Migraciones aplicadas hasta `s7_28`** (`s7_25` vía PR #64; `s7_26` vía PR #67; `s7_27` vía PR #70; `s7_28` vía PR #74, aplicadas en Supabase).
 - **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61.
 - **Ubicación estructurada admin: ✅ live (PR #64, `s7_25`).** Los 5 médicos publicados tienen Depto/Municipio cargados.
 
