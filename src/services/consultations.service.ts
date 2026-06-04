@@ -44,6 +44,11 @@ export interface ConsultationContext extends Consultation {
     license_number: string | null;
     specialty_name: string | null;
   };
+  // Correcciones post-firma (consultation_amendments). amendment_count=0 en
+  // borradores y consultas sin corregir. last_corrected_at = fecha de la
+  // corrección más reciente (para la marca de receta corregida — B3).
+  amendment_count: number;
+  last_corrected_at: string | null;
 }
 
 export interface ConsultationUpdate {
@@ -106,9 +111,13 @@ export async function getOrCreateConsultationForAppointment(
     consultation = created as Consultation;
   }
 
-  // 3. Cargar contexto: paciente + cita + médico (para receta)
-  const [{ data: patient, error: pErr }, { data: apt, error: aErr }, { data: doctor, error: dErr }] =
-    await Promise.all([
+  // 3. Cargar contexto: paciente + cita + médico (para receta) + adendas
+  const [
+    { data: patient, error: pErr },
+    { data: apt, error: aErr },
+    { data: doctor, error: dErr },
+    { data: amendments, error: amErr },
+  ] = await Promise.all([
       supabase
         .from('patients')
         .select('id, full_name, phone, photo_url, date_of_birth, gender')
@@ -124,11 +133,19 @@ export async function getOrCreateConsultationForAppointment(
         .select('id, license_number, profiles!inner(full_name), specialties(name)')
         .eq('id', consultation.doctor_id)
         .single(),
+      // Adendas de corrección: las más recientes primero. Vacío en borradores
+      // y consultas no corregidas (la RLS solo deja leerlas al médico dueño).
+      supabase
+        .from('consultation_amendments')
+        .select('corrected_at')
+        .eq('consultation_id', consultation.id)
+        .order('corrected_at', { ascending: false }),
     ]);
 
   if (pErr) throw pErr;
   if (aErr) throw aErr;
   if (dErr) throw dErr;
+  if (amErr) throw amErr;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const aptAny = apt as any;
@@ -158,6 +175,8 @@ export async function getOrCreateConsultationForAppointment(
       license_number: doctorAny.license_number ?? null,
       specialty_name: doctorAny.specialties?.name ?? null,
     },
+    amendment_count: amendments?.length ?? 0,
+    last_corrected_at: amendments?.[0]?.corrected_at ?? null,
   };
 }
 
