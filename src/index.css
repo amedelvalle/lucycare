@@ -23,6 +23,11 @@
  * Oculta UI de panel (sidebar, mobile header, sticky bottom bar)
  * para que solo aparezca el componente RecetaPrint en la hoja.
  */
+/* Receta: forzar A4 vertical (nunca landscape) */
+@page {
+  size: A4 portrait;
+}
+
 @media print {
   /* Sidebar persistente (md+) */
   aside {
