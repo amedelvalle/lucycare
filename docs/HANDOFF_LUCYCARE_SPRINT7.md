@@ -9,7 +9,7 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `da5bbab` o posterior. **PRs #1–#76 mergeados** (#67 gate clínico `s7_26`; #70 Mi equipo Fase 1 + `s7_27`; #72 análisis correcciones; #73 plan Fase 0; #74 Etapa A inmutabilidad + `s7_28`; #76 Etapa B1 corrección controlada + `s7_29`).
+- **HEAD esperado en `main`:** `611acf8` o posterior. **PRs #1–#77 mergeados** (#67 gate clínico `s7_26`; #70 Mi equipo Fase 1 + `s7_27`; #72 análisis correcciones; #73 plan Fase 0; #74 Etapa A inmutabilidad + `s7_28`; #76 Etapa B1 corrección controlada + `s7_29`).
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
 - **Migraciones aplicadas hasta `s7_29`** (`s7_26` gate clínico / PR #67; `s7_27` límite asistentes / PR #70; `s7_28` inmutabilidad firmadas / PR #74; `s7_29` corrección controlada / PR #76).
 - **Sprint 7 — Admin SaaS + Robustez:** ✅ completado (PRs #16–#30).
@@ -319,7 +319,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#76 mergeados (HEAD da5bbab), migraciones hasta s7_29 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: Etapa A inmutabilidad ✅ (#74, s7_28) + Etapa B1 corrección controlada ✅ (#76, s7_29) → ⏳ B1.5 (diag/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida). Análisis pagos SaaS ✅ doc base (PR #62).
+Estado: PRs #1–#77 mergeados (HEAD 611acf8), migraciones hasta s7_29 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: Etapa A inmutabilidad ✅ (#74, s7_28) + Etapa B1 corrección controlada ✅ (#76, s7_29) → ⏳ B1.5 (diag/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida). Análisis pagos SaaS ✅ doc base (PR #62).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ✅ cerrado):
   - análisis de pagos SaaS autoservicio;
