@@ -1,8 +1,11 @@
 # Análisis — Correcciones post-firma de consultas clínicas
 
 > Documento de análisis + propuesta. **Snapshot 2026-06-03.**
-> **Estado: BORRADOR para discusión. NO implementar código ni tocar la
-> DB hasta cerrar las preguntas de la §10.**
+> **Estado (2026-06-04): Opción C IMPLEMENTADA para texto + receta**
+> (PRs #74/#76/#79/#80/#81/#82; migraciones `s7_28`/`s7_29`/`s7_30`).
+> Preguntas §10 cerradas por el owner (ver `PLAN_CORRECCIONES_FASE0.md` §0).
+> ⏳ Único pendiente: **B1.5** (diagnósticos / antecedentes estructurados /
+> signos vitales), no bloqueante. Este doc queda como referencia de diseño.
 >
 > Acompaña a:
 > - Deuda técnica **#2** (CLAUDE.md): "Inmutabilidad server-side de
