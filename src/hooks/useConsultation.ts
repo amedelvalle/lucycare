@@ -10,6 +10,9 @@ import {
   type ConsultationUpdate,
   type ConsultationTextChanges,
   type PrescriptionOp,
+  type DiagnosisOp,
+  type FamilyHistoryOp,
+  type VitalsChanges,
 } from '@/services/consultations.service';
 import {
   getVitalsByAppointment,
@@ -150,7 +153,8 @@ export function useConsultationAmendments(consultationId: string | undefined) {
   });
 }
 
-/** Corrige una consulta firmada (texto + receta) vía amend_consultation. */
+/** Corrige una consulta firmada (texto + receta + diagnósticos + antecedentes
+ * + vitales) vía amend_consultation. */
 export function useAmendConsultation(consultationId: string, appointmentId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -158,13 +162,27 @@ export function useAmendConsultation(consultationId: string, appointmentId: stri
       reason: string;
       changes: ConsultationTextChanges;
       prescriptionOps: PrescriptionOp[];
-    }) => amendConsultation(consultationId, input.reason, input.changes, input.prescriptionOps),
+      diagnosisOps: DiagnosisOp[];
+      familyHistoryOps: FamilyHistoryOp[];
+      vitalsChanges: VitalsChanges;
+    }) =>
+      amendConsultation(
+        consultationId,
+        input.reason,
+        input.changes,
+        input.prescriptionOps,
+        input.diagnosisOps,
+        input.familyHistoryOps,
+        input.vitalsChanges
+      ),
     onSuccess: () => {
-      // Refrescar la consulta (texto corregido + datos de adendas para el
-      // banner), el historial de adendas y las recetas (versionado v2).
+      // Refrescar todo lo que la corrección pudo tocar.
       qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
       qc.invalidateQueries({ queryKey: consultationKeys.amendments(consultationId) });
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.consultationDiagnoses(consultationId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.vitals(appointmentId) });
     },
   });
 }

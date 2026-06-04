@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { DurationUnit } from './prescriptions.service';
+import type { DiagnosisType, DiagnosisStatus } from './consultationDiagnoses.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -402,6 +403,43 @@ export interface PrescriptionRemoveOp {
 }
 export type PrescriptionOp = PrescriptionReplaceOp | PrescriptionAddOp | PrescriptionRemoveOp;
 
+/** Operaciones de diagnósticos (s7_31). */
+export interface DiagnosisReplaceOp {
+  op: 'replace';
+  id: string;                 // consultation_diagnoses.id
+  diagnosis_id?: string;      // solo si se cambia el diagnóstico
+  diagnosis_type?: DiagnosisType;
+  diagnosis_status?: DiagnosisStatus;
+  notes?: string | null;
+}
+export interface DiagnosisAddOp {
+  op: 'add';
+  diagnosis_id: string;
+  diagnosis_type?: DiagnosisType;
+  diagnosis_status?: DiagnosisStatus;
+  notes?: string | null;
+}
+export interface DiagnosisRemoveOp { op: 'remove'; id: string; }
+export type DiagnosisOp = DiagnosisReplaceOp | DiagnosisAddOp | DiagnosisRemoveOp;
+
+/** Operaciones de antecedentes familiares estructurados (s7_31). */
+export interface FamilyHistoryReplaceOp {
+  op: 'replace';
+  id: string;                 // consultation_family_history.id
+  family_history_id?: string;
+  notes?: string | null;
+}
+export interface FamilyHistoryAddOp { op: 'add'; family_history_id: string; notes?: string | null; }
+export interface FamilyHistoryRemoveOp { op: 'remove'; id: string; }
+export type FamilyHistoryOp = FamilyHistoryReplaceOp | FamilyHistoryAddOp | FamilyHistoryRemoveOp;
+
+/** Cambios de signos vitales (s7_31). Una fila por cita; bmi lo computa el
+ * cliente. Solo se mandan los campos modificados (null = limpiar el signo). */
+export type VitalsField =
+  | 'systolic_bp' | 'diastolic_bp' | 'heart_rate' | 'respiratory_rate'
+  | 'temperature' | 'spo2' | 'weight_kg' | 'height_cm';
+export type VitalsChanges = Partial<Record<VitalsField | 'bmi', number | null>>;
+
 /**
  * Corrige una consulta FIRMADA vía la RPC amend_consultation (s7_29/s7_30) en
  * una sola transacción: campos de texto (p_consultation_changes) + operaciones
@@ -413,13 +451,19 @@ export async function amendConsultation(
   consultationId: string,
   reason: string,
   changes: ConsultationTextChanges,
-  prescriptionOps: PrescriptionOp[] = []
+  prescriptionOps: PrescriptionOp[] = [],
+  diagnosisOps: DiagnosisOp[] = [],
+  familyHistoryOps: FamilyHistoryOp[] = [],
+  vitalsChanges: VitalsChanges = {}
 ): Promise<void> {
   const { error } = await supabase.rpc('amend_consultation', {
     p_consultation_id: consultationId,
     p_reason: reason,
     p_consultation_changes: changes,
     p_prescription_ops: prescriptionOps,
+    p_diagnosis_ops: diagnosisOps,
+    p_family_history_ops: familyHistoryOps,
+    p_vitals_changes: vitalsChanges,
   });
   if (error) throw error;
 }
