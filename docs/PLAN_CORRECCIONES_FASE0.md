@@ -5,8 +5,14 @@
 > Q1–Q9 cerradas por el owner (2026-06-03).
 > **Snapshot 2026-06-03.**
 >
-> **Estado: BORRADOR operativo. NO implementar código ni tocar la DB
-> hasta aprobar este plan.**
+> **Estado (2026-06-04): IMPLEMENTADO para texto + receta.** Etapa A
+> (PR #74, `s7_28`) + Etapa B1 (PR #76, `s7_29`) + impresión (PRs #79
+> filtro `is_current`, #80 banner "RECETA CORREGIDA" + "Corrección vN",
+> #81/`s7_30` distinción texto vs receta) + **UI completa (PR #82): modal
+> "Corregir consulta firmada" con Texto + Receta, motivo obligatorio,
+> confirmación reforzada para receta, historial de adendas**. ⏳ Único
+> pendiente: **B1.5** (diagnósticos / antecedentes familiares estructurados
+> / signos vitales) — no bloquea el flujo texto + receta ya live.
 >
 > Cierra la **deuda técnica #2** (inmutabilidad server-side de consultas
 > firmadas) y define el modelo mínimo de adendas/correcciones.
