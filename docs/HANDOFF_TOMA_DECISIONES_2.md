@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-06-04** (eje **Correcciones post-firma cerrado para texto + receta**: PRs #79 filtro `is_current`, #80 marca impresión, #81 distinción texto/receta `s7_30`, #82 UI completa; único pendiente B1.5 no bloqueante. Previo: Afiliación Fase 2 + smoke ✅; fixes PR #61/`s7_24`; análisis pagos SaaS PR #62; fix orden Home PR #63; ubicación estructurada admin PR #64/`s7_25` ✅ live).
+> **Snapshot 2026-06-04** (eje **Correcciones post-firma COMPLETO — backend + UI para los 5 bloques clínicos**: texto, receta, diagnósticos, antecedentes, vitales. PRs #79–#82 (texto+receta), #84/`s7_31` (backend diag/antecedentes/vitales + inmutabilidad de `vitals`), #85 (UI completa + fix dropdown en modal + impresión receta 2 columnas). Previo: Afiliación Fase 2 + smoke ✅; fixes PR #61/`s7_24`; análisis pagos SaaS PR #62; fix orden Home PR #63; ubicación estructurada admin PR #64/`s7_25` ✅ live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -33,15 +33,17 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `2a878f1` o posterior, **PRs #1–#82 mergeados**. Migraciones hasta `s7_30` (aplicadas en Supabase). #67 gate clínico (`s7_26`), #70 Mi equipo Fase 1 (`s7_27`), #72 análisis correcciones, #73 plan Fase 0, #74 Etapa A inmutabilidad (`s7_28`), #76 Etapa B1 corrección controlada (`s7_29`), #79 filtro `is_current`, #80 marca impresión, #81 distinción texto/receta (`s7_30`), #82 UI completa.
+`main` HEAD esperado: `b066967` o posterior, **PRs #1–#85 mergeados**. Migraciones hasta `s7_31` (aplicadas en Supabase). #74 Etapa A (`s7_28`), #76 B1 (`s7_29`), #79 filtro `is_current`, #80 marca impresión, #81 distinción texto/receta (`s7_30`), #82 UI texto+receta, #84 backend diag/antecedentes/vitales + inmutabilidad `vitals` (`s7_31`), #85 UI completa + fix dropdown + impresión 2 columnas.
 
-**Correcciones post-firma — eje cerrado para TEXTO + RECETA (PRs #74, #76, #79, #80, #81, #82):**
+**Correcciones post-firma — EJE COMPLETO (backend + UI), 5 bloques clínicos (PRs #74, #76, #79, #80, #81, #82, #84, #85):**
 - **A (PR #74, `s7_28`):** sin edición silenciosa por API. Firma vía RPC `sign_consultation()` + RLS endurecida (`signed_at IS NULL`). Sync cita→atendida y borradores sin regresión.
 - **B1 (PR #76, `s7_29`):** corrección controlada vía RPC `amend_consultation()` (definer + bypass `app.amending`). `consultation_amendments` append-only + **motivo obligatorio** + **snapshots before/after** + **versionado de recetas** (anterior `is_current=false` histórica + **v2** vigente) + **solo médico dueño** + **campos prohibidos rechazados (P0013)** + audit. UPDATE directo de firmada sigue bloqueado; asistente bloqueado.
 - **Impresión (PRs #79/#80/#81, `s7_30`):** lecturas/impresión filtran `is_current=true` (no duplican v1+v2, #79); banner "RECETA CORREGIDA · fecha" + "Corrección vN" por medicamento (#80); columna `affects_prescriptions` (#81/`s7_30`) → la marca se dispara **solo** si la corrección tocó receta, no por texto.
-- **UI completa (PR #82):** modal "Corregir consulta firmada" con secciones **Texto** + **Receta** (editar/sustituir/agregar/quitar medicamento), **un motivo obligatorio**, **una llamada atómica** a `amend_consultation` (texto + `prescription_ops`), **confirmación reforzada** para receta, mensaje visible "No hay cambios para guardar", historial de adendas. Validado visualmente por el owner.
+- **UI texto + receta (PR #82):** modal "Corregir consulta firmada" con secciones **Texto** + **Receta**, **un motivo obligatorio**, **una llamada atómica** a `amend_consultation`, confirmación reforzada para receta, historial de adendas.
+- **B1.5-a backend (PR #84, `s7_31`):** `amend_consultation` extendida con `p_diagnosis_ops` / `p_family_history_ops` / `p_vitals_changes` (corrección **in-place** de diagnósticos/antecedentes/vitales, trazada por el snapshot que ya los captura) + **cierre del hueco de inmutabilidad de `vitals`** (RLS rechaza editar vitales de cita con consulta firmada). `affects_prescriptions` sigue dependiendo solo de receta → corregir estos bloques no marca "RECETA CORREGIDA". **Smoke OTP 11/11** (sesión de médico real, fixtures aisladas + cleanup).
+- **B1.5-b UI (PR #85):** modal en **accordion** con las 5 secciones (texto, vitales, antecedentes, diagnósticos, receta), badges "modificado", **"Cambiar diagnóstico"**, IMC en vivo, **resumen unificado** de cambios (reemplaza el reforzado solo-receta; la advertencia "RECETA CORREGIDA" solo si cambia receta). Incluye **fix del dropdown del `Combobox`** (portal `fixed`, ya no lo recorta el modal/accordion — beneficia los 4 usos) e **impresión de receta en 2 columnas** para 3+ medicamentos (A4 vertical, sin 2ª página innecesaria). Validado visualmente por el owner.
 - **Bugs corregidos en el camino (B1):** bypass del guard `prevent_signed_consultation_edit` vía GUC `app.amending`; cast del enum `duration_unit` en el versionado; `corrected_by = auth.uid()`.
-- ⏳ **Único pendiente: B1.5** (extender amend a **diagnósticos / antecedentes familiares estructurados / signos vitales** — el snapshot ya los captura; falta el "apply" + UI). **NO bloquea** el flujo principal texto + receta, que ya está live.
+- ✅ **Eje CERRADO** — backend + UI para los 5 bloques. No quedan pendientes del eje.
 
 **Mi equipo Fase 1 (PR #70, `s7_27`) — activo:** límite base 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). Conteo = activos + invitaciones pendientes. Enforcement **server-side validado**: trigger BEFORE INSERT en `clinic_invitations` (P0001) + revalidación en `accept_clinic_invitations`. UI con contador `n/2`. El smoke corrigió un **bug pre-existente** del accept (cast `clinic_member_role::user_role` → `::text::user_role`; nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` engancha con `subscriptions`).
 
@@ -227,9 +229,9 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 8. `docs/ANALISIS_PACIENTE_GLOBAL.md`
 
 ### Luego confirmar
-- **HEAD final actual:** `2a878f1` (o posterior).
-- **PRs mergeados hasta #82.**
-- **Migraciones aplicadas hasta `s7_30`** (en Supabase).
+- **HEAD final actual:** `b066967` (o posterior).
+- **PRs mergeados hasta #85.**
+- **Migraciones aplicadas hasta `s7_31`** (en Supabase).
 - **Árbol limpio.**
 - **Cuál será el siguiente frente a trabajar** (ver opciones abajo).
 
@@ -241,15 +243,15 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **Home/directorio ✅:** PR #63 cerró el bug de "Ordenar por" (se quitó "Más cercanos"); quedan "Disponibilidad/Mejor coincidencia" y "Mejor valorados". Cercanía real = backlog (requiere lat/lng en `clinics` + ubicación del usuario + UX/privacidad).
 - **Ubicación estructurada ✅ live (PR #64/`s7_25`):** LucyAdmin > Médicos > Editar edita Depto/Municipio (listas del Home), guarda `clinics.department_id/municipality_id` (filtran el Home); regla **P0004** (publicados/operativos requieren ubicación). Los publicados pendientes ya los completó el owner.
 - **Mi equipo ✅ Fase 1:** gate clínico del asistente (PR #67/`s7_26`), límite base 1 titular + 2 asistentes (PR #70/`s7_27`, conteo activos+pendientes, enforcement server-side, bug de `accept_clinic_invitations` corregido). `assistant` = operativo/no clínico (no lee/escribe `vitals` ni `consultation_family_history`; ya estaba bloqueado en consultas/recetas/diagnósticos/firma). ⏳ Fase 2 (expiración/reenvío) + add-ons (dependen de pagos).
-- **Correcciones post-firma ✅ cerrado para TEXTO + RECETA:** Etapa A inmutabilidad (PR #74/`s7_28`) + B1 corrección controlada (PR #76/`s7_29`) + impresión (PRs #79 filtro `is_current`, #80 banner "RECETA CORREGIDA" + "Corrección vN", #81/`s7_30` distinción texto vs receta vía `affects_prescriptions`) + **UI completa (PR #82): modal "Corregir consulta firmada" con Texto + Receta, motivo obligatorio, confirmación reforzada para receta, historial de adendas, sin edición silenciosa, receta anterior histórica + vigente imprimible**. ⏳ **Único pendiente: B1.5** (diagnósticos / antecedentes familiares estructurados / signos vitales) — **NO bloquea** el flujo texto + receta ya live.
+- **Correcciones post-firma ✅ EJE COMPLETO (backend + UI, 5 bloques):** texto, receta, **diagnósticos, antecedentes familiares estructurados, signos vitales**. Etapa A inmutabilidad (PR #74/`s7_28`) + B1 (PR #76/`s7_29`) + impresión/distinción (PRs #79/#80/#81/`s7_30`) + UI texto+receta (PR #82) + **backend diag/antecedentes/vitales + inmutabilidad de `vitals` (PR #84/`s7_31`, smoke OTP 11/11)** + **UI completa en accordion (PR #85)**. Garantizado: motivo obligatorio, snapshots before/after, auditoría, inmutabilidad server-side, versionado de recetas (anterior histórica + vigente imprimible), marca "RECETA CORREGIDA" **solo cuando cambia receta**. Sin pendientes del eje.
 - **Pagos SaaS ⏳ solo análisis (PR #62):** modelo preliminar $55/mes · $594/año · 1 titular + 2 asistentes · adicional $5/mes. **Stripe = candidato, NO cerrado.** El owner debe validar pasarela viable para El Salvador + IVA + DTE/facturación + Q1–Q11 **antes** de cualquier código de pagos.
 - **Paciente Global / DUI ⏳ pendiente prioritario de análisis:** paciente global único + ficha local por clínica/médico (médico/asistente puede crear paciente sin obligar registro previo); DUI como identificador fuerte (probablemente progresivo en MVP); no sobrescribir identidad global sin trazabilidad; analizar dedup/merge/auditoría/maestros-vs-locales. Base: `docs/ANALISIS_PACIENTE_GLOBAL.md` (Fase 1 ✅ live; Fases 2-5 en cola).
 
 ### Próximos frentes (backlog, elegir uno)
-- **Correcciones firmadas: B1.5** — extender `amend_consultation` a diagnósticos / antecedentes familiares estructurados / signos vitales (cierra completamente el eje clínico; no bloqueante).
+- **Paciente Global / DUI (análisis Fase 2+)** — siguiente frente recomendado (correcciones ya cerrado).
 - Pasarela de pagos / IVA / DTE / Q1–Q11 (desbloquea add-ons de equipo + suscripción SaaS).
-- Paciente Global / DUI (análisis Fase 2+).
 - Mi equipo Fase 2 (expiración/reenvío de invitaciones).
+- Pendientes acotados: vista global `/admin/lista-espera`, causa raíz PanelLayout/useClinicContext, catálogos per-médico, paginación Home.
 - Paciente Global / DUI (análisis).
 - PanelLayout/useClinicContext: causa raíz del fallo de primera carga (hoy mitigado con "Reintentar").
 - Catálogos personalizados por médico (diagnósticos/medicamentos); paginación del Home; foto/avatar del médico; self-service de recuperación de acceso médico.
