@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { DurationUnit } from './prescriptions.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -351,4 +352,88 @@ export async function signConsultation(consultationId: string): Promise<void> {
     console.warn('[signConsultation] auto-transición de cita falló:', err);
     // No lanzamos: la firma es lo crítico, el cambio de estado es bonus
   }
+}
+
+// ─── Corrección controlada de consulta firmada (B2) ───────────────────
+
+/** Campos de texto corregibles por la UI de corrección (subset del whitelist
+ * de amend_consultation; diagnósticos/antecedentes/vitales NO acá — B1.5). */
+export type ConsultationTextField =
+  | 'chief_complaint'
+  | 'history_present_illness'
+  | 'physical_exam'
+  | 'internal_analysis'
+  | 'plan';
+
+export type ConsultationTextChanges = Partial<Record<ConsultationTextField, string | null>>;
+
+export interface ConsultationAmendment {
+  id: string;
+  version: number;
+  reason: string;
+  corrected_at: string;
+  affects_prescriptions: boolean;
+}
+
+/** Operaciones de receta para amend_consultation (s7_29). Cualquier op no
+ * vacía marca affects_prescriptions=true → impresión "RECETA CORREGIDA". */
+export interface PrescriptionReplaceOp {
+  op: 'replace';
+  prescription_id: string;
+  medication_id?: string;   // solo si se sustituye el medicamento
+  dosage?: string | null;
+  frequency?: string | null;
+  duration_value?: number | null;
+  duration_unit?: DurationUnit | null;
+  instructions?: string | null;
+}
+export interface PrescriptionAddOp {
+  op: 'add';
+  medication_id: string;
+  dosage?: string | null;
+  frequency?: string | null;
+  duration_value?: number | null;
+  duration_unit?: DurationUnit | null;
+  instructions?: string | null;
+}
+export interface PrescriptionRemoveOp {
+  op: 'remove';
+  prescription_id: string;
+}
+export type PrescriptionOp = PrescriptionReplaceOp | PrescriptionAddOp | PrescriptionRemoveOp;
+
+/**
+ * Corrige una consulta FIRMADA vía la RPC amend_consultation (s7_29/s7_30) en
+ * una sola transacción: campos de texto (p_consultation_changes) + operaciones
+ * de receta (p_prescription_ops). El gate (médico dueño, firmada, motivo
+ * obligatorio, campos prohibidos, versionado de recetas, affects_prescriptions)
+ * es server-side. Enviar SOLO lo modificado.
+ */
+export async function amendConsultation(
+  consultationId: string,
+  reason: string,
+  changes: ConsultationTextChanges,
+  prescriptionOps: PrescriptionOp[] = []
+): Promise<void> {
+  const { error } = await supabase.rpc('amend_consultation', {
+    p_consultation_id: consultationId,
+    p_reason: reason,
+    p_consultation_changes: changes,
+    p_prescription_ops: prescriptionOps,
+  });
+  if (error) throw error;
+}
+
+/** Historial de adendas de una consulta (más reciente primero). RLS: solo el
+ * médico dueño. */
+export async function getConsultationAmendments(
+  consultationId: string
+): Promise<ConsultationAmendment[]> {
+  const { data, error } = await supabase
+    .from('consultation_amendments')
+    .select('id, version, reason, corrected_at, affects_prescriptions')
+    .eq('consultation_id', consultationId)
+    .order('version', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ConsultationAmendment[];
 }

@@ -5,7 +5,11 @@ import {
   signConsultation,
   isDraftConsultationEmpty,
   discardEmptyConsultation,
+  amendConsultation,
+  getConsultationAmendments,
   type ConsultationUpdate,
+  type ConsultationTextChanges,
+  type PrescriptionOp,
 } from '@/services/consultations.service';
 import {
   getVitalsByAppointment,
@@ -69,6 +73,8 @@ export const consultationKeys = {
     [...consultationKeys.all, 'rx', consultationId] as const,
   permanentRx: (patientId: string, doctorId: string) =>
     [...consultationKeys.all, 'permanent-rx', patientId, doctorId] as const,
+  amendments: (consultationId: string) =>
+    [...consultationKeys.all, 'amendments', consultationId] as const,
 };
 
 // ─── Consulta ─────────────────────────────────────────────────────────
@@ -128,6 +134,37 @@ export function useDiscardConsultation(consultationId: string, appointmentId: st
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
       qc.invalidateQueries({ queryKey: ['consultation-is-empty'] });
+    },
+  });
+}
+
+// ─── Corrección controlada de consulta firmada (B2.1) ─────────────────
+
+/** Historial de adendas de una consulta (más reciente primero). */
+export function useConsultationAmendments(consultationId: string | undefined) {
+  return useQuery({
+    queryKey: consultationKeys.amendments(consultationId ?? ''),
+    queryFn: () => getConsultationAmendments(consultationId!),
+    enabled: !!consultationId,
+    staleTime: 1000 * 30,
+  });
+}
+
+/** Corrige una consulta firmada (texto + receta) vía amend_consultation. */
+export function useAmendConsultation(consultationId: string, appointmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      reason: string;
+      changes: ConsultationTextChanges;
+      prescriptionOps: PrescriptionOp[];
+    }) => amendConsultation(consultationId, input.reason, input.changes, input.prescriptionOps),
+    onSuccess: () => {
+      // Refrescar la consulta (texto corregido + datos de adendas para el
+      // banner), el historial de adendas y las recetas (versionado v2).
+      qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.amendments(consultationId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
     },
   });
 }
