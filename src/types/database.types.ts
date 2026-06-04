@@ -556,6 +556,60 @@ export type Database = {
           },
         ]
       }
+      consultation_amendments: {
+        Row: {
+          consultation_id: string
+          corrected_at: string
+          corrected_by: string
+          created_at: string
+          id: string
+          reason: string
+          reason_category: string | null
+          snapshot_after: Json
+          snapshot_before: Json
+          version: number
+        }
+        Insert: {
+          consultation_id: string
+          corrected_at?: string
+          corrected_by: string
+          created_at?: string
+          id?: string
+          reason: string
+          reason_category?: string | null
+          snapshot_after: Json
+          snapshot_before: Json
+          version: number
+        }
+        Update: {
+          consultation_id?: string
+          corrected_at?: string
+          corrected_by?: string
+          created_at?: string
+          id?: string
+          reason?: string
+          reason_category?: string | null
+          snapshot_after?: Json
+          snapshot_before?: Json
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultation_amendments_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "consultations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_amendments_corrected_by_fkey"
+            columns: ["corrected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consultation_family_history: {
         Row: {
           consultation_id: string

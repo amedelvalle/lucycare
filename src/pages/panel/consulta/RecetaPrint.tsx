@@ -21,6 +21,12 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
   const signedDate = ctx.signed_at ? new Date(ctx.signed_at) : new Date();
   const age = calculateAge(ctx.patient.date_of_birth);
 
+  // Receta corregida: la consulta tiene ≥1 adenda (cubre receta versionada,
+  // medicamento agregado/quitado o corrección de texto). La fecha es la de la
+  // corrección más reciente. La receta original (v1) se imprime sin esta marca.
+  const isCorrected = ctx.amendment_count > 0;
+  const correctedDate = ctx.last_corrected_at ? new Date(ctx.last_corrected_at) : null;
+
   return (
     <div className="hidden print:block print-receta">
       {/* Header — datos del médico */}
@@ -44,6 +50,21 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
           </div>
         </div>
       </header>
+
+      {/* Aviso de corrección — solo si la consulta fue corregida tras la firma */}
+      {isCorrected && (
+        <div className="border-2 border-gray-800 rounded-md px-4 py-2 mb-6">
+          <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+            Receta corregida
+            {correctedDate && (
+              <span className="font-semibold"> · {formatLongDate(correctedDate)}</span>
+            )}
+          </p>
+          <p className="text-xs text-gray-700 mt-0.5">
+            Esta receta reemplaza versiones anteriores.
+          </p>
+        </div>
+      )}
 
       {/* Datos del paciente */}
       <section className="mb-6 grid grid-cols-2 gap-4 text-sm">
@@ -89,6 +110,11 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
             <p className="text-[11px] text-gray-500 mt-2">
               Firmado digitalmente · {formatLongDate(signedDate)}
             </p>
+            {isCorrected && correctedDate && (
+              <p className="text-[11px] text-gray-500">
+                Corregida · {formatLongDate(correctedDate)}
+              </p>
+            )}
           </div>
         </div>
       </footer>
@@ -113,7 +139,14 @@ function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
       <div className="flex items-baseline gap-2">
         <span className="font-bold text-gray-900">{index}.</span>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900">{p.medication.commercial_name}</p>
+          <p className="font-semibold text-gray-900">
+            {p.medication.commercial_name}
+            {p.version > 1 && (
+              <span className="ml-2 text-xs font-bold text-gray-700 uppercase">
+                · Corrección v{p.version}
+              </span>
+            )}
+          </p>
           {subParts.length > 0 && (
             <p className="text-xs text-gray-600 mt-0.5">{subParts.join(' · ')}</p>
           )}

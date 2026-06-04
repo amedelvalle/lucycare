@@ -30,6 +30,9 @@ export interface Prescription {
   duration_unit: DurationUnit | null;
   instructions: string | null;
   alternatives: string | null;
+  // Versión de la receta: 1 = original; ≥2 = corregida (amend_consultation).
+  // La vigente siempre es is_current=true (filtrado en las lecturas).
+  version: number;
   // Datos del medicamento (join)
   medication: {
     id: string;
@@ -70,6 +73,7 @@ export async function getPrescriptions(consultationId: string): Promise<Prescrip
       duration_unit,
       instructions,
       alternatives,
+      version,
       medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
     `)
     .eq('consultation_id', consultationId)
@@ -122,6 +126,7 @@ export async function getPermanentPrescriptionsForPatient(
       duration_unit,
       instructions,
       alternatives,
+      version,
       medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
     `)
     .in('consultation_id', consultIds)
@@ -177,6 +182,7 @@ export async function addPrescription(
       duration_unit,
       instructions,
       alternatives,
+      version,
       medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
     `)
     .single();
