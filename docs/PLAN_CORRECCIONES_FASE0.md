@@ -5,14 +5,13 @@
 > Q1–Q9 cerradas por el owner (2026-06-03).
 > **Snapshot 2026-06-03.**
 >
-> **Estado (2026-06-04): IMPLEMENTADO para texto + receta.** Etapa A
-> (PR #74, `s7_28`) + Etapa B1 (PR #76, `s7_29`) + impresión (PRs #79
-> filtro `is_current`, #80 banner "RECETA CORREGIDA" + "Corrección vN",
-> #81/`s7_30` distinción texto vs receta) + **UI completa (PR #82): modal
-> "Corregir consulta firmada" con Texto + Receta, motivo obligatorio,
-> confirmación reforzada para receta, historial de adendas**. ⏳ Único
-> pendiente: **B1.5** (diagnósticos / antecedentes familiares estructurados
-> / signos vitales) — no bloquea el flujo texto + receta ya live.
+> **Estado (2026-06-04): EJE COMPLETO (backend + UI) para los 5 bloques
+> clínicos.** Texto + receta: PRs #74/`s7_28`, #76/`s7_29`, #79, #80,
+> #81/`s7_30`, #82. **Diagnósticos / antecedentes / signos vitales:
+> PR #84/`s7_31` (backend, RPC extendida + inmutabilidad de `vitals`,
+> smoke OTP 11/11) + PR #85 (UI en accordion con las 5 secciones, resumen
+> unificado, fix dropdown del Combobox, impresión de receta en 2 columnas).**
+> No quedan pendientes del eje.
 >
 > Cierra la **deuda técnica #2** (inmutabilidad server-side de consultas
 > firmadas) y define el modelo mínimo de adendas/correcciones.

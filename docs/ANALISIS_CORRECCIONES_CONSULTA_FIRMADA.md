@@ -1,11 +1,12 @@
 # Análisis — Correcciones post-firma de consultas clínicas
 
 > Documento de análisis + propuesta. **Snapshot 2026-06-03.**
-> **Estado (2026-06-04): Opción C IMPLEMENTADA para texto + receta**
-> (PRs #74/#76/#79/#80/#81/#82; migraciones `s7_28`/`s7_29`/`s7_30`).
-> Preguntas §10 cerradas por el owner (ver `PLAN_CORRECCIONES_FASE0.md` §0).
-> ⏳ Único pendiente: **B1.5** (diagnósticos / antecedentes estructurados /
-> signos vitales), no bloqueante. Este doc queda como referencia de diseño.
+> **Estado (2026-06-04): Opción C IMPLEMENTADA COMPLETA — backend + UI para
+> los 5 bloques clínicos** (texto, receta, diagnósticos, antecedentes,
+> vitales). PRs #74/#76/#79/#80/#81/#82/#84/#85; migraciones
+> `s7_28`/`s7_29`/`s7_30`/`s7_31`. Preguntas §10 cerradas por el owner
+> (ver `PLAN_CORRECCIONES_FASE0.md` §0). **Eje cerrado, sin pendientes.**
+> Este doc queda como referencia de diseño.
 >
 > Acompaña a:
 > - Deuda técnica **#2** (CLAUDE.md): "Inmutabilidad server-side de
