@@ -8,6 +8,7 @@ import {
   useDiscardConsultation,
   useVitals,
   useUpsertVitals,
+  useConsultationAmendments,
 } from '@/hooks/useConsultation';
 import { computeBmi, type VitalsInput } from '@/services/vitals.service';
 import type { ConsultationUpdate } from '@/services/consultations.service';
@@ -16,6 +17,7 @@ import PrescriptionsSection from './PrescriptionsSection';
 import AntecedentesSection from './AntecedentesSection';
 import FollowUpScheduler from './FollowUpScheduler';
 import RecetaPrint from './RecetaPrint';
+import CorrectConsultationModal from './CorrectConsultationModal';
 import { usePrescriptions } from '@/hooks/useConsultation';
 
 interface FormState {
@@ -69,6 +71,9 @@ export default function ConsultaPage() {
   const upsertVitals = useUpsertVitals(appointmentId ?? '', ctx?.patient_id ?? '');
   const { data: isEmpty } = useIsConsultationEmpty(ctx?.id);
   const discard = useDiscardConsultation(ctx?.id ?? '', appointmentId ?? '');
+  const { data: amendments = [] } = useConsultationAmendments(
+    ctx?.status === 'signed' ? ctx?.id : undefined
+  );
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [vitalsForm, setVitalsForm] = useState<VitalsFormState>(EMPTY_VITALS);
@@ -76,6 +81,7 @@ export default function ConsultaPage() {
   const [signError, setSignError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [showCorrect, setShowCorrect] = useState(false);
 
   const isSigned = ctx?.status === 'signed';
   const readOnly = isSigned;
@@ -91,7 +97,11 @@ export default function ConsultaPage() {
         plan: ctx.plan ?? '',
       });
     }
-  }, [ctx?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // updated_at en la dep: tras una corrección (amend) el ctx se refetcha con
+    // texto nuevo pero el mismo id → re-hidratar para que el modo lectura
+    // muestre el texto corregido. En borrador, updated_at solo cambia al
+    // guardar (no mientras se tipea), así que no pisa ediciones en curso.
+  }, [ctx?.id, ctx?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (vitals) {
@@ -213,6 +223,33 @@ export default function ConsultaPage() {
         onBack={() => navigate(-1)}
         readOnly={readOnly}
       />
+
+      {/* ─── Historial de correcciones (consulta firmada con adendas) ─── */}
+      {isSigned && amendments.length > 0 && (
+        <Section
+          title="Historial de correcciones"
+          subtitle="Cada corrección queda registrada con su motivo. La versión anterior se conserva."
+        >
+          <ul className="space-y-2">
+            {amendments.map((a) => (
+              <li key={a.id} className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center rounded-full bg-gray-200 text-gray-700 px-2.5 py-0.5 text-xs font-medium">
+                    v{a.version}
+                  </span>
+                  <span className="text-xs text-gray-500">{formatTimestamp(a.corrected_at)}</span>
+                  {a.affects_prescriptions && (
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-xs font-medium">
+                      Receta corregida
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-800 mt-1.5 whitespace-pre-wrap">{a.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       {/* ─── Sección: Evaluación clínica ────────────────────── */}
       <Section title="Evaluación clínica" subtitle="Anamnesis y exploración del paciente">
@@ -516,17 +553,30 @@ export default function ConsultaPage() {
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-5 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                </svg>
-                Imprimir receta
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowCorrect(true)}
+                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Corregir consulta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Imprimir receta
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -548,6 +598,22 @@ export default function ConsultaPage() {
           onConfirm={handleDiscard}
           onCancel={() => setConfirmDiscard(false)}
           isSubmitting={discard.isPending}
+        />
+      )}
+
+      {/* ─── Modal de corrección de consulta firmada (B2.1) ──── */}
+      {showCorrect && ctx && (
+        <CorrectConsultationModal
+          consultationId={ctx.id}
+          appointmentId={appointmentId ?? ''}
+          initial={{
+            chief_complaint: ctx.chief_complaint ?? '',
+            history_present_illness: ctx.history_present_illness ?? '',
+            physical_exam: ctx.physical_exam ?? '',
+            internal_analysis: ctx.internal_analysis ?? '',
+            plan: ctx.plan ?? '',
+          }}
+          onClose={() => setShowCorrect(false)}
         />
       )}
       </div>

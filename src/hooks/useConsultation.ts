@@ -5,7 +5,10 @@ import {
   signConsultation,
   isDraftConsultationEmpty,
   discardEmptyConsultation,
+  amendConsultationText,
+  getConsultationAmendments,
   type ConsultationUpdate,
+  type ConsultationTextChanges,
 } from '@/services/consultations.service';
 import {
   getVitalsByAppointment,
@@ -69,6 +72,8 @@ export const consultationKeys = {
     [...consultationKeys.all, 'rx', consultationId] as const,
   permanentRx: (patientId: string, doctorId: string) =>
     [...consultationKeys.all, 'permanent-rx', patientId, doctorId] as const,
+  amendments: (consultationId: string) =>
+    [...consultationKeys.all, 'amendments', consultationId] as const,
 };
 
 // ─── Consulta ─────────────────────────────────────────────────────────
@@ -128,6 +133,33 @@ export function useDiscardConsultation(consultationId: string, appointmentId: st
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
       qc.invalidateQueries({ queryKey: ['consultation-is-empty'] });
+    },
+  });
+}
+
+// ─── Corrección controlada de consulta firmada (B2.1) ─────────────────
+
+/** Historial de adendas de una consulta (más reciente primero). */
+export function useConsultationAmendments(consultationId: string | undefined) {
+  return useQuery({
+    queryKey: consultationKeys.amendments(consultationId ?? ''),
+    queryFn: () => getConsultationAmendments(consultationId!),
+    enabled: !!consultationId,
+    staleTime: 1000 * 30,
+  });
+}
+
+/** Corrige los campos de texto de una consulta firmada vía amend_consultation. */
+export function useAmendConsultationText(consultationId: string, appointmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { reason: string; changes: ConsultationTextChanges }) =>
+      amendConsultationText(consultationId, input.reason, input.changes),
+    onSuccess: () => {
+      // Refrescar la consulta (trae el texto corregido + datos de adendas para
+      // el banner) y el historial de adendas.
+      qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.amendments(consultationId) });
     },
   });
 }

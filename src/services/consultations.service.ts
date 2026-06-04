@@ -352,3 +352,58 @@ export async function signConsultation(consultationId: string): Promise<void> {
     // No lanzamos: la firma es lo crítico, el cambio de estado es bonus
   }
 }
+
+// ─── Corrección controlada de consulta firmada (B2.1) ─────────────────
+
+/** Campos de texto corregibles por la UI de corrección (subset del whitelist
+ * de amend_consultation; recetas/diagnósticos/antecedentes/vitales NO acá). */
+export type ConsultationTextField =
+  | 'chief_complaint'
+  | 'history_present_illness'
+  | 'physical_exam'
+  | 'internal_analysis'
+  | 'plan';
+
+export type ConsultationTextChanges = Partial<Record<ConsultationTextField, string | null>>;
+
+export interface ConsultationAmendment {
+  id: string;
+  version: number;
+  reason: string;
+  corrected_at: string;
+  affects_prescriptions: boolean;
+}
+
+/**
+ * Corrige una consulta FIRMADA vía la RPC amend_consultation (s7_29/s7_30).
+ * Solo campos de texto en B2.1 (sin prescription_ops → affects_prescriptions
+ * queda false). El gate (médico dueño, firmada, motivo obligatorio, campos
+ * prohibidos) es server-side. Enviar SOLO los campos modificados.
+ */
+export async function amendConsultationText(
+  consultationId: string,
+  reason: string,
+  changes: ConsultationTextChanges
+): Promise<void> {
+  const { error } = await supabase.rpc('amend_consultation', {
+    p_consultation_id: consultationId,
+    p_reason: reason,
+    p_consultation_changes: changes,
+    // p_prescription_ops omitido → default '[]' → affects_prescriptions=false
+  });
+  if (error) throw error;
+}
+
+/** Historial de adendas de una consulta (más reciente primero). RLS: solo el
+ * médico dueño. */
+export async function getConsultationAmendments(
+  consultationId: string
+): Promise<ConsultationAmendment[]> {
+  const { data, error } = await supabase
+    .from('consultation_amendments')
+    .select('id, version, reason, corrected_at, affects_prescriptions')
+    .eq('consultation_id', consultationId)
+    .order('version', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ConsultationAmendment[];
+}
