@@ -601,18 +601,20 @@ export default function ConsultaPage() {
         />
       )}
 
-      {/* ─── Modal de corrección de consulta firmada (B2.1) ──── */}
+      {/* ─── Modal de corrección de consulta firmada (B2 — texto + receta) ──── */}
       {showCorrect && ctx && (
         <CorrectConsultationModal
           consultationId={ctx.id}
           appointmentId={appointmentId ?? ''}
-          initial={{
+          doctorId={ctx.doctor_id}
+          initialText={{
             chief_complaint: ctx.chief_complaint ?? '',
             history_present_illness: ctx.history_present_illness ?? '',
             physical_exam: ctx.physical_exam ?? '',
             internal_analysis: ctx.internal_analysis ?? '',
             plan: ctx.plan ?? '',
           }}
+          initialPrescriptions={prescriptions}
           onClose={() => setShowCorrect(false)}
         />
       )}

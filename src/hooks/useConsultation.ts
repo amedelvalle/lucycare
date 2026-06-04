@@ -5,10 +5,11 @@ import {
   signConsultation,
   isDraftConsultationEmpty,
   discardEmptyConsultation,
-  amendConsultationText,
+  amendConsultation,
   getConsultationAmendments,
   type ConsultationUpdate,
   type ConsultationTextChanges,
+  type PrescriptionOp,
 } from '@/services/consultations.service';
 import {
   getVitalsByAppointment,
@@ -149,17 +150,21 @@ export function useConsultationAmendments(consultationId: string | undefined) {
   });
 }
 
-/** Corrige los campos de texto de una consulta firmada vía amend_consultation. */
-export function useAmendConsultationText(consultationId: string, appointmentId: string) {
+/** Corrige una consulta firmada (texto + receta) vía amend_consultation. */
+export function useAmendConsultation(consultationId: string, appointmentId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { reason: string; changes: ConsultationTextChanges }) =>
-      amendConsultationText(consultationId, input.reason, input.changes),
+    mutationFn: (input: {
+      reason: string;
+      changes: ConsultationTextChanges;
+      prescriptionOps: PrescriptionOp[];
+    }) => amendConsultation(consultationId, input.reason, input.changes, input.prescriptionOps),
     onSuccess: () => {
-      // Refrescar la consulta (trae el texto corregido + datos de adendas para
-      // el banner) y el historial de adendas.
+      // Refrescar la consulta (texto corregido + datos de adendas para el
+      // banner), el historial de adendas y las recetas (versionado v2).
       qc.invalidateQueries({ queryKey: consultationKeys.byAppointment(appointmentId) });
       qc.invalidateQueries({ queryKey: consultationKeys.amendments(consultationId) });
+      qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
     },
   });
 }
