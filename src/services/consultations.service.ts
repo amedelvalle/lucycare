@@ -44,11 +44,17 @@ export interface ConsultationContext extends Consultation {
     license_number: string | null;
     specialty_name: string | null;
   };
-  // Correcciones post-firma (consultation_amendments). amendment_count=0 en
-  // borradores y consultas sin corregir. last_corrected_at = fecha de la
-  // corrección más reciente (para la marca de receta corregida — B3).
+  // Correcciones post-firma (consultation_amendments).
+  //  - amendment_count: total de adendas (texto y/o receta) → historial /
+  //    "consulta corregida". 0 en borradores y consultas sin corregir.
+  //  - last_corrected_at: fecha de la corrección más reciente (cualquier tipo).
+  //  - receta_corrected_at: fecha de la corrección de RECETA más reciente, o
+  //    null si ninguna adenda tocó medicamentos (s7_30). Gobierna la marca
+  //    "RECETA CORREGIDA" de impresión — una corrección solo de texto NO la
+  //    dispara.
   amendment_count: number;
   last_corrected_at: string | null;
+  receta_corrected_at: string | null;
 }
 
 export interface ConsultationUpdate {
@@ -135,9 +141,10 @@ export async function getOrCreateConsultationForAppointment(
         .single(),
       // Adendas de corrección: las más recientes primero. Vacío en borradores
       // y consultas no corregidas (la RLS solo deja leerlas al médico dueño).
+      // affects_prescriptions distingue corrección de receta vs solo texto.
       supabase
         .from('consultation_amendments')
-        .select('corrected_at')
+        .select('corrected_at, affects_prescriptions')
         .eq('consultation_id', consultation.id)
         .order('corrected_at', { ascending: false }),
     ]);
@@ -177,6 +184,10 @@ export async function getOrCreateConsultationForAppointment(
     },
     amendment_count: amendments?.length ?? 0,
     last_corrected_at: amendments?.[0]?.corrected_at ?? null,
+    // amendments viene ordenado desc por corrected_at → la primera con
+    // affects_prescriptions es la corrección de receta más reciente.
+    receta_corrected_at:
+      amendments?.find((a) => a.affects_prescriptions)?.corrected_at ?? null,
   };
 }
 

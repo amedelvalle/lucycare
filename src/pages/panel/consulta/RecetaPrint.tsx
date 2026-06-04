@@ -21,11 +21,11 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
   const signedDate = ctx.signed_at ? new Date(ctx.signed_at) : new Date();
   const age = calculateAge(ctx.patient.date_of_birth);
 
-  // Receta corregida: la consulta tiene ≥1 adenda (cubre receta versionada,
-  // medicamento agregado/quitado o corrección de texto). La fecha es la de la
-  // corrección más reciente. La receta original (v1) se imprime sin esta marca.
-  const isCorrected = ctx.amendment_count > 0;
-  const correctedDate = ctx.last_corrected_at ? new Date(ctx.last_corrected_at) : null;
+  // Receta corregida: SOLO si alguna adenda tocó medicamentos/recetas
+  // (affects_prescriptions, s7_30). Una corrección solo de texto de la consulta
+  // NO marca la receta. La fecha es la de la corrección de receta más reciente.
+  const isCorrected = ctx.receta_corrected_at !== null;
+  const correctedDate = ctx.receta_corrected_at ? new Date(ctx.receta_corrected_at) : null;
 
   return (
     <div className="hidden print:block print-receta">

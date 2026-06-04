@@ -558,6 +558,7 @@ export type Database = {
       }
       consultation_amendments: {
         Row: {
+          affects_prescriptions: boolean
           consultation_id: string
           corrected_at: string
           corrected_by: string
@@ -570,6 +571,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          affects_prescriptions?: boolean
           consultation_id: string
           corrected_at?: string
           corrected_by: string
@@ -582,6 +584,7 @@ export type Database = {
           version: number
         }
         Update: {
+          affects_prescriptions?: boolean
           consultation_id?: string
           corrected_at?: string
           corrected_by?: string
