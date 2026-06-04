@@ -73,6 +73,10 @@ export async function getPrescriptions(consultationId: string): Promise<Prescrip
       medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
     `)
     .eq('consultation_id', consultationId)
+    // Solo la receta VIGENTE: tras una corrección (amend_consultation), la
+    // versión anterior queda is_current=false (histórica) y se conserva la v2.
+    // Sin este filtro, display e impresión mostrarían v1 y v2 duplicadas.
+    .eq('is_current', true)
     .order('id', { ascending: true });
 
   if (error) throw error;
@@ -121,7 +125,9 @@ export async function getPermanentPrescriptionsForPatient(
       medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
     `)
     .in('consultation_id', consultIds)
-    .eq('duration_unit', 'permanente');
+    .eq('duration_unit', 'permanente')
+    // Solo recetas vigentes: si una permanente fue corregida, vale la v2.
+    .eq('is_current', true);
 
   if (error) throw error;
 
