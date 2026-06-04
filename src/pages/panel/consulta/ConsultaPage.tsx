@@ -9,6 +9,8 @@ import {
   useVitals,
   useUpsertVitals,
   useConsultationAmendments,
+  useConsultationDiagnoses,
+  useConsultationFamilyHistory,
 } from '@/hooks/useConsultation';
 import { computeBmi, type VitalsInput } from '@/services/vitals.service';
 import type { ConsultationUpdate } from '@/services/consultations.service';
@@ -74,6 +76,10 @@ export default function ConsultaPage() {
   const { data: amendments = [] } = useConsultationAmendments(
     ctx?.status === 'signed' ? ctx?.id : undefined
   );
+  // Datos clínicos vigentes para el modal de corrección (reusan la cache que
+  // ya pueblan DiagnosesSection / AntecedentesSection).
+  const { data: diagnoses = [] } = useConsultationDiagnoses(ctx?.id);
+  const { data: familyHistory = [] } = useConsultationFamilyHistory(ctx?.id);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [vitalsForm, setVitalsForm] = useState<VitalsFormState>(EMPTY_VITALS);
@@ -615,6 +621,9 @@ export default function ConsultaPage() {
             plan: ctx.plan ?? '',
           }}
           initialPrescriptions={prescriptions}
+          initialDiagnoses={diagnoses}
+          initialFamilyHistory={familyHistory}
+          initialVitals={vitals ?? null}
           onClose={() => setShowCorrect(false)}
         />
       )}

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Combobox reusable: input con dropdown de búsqueda + opción "Crear nuevo".
@@ -41,12 +42,47 @@ export default function Combobox<T>({
   className,
 }: ComboboxProps<T>) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // El dropdown se renderiza en un PORTAL con posición fixed para escapar el
+  // overflow del modal/accordion y cualquier stacking context que lo recorte.
+  const [pos, setPos] = useState<{
+    left: number; width: number; openUp: boolean; top?: number; bottom?: number; maxH: number;
+  } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);    // wrapper del input (ancla)
+  const dropdownRef = useRef<HTMLDivElement>(null); // el menú portaleado
 
+  const updatePos = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    const openUp = spaceBelow < 200 && spaceAbove > spaceBelow;
+    const maxH = Math.min(256, Math.max(openUp ? spaceAbove : spaceBelow, 120));
+    setPos(openUp
+      ? { left: r.left, width: r.width, openUp, bottom: window.innerHeight - r.top + 4, maxH }
+      : { left: r.left, width: r.width, openUp, top: r.bottom + 4, maxH });
+  }, []);
+
+  // Posicionar al abrir + seguir scroll/resize (capture: cubre scroll del modal).
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePos();
+    const onMove = () => updatePos();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, updatePos]);
+
+  // Cerrar al click fuera (considera input + dropdown portaleado).
   useEffect(() => {
     if (!open) return;
     function onClickOutside(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || dropdownRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
@@ -72,8 +108,8 @@ export default function Combobox<T>({
   };
 
   return (
-    <div ref={containerRef} className={`relative ${className ?? ''}`}>
-      <div className="relative">
+    <div className={className ?? ''}>
+      <div ref={wrapRef} className="relative">
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
           fill="none"
@@ -101,8 +137,18 @@ export default function Combobox<T>({
         />
       </div>
 
-      {open && !disabled && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-64 overflow-y-auto">
+      {open && !disabled && pos && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'fixed',
+            left: pos.left,
+            width: pos.width,
+            maxHeight: pos.maxH,
+            ...(pos.openUp ? { bottom: pos.bottom } : { top: pos.top }),
+          }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg z-[100] overflow-y-auto"
+        >
           {isLoading ? (
             <p className="px-3 py-2 text-xs text-gray-400">Buscando...</p>
           ) : items.length === 0 ? (
@@ -143,7 +189,8 @@ export default function Combobox<T>({
               </p>
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

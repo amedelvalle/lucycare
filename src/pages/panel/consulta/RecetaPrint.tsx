@@ -90,7 +90,15 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
             No se prescribieron medicamentos en esta consulta.
           </p>
         ) : (
-          <ol className="space-y-4">
+          // 3+ medicamentos → 2 columnas (fila-major: 1|2 / 3|4) para aprovechar
+          // el ancho A4 y no empujar la firma a una segunda página. 1–2 → 1 columna.
+          <ol
+            className={
+              prescriptions.length >= 3
+                ? 'grid grid-cols-2 gap-x-6 gap-y-4'
+                : 'space-y-4'
+            }
+          >
             {prescriptions.map((p, i) => (
               <PrescriptionItem key={p.id} index={i + 1} p={p} />
             ))}
@@ -99,7 +107,7 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
       </section>
 
       {/* Footer — firma */}
-      <footer className="mt-12 pt-4 border-t border-gray-300">
+      <footer className="mt-12 pt-4 border-t border-gray-300 break-inside-avoid">
         <div className="flex justify-end">
           <div className="text-right">
             <div className="border-b border-gray-800 w-64 mb-1" />
@@ -135,7 +143,7 @@ function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
   const durationLine = formatDuration(p.duration_value, p.duration_unit);
 
   return (
-    <li className="text-sm text-gray-800">
+    <li className="text-sm text-gray-800 break-inside-avoid">
       <div className="flex items-baseline gap-2">
         <span className="font-bold text-gray-900">{index}.</span>
         <div className="flex-1 min-w-0">
