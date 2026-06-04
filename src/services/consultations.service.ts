@@ -216,7 +216,7 @@ export async function isDraftConsultationEmpty(consultationId: string): Promise<
 
   const [{ count: diagCount }, { count: rxCount }, { count: fhCount }] = await Promise.all([
     supabase.from('consultation_diagnoses').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
-    supabase.from('prescriptions').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
+    supabase.from('prescriptions').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId).eq('is_current', true),
     supabase.from('consultation_family_history').select('id', { count: 'exact', head: true }).eq('consultation_id', consultationId),
   ]);
 

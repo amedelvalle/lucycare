@@ -1174,7 +1174,10 @@ export type Database = {
           frequency: string | null
           id: string
           instructions: string | null
+          is_current: boolean
           medication_id: string
+          replaces_id: string | null
+          version: number
         }
         Insert: {
           alternatives?: string | null
@@ -1185,7 +1188,10 @@ export type Database = {
           frequency?: string | null
           id?: string
           instructions?: string | null
+          is_current?: boolean
           medication_id: string
+          replaces_id?: string | null
+          version?: number
         }
         Update: {
           alternatives?: string | null
@@ -1196,7 +1202,10 @@ export type Database = {
           frequency?: string | null
           id?: string
           instructions?: string | null
+          is_current?: boolean
           medication_id?: string
+          replaces_id?: string | null
+          version?: number
         }
         Relationships: [
           {
