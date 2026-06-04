@@ -1285,10 +1285,16 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          date_of_birth: string | null
+          department_id: string | null
+          document_number: string | null
+          document_type: string | null
           email: string | null
           full_name: string
+          gender: Database["public"]["Enums"]["gender_type"] | null
           id: string
           is_active: boolean
+          municipality_id: string | null
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
@@ -1296,10 +1302,16 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          department_id?: string | null
+          document_number?: string | null
+          document_type?: string | null
           email?: string | null
           full_name: string
+          gender?: Database["public"]["Enums"]["gender_type"] | null
           id: string
           is_active?: boolean
+          municipality_id?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
@@ -1307,15 +1319,36 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          department_id?: string | null
+          document_number?: string | null
+          document_type?: string | null
           email?: string | null
           full_name?: string
+          gender?: Database["public"]["Enums"]["gender_type"] | null
           id?: string
           is_active?: boolean
+          municipality_id?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_municipality_id_fkey"
+            columns: ["municipality_id"]
+            isOneToOne: false
+            referencedRelation: "municipalities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reviews: {
         Row: {
