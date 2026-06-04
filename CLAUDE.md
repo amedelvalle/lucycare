@@ -45,7 +45,7 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-05-27)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `da5bbab` o posterior. **PRs #1–#76 mergeados** (#67 gate clínico asistente + `s7_26`, #70 Mi equipo Fase 1 + `s7_27`, #72 análisis correcciones post-firma, #73 plan correcciones Fase 0, #74 inmutabilidad consultas firmadas Etapa A + `s7_28`, #76 corrección controlada Etapa B1 + `s7_29`).
+- **HEAD esperado:** `611acf8` o posterior. **PRs #1–#77 mergeados** (#67 gate clínico asistente + `s7_26`, #70 Mi equipo Fase 1 + `s7_27`, #72 análisis correcciones post-firma, #73 plan correcciones Fase 0, #74 inmutabilidad consultas firmadas Etapa A + `s7_28`, #76 corrección controlada Etapa B1 + `s7_29`).
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
 - **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
@@ -406,6 +406,7 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+611acf8 docs: refresh post-#76 — Etapa B1 corrección controlada de consultas firmadas (#77)
 da5bbab feat(clinico): correcciones post-firma — Etapa B/B1 (adendas + amend_consultation) (#76)
 cc71e0b feat(clinico): inmutabilidad server-side de consultas firmadas (Etapa A) (#74)
 0abaf23 feat(equipo): límite de 2 asistentes incluidos (Mi equipo Fase 1) (#70)
@@ -477,7 +478,7 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según objetivo de hoy]
 
-Estado: PRs #1–#76 mergeados (HEAD da5bbab), migraciones hasta s7_29 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: análisis (#72) + plan (#73) + **Etapa A inmutabilidad ✅ (#74, `s7_28`) + Etapa B1 corrección controlada ✅ (#76, `s7_29`)** → ⏳ B1.5 (diag/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida). Análisis pagos SaaS ✅ doc base (PR #62).
+Estado: PRs #1–#77 mergeados (HEAD 611acf8), migraciones hasta s7_29 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Ubicación estructurada admin ✅ (PR #64). Gate clínico asistente ✅ (PR #67). Mi equipo Fase 1 límite 2 asistentes ✅ (PR #70). Correcciones post-firma: análisis (#72) + plan (#73) + **Etapa A inmutabilidad ✅ (#74, `s7_28`) + Etapa B1 corrección controlada ✅ (#76, `s7_29`)** → ⏳ B1.5 (diag/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida). Análisis pagos SaaS ✅ doc base (PR #62).
 
 Hoy hacemos: ___[opciones en cola (smoke afiliación ya cerrado):
                    - análisis de pagos SaaS autoservicio;

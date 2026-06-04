@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `da5bbab` o posterior, **PRs #1–#76 mergeados**. Migraciones hasta `s7_29` (aplicadas en Supabase). #67 gate clínico (`s7_26`), #70 Mi equipo Fase 1 (`s7_27`), #72 análisis correcciones, #73 plan Fase 0, #74 Etapa A inmutabilidad (`s7_28`), #76 Etapa B1 corrección controlada (`s7_29`).
+`main` HEAD esperado: `611acf8` o posterior, **PRs #1–#77 mergeados**. Migraciones hasta `s7_29` (aplicadas en Supabase). #67 gate clínico (`s7_26`), #70 Mi equipo Fase 1 (`s7_27`), #72 análisis correcciones, #73 plan Fase 0, #74 Etapa A inmutabilidad (`s7_28`), #76 Etapa B1 corrección controlada (`s7_29`).
 
 **Correcciones post-firma — Etapa A (PR #74, `s7_28`) + Etapa B1 (PR #76, `s7_29`) — completadas:**
 - **A:** sin edición silenciosa por API. Firma vía RPC `sign_consultation()` + RLS endurecida (`signed_at IS NULL`). Sync cita→atendida y borradores sin regresión.
@@ -211,20 +211,50 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 ## INSTRUCCIÓN PARA NUEVA VENTANA DE CONTEXTO
 
-Para continuar LucyCare, leer primero:
+> Handoff de cierre 2026-06-03. Esta sección es el **punto de entrada**
+> para retomar LucyCare en una conversación nueva sin reconstruir contexto.
+
+### Leer primero (en este orden)
 1. `CLAUDE.md`
 2. `docs/HANDOFF_LUCYCARE_SPRINT7.md`
 3. `docs/HANDOFF_TOMA_DECISIONES_2.md`
-4. `docs/ANALISIS_AFILIACION_MEDICO.md`
-5. `docs/PLAN_AFILIACION_MEDICO.md`
-6. `docs/ANALISIS_PACIENTE_GLOBAL.md`
-7. `docs/SECURITY_GATE_PILOTO.md`
+4. `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`
+5. `docs/ANALISIS_MI_EQUIPO_INVITADOS.md`
+6. `docs/ANALISIS_CORRECCIONES_CONSULTA_FIRMADA.md`
+7. `docs/PLAN_CORRECCIONES_FASE0.md`
+8. `docs/ANALISIS_PACIENTE_GLOBAL.md`
 
-Luego confirmar:
-- **HEAD actual** (esperado `da5bbab` o posterior).
-- **PRs mergeados hasta #59.**
-- **Migraciones aplicadas hasta `s7_29`** (`s7_26` vía PR #67; `s7_27` vía PR #70; `s7_28` vía PR #74; `s7_29` vía PR #76, aplicadas en Supabase).
-- **Smoke end-to-end de afiliación: ✅ COMPLETADO (2026-05-30)** — ver §5.1. Detectó 4 bugs corregidos en PR #61.
-- **Ubicación estructurada admin: ✅ live (PR #64, `s7_25`).** Los 5 médicos publicados tienen Depto/Municipio cargados.
+### Luego confirmar
+- **HEAD final actual:** `611acf8` (o posterior).
+- **PRs mergeados hasta #77.**
+- **Migraciones aplicadas hasta `s7_29`** (en Supabase).
+- **Árbol limpio.**
+- **Cuál será el siguiente frente a trabajar** (ver opciones abajo).
 
 **No codificar nada hasta confirmar ese estado.**
+
+### Estado consolidado al cierre (qué está ✅ y qué ⏳)
+- **Infra:** dominio principal `https://lucycare.app`; `lucycare.vercel.app` = fallback temporal (no desactivar). SMTP Resend live.
+- **Afiliación médica ✅ end-to-end:** Fase 1 (solicitud pública + bandeja admin) + Fase 2 (LucyAdmin convierte lead aprobado en médico `listed_only`) + smoke (lead→médico→claim→`claimed`). **Decisión cerrada (no reabrir):** el médico creado por afiliación nace `profile.role='patient'` pre-claim y se promueve a `doctor` solo al reclamar.
+- **Home/directorio ✅:** PR #63 cerró el bug de "Ordenar por" (se quitó "Más cercanos"); quedan "Disponibilidad/Mejor coincidencia" y "Mejor valorados". Cercanía real = backlog (requiere lat/lng en `clinics` + ubicación del usuario + UX/privacidad).
+- **Ubicación estructurada ✅ live (PR #64/`s7_25`):** LucyAdmin > Médicos > Editar edita Depto/Municipio (listas del Home), guarda `clinics.department_id/municipality_id` (filtran el Home); regla **P0004** (publicados/operativos requieren ubicación). Los publicados pendientes ya los completó el owner.
+- **Mi equipo ✅ Fase 1:** gate clínico del asistente (PR #67/`s7_26`), límite base 1 titular + 2 asistentes (PR #70/`s7_27`, conteo activos+pendientes, enforcement server-side, bug de `accept_clinic_invitations` corregido). `assistant` = operativo/no clínico (no lee/escribe `vitals` ni `consultation_family_history`; ya estaba bloqueado en consultas/recetas/diagnósticos/firma). ⏳ Fase 2 (expiración/reenvío) + add-ons (dependen de pagos).
+- **Correcciones post-firma ✅ A+B1:** Etapa A inmutabilidad server-side (PR #74/`s7_28`) + Etapa B1 corrección controlada (PR #76/`s7_29`: `consultation_amendments` append-only, motivo obligatorio, snapshots before/after, recetas v2 con anterior histórica, campos prohibidos rechazados (P0013), solo médico dueño, audit). ⏳ B1.5 (diagnósticos/antecedentes/vitales), B2 (UI), B3 (impresión receta corregida).
+- **Pagos SaaS ⏳ solo análisis (PR #62):** modelo preliminar $55/mes · $594/año · 1 titular + 2 asistentes · adicional $5/mes. **Stripe = candidato, NO cerrado.** El owner debe validar pasarela viable para El Salvador + IVA + DTE/facturación + Q1–Q11 **antes** de cualquier código de pagos.
+- **Paciente Global / DUI ⏳ pendiente prioritario de análisis:** paciente global único + ficha local por clínica/médico (médico/asistente puede crear paciente sin obligar registro previo); DUI como identificador fuerte (probablemente progresivo en MVP); no sobrescribir identidad global sin trazabilidad; analizar dedup/merge/auditoría/maestros-vs-locales. Base: `docs/ANALISIS_PACIENTE_GLOBAL.md` (Fase 1 ✅ live; Fases 2-5 en cola).
+
+### Próximos frentes (backlog, elegir uno)
+- Pasarela de pagos / IVA / DTE / Q1–Q11 (desbloquea add-ons de equipo + suscripción SaaS).
+- Correcciones firmadas: B1.5 → B2 → B3.
+- Mi equipo Fase 2 (expiración/reenvío de invitaciones).
+- Paciente Global / DUI (análisis).
+- PanelLayout/useClinicContext: causa raíz del fallo de primera carga (hoy mitigado con "Reintentar").
+- Catálogos personalizados por médico (diagnósticos/medicamentos); paginación del Home; foto/avatar del médico; self-service de recuperación de acceso médico.
+
+---
+
+## REGLA OPERATIVA (owner vs dev)
+
+Las **tareas manuales en LucyAdmin, dashboards o validaciones operativas las hace el owner/usuario**, salvo que se indique explícitamente que las haga el dev. Ejemplos del owner: completar datos desde LucyAdmin, validar opciones visuales en el navegador, probar flujos con OTP, aplicar decisiones comerciales, validar pasarela/IVA/DTE/temas legales.
+
+El **dev** verifica (DB/audit), documenta, audita e **implementa cuando se le indique** — pero **no asume** tareas manuales operativas del owner. (También registrado en la memoria del proyecto: `convention_admin_tasks_owner`.)
