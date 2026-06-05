@@ -15,7 +15,14 @@
 >   no bloqueante + prefill con "Usar" por campo (sin guardado automático;
 >   conflicto sin auto-elegir) + DUI duplicado con mensaje amable.
 >   Diagnóstico read-only previo: 0 duplicados de DUI en `patients`.
-> - **Fases 3-5 ⏳ en cola** + cambio de teléfono por OTP (pendiente separado).
+> - **Fase 3 ✅ live** (PR #90/`s7_33` backend + PR #91 UI): **Opción B (sync
+>   espejo)**. `profiles` canónico; `patients` espejo sincronizado. Guard
+>   server-side (P0030) bloquea editar identidad local si `profile_id` set;
+>   claim copia global→local (global gana, local-only se conserva); sync ongoing
+>   propaga cambios del perfil a fichas vinculadas (sin anular NOT NULL, bypass
+>   GUC); UI médico read-only + badge; walk-in sin cambios. `phone` fuera del
+>   sync. Smoke OTP 6/6.
+> - **Fases 4-5 ⏳ en cola** + cambio de teléfono por OTP (pendiente separado).
 > - **Decisiones DA1-DA4 firmadas** (§ "Decisiones cerradas" abajo) se respetan.
 
 ## TL;DR
@@ -349,7 +356,12 @@ Compatible con código actual.
 
 **Tamaño:** 1 PR mediano.
 
-### Fase 3 — Read-only para médico sobre datos personales del paciente vinculado
+### Fase 3 — Read-only para médico sobre datos personales del paciente vinculado ✅ LIVE (PR #90/`s7_33` + PR #91)
+
+> Implementada como **Opción B (sync espejo)**, decidida por el owner: además
+> del read-only en UI, `patients` se mantiene como espejo de `profiles` (sync
+> bidireccional en el sentido global→local) + guard server-side (P0030). Detalle
+> en CLAUDE.md (§ Paciente Global) y `HANDOFF_TOMA_DECISIONES_2.md`.
 
 Objetivo: cerrar el problema #5 (médico edita datos personales).
 
@@ -373,6 +385,14 @@ Requiere comunicación.
 **Tamaño:** 1 PR mediano + comunicación.
 
 ### Fase 4 — Herramienta admin para resolución de duplicados
+
+> **Nota de F3 (a considerar acá):** el sync espejo de Fase 3 puede chocar con
+> `UNIQUE(clinic_id, document_type, document_number)` de `patients` si existieran
+> **fichas duplicadas del mismo perfil en la misma clínica** con documento
+> no-null — al sincronizar ambas al mismo documento canónico. Caso raro (el
+> dedup de `createBasicPatient`/`getOrCreatePatient` lo previene) y de **falla
+> elegante** (error al guardar el perfil del paciente, sin corrupción). El merge/
+> dedup admin de esta fase debe resolver esas fichas duplicadas.
 
 Objetivo: el admin puede fusionar 2 `patients` que son la misma
 persona (cross-clinic o intra-clinic).
