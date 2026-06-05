@@ -27,7 +27,10 @@
 >   sincroniza `profiles.phone` + `patients.phone` vinculados (bypass del guard)
 >   + audit; `ChangePhoneModal` reusable. Sesión activa + OTP solo al nuevo;
 >   recuperación sin sesión → soporte/LucyAdmin.
-> - **Fases 4-5 ⏳ en cola.**
+> - **Fase 5 ⏳ en diseño** (PR-0 docs, 2026-06-05): dedup **preventivo** en
+>   creación de paciente/walk-in. Decisiones de privacidad cerradas (ver
+>   § Fase 5). **Solo previene/advierte — no fusiona ni sincroniza** (eso es F4).
+> - **Fase 4 ⏳ en cola.**
 > - **Decisiones DA1-DA4 firmadas** (§ "Decisiones cerradas" abajo) se respetan.
 
 ## TL;DR
@@ -421,22 +424,128 @@ Audit log + dry-run obligatorios. Solo admin.
 
 ### Fase 5 — Dedup preventivo en creación
 
-Objetivo: evitar duplicados de entrada.
+> **Diseño cerrado 2026-06-05 (PR-0 docs).** Decisiones de privacidad y de
+> alcance abajo. **F5 es prevención, NO merge ni sync** — fusionar duplicados
+> existentes y copiar identidad global→local son Fase 4 / diseño posterior.
 
-**Backend:**
-- `createBasicPatient` y `getOrCreatePatient` consultan por
-  `phone_normalized` cross-clinic antes de crear.
-- Si hay match: devuelven el patient existente Y avisan al médico:
-  "este phone ya tiene ficha en LucyCare (clínica X). Querés vincular
-  a ese paciente o crear ficha aparte para esta clínica?"
+**Objetivo:** reducir la creación de duplicados *de entrada*, ayudando al
+médico/asistente a darse cuenta de que la persona que está por crear quizá ya
+existe — **sin** revelar datos de otras clínicas y **sin** bloquear el flujo
+legítimo.
 
-**Frontend:**
-- Modal en panel: "encontramos este paciente, ¿es el mismo?".
+#### Estado actual (lo que YA hay — punto de partida)
 
-**Riesgo:** medio. Cambia UX del walk-in. Falsos positivos en phones
-compartidos (familia, oficina).
+- Único choke point de creación: **`createBasicPatient()`**
+  (`src/services/patients.service.ts`). Lo usan `NewPatientModal`
+  (`/panel/pacientes`) y `CreateWalkInModal` (Nueva cita) vía
+  `createWalkInPatient()`.
+- Dedup actual = **solo teléfono, solo intra-clínica, solo activos**
+  (`clinic_id = X AND phone = Y AND is_active`). Lanza `DuplicatePhoneError`
+  (con flag `multiple` si hay >1). No chequea documento proactivamente; el
+  `UNIQUE(clinic_id, document_type, document_number)` (NULLS DISTINCT) solo
+  actúa como red final en el INSERT.
+- Creación **siempre** con `profile_id = NULL`; la vinculación al profile global
+  es **retroactiva** vía `claim_patient_records()` (login OTP, phone match).
+- Walk-in tiene además búsqueda manual por **nombre** intra-clínica
+  (`searchPatients`).
 
-**Tamaño:** 1 PR mediano.
+#### Decisiones de privacidad (cerradas)
+
+1. **Cross-clínica = señal mínima.** Para coincidencias **fuera de la clínica
+   actual** NO se revela nombre completo, clínica, médico, historial, teléfono
+   de otra ficha, ni documento completo (si el médico no lo ingresó él). Solo un
+   aviso genérico, p. ej.:
+   - match débil (teléfono): *"Existe una posible coincidencia en LucyCare."*
+   - match fuerte (documento ingresado por el médico): *"Este documento ya está
+     asociado a una identidad en LucyCare."*
+2. **Intra-clínica = detalle permitido.** Para coincidencias dentro de la
+   clínica actual SÍ se muestra nombre/teléfono y se ofrece reusar la ficha — el
+   médico ya tiene permiso (RLS) sobre esos pacientes. (Es el comportamiento
+   actual del `DuplicatePhoneError`, que se conserva y se amplía a documento.)
+
+#### Advertir vs bloquear (cerrado)
+
+- **No bloquear** por coincidencia cross-clínica. Razones: familiares comparten
+  teléfono; menores usan el teléfono del responsable; nombres parecidos; DUI
+  progresivo (muchas fichas sin documento).
+- El sistema **advierte pero permite**:
+  - **usar ficha existente** si el match es **intra-clínica**;
+  - **crear ficha local nueva** si el match es **cross-clínica** (caso legítimo:
+    misma persona, primera vez en esta clínica);
+  - **continuar como nuevo** si el médico confirma que no es la misma persona
+    (falso positivo).
+- **Único bloqueo fuerte** = el constraint real de DB cuando aplique
+  (p. ej. documento duplicado dentro de la misma clínica → `UNIQUE`).
+
+#### Señales de coincidencia
+
+| Señal | Alcance del match | Confianza | Uso |
+|---|---|---|---|
+| Teléfono normalizado | intra + cross-clínica | débil (familiares/oficina) | advertencia; intra → reuso |
+| Documento (si ingresado) | intra + cross/global (`profiles`) | fuerte | advertencia; intra → red de DB |
+| Nombre | solo intra (búsqueda manual ya existente) | baja | ayuda manual; **no** llave dura |
+| Fecha de nacimiento | — | — | **fuera de MVP** (a lo sumo desempate futuro) |
+
+> Fuzzy matching de nombres queda **fuera de MVP** (caro y ruidoso). El nombre
+> sigue siendo solo señal secundaria / búsqueda manual.
+
+#### Qué se muestra y qué NO
+
+- **Intra-clínica:** banner con nombre del paciente existente + "Usar este
+  paciente" / "Ver paciente" (lo de hoy) + ahora también para documento.
+- **Cross-clínica/global:** banner **advisory** sin PII —
+  *"Existe una posible coincidencia en LucyCare"* (o el mensaje de documento) +
+  botón **"Crear ficha para esta clínica"** + "Son personas distintas / continuar".
+- **Nunca** se muestra: nombre, clínica, médico, historial, teléfono o documento
+  completo de una ficha que vive en otra clínica.
+
+#### Arquitectura (server-side vs UI)
+
+- **Server-side (autoridad):**
+  - El check intra-clínica corre con la sesión del médico (RLS permite ver sus
+    pacientes). Se **mantiene** y se **amplía** a documento (hoy solo phone).
+  - El check **cross-clínica / profile global** DEBE ser **RPC
+    `SECURITY DEFINER`** — el médico/asistente **no tiene RLS** para leer
+    pacientes de otras clínicas ni `profiles` globales (hardening `s7_16`). La
+    RPC devuelve **solo señal mínima** (existe sí/no, tipo de match débil/fuerte),
+    sin PII de otra clínica.
+  - El `UNIQUE(clinic, doc)` sigue siendo la red final.
+- **UI:** muestra candidatos/avisos y opciones. Es ayuda, **no enforcement**: la
+  decisión del médico se respeta.
+
+#### Qué queda FUERA de Fase 5 (explícito)
+
+- **Fusión de duplicados** existentes → Fase 4 (`admin_merge_patients`).
+- **Copia de identidad global→local** al crear → diferido a F4 / diseño
+  posterior. Motivo: copiar identidad global a una ficha local solo por una
+  coincidencia expondría datos globales del paciente a una clínica **antes** de
+  una vinculación/confirmación adecuada. F5 = prevención, no merge ni sync nuevo.
+- **Vinculación automática `profile_id`** al crear → sigue siendo retroactiva por
+  OTP (`claim_patient_records`). F5 no la toca.
+- **Fuzzy matching de nombre / fecha de nacimiento.**
+
+#### Riesgos de falsos positivos (resumen)
+
+| Caso | Riesgo | Mitigación |
+|---|---|---|
+| Familiares con mismo teléfono | alto | teléfono nunca bloquea; segundo factor sube confianza |
+| Menores / dependientes (tel. del tutor + apellido) | alto | siempre permitir "son personas distintas" |
+| Nombres parecidos | medio | no usar nombre como llave dura; sin fuzzy en MVP |
+| Pacientes sin DUI (DUI progresivo) | — | el teléfono sigue siendo la llave práctica |
+
+#### Plan de PRs pequeños
+
+| PR | Alcance | Migración | Riesgo |
+|---|---|---|---|
+| **PR-0** (este) | Este diseño en el análisis. Docs-only. | — | nulo |
+| **PR-1 (backend)** | RPC `find_patient_match_candidates(clinic_id, phone, doc_type, doc_number)` `SECURITY DEFINER`: intra-clínica con detalle (lo que el médico ya puede ver) + cross-clínica/global como **señal mínima** sin PII. Endurecer chequeo de **documento** intra-clínica en `createBasicPatient`. `check-s7_NN.mjs` + smoke. **Sin UI.** | `s7_35` | medio (RLS/privacidad) |
+| **PR-2 (UI)** | Componente reusable de candidatos integrado en `NewPatientModal` + `CreateWalkInModal` (lookup al teclear phone/doc; panel "¿es esta persona?"; opciones reusar/crear/continuar según intra vs cross). | — | medio (UX) |
+
+**Riesgo global:** medio. Cambia UX de creación; la mitigación principal es
+"advertir, no bloquear" + privacidad estricta cross-clínica.
+
+**Orden vs Fase 4:** hacer **F5 antes que F4** — prevenir nuevos duplicados
+reduce la pila que la herramienta de merge (F4) tendrá que limpiar.
 
 ## Riesgos transversales
 
