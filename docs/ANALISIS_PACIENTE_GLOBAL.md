@@ -1,8 +1,22 @@
 # Análisis — Modelo de paciente global
 
 > Diagnóstico + propuesta de evolución del modelo de paciente.
-> Snapshot 2026-05-25. Sin código todavía — este doc es la base de
-> decisión para múltiples PRs futuros.
+> Snapshot 2026-05-25 (análisis original).
+>
+> **Estado de implementación (2026-06-04):**
+> - **Fase 1 ✅ live** (PR #44, `s7_20`): vinculación retroactiva por phone
+>   OTP (`claim_patient_records`) + vista "Mis atenciones".
+> - **Fase 2 ✅ live** (PR #87/`s7_32` backend + PR #88 UI): identidad global
+>   en `profiles` (DUI/DOB/género/dpto/muni, **DUI progresivo** = nullable),
+>   **UNIQUE parcial** `(document_type, document_number)`, **UPDATE
+>   column-restricted** (paciente no toca `role`/`is_active`/`phone`),
+>   coherencia muni-depto (P0004), audit (`edited_via='profile_identity'`),
+>   anon nunca ve DUI/DOB. UI `/paciente/perfil` (teléfono read-only) + banner
+>   no bloqueante + prefill con "Usar" por campo (sin guardado automático;
+>   conflicto sin auto-elegir) + DUI duplicado con mensaje amable.
+>   Diagnóstico read-only previo: 0 duplicados de DUI en `patients`.
+> - **Fases 3-5 ⏳ en cola** + cambio de teléfono por OTP (pendiente separado).
+> - **Decisiones DA1-DA4 firmadas** (§ "Decisiones cerradas" abajo) se respetan.
 
 ## TL;DR
 
@@ -283,7 +297,7 @@ Sin cambios mayores en RLS. Lo que ya existe sigue:
 
 ### Fase 0 — Documentación (este doc) ✅
 
-### Fase 1 — Vinculación retroactiva + vista "Mis atenciones"
+### Fase 1 — Vinculación retroactiva + vista "Mis atenciones" ✅ LIVE (PR #44, `s7_20`)
 
 Objetivo: empezar a unificar la identidad sin tocar schema.
 
@@ -307,7 +321,14 @@ paciente ver sus rows (vía profile_id).
 
 **Tamaño:** 1 PR mediano (1 RPC + 1 página + 1 link en header).
 
-### Fase 2 — Perfil del paciente con datos extendidos
+### Fase 2 — Perfil del paciente con datos extendidos ✅ LIVE (PR #87/`s7_32` + PR #88)
+
+> Implementada con ajustes sobre la propuesta original: `document_type` como
+> `text`+CHECK (no enum), `gender` reusa el enum `gender_type`, depto/muni son
+> `text` (catálogos del Home), **UNIQUE parcial** de documento, **UPDATE
+> column-restricted** (cierra escalada de `role`/`is_active`/`phone`), prefill
+> con "Usar" por campo. Detalle en CLAUDE.md (§ Paciente Global) y
+> `HANDOFF_TOMA_DECISIONES_2.md`.
 
 Objetivo: el paciente puede ver y editar sus datos personales.
 
