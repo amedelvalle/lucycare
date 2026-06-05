@@ -10,8 +10,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import PatientHeader from '@/components/PatientHeader';
-import { useMyProfile, useLocalSuggestions, useUpdateMyProfile } from '@/hooks/usePatientProfile';
+import ChangePhoneModal from '@/components/ChangePhoneModal';
+import { useMyProfile, useLocalSuggestions, useUpdateMyProfile, patientProfileKeys } from '@/hooks/usePatientProfile';
 import { useDepartments, useMunicipalities } from '@/hooks/useDirectory';
 import { sanitizeDuiInput, formatDuiDisplay, validateDocument, type DocumentType } from '@/lib/document';
 import { DuplicateDocumentError, type Gender } from '@/services/patientProfile.service';
@@ -50,6 +52,8 @@ const inputCls =
 
 export default function MiPerfilPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [showChangePhone, setShowChangePhone] = useState(false);
   const { data: profile, isLoading } = useMyProfile();
   const { data: suggestions = [] } = useLocalSuggestions();
   const update = useUpdateMyProfile();
@@ -219,11 +223,20 @@ export default function MiPerfilPage() {
             </Field>
           </div>
 
-          {/* Teléfono read-only */}
+          {/* Teléfono read-only + cambiar por OTP */}
           <Field label="Teléfono">
-            <input type="text" value={profile?.phone ?? ''} disabled className={inputCls} />
+            <div className="flex items-center gap-2">
+              <input type="text" value={profile?.phone ? `+${profile.phone}` : ''} disabled className={inputCls} />
+              <button
+                type="button"
+                onClick={() => setShowChangePhone(true)}
+                className="px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg whitespace-nowrap"
+              >
+                Cambiar
+              </button>
+            </div>
             <p className="text-[11px] text-gray-500 mt-1">
-              Tu teléfono se usa para acceder a tu cuenta. Para cambiarlo se requerirá verificación por código.
+              Tu teléfono se usa para acceder a tu cuenta. Para cambiarlo te enviamos un código por SMS al número nuevo.
             </p>
           </Field>
 
@@ -248,6 +261,14 @@ export default function MiPerfilPage() {
           </div>
         </div>
       </main>
+
+      {showChangePhone && (
+        <ChangePhoneModal
+          currentPhone={profile?.phone ?? null}
+          onClose={() => setShowChangePhone(false)}
+          onChanged={() => qc.invalidateQueries({ queryKey: patientProfileKeys.profile })}
+        />
+      )}
     </div>
   );
 }
