@@ -23,6 +23,7 @@ import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
 import ResetPasswordPage from "../pages/reset-password/ResetPasswordPage";
 import MisAtencionesPage from "../pages/paciente/MisAtencionesPage";
+import MiPerfilPage from "../pages/paciente/MiPerfilPage";
 import PatientOnlyRoute from "./PatientOnlyRoute";
 import AdminLayout from "../pages/admin/AdminLayout";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
@@ -59,6 +60,14 @@ const routes: RouteObject[] = [
     element: (
       <PatientOnlyRoute>
         <MisAtencionesPage />
+      </PatientOnlyRoute>
+    ),
+  },
+  {
+    path: "/paciente/perfil",
+    element: (
+      <PatientOnlyRoute>
+        <MiPerfilPage />
       </PatientOnlyRoute>
     ),
   },

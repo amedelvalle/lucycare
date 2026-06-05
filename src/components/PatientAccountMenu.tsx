@@ -83,6 +83,15 @@ export default function PatientAccountMenu({ displayName }: PatientAccountMenuPr
           )}
           <button
             type="button"
+            onClick={() => handleNavigate('/paciente/perfil')}
+            role="menuitem"
+            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <i className="ri-user-line text-gray-500" aria-hidden="true"></i>
+            Mi perfil
+          </button>
+          <button
+            type="button"
             onClick={() => handleNavigate('/paciente/mis-atenciones')}
             role="menuitem"
             className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
