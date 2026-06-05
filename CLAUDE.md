@@ -28,7 +28,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo (Fase 2 ✅ live).
 - `docs/ANALISIS_AUTH_MEDICO.md` — plan auth email+password (PR-A ✅ live, PR-B en cola).
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial del directorio.
-- `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de identidad de paciente (Fases 1 y 2 ✅ live; 3-5 en cola).
+- `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de identidad de paciente (Fases 1, 2 y 3 ✅ live; 4-5 en cola).
 - `docs/FASE_4_AUTH_EMAIL.md` — guía operativa Supabase URL/email config.
 - `docs/SETUP_SMTP_RESEND.md` — Resend como SMTP custom de Supabase Auth (✅ live desde 2026-05-26, dominio `lucycare.app`).
 - `docs/CUENTA_DEMO_CAMILO.md` — credenciales y reglas de la cuenta demo oficial.
@@ -45,11 +45,11 @@ squash-merge, la rama puede borrarse.
 ## Estado actual del proyecto (snapshot 2026-06-04)
 
 - **Fuente de verdad:** `origin/main` en GitHub (github.com/amedelvalle/lucycare).
-- **HEAD esperado:** `399452c` o posterior. **PRs #1–#88 mergeados.** Eje Correcciones post-firma COMPLETO (#74–#85, migraciones `s7_28..s7_31`). **Paciente Global Fase 2 COMPLETA: #87 (`s7_32`) identidad global en `profiles` + #88 UI `/paciente/perfil`.**
+- **HEAD esperado:** `2265226` o posterior. **PRs #1–#91 mergeados.** Eje Correcciones post-firma COMPLETO (#74–#85, migraciones `s7_28..s7_31`). **Paciente Global Fases 2 y 3 COMPLETAS:** #87 (`s7_32`) identidad global en `profiles` + #88 UI `/paciente/perfil` + **#90 (`s7_33`) sync espejo `profiles→patients` + guard de identidad + #91 UI médico read-only**.
 - **Sprint 6 — Reputación médica:** ✅ completado (PRs #2–#10).
 - **Sprint 7 — Admin SaaS + Robustez pacientes:** ✅ Fases A, B, B2-A, B3-doctor, B3-admin (PRs hasta #30).
 - **Pre-piloto (PRs #32–#58):** ✅ reclamo seguro, foto perfil, auth email+password (PR-A y PR-B), Security Gate (5 hallazgos cerrados), directorio informativo, lista de espera real, Paciente Global Fase 1, SMTP externo Resend, dominio público `lucycare.app`, password en flujo de Reclamar perfil, mitigación del flujo público "Soy médico", Afiliación médica Fase 1 (captura de leads + bandeja admin), **Afiliación Fase 2 (admin convierte lead aprobado en doctor `listed_only` con email override)**.
-- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_32` (`s7_26` = gate clínico asistente / PR #67; `s7_27` = límite de asistentes / PR #70; `s7_28` = inmutabilidad consultas firmadas Etapa A / PR #74; `s7_29` = corrección controlada Etapa B1 / PR #76; `s7_30` = distinción adenda texto vs receta — `affects_prescriptions` / PR #81; `s7_31` = amend de diagnósticos/antecedentes/vitales + inmutabilidad de `vitals` / PR #84; `s7_32` = Paciente Global Fase 2 — identidad global en `profiles` (DUI/DOB/género/depto/muni) + UNIQUE parcial de documento + UPDATE column-restricted + coherencia muni-depto + audit / PR #87). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Migraciones aplicadas:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_32` (`s7_26` = gate clínico asistente / PR #67; `s7_27` = límite de asistentes / PR #70; `s7_28` = inmutabilidad consultas firmadas Etapa A / PR #74; `s7_29` = corrección controlada Etapa B1 / PR #76; `s7_30` = distinción adenda texto vs receta — `affects_prescriptions` / PR #81; `s7_31` = amend de diagnósticos/antecedentes/vitales + inmutabilidad de `vitals` / PR #84; `s7_32` = Paciente Global Fase 2 — identidad global en `profiles` (DUI/DOB/género/depto/muni) + UNIQUE parcial de documento + UPDATE column-restricted + coherencia muni-depto + audit / PR #87; `s7_33` = Paciente Global Fase 3 — sync espejo `profiles→patients` (trigger) + guard server-side de identidad local (trigger, P0030) + claim copia identidad global→local / PR #90). Verificables con `node scripts/check-s7_NN.mjs`.
 - **Mi equipo Fase 1 — límite de asistentes (PR #70, `s7_27`) — activo:** plan base = 1 titular + **2 asistentes** (`team_seat_limit()`=2 fijo). El conteo incluye **asistentes activos + invitaciones pendientes**. Enforcement **server-side validado**: trigger `BEFORE INSERT` en `clinic_invitations` (`P0001`) + revalidación en `accept_clinic_invitations`. UI `/panel/equipo` con contador `n/2` + botón deshabilitado al límite. El smoke destapó y **corrigió un bug pre-existente** en `accept_clinic_invitations` (cast `clinic_member_role::user_role` imposible → ahora `::text::user_role`; el accept nunca había funcionado por falta de asistentes). **Usuarios adicionales → fase de pagos/add-ons** (`team_seat_limit()` es el punto de enganche con `subscriptions`).
 - **Ubicación estructurada del médico (PR #64, `s7_25`) — live en producción:** LucyAdmin > Médicos > Editar > Clínica edita Departamento/Municipio con las listas jerárquicas del Home, guarda IDs en `clinics.department_id/municipality_id` (lo que filtra el directorio). Municipio depende del departamento; **obligatorios para médicos publicados/operativos** (enforcement server-side `P0004` + UI). Los 5 médicos publicados ya tienen ubicación estructurada.
 - **Importación de médicos:** 100 cargados + 12 seed `*.lucycare.test` (desactivados en PR #38).
@@ -287,10 +287,10 @@ PR #61 (fix + `s7_24`) ✅ mergeado (commit `b2decba`). Después: opciones en co
 ### Paciente Global
 - **Fase 1** ✅ live (PR #44, `s7_20`): vinculación retroactiva por phone OTP + "Mis atenciones".
 - **Fase 2** ✅ live (PR #87/`s7_32` backend + PR #88 UI): identidad global en `profiles` (DUI/DOB/género/dpto/muni, **DUI progresivo** = todo nullable), **UNIQUE parcial** `(document_type, document_number)`, **UPDATE column-restricted** (paciente no cambia `role`/`is_active`/`phone`), coherencia muni-depto (P0004), audit (`edited_via='profile_identity'`), **privacidad** (anon nunca ve DUI/DOB). UI `/paciente/perfil` (form + teléfono read-only), **banner no bloqueante** "Completá tu perfil" en "Mis atenciones", **prefill con "Usar" por campo** desde fichas locales (sin guardado automático; conflicto entre clínicas sin auto-elegir), DUI duplicado → mensaje amable.
-- **Fase 3** ⏳: lock visual/read-only de datos personales para el médico cuando el paciente reclamó identidad (server-side ya ayuda: el médico no escribe `profiles`).
-- **Fase 4** ⏳: herramienta admin para fusionar duplicados (`admin_merge_patients`, audit + reversibilidad + dry-run) — resuelve los DUI duplicados que el UNIQUE destape.
+- **Fase 3** ✅ live (PR #90/`s7_33` backend + PR #91 UI): **Opción B (sync espejo)**. `profiles` = verdad canónica; `patients` = **espejo sincronizado** (compat con consulta/receta/listado). **Guard server-side** (trigger BEFORE UPDATE en `patients`, `P0030`): médico/asistente no edita identidad local (`full_name`/`phone`/`email`/`document_*`/`date_of_birth`/`gender`) si `profile_id IS NOT NULL`; locales (sangre/alergias/emergencia/notas/tipo/foto/is_active) editables. **Claim** copia identidad global→local al vincular (global gana; local-only se conserva; no promueve local→global). **Sync ongoing** (trigger AFTER UPDATE en `profiles`): propaga campos cambiados a fichas vinculadas (cross-clínica, sin anular NOT NULL, sin pisar locales; bypass GUC `app.syncing_patient_identity` solo para el sync). `phone` fuera del sync (read-only + guardado). **UI médico**: `EditPatientModal` muestra identidad read-only ("Datos gestionados por el paciente en su perfil Lucy" / "No cargado por el paciente") cuando hay vínculo; badge en el detalle; walk-in sin cambios. Validado smoke OTP 6/6.
+- **Fase 4** ⏳: herramienta admin para fusionar duplicados (`admin_merge_patients`, audit + reversibilidad + dry-run) — resuelve los DUI duplicados que el UNIQUE destape. **Nota (de F3):** el sync de Fase 3 puede chocar con `UNIQUE(clinic_id, document_type, document_number)` si existieran **fichas duplicadas del mismo perfil en la misma clínica** con documento no-null (caso raro: el dedup lo previene); falla elegante (error al guardar perfil, no corrupción) → considerarlo en el merge/dedup admin.
 - **Fase 5** ⏳: dedup preventivo cross-clinic al crear paciente (walk-in).
-- **Pendiente separado:** cambio de teléfono del paciente con verificación por OTP (el `phone` quedó excluido del UPDATE editable en `s7_32`).
+- **Pendiente separado:** cambio de teléfono del paciente con verificación por OTP (el `phone` quedó excluido del UPDATE editable en `s7_32` y del sync en `s7_33`).
 
 ### Directorio (follow-ups)
 - Vista global `/admin/lista-espera` cross-médicos con filtros.
@@ -381,6 +381,7 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_19` bulk count waitlist por doctor.
 - `s7_20` Paciente Global Fase 1 — RPC `claim_patient_records` + policies SELECT-self.
 - `s7_32` Paciente Global Fase 2 — columnas de identidad en `profiles` (DUI/DOB/género/dpto/muni) + CHECK de `document_type` + regla number⇒type + UNIQUE parcial de documento + trigger coherencia muni-depto + GRANT UPDATE column-restricted + trigger audit de identidad.
+- `s7_33` Paciente Global Fase 3 — guard BEFORE UPDATE en `patients` (bloquea identidad local si `profile_id` set, P0030) + sync AFTER UPDATE `profiles→patients` (espejo, bypass GUC) + `claim_patient_records` copia identidad global→local.
 
 ## Scripts utilitarios (`/scripts/`)
 
@@ -409,6 +410,9 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
 ## Tags y commits importantes
 
 ```
+2265226 feat(paciente): identidad read-only del paciente vinculado en panel médico (F3.2) (#91)
+dafbfde feat(paciente): sync espejo profiles→patients + guard de identidad (F3.1 / s7_33) (#90)
+c7acc54 docs: cierre de Paciente Global Fase 2 — PRs #87/#88 (s7_32) (#89)
 399452c feat(paciente): página /paciente/perfil + banner — Paciente Global F2.2 (#88)
 7a7e38b feat(paciente): identidad global en profiles — Paciente Global F2.1 (s7_32) (#87)
 9ca3c08 docs: cierre FINAL del eje Correcciones post-firma — PRs #84/#85 (s7_31) (#86)
