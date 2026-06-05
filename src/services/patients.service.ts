@@ -386,9 +386,15 @@ export interface FindMatchInput {
 export async function findPatientMatchCandidates(
   input: FindMatchInput
 ): Promise<PatientMatchResult> {
+  // Normalizamos el teléfono a la forma canónica '503XXXXXXXX' con el MISMO
+  // helper que usa createBasicPatient para deduplicar (y que ya tienen las
+  // filas guardadas). Sin esto, un input local de 8 dígitos ('71234567') no
+  // matchearía contra el valor almacenado ('50371234567') y el panel diría
+  // "Sin coincidencias" aunque el INSERT después sí detecte el duplicado.
+  const normPhone = input.phone ? normalizePhoneSV(input.phone) ?? undefined : undefined;
   const { data, error } = await supabase.rpc('find_patient_match_candidates', {
     p_clinic_id: input.clinicId,
-    p_phone: input.phone ?? undefined,
+    p_phone: normPhone,
     p_document_type: input.documentType ?? undefined,
     p_document_number: input.documentNumber ?? undefined,
   });
