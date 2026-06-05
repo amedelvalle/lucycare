@@ -22,7 +22,12 @@
 >   propaga cambios del perfil a fichas vinculadas (sin anular NOT NULL, bypass
 >   GUC); UI médico read-only + badge; walk-in sin cambios. `phone` fuera del
 >   sync. Smoke OTP 6/6.
-> - **Fases 4-5 ⏳ en cola** + cambio de teléfono por OTP (pendiente separado).
+> - **Cambio de teléfono por OTP ✅ live** (PR #93/`s7_34` backend + #94 UI
+>   paciente + #95 UI médico): trigger `AFTER UPDATE OF phone ON auth.users`
+>   sincroniza `profiles.phone` + `patients.phone` vinculados (bypass del guard)
+>   + audit; `ChangePhoneModal` reusable. Sesión activa + OTP solo al nuevo;
+>   recuperación sin sesión → soporte/LucyAdmin.
+> - **Fases 4-5 ⏳ en cola.**
 > - **Decisiones DA1-DA4 firmadas** (§ "Decisiones cerradas" abajo) se respetan.
 
 ## TL;DR
