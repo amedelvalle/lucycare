@@ -1552,6 +1552,15 @@ export type Database = {
         Args: { user_phone: string }
         Returns: number
       }
+      find_patient_match_candidates: {
+        Args: {
+          p_clinic_id: string
+          p_phone?: string
+          p_document_type?: string
+          p_document_number?: string
+        }
+        Returns: Json
+      }
       get_user_clinic_ids: { Args: never; Returns: string[] }
       get_user_doctor_id: { Args: never; Returns: string }
       get_user_role: {

@@ -89,6 +89,23 @@ export class DuplicatePhoneError extends Error {
   }
 }
 
+/**
+ * Error lanzado por createBasicPatient cuando ya existe un paciente ACTIVO
+ * con el mismo documento (tipo + número) en la clínica. Es el chequeo
+ * proactivo de Fase 5: anticipa el UNIQUE(clinic_id, document_type,
+ * document_number) de la DB para mostrar un aviso amable (con el nombre del
+ * paciente existente) en vez del error crudo de Postgres. El UNIQUE de la DB
+ * sigue siendo la red final (cubre carreras y fichas inactivas).
+ */
+export class DuplicateDocumentError extends Error {
+  existing: { id: string; full_name: string };
+  constructor(existing: { id: string; full_name: string }) {
+    super(`Ya existe un paciente con este documento en la clínica: ${existing.full_name}.`);
+    this.name = 'DuplicateDocumentError';
+    this.existing = existing;
+  }
+}
+
 export interface CreateBasicPatientInput {
   clinicId: string;
   fullName: string;
@@ -288,6 +305,28 @@ export async function createBasicPatient(
   const documentType = input.documentType ?? 'dui';
   const docValidation = validateDocument(documentType, input.documentNumber);
   if (!docValidation.valid) throw new Error(docValidation.error);
+
+  // Dedup proactivo por documento — solo si se ingresó un documento y solo
+  // entre activos. Anticipa el UNIQUE(clinic_id, document_type, document_number)
+  // para dar un aviso con nombre en vez del error crudo de Postgres (Fase 5).
+  // El UNIQUE de la DB sigue siendo la red final (carreras / fichas inactivas).
+  if (docValidation.canonical) {
+    const { data: docMatches, error: docLookupErr } = await supabase
+      .from('patients')
+      .select('id, full_name')
+      .eq('clinic_id', input.clinicId)
+      .eq('document_type', documentType)
+      .eq('document_number', docValidation.canonical)
+      .eq('is_active', true)
+      .limit(1);
+    if (docLookupErr) throw docLookupErr;
+    if (docMatches && docMatches.length > 0) {
+      throw new DuplicateDocumentError({
+        id: docMatches[0].id,
+        full_name: docMatches[0].full_name,
+      });
+    }
+  }
 
   const { data, error } = await supabase
     .from('patients')
