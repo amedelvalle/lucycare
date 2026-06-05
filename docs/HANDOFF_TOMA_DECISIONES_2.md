@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `1bd6c9f` o posterior, **PRs #1–#95 mergeados**. Migraciones hasta `s7_34` (aplicadas en Supabase). Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).**
+`main` HEAD esperado: `1bf62c7` o posterior (+ el PR documental de cierre de esta ventana), **PRs #1–#96 mergeados**. Migraciones hasta `s7_34` (aplicadas en Supabase). Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).**
 
 **Correcciones post-firma — EJE COMPLETO (backend + UI), 5 bloques clínicos (PRs #74, #76, #79, #80, #81, #82, #84, #85):**
 - **A (PR #74, `s7_28`):** sin edición silenciosa por API. Firma vía RPC `sign_consultation()` + RLS endurecida (`signed_at IS NULL`). Sync cita→atendida y borradores sin regresión.
@@ -230,8 +230,8 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 ### Próximo arranque recomendado (nueva ventana)
 1. **Sincronizar repo:** `git fetch origin && git checkout main && git pull --ff-only`.
-2. **Confirmar HEAD final:** `1bd6c9f` o posterior (+ el PR documental de cierre de esta ventana).
-3. **Confirmar PRs mergeados hasta #95** (+ el PR documental de cierre).
+2. **Confirmar HEAD final:** `1bf62c7` o posterior (+ el PR documental de cierre de esta ventana).
+3. **Confirmar PRs mergeados hasta #96** (+ el PR documental de cierre de esta ventana).
 4. **Confirmar migraciones hasta `s7_34`** (aplicadas en Supabase).
 5. **Confirmar frentes cerrados:**
    - ✅ **Correcciones post-firma** COMPLETO (texto, receta, diagnósticos, antecedentes, vitales).
