@@ -12,10 +12,12 @@ import {
 import { useSpecialties } from '@/hooks/useDirectory';
 import { useClinicContext } from '@/hooks/useClinicContext';
 import AvatarUploader from '@/components/AvatarUploader';
+import ChangePhoneModal from '@/components/ChangePhoneModal';
 import { uploadMyAvatar, removeMyAvatar } from '@/services/avatar.service';
 
 export default function PerfilPage() {
   const qc = useQueryClient();
+  const [showChangePhone, setShowChangePhone] = useState(false);
   const { data: ctx, isLoading: ctxLoading } = useClinicContext();
   const { data: profile, isLoading } = useMyDoctorProfile();
   const { data: specialties = [] } = useSpecialties();
@@ -236,13 +238,22 @@ export default function PerfilPage() {
               className={inputCls}
             />
           </Field>
-          <Field label="Teléfono" hint="Para cambiarlo, contacta soporte">
-            <input
-              type="tel"
-              value={profile.phone ?? ''}
-              disabled
-              className={`${inputCls} bg-gray-50 text-gray-500 cursor-not-allowed`}
-            />
+          <Field label="Teléfono" hint="Es tu forma de acceso. Para cambiarlo verificamos el número nuevo con un código por SMS.">
+            <div className="flex items-center gap-2">
+              <input
+                type="tel"
+                value={profile.phone ? `+${profile.phone}` : ''}
+                disabled
+                className={`${inputCls} bg-gray-50 text-gray-500 cursor-not-allowed`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowChangePhone(true)}
+                className="px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg whitespace-nowrap"
+              >
+                Cambiar
+              </button>
+            </div>
           </Field>
         </div>
       </div>
@@ -346,6 +357,14 @@ export default function PerfilPage() {
           {isSaving ? 'Guardando...' : 'Guardar cambios'}
         </button>
       </div>
+
+      {showChangePhone && (
+        <ChangePhoneModal
+          currentPhone={profile.phone ?? null}
+          onClose={() => setShowChangePhone(false)}
+          onChanged={() => qc.invalidateQueries({ queryKey: myDoctorProfileKey })}
+        />
+      )}
     </div>
   );
 }
