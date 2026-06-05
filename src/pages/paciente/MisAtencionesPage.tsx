@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listMyAppointments } from '@/services/patientHistory.service';
 import PatientHeader from '@/components/PatientHeader';
+import ProfileIncompleteBanner from '@/components/ProfileIncompleteBanner';
 
 const PAGE_SIZE = 20;
 
@@ -76,6 +77,8 @@ export default function MisAtencionesPage() {
             Historial de citas y atenciones con tus médicos en LucyCare.
           </p>
         </div>
+
+        <ProfileIncompleteBanner />
 
         {/* Loading */}
         {isLoading && (
