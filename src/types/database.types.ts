@@ -694,6 +694,7 @@ export type Database = {
         Row: {
           consultation_id: string
           diagnosis_id: string
+          diagnosis_name_snapshot: string | null
           diagnosis_status: Database["public"]["Enums"]["diagnosis_status"]
           diagnosis_type: Database["public"]["Enums"]["diagnosis_type"]
           id: string
@@ -702,6 +703,7 @@ export type Database = {
         Insert: {
           consultation_id: string
           diagnosis_id: string
+          diagnosis_name_snapshot?: string | null
           diagnosis_status?: Database["public"]["Enums"]["diagnosis_status"]
           diagnosis_type?: Database["public"]["Enums"]["diagnosis_type"]
           id?: string
@@ -710,6 +712,7 @@ export type Database = {
         Update: {
           consultation_id?: string
           diagnosis_id?: string
+          diagnosis_name_snapshot?: string | null
           diagnosis_status?: Database["public"]["Enums"]["diagnosis_status"]
           diagnosis_type?: Database["public"]["Enums"]["diagnosis_type"]
           id?: string
@@ -1226,7 +1229,9 @@ export type Database = {
       }
       prescriptions: {
         Row: {
+          active_ingredient_snapshot: string | null
           alternatives: string | null
+          concentration_snapshot: string | null
           consultation_id: string
           dosage: string | null
           duration_unit: Database["public"]["Enums"]["duration_unit"] | null
@@ -1236,11 +1241,15 @@ export type Database = {
           instructions: string | null
           is_current: boolean
           medication_id: string
+          medication_name_snapshot: string | null
+          presentation_snapshot: string | null
           replaces_id: string | null
           version: number
         }
         Insert: {
+          active_ingredient_snapshot?: string | null
           alternatives?: string | null
+          concentration_snapshot?: string | null
           consultation_id: string
           dosage?: string | null
           duration_unit?: Database["public"]["Enums"]["duration_unit"] | null
@@ -1250,11 +1259,15 @@ export type Database = {
           instructions?: string | null
           is_current?: boolean
           medication_id: string
+          medication_name_snapshot?: string | null
+          presentation_snapshot?: string | null
           replaces_id?: string | null
           version?: number
         }
         Update: {
+          active_ingredient_snapshot?: string | null
           alternatives?: string | null
+          concentration_snapshot?: string | null
           consultation_id?: string
           dosage?: string | null
           duration_unit?: Database["public"]["Enums"]["duration_unit"] | null
@@ -1264,6 +1277,8 @@ export type Database = {
           instructions?: string | null
           is_current?: boolean
           medication_id?: string
+          medication_name_snapshot?: string | null
+          presentation_snapshot?: string | null
           replaces_id?: string | null
           version?: number
         }
