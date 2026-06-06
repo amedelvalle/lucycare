@@ -9,9 +9,9 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `bede2df` o posterior (+ el PR documental de cierre de esta ventana). **PRs #1–#100 mergeados.** Hitos recientes: Correcciones post-firma **EJE COMPLETO** (#74–#85, `s7_28..s7_31`); Paciente Global **Fases 1–3 COMPLETAS** (#87/`s7_32` + #88 + #90/`s7_33` + #91); **Cambio de teléfono por OTP COMPLETO** (#93/`s7_34` + #94 + #95); **Paciente Global Fase 5 (dedup preventivo) COMPLETA** (#98 diseño + #99/`s7_35` + #100 UI); cierres documentales #86/#89/#92/#96.
+- **HEAD esperado en `main`:** `3fa1604` o posterior (+ el PR documental de cierre de esta ventana). **PRs #1–#103 mergeados.** Hitos recientes: Correcciones post-firma **EJE COMPLETO** (#74–#85, `s7_28..s7_31`); Paciente Global **Fases 1–3 COMPLETAS** (#87/`s7_32` + #88 + #90/`s7_33` + #91); **Cambio de teléfono por OTP COMPLETO** (#93/`s7_34` + #94 + #95); **Paciente Global Fase 5 (dedup preventivo) COMPLETA** (#98 diseño + #99/`s7_35` + #100 UI); **Mi equipo Fase 2 (ciclo de vida de invitación) COMPLETA** (#102/`s7_36` + #103 UI); cierres documentales #86/#89/#92/#96/#101.
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
-- **Migraciones aplicadas hasta `s7_35`** (`s7_30` distinción adenda texto vs receta / PR #81; `s7_31` amend diag/antecedentes/vitales + inmutabilidad `vitals` / PR #84; `s7_32` Paciente Global F2 identidad global en `profiles` / PR #87; `s7_33` Paciente Global F3 sync espejo + guard / PR #90; `s7_34` cambio de teléfono por OTP — trigger sync `auth.users.phone` / PR #93; `s7_35` Paciente Global F5 — RPC `find_patient_match_candidates` dedup preventivo / PR #99).
+- **Migraciones aplicadas hasta `s7_36`** (`s7_30` distinción adenda texto vs receta / PR #81; `s7_31` amend diag/antecedentes/vitales + inmutabilidad `vitals` / PR #84; `s7_32` Paciente Global F2 identidad global en `profiles` / PR #87; `s7_33` Paciente Global F3 sync espejo + guard / PR #90; `s7_34` cambio de teléfono por OTP — trigger sync `auth.users.phone` / PR #93; `s7_35` Paciente Global F5 — RPC `find_patient_match_candidates` dedup preventivo / PR #99; `s7_36` Mi equipo F2 — `expires_at` TTL 14d + `team_seats_used` excluye vencidas + `accept` ignora vencidas + RPC `resend_invitation` / PR #102).
 - **Tres frentes recién cerrados (no reabrir):**
   - **Correcciones post-firma — EJE COMPLETO (backend + UI), 5 bloques clínicos:** texto, receta, diagnósticos, antecedentes familiares estructurados y signos vitales. Etapa A inmutabilidad (#74/`s7_28`), B1 corrección controlada vía `amend_consultation()` (#76/`s7_29`), impresión/distinción adenda (#79/#80/#81/`s7_30`), UI texto+receta (#82), backend diag/antecedentes/vitales + inmutabilidad de `vitals` (#84/`s7_31`, smoke OTP 11/11), UI completa en accordion (#85). Motivo obligatorio, snapshots before/after, versionado de recetas, marca "RECETA CORREGIDA" solo si cambia receta.
   - **Paciente Global — Fases 1–3 COMPLETAS:** F1 vinculación retroactiva + "Mis atenciones" (#44/`s7_20`); F2 identidad global en `profiles` (DUI/DOB/género/dpto/muni, DUI progresivo, UNIQUE parcial, UPDATE column-restricted, #87/`s7_32`) + UI `/paciente/perfil` (#88); F3 sync espejo `profiles→patients` + guard server-side P0030 + read-only del médico (#90/`s7_33` + #91); **F5 dedup preventivo** en creación (#98 diseño + #99/`s7_35` RPC `find_patient_match_candidates` + #100 UI `PatientMatchHints`; intra con detalle, cross sin PII, advisory). Smoke OTP 6/6 (F3) + 8/8 (F5). ⏳ Fase 4 (merge admin de duplicados) en cola.
@@ -43,7 +43,7 @@
   - PR #56 **Afiliación Fase 1** (`s7_21`). Tabla `doctor_affiliation_requests` con RLS estricto + `incomplete` GENERATED. RPC pública `submit_affiliation_request` con rate limit 1/IP/24h y UNIQUE phone activo. RPCs admin para triage (in_review/approved/rejected). Frontend: `AffiliationRequestModal` reemplaza al interest legacy. Bandeja `/admin/afiliaciones` con filtros + badge sidebar. Página `/privacidad` MVP. No crea doctor/profile/clinic.
   - PR #57 Refresh documental post-PR #56.
   - PR #58 **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor(p_request_id, p_overrides)` que en una transacción crea auth.users dormant + profile (UPSERT defensivo coexiste con trigger `handle_new_user`) + clinic + clinic_member (owner) + doctor en `lucy_status='listed_only'` con flags conservadores en false. Email override aceptado solo si lead no trajo email (regla server-side en s7_23). UI: botón "Crear médico" en `AdminAffiliationDetailModal` con form de overrides + checkbox confirm + pantalla de éxito con doctor_id + link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" reemplazado por "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin. **Pendiente**: validar claim end-to-end del médico creado con test phone real del médico.
-- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_34` (hasta `s7_30` PR #81; `s7_31` PR #84; `s7_32` PR #87; `s7_33` PR #90; `s7_34` PR #93). Verificables con `node scripts/check-s7_NN.mjs`.
+- **Migraciones aplicadas en DB:** `s4_*`, `s5_01..s5_07`, `s6_01..s6_10`, `s7_01..s7_36` (hasta `s7_30` PR #81; `s7_31` PR #84; `s7_32` PR #87; `s7_33` PR #90; `s7_34` PR #93; `s7_35` PR #99; `s7_36` PR #102). Verificables con `node scripts/check-s7_NN.mjs`.
 - **Médicos en producción hoy:** 5 publicados (Camilo + 4 informativos).
   - Camilo: `lucy_status=verified`, agenda en línea real, único con `booking_enabled=true`.
   - Otros 4 (Gina, Abraham, German, Elena): publicados sin agenda en línea, captados por el directorio informativo.
@@ -143,6 +143,7 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas. Mantenerla a
 | Corregir consulta firmada (5 bloques) | Modal "Corregir consulta firmada" en accordion | ✅ live |
 | Receta corregida — versionado + marca de impresión | `is_current` + banner "RECETA CORREGIDA" | ✅ live |
 | Dedup preventivo al crear paciente/walk-in (F5) | `PatientMatchHints` en NewPatient + CreateWalkIn | ✅ live |
+| Ciclo de vida de invitación de equipo (F2) | `EquipoPage` — vigentes/vencidas, "expira en N días", Reenviar | ✅ live |
 
 ---
 
@@ -288,6 +289,7 @@ Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.m
 - `s7_33_patient_global_phase3_sync.sql` (Paciente Global F3: guard BEFORE UPDATE en `patients` P0030 + sync espejo AFTER UPDATE `profiles→patients` + claim copia identidad global→local — PR #90)
 - `s7_34_phone_change_sync.sql` (cambio de teléfono por OTP: trigger `AFTER UPDATE OF phone ON auth.users` → sincroniza `profiles.phone` + `patients.phone` vinculados, bypass del guard, audit `phone_change` — PR #93)
 - `s7_35_patient_match_candidates.sql` (Paciente Global F5: RPC `find_patient_match_candidates` `SECURITY DEFINER` para dedup preventivo — intra-clínica con detalle, cross-clínica/global solo señal mínima sin PII, gate `is_clinic_member`/`is_admin` P0001 — PR #99)
+- `s7_36_invitation_lifecycle.sql` (Mi equipo F2: `invitation_ttl()` 14d + `clinic_invitations.expires_at` + `team_seats_used` excluye vencidas + `accept_clinic_invitations` ignora vencidas + RPC `resend_invitation` titular/revalida cupo/extiende — PR #102)
 
 **Scripts** (`/scripts/`):
 - `_lib/env.mjs`, `_lib/supabase-admin.mjs`, `_lib/supabase-anon.mjs` — infra.
@@ -342,16 +344,15 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#100 mergeados (HEAD bede2df o posterior), migraciones hasta s7_35 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Gate clínico asistente ✅ (#67). Mi equipo Fase 1 límite 2 asistentes ✅ (#70). **Frentes cerrados:** Correcciones post-firma COMPLETO (texto/receta/diagnósticos/antecedentes/vitales, #74–#85, s7_28..s7_31); Paciente Global Fases 1–3 COMPLETO (#87/#88/#90/#91, s7_32/s7_33); Cambio de teléfono por OTP COMPLETO (#93/#94/#95, s7_34); Paciente Global Fase 5 dedup preventivo COMPLETO (#98/#99/#100, s7_35). Análisis pagos SaaS ✅ doc base (#62). Árbol limpio · build OK · tsc --noEmit OK.
+Estado: PRs #1–#103 mergeados (HEAD 3fa1604 o posterior), migraciones hasta s7_36 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Gate clínico asistente ✅ (#67). **Frentes cerrados:** Correcciones post-firma COMPLETO (texto/receta/diagnósticos/antecedentes/vitales, #74–#85, s7_28..s7_31); Paciente Global Fases 1–3 COMPLETO (#87/#88/#90/#91, s7_32/s7_33); Cambio de teléfono por OTP COMPLETO (#93/#94/#95, s7_34); Paciente Global Fase 5 dedup preventivo COMPLETO (#98/#99/#100, s7_35); **Mi equipo Fases 0–2 COMPLETO** (gate clínico #67, límite 2 #70, ciclo de vida invitación #102/#103, s7_36). Análisis pagos SaaS ✅ doc base (#62). Árbol limpio · build OK · tsc --noEmit OK.
 
 Hoy hacemos: ___[siguiente frente a decidir — ninguno arrancado:
   1. Paciente Global Fase 4 (merge admin de duplicados — grande/delicado; ojo UNIQUE(clinic,document) de F3; F5 ya previene nuevos);
   2. Recuperación de acceso sin sesión (LucyAdmin/soporte — complemento del cambio de teléfono);
-  3. Mi equipo Fase 2 (expiración/reenvío de invitaciones);
-  4. Catálogos personalizados por médico (diagnósticos/medicamentos);
-  5. Pasarela de pagos / IVA / DTE / Q1–Q11 (requiere validación del owner antes de código);
-  6. Pendientes acotados (vista global /admin/lista-espera, causa raíz PanelLayout/useClinicContext, paginación del Home);
-  7. Defensa en profundidad de F5: RPC find_patient_match_candidates tolerante a teléfono crudo (migración chica).
+  3. Catálogos personalizados por médico (diagnósticos/medicamentos);
+  4. Pasarela de pagos / IVA / DTE / Q1–Q11 (requiere validación del owner antes de código; desbloquea add-ons de asistentes de Mi equipo);
+  5. Pendientes acotados (vista global /admin/lista-espera, causa raíz PanelLayout/useClinicContext, paginación del Home);
+  6. Defensa en profundidad de F5: RPC find_patient_match_candidates tolerante a teléfono crudo (migración chica).
 ]___
 ```
 
