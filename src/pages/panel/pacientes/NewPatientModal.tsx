@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCreatePatient } from '@/hooks/usePatients';
-import { DuplicatePhoneError } from '@/services/patients.service';
+import { DuplicatePhoneError, DuplicateDocumentError } from '@/services/patients.service';
+import PatientMatchHints from '@/components/PatientMatchHints';
 import { friendlyErrorMessage } from '@/lib/errors';
 import {
   validateDocument,
@@ -48,6 +49,8 @@ export default function NewPatientModal({
   const [error, setError] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [dupExisting, setDupExisting] = useState<{ id: string; full_name: string; multiple: boolean } | null>(null);
+  // Documento duplicado en la clínica (DuplicateDocumentError, chequeo proactivo).
+  const [dupDoc, setDupDoc] = useState<{ id: string; full_name: string } | null>(null);
 
   function reset() {
     setFullName('');
@@ -58,6 +61,7 @@ export default function NewPatientModal({
     setError(null);
     setDocError(null);
     setDupExisting(null);
+    setDupDoc(null);
   }
 
   /** Cambia el tipo y re-sanitiza el número si pasa a DUI. */
@@ -90,6 +94,7 @@ export default function NewPatientModal({
     setError(null);
     setDocError(null);
     setDupExisting(null);
+    setDupDoc(null);
     if (!fullName.trim()) {
       setError('El nombre es obligatorio.');
       return;
@@ -124,8 +129,12 @@ export default function NewPatientModal({
           if (err instanceof DuplicatePhoneError) {
             setDupExisting({ ...err.existing, multiple: err.multiple });
             setError(null);
+          } else if (err instanceof DuplicateDocumentError) {
+            setDupDoc(err.existing);
+            setError(null);
           } else {
             setDupExisting(null);
+            setDupDoc(null);
             setError(friendlyErrorMessage(err));
           }
         },
@@ -137,6 +146,7 @@ export default function NewPatientModal({
     setError(null);
     setDocError(null);
     setDupExisting(null);
+    setDupDoc(null);
   }
 
   if (!isOpen) return null;
@@ -235,6 +245,18 @@ export default function NewPatientModal({
               max={new Date().toLocaleDateString('en-CA')}
             />
           </Field>
+
+          {/* Dedup preventivo (Fase 5): avisa si la persona quizá ya existe. */}
+          <PatientMatchHints
+            clinicId={clinicId}
+            phone={phone}
+            documentType={documentType}
+            documentNumber={documentNumber}
+            onUseExisting={(c) => {
+              handleClose();
+              navigate(`/panel/pacientes/${c.id}`);
+            }}
+          />
         </div>
 
         <div className="px-6 py-4 border-t border-gray-200 space-y-3">
@@ -267,6 +289,34 @@ export default function NewPatientModal({
                 <button
                   type="button"
                   onClick={() => setDupExisting(null)}
+                  className="px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                >
+                  Cerrar aviso
+                </button>
+              </div>
+            </div>
+          )}
+
+          {dupDoc && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-2">
+              <p className="text-sm text-amber-900">
+                Ya existe un paciente con este documento en la clínica:{' '}
+                <span className="font-medium">{dupDoc.full_name}</span>.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClose();
+                    navigate(`/panel/pacientes/${dupDoc.id}`);
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg"
+                >
+                  Ver este paciente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDupDoc(null)}
                   className="px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg"
                 >
                   Cerrar aviso

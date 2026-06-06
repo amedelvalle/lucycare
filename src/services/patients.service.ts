@@ -348,6 +348,64 @@ export async function createBasicPatient(
   return data;
 }
 
+// ─── Dedup preventivo (Fase 5) ──────────────────────────────────────────
+
+export type CrossMatchLevel = 'none' | 'weak' | 'strong';
+
+/** Coincidencia dentro de la misma clínica — el caller tiene permiso RLS. */
+export interface IntraMatchCandidate {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  is_active: boolean;
+  match: 'phone' | 'document' | 'both';
+}
+
+export interface PatientMatchResult {
+  intra_clinic: IntraMatchCandidate[];
+  /** Cross-clínica / identidad global: SOLO nivel, sin PII. */
+  cross_clinic: { match: CrossMatchLevel };
+}
+
+export interface FindMatchInput {
+  clinicId: string;
+  phone?: string | null;
+  documentType?: DocumentType | null;
+  documentNumber?: string | null;
+}
+
+/**
+ * Dedup preventivo (Fase 5): busca coincidencias ANTES de crear un paciente,
+ * para ayudar al médico/asistente a no duplicar. Vía RPC
+ * `find_patient_match_candidates` (s7_35, SECURITY DEFINER):
+ * - Intra-clínica → detalle (id, nombre, teléfono, activo, tipo de match).
+ * - Cross-clínica / global → solo señal mínima ('weak'|'strong'), sin PII.
+ * Es advisory: nunca bloquea la creación (el único bloqueo fuerte es el
+ * UNIQUE(clinic_id, document_type, document_number) en el INSERT).
+ */
+export async function findPatientMatchCandidates(
+  input: FindMatchInput
+): Promise<PatientMatchResult> {
+  // Normalizamos el teléfono a la forma canónica '503XXXXXXXX' con el MISMO
+  // helper que usa createBasicPatient para deduplicar (y que ya tienen las
+  // filas guardadas). Sin esto, un input local de 8 dígitos ('71234567') no
+  // matchearía contra el valor almacenado ('50371234567') y el panel diría
+  // "Sin coincidencias" aunque el INSERT después sí detecte el duplicado.
+  const normPhone = input.phone ? normalizePhoneSV(input.phone) ?? undefined : undefined;
+  const { data, error } = await supabase.rpc('find_patient_match_candidates', {
+    p_clinic_id: input.clinicId,
+    p_phone: normPhone,
+    p_document_type: input.documentType ?? undefined,
+    p_document_number: input.documentNumber ?? undefined,
+  });
+  if (error) throw error;
+  const r = (data ?? null) as unknown as PatientMatchResult | null;
+  return {
+    intra_clinic: r?.intra_clinic ?? [],
+    cross_clinic: r?.cross_clinic ?? { match: 'none' },
+  };
+}
+
 /**
  * Actualiza datos editables de un paciente.
  */

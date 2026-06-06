@@ -16,6 +16,7 @@ import { calendarKeys } from '@/hooks/useCalendarAppointments';
 import { appointmentKeys } from '@/hooks/appointments.hooks';
 import { friendlyErrorMessage } from '@/lib/errors';
 import { DuplicatePhoneError } from '@/services/patients.service';
+import PatientMatchHints from '@/components/PatientMatchHints';
 
 // ─── Constantes ───────────────────────────────────────────────────────
 const DURATION_OPTIONS = [
@@ -441,6 +442,17 @@ export default function CreateWalkInModal({
                       Para evitar duplicados, el teléfono es obligatorio. Otros datos
                       del paciente se pueden completar después desde su perfil.
                     </p>
+
+                    {/* Dedup preventivo (Fase 5): avisa si la persona quizá ya existe. */}
+                    {clinicId && (
+                      <PatientMatchHints
+                        clinicId={clinicId}
+                        phone={newPatientPhone}
+                        onUseExisting={(c) =>
+                          handleSelectPatient({ id: c.id, full_name: c.full_name, phone: c.phone })
+                        }
+                      />
+                    )}
                   </div>
                 )}
               </section>
