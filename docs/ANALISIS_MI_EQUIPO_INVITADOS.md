@@ -7,7 +7,8 @@
 > - **Fase 0** (gate clínico del asistente) ✅ live — PR #67/`s7_26`.
 > - **Fase 1** (límite 2 asistentes, conteo activos+pendientes, enforcement
 >   server-side) ✅ live — PR #70/`s7_27`.
-> - **Fase 2** (ciclo de vida de invitación) ✅ backend live — PR (s7_36).
+> - **Fase 2** (ciclo de vida de invitación) ✅ **COMPLETA** — backend PR #102
+>   (`s7_36`) + UI PR #103 (`EquipoPage`).
 >   Decisiones cerradas por el owner (2026-06-06):
 >   - **TTL = 14 días** (`invitation_ttl()`); "vencida" = estado **derivado**
 >     (`expires_at < now()`), sin cron ni Edge Function.
@@ -20,7 +21,9 @@
 >     `expires_at > now()`); pendientes vigentes y asistentes activos sí.
 >   - El UNIQUE parcial bloquea crear otra pendiente para el mismo teléfono →
 >     el camino para una vencida es **Reenviar**, no "invitar de nuevo".
->   - ⏳ UI (estados visibles, "expira en N días", botón Reenviar, copy) = PR-2.
+>   - ✅ UI (#103): pendientes **vigentes** ("expira en N días", Reenviar, Cancelar)
+>     vs **vencidas** (badge "Vencida", Reenviar primario); contador alineado
+>     (vigentes + activos); copy de seguridad reforzado.
 >
 > Acompaña a:
 > - `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` — los asientos del equipo son un
@@ -360,13 +363,14 @@ enganchar**:
   `included_assistants=2` + conteo (miembros activos + invitaciones
   pendientes) + enforcement en crear-invitación y en `accept_*` +
   trigger/constraint defensivo. UI: contador de cupos `n/2`.
-- **Fase 2 — Ciclo de vida de invitación:** ✅ **backend live (`s7_36`)** —
-  `expires_at` (TTL 14d, default + backfill), "vencida" derivada
-  (`expires_at < now()`), `team_seats_used` excluye vencidas, `accept_*` ignora
-  vencidas, RPC `resend_invitation` (titular, revalida cupo si estaba vencida,
-  extiende la misma fila), auditoría por el trigger existente. ⏳ UI (PR-2):
-  estados visibles, "expira en N días", botón Reenviar, copy. Colisión de phone
-  (Q8) sigue pendiente para una fase posterior.
+- **Fase 2 — Ciclo de vida de invitación:** ✅ **COMPLETA** — backend `s7_36`
+  (PR #102) + UI (PR #103). `expires_at` (TTL 14d, default + backfill), "vencida"
+  derivada (`expires_at < now()`), `team_seats_used` excluye vencidas, `accept_*`
+  ignora vencidas, RPC `resend_invitation` (titular, revalida cupo si estaba
+  vencida, extiende la misma fila), auditoría por el trigger existente. UI:
+  vigentes ("expira en N días", Reenviar, Cancelar) vs vencidas (badge "Vencida",
+  Reenviar primario), contador alineado, copy de seguridad. Smoke `s7_36` 8/8 +
+  OK visual. Colisión de phone (Q8) sigue pendiente para una fase posterior.
 - **Fase 3 — Permisos finos del asistente:** confirmar/ajustar RLS
   operativa (citas, waitlist, pacientes-agenda) + notas administrativas
   (Q5) + bloquear config crítica (Q6).
