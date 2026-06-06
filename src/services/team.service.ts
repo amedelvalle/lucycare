@@ -20,6 +20,7 @@ export interface PendingInvitation {
   display_name: string | null;
   role: 'owner' | 'doctor' | 'assistant';
   invited_at: string;
+  expires_at: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ export async function getTeamMembers(clinicId: string): Promise<TeamMember[]> {
 export async function getPendingInvitations(clinicId: string): Promise<PendingInvitation[]> {
   const { data, error } = await supabase
     .from('clinic_invitations')
-    .select('id, clinic_id, phone, display_name, role, invited_at')
+    .select('id, clinic_id, phone, display_name, role, invited_at, expires_at')
     .eq('clinic_id', clinicId)
     .is('accepted_at', null)
     .is('cancelled_at', null)
@@ -145,6 +146,25 @@ export async function cancelInvitation(invitationId: string): Promise<void> {
     .update({ cancelled_at: new Date().toISOString() })
     .eq('id', invitationId);
   if (error) throw error;
+}
+
+/**
+ * Reenvía (extiende) una invitación pendiente vía RPC `resend_invitation`
+ * (s7_36). Extiende `expires_at` 14 días sobre la MISMA fila. Si la invitación
+ * estaba vencida, el backend revalida el cupo antes de revivirla (si no hay
+ * cupo, lanza P0001). Devuelve el nuevo `expires_at`.
+ */
+export async function resendInvitation(invitationId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('resend_invitation', {
+    p_invitation_id: invitationId,
+  });
+  if (error) {
+    if (error.code === 'P0001') {
+      throw new Error(error.message || 'No se pudo reenviar la invitación.');
+    }
+    throw error;
+  }
+  return data as string;
 }
 
 /**
