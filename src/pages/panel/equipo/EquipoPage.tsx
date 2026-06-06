@@ -5,6 +5,7 @@ import {
   usePendingInvitations,
   useInviteMember,
   useCancelInvitation,
+  useResendInvitation,
   useSetMemberActive,
 } from '@/hooks/useTeam';
 import { normalizePhone, isValidPhone } from '@/services/team.service';
@@ -73,9 +74,11 @@ function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => 
   const { data: members = [] } = useTeamMembers(clinicId);
   const { data: pending = [] } = usePendingInvitations(clinicId);
 
-  // Conteo (D2): asistentes activos + invitaciones pendientes.
+  // Conteo (D2): asistentes activos + invitaciones pendientes VIGENTES.
+  // Las vencidas no consumen cupo (alineado con team_seats_used de s7_36).
   const activeAssistants = members.filter((m) => m.role === 'assistant' && m.is_active).length;
-  const used = activeAssistants + pending.length;
+  const pendingVigentes = pending.filter((inv) => !isExpired(inv.expires_at)).length;
+  const used = activeAssistants + pendingVigentes;
   const atLimit = used >= INCLUDED_ASSISTANTS;
 
   return (
@@ -84,8 +87,9 @@ function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => 
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mi equipo</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Personas con acceso a tu clínica. Las asistentes pueden gestionar
-            citas y pacientes pero no firman consultas.
+            Personas con acceso a tu clínica. Las asistentes ayudan en la agenda
+            y la operación; <span className="font-medium text-gray-600">no firman
+            consultas ni realizan atención médica</span>.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
@@ -110,7 +114,8 @@ function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => 
         </div>
       )}
       <p className="text-[11px] text-gray-400 mt-1.5">
-        El conteo incluye asistentes activos e invitaciones pendientes.
+        El conteo incluye asistentes activos e invitaciones pendientes vigentes.
+        Las invitaciones vencidas no ocupan cupo.
       </p>
     </div>
   );
@@ -119,8 +124,32 @@ function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => 
 function PendingInvitationsList({ clinicId }: { clinicId: string }) {
   const { data: pending = [] } = usePendingInvitations(clinicId);
   const cancelMutation = useCancelInvitation(clinicId);
+  const resendMutation = useResendInvitation(clinicId);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ id: string; type: 'ok' | 'err'; msg: string } | null>(null);
 
   if (pending.length === 0) return null;
+
+  const vigentes = pending.filter((inv) => !isExpired(inv.expires_at));
+  const vencidas = pending.filter((inv) => isExpired(inv.expires_at));
+
+  function handleResend(inv: PendingInvitation) {
+    setActingId(inv.id);
+    setFeedback(null);
+    resendMutation.mutate(inv.id, {
+      onSuccess: () =>
+        setFeedback({ id: inv.id, type: 'ok', msg: 'Invitación reenviada — vuelve a expirar en 14 días.' }),
+      onError: (e) =>
+        setFeedback({ id: inv.id, type: 'err', msg: e instanceof Error ? e.message : 'No se pudo reenviar.' }),
+      onSettled: () => setActingId(null),
+    });
+  }
+
+  function handleCancel(inv: PendingInvitation) {
+    setActingId(inv.id);
+    setFeedback(null);
+    cancelMutation.mutate(inv.id, { onSettled: () => setActingId(null) });
+  }
 
   return (
     <section className="mb-6">
@@ -128,38 +157,113 @@ function PendingInvitationsList({ clinicId }: { clinicId: string }) {
         Invitaciones pendientes ({pending.length})
       </h2>
       <ul className="space-y-2">
-        {pending.map((inv) => (
-          <li
+        {vigentes.map((inv) => (
+          <PendingRow
             key={inv.id}
-            className="bg-amber-50/50 border border-amber-200 rounded-lg p-3 flex items-center gap-3"
-          >
-            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900">
-                {inv.display_name || inv.phone}
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {inv.display_name ? `${inv.phone} · ` : ''}
-                Esperando que ingrese con OTP · {formatRelative(inv.invited_at)}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => cancelMutation.mutate(inv.id)}
-              disabled={cancelMutation.isPending}
-            >
-              Cancelar
-            </Button>
-          </li>
+            inv={inv}
+            expired={false}
+            acting={actingId === inv.id}
+            feedback={feedback?.id === inv.id ? feedback : null}
+            onResend={() => handleResend(inv)}
+            onCancel={() => handleCancel(inv)}
+          />
+        ))}
+        {vencidas.map((inv) => (
+          <PendingRow
+            key={inv.id}
+            inv={inv}
+            expired
+            acting={actingId === inv.id}
+            feedback={feedback?.id === inv.id ? feedback : null}
+            onResend={() => handleResend(inv)}
+            onCancel={() => handleCancel(inv)}
+          />
         ))}
       </ul>
     </section>
+  );
+}
+
+function PendingRow({
+  inv,
+  expired,
+  acting,
+  feedback,
+  onResend,
+  onCancel,
+}: {
+  inv: PendingInvitation;
+  expired: boolean;
+  acting: boolean;
+  feedback: { type: 'ok' | 'err'; msg: string } | null;
+  onResend: () => void;
+  onCancel: () => void;
+}) {
+  const days = daysUntil(inv.expires_at);
+  return (
+    <li
+      className={`rounded-lg p-3 border ${
+        expired ? 'bg-gray-50 border-gray-200' : 'bg-amber-50/50 border-amber-200'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+            expired ? 'bg-gray-200' : 'bg-amber-100'
+          }`}
+        >
+          <svg
+            className={`w-5 h-5 ${expired ? 'text-gray-500' : 'text-amber-700'}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {inv.display_name || inv.phone}
+            </p>
+            {expired && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-200 text-gray-700">
+                Vencida
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {inv.display_name ? `${inv.phone} · ` : ''}
+            {expired
+              ? 'Vencida — reenviá para renovar'
+              : `Esperando que ingrese con OTP · ${expiryLabel(days)}`}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <Button
+            variant={expired ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={onResend}
+            disabled={acting}
+          >
+            Reenviar
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onCancel} disabled={acting}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
+      {feedback && (
+        <p
+          className={`text-xs mt-2 ${
+            feedback.type === 'ok' ? 'text-emerald-700' : 'text-red-600'
+          }`}
+        >
+          {feedback.msg}
+        </p>
+      )}
+    </li>
   );
 }
 
@@ -439,13 +543,18 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-function formatRelative(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return 'recién';
-  if (min < 60) return `hace ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `hace ${h}h`;
-  const d = Math.floor(h / 24);
-  return `hace ${d}d`;
+function isExpired(iso: string): boolean {
+  return new Date(iso).getTime() <= Date.now();
 }
+
+/** Días enteros (hacia arriba) hasta la expiración. >0 si vigente. */
+function daysUntil(iso: string): number {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+}
+
+function expiryLabel(days: number): string {
+  if (days <= 0) return 'expira hoy';
+  if (days === 1) return 'expira mañana';
+  return `expira en ${days} días`;
+}
+

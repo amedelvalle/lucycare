@@ -4,6 +4,7 @@ import {
   getPendingInvitations,
   inviteMember,
   cancelInvitation,
+  resendInvitation,
   setMemberActive,
 } from '@/services/team.service';
 
@@ -45,6 +46,16 @@ export function useCancelInvitation(clinicId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (invitationId: string) => cancelInvitation(invitationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamKeys.pending(clinicId) });
+    },
+  });
+}
+
+export function useResendInvitation(clinicId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) => resendInvitation(invitationId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: teamKeys.pending(clinicId) });
     },
