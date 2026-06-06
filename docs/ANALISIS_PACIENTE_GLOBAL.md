@@ -27,9 +27,13 @@
 >   sincroniza `profiles.phone` + `patients.phone` vinculados (bypass del guard)
 >   + audit; `ChangePhoneModal` reusable. Sesión activa + OTP solo al nuevo;
 >   recuperación sin sesión → soporte/LucyAdmin.
-> - **Fase 5 ⏳ en diseño** (PR-0 docs, 2026-06-05): dedup **preventivo** en
->   creación de paciente/walk-in. Decisiones de privacidad cerradas (ver
->   § Fase 5). **Solo previene/advierte — no fusiona ni sincroniza** (eso es F4).
+> - **Fase 5 ✅ live** (PR #98 diseño + PR #99/`s7_35` backend + PR #100 UI): dedup
+>   **preventivo** en creación de paciente/walk-in. RPC `find_patient_match_candidates`
+>   (`SECURITY DEFINER`): intra-clínica con detalle, cross-clínica/global solo
+>   señal mínima (`weak`/`strong`, **sin PII**), gate `is_clinic_member`/`is_admin`,
+>   **advisory** (no bloquea). UI `PatientMatchHints` + `DuplicateDocumentError`.
+>   Teléfono normalizado con `normalizePhoneSV` (lookup y submit alineados).
+>   **Solo previene/advierte — no fusiona ni sincroniza** (eso es F4).
 > - **Fase 4 ⏳ en cola.**
 > - **Decisiones DA1-DA4 firmadas** (§ "Decisiones cerradas" abajo) se respetan.
 
@@ -422,11 +426,24 @@ Audit log + dry-run obligatorios. Solo admin.
 
 **Tamaño:** 1 PR grande (RPC + audit + UI admin).
 
-### Fase 5 — Dedup preventivo en creación
+### Fase 5 — Dedup preventivo en creación ✅ LIVE (#98 diseño + #99/`s7_35` + #100 UI)
 
-> **Diseño cerrado 2026-06-05 (PR-0 docs).** Decisiones de privacidad y de
-> alcance abajo. **F5 es prevención, NO merge ni sync** — fusionar duplicados
-> existentes y copiar identidad global→local son Fase 4 / diseño posterior.
+> **✅ Implementada.** Diseño PR #98 · backend RPC `find_patient_match_candidates`
+> (`s7_35`) PR #99 · UI `PatientMatchHints` PR #100. Smoke `s7_35` 8/8 + OK visual.
+> **F5 es prevención, NO merge ni sync** — fusionar duplicados existentes y copiar
+> identidad global→local son Fase 4 / diseño posterior. El diseño abajo se mantuvo
+> tal cual al implementar.
+>
+> **Notas de implementación:**
+> - El teléfono se normaliza con `normalizePhoneSV` en el servicio **antes** de la
+>   RPC (mismo helper que `createBasicPatient`), para que el lookup preventivo y el
+>   dedup del INSERT detecten lo mismo (un input local de 8 dígitos `71234567`
+>   matchea el canónico `50371234567`). Sin esto el panel decía "Sin coincidencias"
+>   aunque el submit sí detectaba el duplicado.
+> - `createBasicPatient` suma un chequeo proactivo de **documento** intra-clínica
+>   (`DuplicateDocumentError`, banner amable) que anticipa el `UNIQUE` de la DB.
+> - **Pendiente no-bloqueante:** hacer la RPC tolerante a teléfono crudo en SQL
+>   (defensa en profundidad, futura migración) — hoy el caller normaliza.
 
 **Objetivo:** reducir la creación de duplicados *de entrada*, ayudando al
 médico/asistente a darse cuenta de que la persona que está por crear quizá ya
