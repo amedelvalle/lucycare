@@ -65,25 +65,49 @@ export const DIAGNOSIS_STATUSES: { value: DiagnosisStatus; label: string }[] = [
   { value: 'resuelto', label: 'Resuelto' },
 ];
 
+// SELECT compartido: JOIN al catálogo vivo + snapshot histórico (s7_37).
+// La lectura prefiere el snapshot (nombre congelado al diagnosticar); cae al
+// catálogo vivo solo si el snapshot es NULL (pre-backfill).
+const DIAGNOSIS_SELECT = `
+  id,
+  consultation_id,
+  diagnosis_id,
+  diagnosis_type,
+  diagnosis_status,
+  notes,
+  diagnosis_name_snapshot,
+  diagnosis:diagnoses(id, name, description)
+`;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapDiagnosis(row: any): ConsultationDiagnosis {
+  const dx = row.diagnosis ?? null;
+  return {
+    id: row.id,
+    consultation_id: row.consultation_id,
+    diagnosis_id: row.diagnosis_id,
+    diagnosis_type: row.diagnosis_type,
+    diagnosis_status: row.diagnosis_status,
+    notes: row.notes,
+    diagnosis: {
+      id: dx?.id ?? row.diagnosis_id,
+      name: row.diagnosis_name_snapshot ?? dx?.name ?? '',
+      description: dx?.description ?? null,
+    },
+  };
+}
+
 export async function getConsultationDiagnoses(
   consultationId: string
 ): Promise<ConsultationDiagnosis[]> {
   const { data, error } = await supabase
     .from('consultation_diagnoses')
-    .select(`
-      id,
-      consultation_id,
-      diagnosis_id,
-      diagnosis_type,
-      diagnosis_status,
-      notes,
-      diagnosis:diagnoses(id, name, description)
-    `)
+    .select(DIAGNOSIS_SELECT)
     .eq('consultation_id', consultationId)
     .order('id', { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as unknown as ConsultationDiagnosis[];
+  return (data ?? []).map(mapDiagnosis);
 }
 
 export async function addConsultationDiagnosis(
@@ -103,15 +127,7 @@ export async function addConsultationDiagnosis(
       diagnosis_status: status,
       notes: notes?.trim() || null,
     })
-    .select(`
-      id,
-      consultation_id,
-      diagnosis_id,
-      diagnosis_type,
-      diagnosis_status,
-      notes,
-      diagnosis:diagnoses(id, name, description)
-    `)
+    .select(DIAGNOSIS_SELECT)
     .single();
 
   if (error) throw error;
@@ -119,7 +135,7 @@ export async function addConsultationDiagnosis(
   // Incrementar usage_count en background — no bloquea
   incrementDiagnosisUsage(diagnosisId).catch(() => {});
 
-  return data as unknown as ConsultationDiagnosis;
+  return mapDiagnosis(data);
 }
 
 export async function updateConsultationDiagnosis(

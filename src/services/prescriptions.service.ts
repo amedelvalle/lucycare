@@ -60,22 +60,56 @@ export const DURATION_UNITS: { value: DurationUnit; label: string }[] = [
   { value: 'permanente', label: 'permanente' },
 ];
 
+// SELECT compartido: incluye el JOIN al catálogo (vivo) Y los snapshots
+// históricos (s7_37). La lectura prefiere el snapshot (texto congelado al
+// recetar); cae al catálogo vivo solo si el snapshot es NULL (datos
+// pre-backfill). Así editar el catálogo no altera recetas históricas/firmadas.
+const PRESCRIPTION_SELECT = `
+  id,
+  consultation_id,
+  medication_id,
+  dosage,
+  frequency,
+  duration_value,
+  duration_unit,
+  instructions,
+  alternatives,
+  version,
+  medication_name_snapshot,
+  active_ingredient_snapshot,
+  concentration_snapshot,
+  presentation_snapshot,
+  medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
+`;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapPrescription(row: any): Prescription {
+  const med = row.medication ?? null;
+  return {
+    id: row.id,
+    consultation_id: row.consultation_id,
+    medication_id: row.medication_id,
+    dosage: row.dosage,
+    frequency: row.frequency,
+    duration_value: row.duration_value,
+    duration_unit: row.duration_unit,
+    instructions: row.instructions,
+    alternatives: row.alternatives,
+    version: row.version,
+    medication: {
+      id: med?.id ?? row.medication_id,
+      commercial_name: row.medication_name_snapshot ?? med?.commercial_name ?? '',
+      active_ingredient: row.active_ingredient_snapshot ?? med?.active_ingredient ?? null,
+      concentration: row.concentration_snapshot ?? med?.concentration ?? null,
+      presentation: row.presentation_snapshot ?? med?.presentation ?? null,
+    },
+  };
+}
+
 export async function getPrescriptions(consultationId: string): Promise<Prescription[]> {
   const { data, error } = await supabase
     .from('prescriptions')
-    .select(`
-      id,
-      consultation_id,
-      medication_id,
-      dosage,
-      frequency,
-      duration_value,
-      duration_unit,
-      instructions,
-      alternatives,
-      version,
-      medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
-    `)
+    .select(PRESCRIPTION_SELECT)
     .eq('consultation_id', consultationId)
     // Solo la receta VIGENTE: tras una corrección (amend_consultation), la
     // versión anterior queda is_current=false (histórica) y se conserva la v2.
@@ -84,7 +118,7 @@ export async function getPrescriptions(consultationId: string): Promise<Prescrip
     .order('id', { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as unknown as Prescription[];
+  return (data ?? []).map(mapPrescription);
 }
 
 /**
@@ -116,19 +150,7 @@ export async function getPermanentPrescriptionsForPatient(
   // 2. Prescripciones permanentes de esas consultas
   const { data, error } = await supabase
     .from('prescriptions')
-    .select(`
-      id,
-      consultation_id,
-      medication_id,
-      dosage,
-      frequency,
-      duration_value,
-      duration_unit,
-      instructions,
-      alternatives,
-      version,
-      medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
-    `)
+    .select(PRESCRIPTION_SELECT)
     .in('consultation_id', consultIds)
     .eq('duration_unit', 'permanente')
     // Solo recetas vigentes: si una permanente fue corregida, vale la v2.
@@ -141,7 +163,7 @@ export async function getPermanentPrescriptionsForPatient(
   consultIds.forEach((id, idx) => order.set(id, idx));
 
   const byMed = new Map<string, Prescription>();
-  for (const p of (data ?? []) as unknown as Prescription[]) {
+  for (const p of (data ?? []).map(mapPrescription)) {
     const existing = byMed.get(p.medication_id);
     if (!existing) {
       byMed.set(p.medication_id, p);
@@ -172,26 +194,14 @@ export async function addPrescription(
       instructions: input.instructions?.trim() || null,
       alternatives: input.alternatives?.trim() || null,
     })
-    .select(`
-      id,
-      consultation_id,
-      medication_id,
-      dosage,
-      frequency,
-      duration_value,
-      duration_unit,
-      instructions,
-      alternatives,
-      version,
-      medication:medications(id, commercial_name, active_ingredient, concentration, presentation)
-    `)
+    .select(PRESCRIPTION_SELECT)
     .single();
 
   if (error) throw error;
 
   incrementMedicationUsage(input.medication_id).catch(() => {});
 
-  return data as unknown as Prescription;
+  return mapPrescription(data);
 }
 
 export async function updatePrescription(
