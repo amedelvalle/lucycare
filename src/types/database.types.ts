@@ -405,6 +405,7 @@ export type Database = {
           cancelled_at: string | null
           clinic_id: string
           display_name: string | null
+          expires_at: string
           id: string
           invited_at: string
           invited_by: string
@@ -416,6 +417,7 @@ export type Database = {
           cancelled_at?: string | null
           clinic_id: string
           display_name?: string | null
+          expires_at?: string
           id?: string
           invited_at?: string
           invited_by: string
@@ -427,6 +429,7 @@ export type Database = {
           cancelled_at?: string | null
           clinic_id?: string
           display_name?: string | null
+          expires_at?: string
           id?: string
           invited_at?: string
           invited_by?: string
@@ -1567,6 +1570,7 @@ export type Database = {
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]
       }
+      invitation_ttl: { Args: never; Returns: unknown }
       is_clinic_member: { Args: { p_clinic_id: string }; Returns: boolean }
       is_clinic_member_with_role: {
         Args: {
@@ -1575,6 +1579,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      resend_invitation: { Args: { p_invitation_id: string }; Returns: string }
     }
     Enums: {
       appointment_source: "manual" | "lucy_directorio" | "lucy_seguimiento"
