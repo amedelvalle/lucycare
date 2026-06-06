@@ -28,7 +28,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo (Fase 2 ✅ live).
 - `docs/ANALISIS_AUTH_MEDICO.md` — plan auth email+password (PR-A ✅ live, PR-B en cola).
 - `docs/ANALISIS_DIRECTORIO_INFORMATIVO.md` — modelo comercial del directorio.
-- `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de identidad de paciente (Fases 1, 2 y 3 ✅ live; 4-5 en cola).
+- `docs/ANALISIS_PACIENTE_GLOBAL.md` — modelo de identidad de paciente (Fases 1, 2, 3 y 5 ✅ live; 4 en cola).
+- `docs/ANALISIS_CATALOGOS_PERSONALIZADOS.md` — catálogo global Lucy + personal por médico + snapshot histórico (decisiones cerradas; PR-0 ✅, PR-1..5 en cola).
 - `docs/FASE_4_AUTH_EMAIL.md` — guía operativa Supabase URL/email config.
 - `docs/SETUP_SMTP_RESEND.md` — Resend como SMTP custom de Supabase Auth (✅ live desde 2026-05-26, dominio `lucycare.app`).
 - `docs/CUENTA_DEMO_CAMILO.md` — credenciales y reglas de la cuenta demo oficial.
@@ -314,7 +315,7 @@ Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 - **Filtro "Ordenar por" del Home** — ✅ corregido: la opción muerta "Más cercanos" se removió (no había lat/lng ni geolocalización; caía al orden default). Quedan "Disponibilidad/Mejor coincidencia" (orden server: booking_enabled→verified→created_at) y "Mejor valorados" (score ajustado), ambas funcionales. **Backlog:** reintroducir "Más cercanos" cuando exista lat/lng en `clinics` + ubicación del usuario + UX de permisos de geolocalización (no proxy por municipio — no es cercanía real).
 - **Paginación / carga dinámica del Home** cuando haya muchos médicos (hoy carga todos).
 - ~~**Mi equipo / invitados del médico** — máximo inicial **2 asistentes**~~ → ✅ **hecho (PR #70, `s7_27`)**: límite base 2 activo, conteo activos+pendientes, enforcement server-side (trigger + accept revalida), UI con contador `n/2`. Usuarios adicionales = add-on, pendiente de la fase de pagos. **Fase 2 (ciclo de vida: expiración/reenvío de invitaciones) ✅ hecha (PR #102 `s7_36` + #103 UI).**
-- **Catálogos personalizados por médico** para diagnósticos y medicamentos.
+- **Catálogos personalizados por médico** para diagnósticos y medicamentos — **diseño cerrado** en `docs/ANALISIS_CATALOGOS_PERSONALIZADOS.md` (PR-0 ✅). Modelo: catálogo global Lucy (curado por LucyAdmin, read-only) + personal por médico + ocultar/clonar globales + **snapshot histórico** de nombre en receta/diagnóstico (integridad con consulta firmada). Orden: PR-1 snapshot histórico → PR-2 global/personal+RLS → PR-3 UI consulta → PR-4 UI admin → PR-5 de-dup de la base replicada. Hoy ambos catálogos ya son per-médico (sin global compartido; el "base" está replicado por médico).
 - **Flujo legal/comercial de DUI médico, términos y aceptación formal** pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 - **Manejo de email en afiliación/onboarding médico** (override ya existe en Fase 2; falta self-service de cambio post-reclamo, Fase Auth post-piloto).
 - **Error handling en PanelLayout / useClinicContext** — mitigado en PR #61: ahora muestra "Reintentar" en vez de spinner colgado si `useClinicContext` falla. Queda como follow-up entender la causa raíz del fallo de primera carga (posible race de sesión).
