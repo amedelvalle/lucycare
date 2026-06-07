@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { hideGlobalCatalogItem } from './catalogShared.service';
 
 export type MedicationPresentation =
   | 'tableta'
@@ -25,6 +26,11 @@ export interface MedicationCatalogItem {
   presentation: MedicationPresentation | null;
   is_active: boolean;
   usage_count: number;
+}
+
+/** Ítem global con el flag de si este médico lo ocultó. */
+export interface GlobalMedicationItem extends MedicationCatalogItem {
+  hidden: boolean;
 }
 
 export const PRESENTATIONS: { value: MedicationPresentation; label: string }[] = [
@@ -193,6 +199,74 @@ export async function listAllMedications(
 
   if (error) throw error;
   return { items: data ?? [], total: count ?? 0, page, pageSize };
+}
+
+/**
+ * Lista paginada de medicamentos GLOBALES (base Lucy, `doctor_id IS NULL`,
+ * activos), con el flag `hidden` por médico. Read-only para el médico.
+ */
+export async function listGlobalMedications(
+  doctorId: string,
+  options?: { search?: string; page?: number; pageSize?: number }
+): Promise<PaginatedResult<GlobalMedicationItem>> {
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = options?.pageSize ?? 50;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let q = supabase
+    .from('medications')
+    .select(
+      'id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count',
+      { count: 'exact' }
+    )
+    .is('doctor_id', null)
+    .eq('is_active', true);
+
+  const trimmed = options?.search?.trim() ?? '';
+  if (trimmed.length >= 1) {
+    const escaped = trimmed.replace(/[%_]/g, '\\$&');
+    q = q.or(`commercial_name.ilike.%${escaped}%,active_ingredient.ilike.%${escaped}%`);
+  }
+
+  const { data, error, count } = await q.order('commercial_name').range(from, to);
+  if (error) throw error;
+
+  const hidden = new Set(await getHiddenGlobalMedIds(doctorId));
+  const items = (data ?? []).map((m) => ({ ...m, hidden: hidden.has(m.id) }));
+  return { items, total: count ?? 0, page, pageSize };
+}
+
+/**
+ * Clona un medicamento GLOBAL al catálogo personal del médico (copia editable)
+ * y oculta el global para ese médico. PR-4.
+ */
+export async function cloneMedicationToOwn(
+  doctorId: string,
+  global: {
+    id: string;
+    commercial_name: string;
+    active_ingredient: string | null;
+    concentration: string | null;
+    presentation: MedicationPresentation | null;
+  }
+): Promise<MedicationCatalogItem> {
+  const { data, error } = await supabase
+    .from('medications')
+    .insert({
+      doctor_id: doctorId,
+      commercial_name: global.commercial_name,
+      active_ingredient: global.active_ingredient ?? null,
+      concentration: global.concentration ?? null,
+      presentation: global.presentation ?? null,
+      is_active: true,
+      usage_count: 0,
+    })
+    .select('id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count')
+    .single();
+  if (error) throw error;
+  await hideGlobalCatalogItem(doctorId, 'medication', global.id);
+  return data;
 }
 
 export async function updateMedication(

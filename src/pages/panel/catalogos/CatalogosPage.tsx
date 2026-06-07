@@ -7,17 +7,27 @@ import {
   useUpdateMedication,
   useFamilyHistoryAll,
   useUpdateFamilyHistory,
+  useGlobalDiagnoses,
+  useGlobalMedications,
+  useHideCatalogItem,
+  useUnhideCatalogItem,
+  useCloneDiagnosisToOwn,
+  useCloneMedicationToOwn,
 } from '@/hooks/useCatalogs';
 import {
   useCreateDiagnosis,
   useCreateMedication,
   useCreateFamilyHistory,
 } from '@/hooks/useConsultation';
-import type { DiagnosisCatalogItem } from '@/services/diagnosesCatalog.service';
+import type {
+  DiagnosisCatalogItem,
+  GlobalDiagnosisItem,
+} from '@/services/diagnosesCatalog.service';
 import type { FamilyHistoryCatalogItem } from '@/services/familyHistoryCatalog.service';
 import {
   PRESENTATIONS,
   type MedicationCatalogItem,
+  type GlobalMedicationItem,
   type MedicationPresentation,
 } from '@/services/medicationsCatalog.service';
 import Button from '@/components/ui/Button';
@@ -32,6 +42,7 @@ const PlusIcon = () => (
 );
 
 type Tab = 'diagnosticos' | 'medicamentos' | 'antecedentes';
+type CatalogView = 'mine' | 'lucy';
 
 export default function CatalogosPage() {
   const { data: ctx, isLoading: loadingCtx } = useClinicContext();
@@ -54,6 +65,19 @@ export default function CatalogosPage() {
       <div className="max-w-4xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-sm text-red-700">No se encontró contexto de clínica.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Solo el médico administra sus catálogos (RLS es la defensa real; esto es UX).
+  if (ctx.role !== 'doctor') {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <p className="text-sm text-amber-700">
+            Solo el médico puede gestionar sus catálogos.
+          </p>
         </div>
       </div>
     );
@@ -93,6 +117,20 @@ export default function CatalogosPage() {
 // ─── Tab: Diagnósticos ────────────────────────────────────────────────
 
 function DiagnosesTab({ doctorId }: { doctorId: string }) {
+  const [view, setView] = useState<CatalogView>('mine');
+  return (
+    <>
+      <SegmentControl value={view} onChange={setView} />
+      {view === 'mine' ? (
+        <MineDiagnosesTab doctorId={doctorId} />
+      ) : (
+        <GlobalDiagnosesView doctorId={doctorId} />
+      )}
+    </>
+  );
+}
+
+function MineDiagnosesTab({ doctorId }: { doctorId: string }) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -303,6 +341,20 @@ function DiagnosisFormModal({
 // ─── Tab: Medicamentos ────────────────────────────────────────────────
 
 function MedicationsTab({ doctorId }: { doctorId: string }) {
+  const [view, setView] = useState<CatalogView>('mine');
+  return (
+    <>
+      <SegmentControl value={view} onChange={setView} />
+      {view === 'mine' ? (
+        <MineMedicationsTab doctorId={doctorId} />
+      ) : (
+        <GlobalMedicationsView doctorId={doctorId} />
+      )}
+    </>
+  );
+}
+
+function MineMedicationsTab({ doctorId }: { doctorId: string }) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -765,6 +817,241 @@ function FamilyHistoryFormModal({
         </div>
       </form>
     </ModalShell>
+  );
+}
+
+// ─── Segmento Míos / Base Lucy ────────────────────────────────────────
+
+function SegmentControl({ value, onChange }: { value: CatalogView; onChange: (v: CatalogView) => void }) {
+  const opt = (v: CatalogView, label: string) => (
+    <button
+      type="button"
+      onClick={() => onChange(v)}
+      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+        value === v ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="inline-flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+      {opt('mine', 'Míos')}
+      {opt('lucy', 'Base Lucy')}
+    </div>
+  );
+}
+
+function GlobalInfoBanner() {
+  return (
+    <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3">
+      Catálogo base de Lucy (solo lectura). Podés <strong>ocultar</strong> lo que no
+      uses o <strong>clonar a tu catálogo</strong> para adaptarlo a tu nomenclatura.
+    </p>
+  );
+}
+
+function GlobalSearch({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="relative mb-4">
+      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
+      />
+    </div>
+  );
+}
+
+function LucyBadge() {
+  return <span className="flex-shrink-0 text-[10px] font-normal text-gray-400">Base Lucy</span>;
+}
+
+function GlobalActions({
+  hidden,
+  busy,
+  onHide,
+  onUnhide,
+  onClone,
+}: {
+  hidden: boolean;
+  busy: boolean;
+  onHide: () => void;
+  onUnhide: () => void;
+  onClone: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      {hidden ? (
+        <Button variant="subtle" size="sm" onClick={onUnhide} disabled={busy}>Mostrar</Button>
+      ) : (
+        <Button variant="secondary" size="sm" onClick={onHide} disabled={busy}>Ocultar</Button>
+      )}
+      <Button variant="subtle" size="sm" onClick={onClone} disabled={busy}>Clonar a propio</Button>
+    </div>
+  );
+}
+
+function GlobalDiagnosesView({ doctorId }: { doctorId: string }) {
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 250); return () => clearTimeout(t); }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const { data, isLoading } = useGlobalDiagnoses(doctorId, debouncedSearch, page, PAGE_SIZE);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const hide = useHideCatalogItem(doctorId);
+  const unhide = useUnhideCatalogItem(doctorId);
+  const clone = useCloneDiagnosisToOwn(doctorId);
+  const busy = hide.isPending || unhide.isPending || clone.isPending;
+
+  return (
+    <>
+      <GlobalInfoBanner />
+      <GlobalSearch value={search} onChange={setSearch} placeholder="Buscar en base Lucy..." />
+      {isLoading && items.length === 0 ? (
+        <SkeletonRows />
+      ) : items.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">
+            {debouncedSearch ? 'Sin resultados en la base Lucy.' : 'Todavía no hay catálogo base de diagnósticos.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {items.map((d) => (
+              <GlobalDiagnosisRow
+                key={d.id}
+                item={d}
+                busy={busy}
+                onHide={() => hide.mutate({ itemType: 'diagnosis', itemId: d.id })}
+                onUnhide={() => unhide.mutate({ itemType: 'diagnosis', itemId: d.id })}
+                onClone={() => clone.mutate({ id: d.id, name: d.name, description: d.description })}
+              />
+            ))}
+          </ul>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage}
+            itemLabel={{ singular: 'diagnóstico', plural: 'diagnósticos' }} />
+        </>
+      )}
+    </>
+  );
+}
+
+function GlobalDiagnosisRow({
+  item, busy, onHide, onUnhide, onClone,
+}: {
+  item: GlobalDiagnosisItem;
+  busy: boolean;
+  onHide: () => void;
+  onUnhide: () => void;
+  onClone: () => void;
+}) {
+  return (
+    <li className={`bg-white rounded-lg border border-gray-200 p-3 flex items-start gap-3 ${item.hidden ? 'opacity-60' : ''}`}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+          <LucyBadge />
+          {item.hidden && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+              Oculto
+            </span>
+          )}
+        </div>
+        {item.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{item.description}</p>}
+      </div>
+      <GlobalActions hidden={item.hidden} busy={busy} onHide={onHide} onUnhide={onUnhide} onClone={onClone} />
+    </li>
+  );
+}
+
+function GlobalMedicationsView({ doctorId }: { doctorId: string }) {
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 250); return () => clearTimeout(t); }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const { data, isLoading } = useGlobalMedications(doctorId, debouncedSearch, page, PAGE_SIZE);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const hide = useHideCatalogItem(doctorId);
+  const unhide = useUnhideCatalogItem(doctorId);
+  const clone = useCloneMedicationToOwn(doctorId);
+  const busy = hide.isPending || unhide.isPending || clone.isPending;
+
+  return (
+    <>
+      <GlobalInfoBanner />
+      <GlobalSearch value={search} onChange={setSearch} placeholder="Buscar en base Lucy..." />
+      {isLoading && items.length === 0 ? (
+        <SkeletonRows />
+      ) : items.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">
+            {debouncedSearch ? 'Sin resultados en la base Lucy.' : 'Todavía no hay catálogo base de medicamentos.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {items.map((m) => (
+              <GlobalMedicationRow
+                key={m.id}
+                item={m}
+                busy={busy}
+                onHide={() => hide.mutate({ itemType: 'medication', itemId: m.id })}
+                onUnhide={() => unhide.mutate({ itemType: 'medication', itemId: m.id })}
+                onClone={() => clone.mutate({
+                  id: m.id, commercial_name: m.commercial_name, active_ingredient: m.active_ingredient,
+                  concentration: m.concentration, presentation: m.presentation,
+                })}
+              />
+            ))}
+          </ul>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage}
+            itemLabel={{ singular: 'medicamento', plural: 'medicamentos' }} />
+        </>
+      )}
+    </>
+  );
+}
+
+function GlobalMedicationRow({
+  item, busy, onHide, onUnhide, onClone,
+}: {
+  item: GlobalMedicationItem;
+  busy: boolean;
+  onHide: () => void;
+  onUnhide: () => void;
+  onClone: () => void;
+}) {
+  const subParts = [item.active_ingredient, item.concentration, item.presentation].filter(Boolean);
+  return (
+    <li className={`bg-white rounded-lg border border-gray-200 p-3 flex items-start gap-3 ${item.hidden ? 'opacity-60' : ''}`}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-gray-900 truncate">{item.commercial_name}</p>
+          <LucyBadge />
+          {item.hidden && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+              Oculto
+            </span>
+          )}
+        </div>
+        {subParts.length > 0 && <p className="text-xs text-gray-500 mt-0.5 truncate">{subParts.join(' · ')}</p>}
+      </div>
+      <GlobalActions hidden={item.hidden} busy={busy} onHide={onHide} onUnhide={onUnhide} onClone={onClone} />
+    </li>
   );
 }
 
