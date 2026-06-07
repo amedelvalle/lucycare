@@ -173,13 +173,7 @@ export default function Combobox<T>({
                       <div className="flex items-center gap-2">
                         <p className="text-sm text-gray-900 flex-1 min-w-0 truncate">{getLabel(it)}</p>
                         {badge && (
-                          <span
-                            className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              badge.tone === 'lucy'
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'bg-emerald-50 text-emerald-700'
-                            }`}
-                          >
+                          <span className="flex-shrink-0 text-[10px] font-normal text-gray-400">
                             {badge.label}
                           </span>
                         )}
