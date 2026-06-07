@@ -6,7 +6,7 @@
 > (`docs/HANDOFF_LUCYCARE_SPRINT7.md`) ni a los análisis vivos
 > (`docs/ANALISIS_*.md`).
 >
-> **Snapshot 2026-06-07** (ejes recién cerrados: **(1) Correcciones post-firma COMPLETO** — 5 bloques clínicos, PRs #74–#85, `s7_28..s7_31`; **(2) Paciente Global Fases 1–3 COMPLETAS** — identidad global (#87/`s7_32`) + UI `/paciente/perfil` (#88) + sync espejo + guard (#90/`s7_33`) + UI médico read-only (#91); **(3) Cambio de teléfono por OTP COMPLETO** — trigger de sync (#93/`s7_34`) + UI paciente (#94) + UI médico (#95); **(4) Paciente Global Fase 5 — dedup preventivo COMPLETO** (#98/#99/`s7_35`/#100); **(5) Mi equipo Fase 2 — ciclo de vida de invitación COMPLETO** (#102/`s7_36` + #103); **(6) Catálogos personalizados por médico — EJE 100% COMPLETO** — global+personal, snapshot histórico, ocultar/clonar, base replicada migrada (#105–#111, `s7_37`/`s7_38`/`s7_39`) + **UI de LucyAdmin para administrar la Base Lucy global (#114, UI-only, sin migración)**. Previo: Afiliación Fase 2 + smoke ✅; análisis pagos SaaS PR #62; ubicación estructurada admin PR #64/`s7_25` ✅ live).
+> **Snapshot 2026-06-07** (ejes recién cerrados: **(1) Correcciones post-firma COMPLETO** — 5 bloques clínicos, PRs #74–#85, `s7_28..s7_31`; **(2) Paciente Global Fases 1–3 COMPLETAS** — identidad global (#87/`s7_32`) + UI `/paciente/perfil` (#88) + sync espejo + guard (#90/`s7_33`) + UI médico read-only (#91); **(3) Cambio de teléfono por OTP COMPLETO** — trigger de sync (#93/`s7_34`) + UI paciente (#94) + UI médico (#95); **(4) Paciente Global Fase 5 — dedup preventivo COMPLETO** (#98/#99/`s7_35`/#100); **(5) Mi equipo Fase 2 — ciclo de vida de invitación COMPLETO** (#102/`s7_36` + #103); **(6) Catálogos personalizados por médico — EJE 100% COMPLETO** — global+personal, snapshot histórico, ocultar/clonar, base replicada migrada (#105–#111, `s7_37`/`s7_38`/`s7_39`) + **UI de LucyAdmin para administrar la Base Lucy global (#114, UI-only, sin migración)**; **(7) Pendiente acotado — robustez PanelLayout/useClinicContext CERRADO (#116)**: `getSession()` en vez de `getUser()` (quita el race de primera carga) + timeout 8s/`.catch()`/estado recuperable (sin spinner infinito) + errores tipados con copy específico para estructurales. Previo: Afiliación Fase 2 + smoke ✅; análisis pagos SaaS PR #62; ubicación estructurada admin PR #64/`s7_25` ✅ live).
 >
 > Objetivo: permitir retomar el proyecto sin reanalizar decisiones ya
 > tomadas.
@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `3946ff1` o posterior (+ el PR documental de cierre de esta ventana), **PRs #1–#114 mergeados**. Migraciones hasta `s7_39` (aplicadas en Supabase; **#114 no trae migración**: es UI-only sobre el backend `s7_37`/`s7_38`/`s7_39` ya existente). Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).** **Paciente Global F5 (dedup preventivo): #98 diseño + #99 (`s7_35`) RPC `find_patient_match_candidates` + #100 UI `PatientMatchHints`.** **Mi equipo F2 (ciclo de vida de invitación): #102 (`s7_36`) backend + #103 UI `EquipoPage`.** **Catálogos personalizados COMPLETO: #105 diseño + #106 (`s7_37`) snapshot + #107 (`s7_38`) global+personal/RLS + #108 UI consulta + #109 UI admin + #110/#111 (`s7_39`) infra + migración de datos aplicada (Base Lucy 127/736, "Míos" solo lo propio, 11218 filas en `catalog_migration_map`).**
+`main` HEAD esperado: `b4fd300` o posterior (+ el PR documental de cierre de esta ventana), **PRs #1–#116 mergeados**. Migraciones hasta `s7_39` (aplicadas en Supabase; **#114 y #116 no traen migración**: #114 UI-only sobre el backend `s7_37`/`s7_38`/`s7_39` ya existente, #116 robustez frontend del panel). **Robustez PanelLayout/useClinicContext (#116):** `getSession()` (no `getUser()`) + timeout/`.catch()`/estado recuperable + errores tipados. Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).** **Paciente Global F5 (dedup preventivo): #98 diseño + #99 (`s7_35`) RPC `find_patient_match_candidates` + #100 UI `PatientMatchHints`.** **Mi equipo F2 (ciclo de vida de invitación): #102 (`s7_36`) backend + #103 UI `EquipoPage`.** **Catálogos personalizados COMPLETO: #105 diseño + #106 (`s7_37`) snapshot + #107 (`s7_38`) global+personal/RLS + #108 UI consulta + #109 UI admin + #110/#111 (`s7_39`) infra + migración de datos aplicada (Base Lucy 127/736, "Míos" solo lo propio, 11218 filas en `catalog_migration_map`).**
 
 **Correcciones post-firma — EJE COMPLETO (backend + UI), 5 bloques clínicos (PRs #74, #76, #79, #80, #81, #82, #84, #85):**
 - **A (PR #74, `s7_28`):** sin edición silenciosa por API. Firma vía RPC `sign_consultation()` + RLS endurecida (`signed_at IS NULL`). Sync cita→atendida y borradores sin regresión.
@@ -170,7 +170,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **Catálogos personalizados por médico** para diagnósticos y medicamentos.
 - **Flujo legal/comercial de DUI médico, términos y aceptación formal** pre-verificación (`docs/PLAN_AFILIACION_MEDICO.md §11.bis`).
 - **Manejo de email en afiliación/onboarding médico** (override ya existe en Fase 2; falta self-service de cambio post-reclamo).
-- **Error handling en PanelLayout / useClinicContext** — si `useClinicContext` falla (retry agotado), el spinner queda permanente.
+- ~~**Error handling en PanelLayout / useClinicContext**~~ → ✅ **cerrado (PR #116).** Causa raíz = race de sesión (`getUser()` de red vs token hidratándose); ahora `useClinicContext` lee con `getSession()`. `PanelLayout` ya no queda en spinner permanente (timeout 8s + `.catch()` + estado recuperable). Errores tipados (`auth`/`no_clinic`/`no_doctor`/`role`/`unknown`): transitorios → Reintentar; estructurales → copy específico + Cerrar sesión, sin mensaje engañoso de conexión. Frontend-only.
 
 ### 6.2 Otros backlog
 - Vista global `/admin/lista-espera` cross-médicos con filtros.
@@ -230,9 +230,9 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 ### Próximo arranque recomendado (nueva ventana)
 1. **Sincronizar repo:** `git fetch origin && git checkout main && git pull --ff-only`.
-2. **Confirmar HEAD final:** `3946ff1` o posterior (+ el PR documental de cierre de esta ventana).
-3. **Confirmar PRs mergeados hasta #114** (+ el PR documental de cierre de esta ventana).
-4. **Confirmar migraciones hasta `s7_39`** (aplicadas en Supabase). **#114 no trae migración** (UI-only).
+2. **Confirmar HEAD final:** `b4fd300` o posterior (+ el PR documental de cierre de esta ventana).
+3. **Confirmar PRs mergeados hasta #116** (+ el PR documental de cierre de esta ventana).
+4. **Confirmar migraciones hasta `s7_39`** (aplicadas en Supabase). **#114 y #116 no traen migración** (UI/frontend-only).
 5. **Confirmar frentes cerrados:**
    - ✅ **Correcciones post-firma** COMPLETO (texto, receta, diagnósticos, antecedentes, vitales).
    - ✅ **Paciente Global Fases 1–3** COMPLETO (identidad global, perfil paciente, sync espejo + read-only del médico).
@@ -240,8 +240,9 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
    - ✅ **Paciente Global Fase 5 (dedup preventivo)** COMPLETO (diseño #98 + backend `s7_35` #99 + UI #100).
    - ✅ **Mi equipo Fase 2 (ciclo de vida de invitación)** COMPLETO (backend `s7_36` #102 + UI #103).
    - ✅ **Catálogos personalizados por médico — EJE 100% COMPLETO** (global+personal, snapshot histórico, ocultar/clonar, base replicada migrada — #105–#111, `s7_37`/`s7_38`/`s7_39`; **+ UI de LucyAdmin para administrar Base Lucy global #114, UI-only**).
+   - ✅ **Pendiente acotado — robustez PanelLayout/useClinicContext** CERRADO (#116, frontend-only): `getSession()` (no `getUser()`) quita el race de primera carga; timeout 8s + `.catch()` + estado recuperable (sin spinner infinito); errores tipados (`auth`/`no_clinic`/`no_doctor`/`role`/`unknown`) con copy específico para estructurales.
 6. **Árbol limpio · build OK · `tsc --noEmit` OK.**
-7. **Siguiente frente: elegir uno del backlog** (ya NO hay frente recomendado pre-cargado — el de LucyAdmin Base Lucy se cerró en #114). Ver "Próximos frentes" abajo. **No codificar hasta confirmar el frente y el estado.**
+7. **Siguiente frente: elegir uno del backlog** (ya NO hay frente recomendado pre-cargado — LucyAdmin Base Lucy cerrado en #114, robustez del panel en #116). Ver "Próximos frentes" abajo. **No codificar hasta confirmar el frente y el estado.**
 
 ### Estado consolidado al cierre (qué está ✅ y qué ⏳)
 - **Infra:** dominio principal `https://lucycare.app`; `lucycare.vercel.app` = fallback temporal (no desactivar). SMTP Resend live.
@@ -260,7 +261,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **Paciente Global Fase 4** — merge admin de duplicados (`admin_merge_patients`, audit + reversibilidad + dry-run); considerar la nota del `UNIQUE` de F3. (Frente grande/delicado: mueve historial clínico. F5 ya previene nuevos duplicados de entrada.)
 - **Pasarela de pagos / IVA / DTE / Q1–Q11** — desbloquea add-ons de equipo + suscripción SaaS. Requiere validación del owner (pasarela viable SV) antes de código.
 - **Recuperación de acceso sin sesión** (perdió el teléfono, sin email/password) → herramienta LucyAdmin/soporte (complemento del cambio de teléfono).
-- **Pendientes acotados:** vista global `/admin/lista-espera`, causa raíz PanelLayout/useClinicContext, paginación del Home.
+- **Pendientes acotados:** vista global `/admin/lista-espera`, paginación del Home, RPC F5 `find_patient_match_candidates` tolerante a teléfono crudo. (~~causa raíz PanelLayout/useClinicContext~~ ✅ cerrada en #116.)
 
 ---
 
