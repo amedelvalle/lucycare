@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
     icon: 'ri-mail-add-line',
     badgeQueryKey: 'admin-affiliation-pending-count',
   },
+  { to: '/admin/catalogos', label: 'Catálogos', icon: 'ri-book-2-line' },
 ];
 
 function NavBadge({ count }: { count: number }) {
