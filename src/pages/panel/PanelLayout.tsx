@@ -1,9 +1,18 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentAuthUser, signOut } from '../../services/auth.service';
 import type { AuthUser } from '../../services/auth.service';
-import { useClinicContext, useSwitchActiveDoctor } from '../../hooks/useClinicContext';
+import {
+  useClinicContext,
+  useSwitchActiveDoctor,
+  contextErrorKind,
+  type ClinicContextErrorKind,
+} from '../../hooks/useClinicContext';
 import NotificationBell from '../../components/NotificationBell';
+
+/** Timeout duro para la carga del usuario (F2): si getCurrentAuthUser se
+ *  cuelga (select sin timeout / red), no dejamos el spinner infinito. */
+const AUTH_LOAD_TIMEOUT_MS = 8_000;
 
 interface NavItem {
   path: string;
@@ -30,17 +39,52 @@ export default function PanelLayout() {
   const navigate = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: ctx, isError: ctxError, refetch: refetchCtx } = useClinicContext();
+  // F2: estado explícito de la carga del usuario. 'error' cubre tanto el
+  // rechazo de getCurrentAuthUser como el timeout → evita el spinner infinito.
+  const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [authReloadKey, setAuthReloadKey] = useState(0);
+  const {
+    data: ctx,
+    isError: ctxIsError,
+    error: ctxError,
+    refetch: refetchCtx,
+  } = useClinicContext();
 
   useEffect(() => {
-    getCurrentAuthUser().then((u) => {
-      if (!u || (u.role !== 'doctor' && u.role !== 'assistant')) {
-        navigate('/');
-      } else {
-        setUser(u);
-      }
-    });
-  }, [navigate]);
+    let cancelled = false;
+    setAuthState('loading');
+
+    // Race contra un timeout duro para no depender de que el select de
+    // profiles (sin timeout interno) resuelva siempre.
+    const withTimeout = Promise.race([
+      getCurrentAuthUser(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('auth-timeout')), AUTH_LOAD_TIMEOUT_MS),
+      ),
+    ]);
+
+    withTimeout
+      .then((u) => {
+        if (cancelled) return;
+        if (!u || (u.role !== 'doctor' && u.role !== 'assistant')) {
+          navigate('/');
+        } else {
+          setUser(u);
+          setAuthState('ready');
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('[PanelLayout] no se pudo cargar el usuario:', err);
+        setAuthState('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, authReloadKey]);
+
+  const retryAuth = useCallback(() => setAuthReloadKey((k) => k + 1), []);
 
   const handleLogout = async () => {
     await signOut();
@@ -53,47 +97,54 @@ export default function PanelLayout() {
   // Sin esperar `ctx`, el panel completo se renderizaba por un frame
   // antes de la transición a "Perfil reclamado" / "Cuenta suspendida"
   // cuando is_operational=false (flash visible al hacer login post-claim).
-  //
-  // `useClinicContext` es un useQuery; mientras carga devuelve
-  // `ctx === undefined` y el check `ctx?.role === 'doctor' && ...`
-  // evaluaba false → se caía al render del panel completo.
-  //
-  // Auth aún cargando → spinner.
-  if (!user) {
+
+  // F2: la carga del usuario falló (rechazo o timeout). Antes esto dejaba
+  // el spinner colgado para siempre (el `!user` no distinguía cargando de
+  // fallido). Ahora es recuperable: Reintentar re-dispara el efecto.
+  if (authState === 'error') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
-      </div>
+      <PanelStateScreen
+        icon="ri-wifi-off-line"
+        tone="neutral"
+        title="No pudimos cargar tu cuenta"
+        message="Hubo un problema al cargar tu sesión. Revisá tu conexión e intentá de nuevo."
+      >
+        <PrimaryButton onClick={retryAuth}>Reintentar</PrimaryButton>
+        <SecondaryButton onClick={handleLogout}>Cerrar sesión</SecondaryButton>
+      </PanelStateScreen>
     );
   }
 
-  // Contexto de clínica todavía no disponible. Antes, si
-  // `useClinicContext` fallaba (retry de react-query agotado), el
-  // spinner quedaba colgado para siempre y el médico debía refrescar
-  // a mano. Ahora distinguimos error (mostramos "Reintentar") de
-  // carga en curso (spinner).
+  // Auth aún cargando → spinner.
+  if (!user) {
+    return <PanelSpinner />;
+  }
+
+  // Contexto de clínica no disponible. F3: distinguimos
+  //   - error estructural (no_clinic/no_doctor/role) → copy específico,
+  //     SIN prometer que "Reintentar" lo resuelve (solo Cerrar sesión);
+  //   - error transitorio (auth/unknown) → tarjeta recuperable (Reintentar);
+  //   - carga en curso → spinner.
   if (!ctx) {
-    if (ctxError) {
+    if (ctxIsError) {
+      const kind = contextErrorKind(ctxError);
+      const copy = CONTEXT_ERROR_COPY[kind];
+      const structural = kind === 'no_clinic' || kind === 'no_doctor' || kind === 'role';
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center bg-gray-50">
-          <i className="ri-wifi-off-line text-3xl text-gray-400" />
-          <p className="text-sm text-gray-600 max-w-xs">
-            No pudimos cargar tu panel. Revisá tu conexión e intentá de nuevo.
-          </p>
-          <button
-            onClick={() => refetchCtx()}
-            className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800"
-          >
-            Reintentar
-          </button>
-        </div>
+        <PanelStateScreen
+          icon={structural ? 'ri-error-warning-line' : 'ri-wifi-off-line'}
+          tone={structural ? 'warning' : 'neutral'}
+          title={copy.title}
+          message={copy.message}
+        >
+          {!structural && (
+            <PrimaryButton onClick={() => refetchCtx()}>Reintentar</PrimaryButton>
+          )}
+          <SecondaryButton onClick={handleLogout}>Cerrar sesión</SecondaryButton>
+        </PanelStateScreen>
       );
     }
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full"></div>
-      </div>
-    );
+    return <PanelSpinner />;
   }
 
   // Médico no operativo → no puede operar el panel.
@@ -363,6 +414,89 @@ export default function PanelLayout() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+// ─── Pantallas de estado (spinner / error) ───────────────────────────
+
+const CONTEXT_ERROR_COPY: Record<ClinicContextErrorKind, { title: string; message: string }> = {
+  auth: {
+    title: 'No pudimos cargar tu panel',
+    message: 'Hubo un problema al validar tu sesión. Revisá tu conexión e intentá de nuevo.',
+  },
+  unknown: {
+    title: 'No pudimos cargar tu panel',
+    message: 'Revisá tu conexión e intentá de nuevo.',
+  },
+  no_clinic: {
+    title: 'Sin clínica activa',
+    message:
+      'Tu usuario no está asociado a una clínica activa. Contactá a soporte para que te vinculen.',
+  },
+  no_doctor: {
+    title: 'Sin perfil médico activo',
+    message:
+      'No encontramos un perfil médico activo asociado a esta cuenta. Contactá a soporte.',
+  },
+  role: {
+    title: 'Sin acceso al panel',
+    message: 'Tu rol no tiene acceso a este panel.',
+  },
+};
+
+function PanelSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin h-8 w-8 border-2 border-emerald-700 border-t-transparent rounded-full" />
+    </div>
+  );
+}
+
+function PanelStateScreen({
+  icon,
+  tone,
+  title,
+  message,
+  children,
+}: {
+  icon: string;
+  tone: 'neutral' | 'warning';
+  title: string;
+  message: string;
+  children: React.ReactNode;
+}) {
+  const iconColor = tone === 'warning' ? 'text-amber-600' : 'text-gray-400';
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md w-full text-center shadow-sm">
+        <i className={`${icon} text-3xl ${iconColor}`} />
+        <h2 className="text-lg font-semibold text-gray-900 mt-3">{title}</h2>
+        <p className="text-sm text-gray-600 mt-2">{message}</p>
+        <div className="mt-5 flex flex-col sm:flex-row gap-2 justify-center">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function PrimaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-xl hover:bg-emerald-800"
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200"
+    >
+      {children}
+    </button>
   );
 }
 

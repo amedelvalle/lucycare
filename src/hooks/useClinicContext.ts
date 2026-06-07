@@ -42,6 +42,50 @@ export interface ClinicContext {
 export const clinicContextKey = ['clinic-context'] as const;
 const SELECTED_DOCTOR_KEY = 'lucycare_assistant_selected_doctor';
 
+/**
+ * Clasificación del fallo al cargar el contexto de panel. Permite que la UI
+ * distinga errores **transitorios** (vale la pena Reintentar) de errores
+ * **estructurales** (Reintentar no resuelve nada — el usuario debe contactar
+ * soporte o cerrar sesión).
+ *
+ * - `auth`      → no hay sesión válida (transitorio en cold load).
+ * - `unknown`   → error de red/DB inesperado (transitorio).
+ * - `no_clinic` → el usuario no está asociado a una clínica activa (estructural).
+ * - `no_doctor` → no hay un perfil/médico activo asociado (estructural).
+ * - `role`      → el rol no tiene acceso al panel (estructural).
+ */
+export type ClinicContextErrorKind =
+  | 'auth'
+  | 'no_clinic'
+  | 'no_doctor'
+  | 'role'
+  | 'unknown';
+
+const STRUCTURAL_KINDS: ReadonlySet<ClinicContextErrorKind> = new Set([
+  'no_clinic',
+  'no_doctor',
+  'role',
+]);
+
+export class ClinicContextError extends Error {
+  readonly kind: ClinicContextErrorKind;
+  constructor(kind: ClinicContextErrorKind, message: string) {
+    super(message);
+    this.name = 'ClinicContextError';
+    this.kind = kind;
+  }
+}
+
+/** True si el error es estructural (Reintentar no ayuda). */
+export function isStructuralContextError(err: unknown): boolean {
+  return err instanceof ClinicContextError && STRUCTURAL_KINDS.has(err.kind);
+}
+
+/** Devuelve el `kind` del error, o `'unknown'` si no es un ClinicContextError. */
+export function contextErrorKind(err: unknown): ClinicContextErrorKind {
+  return err instanceof ClinicContextError ? err.kind : 'unknown';
+}
+
 function getStoredDoctorId(): string | null {
   try {
     return localStorage.getItem(SELECTED_DOCTOR_KEY);
@@ -59,10 +103,18 @@ function setStoredDoctorId(doctorId: string): void {
 }
 
 async function loadClinicContext(): Promise<ClinicContext> {
+  // F1: leer la identidad desde la sesión local hidratada (getSession),
+  // NO desde getUser() (validación de red). getUser corría en paralelo con
+  // el refresh del token en cold load → fallaba transitoriamente y mandaba
+  // a la tarjeta de error aunque la sesión fuera válida. getSession usa la
+  // misma primitiva que getCurrentAuthUser, eliminando el race. La RLS
+  // sigue siendo la defensa server-side real (los selects de abajo van
+  // firmados con el access token de la sesión).
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('No autenticado');
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
+  if (!user) throw new ClinicContextError('auth', 'No autenticado');
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
@@ -70,8 +122,8 @@ async function loadClinicContext(): Promise<ClinicContext> {
     .eq('id', user.id)
     .single();
 
-  if (profileError) throw profileError;
-  if (!profile) throw new Error('Profile no encontrado');
+  if (profileError) throw new ClinicContextError('unknown', profileError.message);
+  if (!profile) throw new ClinicContextError('unknown', 'Profile no encontrado');
 
   // ─── Doctor ─────────────────────────────────────────────────────
   if (profile.role === 'doctor') {
@@ -79,10 +131,10 @@ async function loadClinicContext(): Promise<ClinicContext> {
       .from('doctors')
       .select('id, clinic_id, is_operational, lucy_status, profiles!inner(full_name)')
       .eq('profile_id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
-    if (!doctor) throw new Error('Doctor no encontrado');
+    if (error) throw new ClinicContextError('unknown', error.message);
+    if (!doctor) throw new ClinicContextError('no_doctor', 'Doctor no encontrado');
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const doctorAny = doctor as any;
@@ -108,8 +160,8 @@ async function loadClinicContext(): Promise<ClinicContext> {
       .limit(1)
       .maybeSingle();
 
-    if (memberError) throw memberError;
-    if (!member) throw new Error('No estás asociada a ninguna clínica');
+    if (memberError) throw new ClinicContextError('unknown', memberError.message);
+    if (!member) throw new ClinicContextError('no_clinic', 'No estás asociada a ninguna clínica');
 
     // Todos los doctores de la clínica, ordenados por antigüedad (estable)
     const { data: doctors, error: doctorsError } = await supabase
@@ -118,9 +170,9 @@ async function loadClinicContext(): Promise<ClinicContext> {
       .eq('clinic_id', member.clinic_id)
       .order('created_at', { ascending: true });
 
-    if (doctorsError) throw doctorsError;
+    if (doctorsError) throw new ClinicContextError('unknown', doctorsError.message);
     if (!doctors || doctors.length === 0) {
-      throw new Error('La clínica no tiene médicos asociados');
+      throw new ClinicContextError('no_doctor', 'La clínica no tiene médicos asociados');
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +199,7 @@ async function loadClinicContext(): Promise<ClinicContext> {
     };
   }
 
-  throw new Error(`Rol no autorizado para el panel: ${profile.role}`);
+  throw new ClinicContextError('role', `Rol no autorizado para el panel: ${profile.role}`);
 }
 
 export function useClinicContext() {
@@ -155,7 +207,11 @@ export function useClinicContext() {
     queryKey: clinicContextKey,
     queryFn: loadClinicContext,
     staleTime: 1000 * 60 * 10, // 10 min — cambia muy poco
-    retry: 1,
+    // F1/F3: reintentar solo errores transitorios (auth/unknown). Los
+    // estructurales (no_clinic/no_doctor/role) no se resuelven reintentando,
+    // así que cortamos para llegar rápido al fallback correcto.
+    retry: (failureCount, error) =>
+      !isStructuralContextError(error) && failureCount < 2,
   });
 }
 
