@@ -31,12 +31,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_diagnoses_global_name
   WHERE doctor_id IS NULL;
 
 -- Medicamentos globales: único por combo normalizado.
+-- `presentation` se indexa como enum (con centinela) en vez de `presentation::text`:
+-- el cast enum→text NO es IMMUTABLE en una expresión de índice (ERROR 42P17).
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_medications_global_combo
   ON medications (
     lower(commercial_name),
     lower(coalesce(active_ingredient, '')),
     lower(coalesce(concentration, '')),
-    coalesce(presentation::text, '')
+    coalesce(presentation, 'otro'::medication_presentation)
   )
   WHERE doctor_id IS NULL;
 
