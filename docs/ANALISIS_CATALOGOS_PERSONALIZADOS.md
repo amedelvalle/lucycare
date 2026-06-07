@@ -228,9 +228,28 @@ visual donde haya UI.
 
 ---
 
-## 9. Extensión: UI de LucyAdmin para Base Lucy global (siguiente frente — diseño)
+## 9. Extensión: UI de LucyAdmin para Base Lucy global — ✅ IMPLEMENTADO (PR #114)
 
-> Análisis hecho 2026-06-07. **No implementado.** Siguiente frente recomendado.
+> Análisis hecho 2026-06-07. **✅ Implementado en PR #114** (docs-only de
+> cierre aparte). UI-only, sin migración. Validado visualmente por el owner
+> + `tsc`/`build` OK. Con esto el **eje Catálogos queda 100% cerrado**.
+>
+> **Lo entregado (PR #114):** página **`/admin/catalogos`** (gate
+> `AdminOnlyRoute`) + NavLink **"Catálogos"** (`ri-book-2-line`) en
+> `AdminLayout`. Tabs **Diagnósticos** y **Medicamentos** (Antecedentes
+> fuera). Por tab: búsqueda · toggle activos/inactivos · crear · editar ·
+> inactivar/reactivar. Servicio `src/services/adminCatalog.service.ts`
+> (list/create/update directo sobre las tablas con sesión admin; **sin RPCs
+> nuevas**). Dedup proactivo case-insensitive que refleja el UNIQUE `s7_39`
+> (diagnósticos por `lower(name)`; medicamentos por el combo
+> `commercial_name+active_ingredient+concentration+presentation`) + `23505`
+> como red final → `DuplicateCatalogError` con mensaje amable (sugiere
+> reactivar si el duplicado está inactivo). `usage_count` oculto. **No
+> hard-delete** (solo `is_active`). Candado `.is('doctor_id', null)` en los
+> `update` → imposible tocar ítems personales de un médico por id. Todo lo
+> creado nace **global** (`doctor_id = null`).
+
+### 9.bis Diseño original (referencia histórica)
 
 **Objetivo:** que LucyAdmin pueda crear/editar/inactivar/reactivar ítems
 **globales** (`doctor_id IS NULL`) de Base Lucy desde una UI propia.
