@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { hideGlobalCatalogItem } from './catalogShared.service';
 
 export interface DiagnosisCatalogItem {
   id: string;
@@ -8,6 +9,11 @@ export interface DiagnosisCatalogItem {
   description: string | null;
   is_active: boolean;
   usage_count: number;
+}
+
+/** Ítem global con el flag de si este médico lo ocultó. */
+export interface GlobalDiagnosisItem extends DiagnosisCatalogItem {
+  hidden: boolean;
 }
 
 /** IDs de ítems globales que este médico ocultó (Catálogos PR-2). */
@@ -162,6 +168,64 @@ export async function listAllDiagnoses(
 
   if (error) throw error;
   return { items: data ?? [], total: count ?? 0, page, pageSize };
+}
+
+/**
+ * Lista paginada de diagnósticos GLOBALES (base Lucy, `doctor_id IS NULL`,
+ * activos), con el flag `hidden` = si este médico lo ocultó. Read-only para el
+ * médico (los administra LucyAdmin).
+ */
+export async function listGlobalDiagnoses(
+  doctorId: string,
+  options?: { search?: string; page?: number; pageSize?: number }
+): Promise<PaginatedResult<GlobalDiagnosisItem>> {
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = options?.pageSize ?? 50;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let q = supabase
+    .from('diagnoses')
+    .select('id, doctor_id, name, description, is_active, usage_count', { count: 'exact' })
+    .is('doctor_id', null)
+    .eq('is_active', true);
+
+  const trimmed = options?.search?.trim() ?? '';
+  if (trimmed.length >= 1) {
+    const escaped = trimmed.replace(/[%_]/g, '\\$&');
+    q = q.ilike('name', `%${escaped}%`);
+  }
+
+  const { data, error, count } = await q.order('name').range(from, to);
+  if (error) throw error;
+
+  const hidden = new Set(await getHiddenGlobalIds(doctorId, 'diagnosis'));
+  const items = (data ?? []).map((d) => ({ ...d, hidden: hidden.has(d.id) }));
+  return { items, total: count ?? 0, page, pageSize };
+}
+
+/**
+ * Clona un diagnóstico GLOBAL al catálogo personal del médico (copia editable)
+ * y oculta el global para ese médico (evita ver el ítem duplicado). PR-4.
+ */
+export async function cloneDiagnosisToOwn(
+  doctorId: string,
+  global: { id: string; name: string; description: string | null }
+): Promise<DiagnosisCatalogItem> {
+  const { data, error } = await supabase
+    .from('diagnoses')
+    .insert({
+      doctor_id: doctorId,
+      name: global.name,
+      description: global.description ?? null,
+      is_active: true,
+      usage_count: 0,
+    })
+    .select('id, doctor_id, name, description, is_active, usage_count')
+    .single();
+  if (error) throw error;
+  await hideGlobalCatalogItem(doctorId, 'diagnosis', global.id);
+  return data;
 }
 
 export async function updateDiagnosis(
