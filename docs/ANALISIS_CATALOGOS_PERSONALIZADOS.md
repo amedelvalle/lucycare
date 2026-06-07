@@ -1,9 +1,21 @@
 # Análisis — Catálogos personalizados por médico (diagnósticos y medicamentos)
 
-> Documento de diseño + plan. **Snapshot 2026-06-06.**
-> **Estado: decisiones cerradas por el owner (§3). PR-0 = este documento.**
-> El código NO se implementa hasta tener este doc mergeado; cada fase es su
-> propio PR chico (§6).
+> Documento de diseño + plan. **Snapshot 2026-06-06** (actualizado 2026-06-07).
+>
+> **✅ EJE COMPLETO** (PRs #105–#111 + migración de datos):
+> - **PR-0** diseño (#105) · **PR-1** snapshot histórico `s7_37` (#106) · **PR-2**
+>   modelo global+personal `s7_38` (#107) · **PR-3** UI consulta (#108) · **PR-4**
+>   UI admin `/panel/catalogos` (#109) · **PR-5a** infra `s7_39` + dry-run
+>   (#110/#111) · **PR-5b** migración de base replicada **aplicada**.
+> - **Resultados finales:** Base Lucy = **127 diagnósticos / 736 medicamentos**
+>   globales; "Míos" = solo personalizaciones reales (4 dx + 4 med en Camilo);
+>   **1650 dx + 9568 med** copias replicadas inactivadas (sin hard-delete);
+>   `catalog_migration_map` = **11218 filas**; **FK no reapuntados** (snapshot
+>   `s7_37` protege históricos); globales de prueba "(base Lucy)" inactivados.
+> - **Pendiente futuro (frente aparte, fuera de este eje):** UI de **LucyAdmin
+>   para administrar la Base Lucy global** (crear/editar/inactivar globales +
+>   audit + anti-duplicados). Regla: médicos usan/ocultan/clonan, **no editan la
+>   base**; globales solo `is_admin` a nivel backend/RLS.
 >
 > Acompaña a:
 > - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — ejes del médico, deudas.
@@ -167,16 +179,28 @@ Reglas:
 
 ---
 
-## 6. Fases (orden acordado — riesgo histórico primero)
+## 6. Fases (orden acordado — riesgo histórico primero) — TODAS ✅
 
-| Fase | Alcance | Migración |
+| Fase | Alcance | Estado |
 |---|---|---|
-| **PR-0** (este) | Decisiones, modelo y fases. Docs. | — |
-| **PR-1 — Integridad histórica** | Columnas snapshot en `prescriptions`/`consultation_diagnoses` + poblar en todas las rutas de inserción (guardado/firma **y** amend RPC) + **backfill** + lectura/impresión usando snapshot. | sí |
-| **PR-2 — Modelo global + personal** | Global (`doctor_id NULL`/`is_global`) + `doctor_catalog_hidden` + RLS (global∪propios − ocultos / escritura propios; globales solo admin) + auditoría. | sí |
-| **PR-3 — UI consulta** | Selector busca en global∪propios; "crear nuevo" → personal; etiquetas "Base Lucy" / "Mío". | — |
-| **PR-4 — UI administración** | Gestionar propios + ver globales read-only + ocultar/mostrar + clonar global→personal. | — |
-| **PR-5 — Migración/de-dup** | Mover la base replicada a global; conservar como personales solo lo realmente creado/modificado por cada médico (seguro gracias al snapshot de PR-1). | datos |
+| **PR-0** | Decisiones, modelo y fases. Docs. | ✅ #105 |
+| **PR-1 — Integridad histórica** | Columnas snapshot en `prescriptions`/`consultation_diagnoses` + triggers `BEFORE INSERT` (guardado/firma **y** amend RPC) + backfill + lectura/impresión usando snapshot. | ✅ #106 (`s7_37`) |
+| **PR-2 — Modelo global + personal** | Global (`doctor_id NULL`) + `doctor_catalog_hidden` + RLS (global∪propios / escritura propios; globales solo admin; sin DELETE) + `audit_catalog`. | ✅ #107 (`s7_38`) |
+| **PR-3 — UI consulta** | Selector busca en global∪propios (menos ocultos); "crear nuevo" → personal; etiqueta discreta "Base Lucy". | ✅ #108 |
+| **PR-4 — UI administración** | `/panel/catalogos` segmento Míos\|Base Lucy: gestionar propios + globales read-only + ocultar/mostrar + clonar global→personal; guard de rol. | ✅ #109 |
+| **PR-5a — Infra/dry-run** | `catalog_migration_map` + UNIQUE parcial global + `migrate-catalog-base.mjs` (dry-run/apply, idempotente). | ✅ #110/#111 (`s7_39`) |
+| **PR-5b — Migración de datos** | `--apply`: globales canónicos desde seed + inactivar copias exactas + mapping + cleanup de globales de prueba. | ✅ aplicada |
+
+**Resultado de PR-5b (aplicado):** Base Lucy 127 dx / 736 med · "Míos" 4 dx + 4 med
+(personalizaciones reales) · 1650 dx + 9568 med inactivadas (sin hard-delete) ·
+`catalog_migration_map` 11218 filas · FK no reapuntados (snapshot protege
+históricos) · globales de prueba inactivados.
+
+### Pendiente futuro (frente aparte, NO de este eje)
+- **UI de LucyAdmin para administrar la Base Lucy global:** crear/editar/
+  inactivar/reactivar diagnósticos y medicamentos globales (`doctor_id IS NULL`)
+  + auditoría + anti-duplicados. Médicos no editan la base (solo usan/ocultan/
+  clonan); el impacto histórico ya está protegido por el snapshot de `s7_37`.
 
 Cada fase: 1 PR chico, migración `s7_NN` + `check-*.mjs`/smoke si aplica,
 `tsc --noEmit` + `vite build` OK, enforcement server-side, preview/validación
