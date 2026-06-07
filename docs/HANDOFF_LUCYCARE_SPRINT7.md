@@ -9,7 +9,7 @@
 
 ## 1. Estado actual
 
-- **HEAD esperado en `main`:** `b8b7dee` o posterior (+ el PR documental de handoff de esta ventana). **PRs #1–#112 mergeados.** **Próximo frente recomendado: UI de LucyAdmin para Base Lucy global** (análisis hecho; backend ya listo — ver `docs/ANALISIS_CATALOGOS_PERSONALIZADOS.md §7`). Hitos recientes: Correcciones post-firma **EJE COMPLETO** (#74–#85, `s7_28..s7_31`); Paciente Global **Fases 1–3 COMPLETAS** (#87/`s7_32` + #88 + #90/`s7_33` + #91); **Cambio de teléfono por OTP COMPLETO** (#93/`s7_34` + #94 + #95); **Paciente Global Fase 5 (dedup preventivo) COMPLETA** (#98 diseño + #99/`s7_35` + #100 UI); **Mi equipo Fase 2 (ciclo de vida de invitación) COMPLETA** (#102/`s7_36` + #103 UI); **Catálogos personalizados por médico COMPLETO** (#105–#111, `s7_37`/`s7_38`/`s7_39` + migración de base replicada: Base Lucy 127/736, "Míos" solo lo propio); cierres documentales #86/#89/#92/#96/#101/#104.
+- **HEAD esperado en `main`:** `3946ff1` o posterior (+ el PR documental de cierre de esta ventana). **PRs #1–#114 mergeados.** **Próximo frente: elegir uno del backlog** (el de LucyAdmin Base Lucy se cerró en #114; ya no hay frente recomendado pre-cargado — ver §4 y §7). Hitos recientes: Correcciones post-firma **EJE COMPLETO** (#74–#85, `s7_28..s7_31`); Paciente Global **Fases 1–3 COMPLETAS** (#87/`s7_32` + #88 + #90/`s7_33` + #91); **Cambio de teléfono por OTP COMPLETO** (#93/`s7_34` + #94 + #95); **Paciente Global Fase 5 (dedup preventivo) COMPLETA** (#98 diseño + #99/`s7_35` + #100 UI); **Mi equipo Fase 2 (ciclo de vida de invitación) COMPLETA** (#102/`s7_36` + #103 UI); **Catálogos personalizados por médico — EJE 100% COMPLETO** (#105–#111, `s7_37`/`s7_38`/`s7_39` + migración de base replicada: Base Lucy 127/736, "Míos" solo lo propio; **+ UI de LucyAdmin para Base Lucy global #114, UI-only sin migración**); cierres documentales #86/#89/#92/#96/#101/#104.
 - **Infra live:** dominio público `https://lucycare.app` (DNS Cloudflare, `www`→apex 308). `lucycare.vercel.app` queda como **fallback temporal** (no desactivar). Previews en `lucycare-git-*.vercel.app`. SMTP externo Resend/Supabase configurado.
 - **Migraciones aplicadas hasta `s7_36`** (`s7_30` distinción adenda texto vs receta / PR #81; `s7_31` amend diag/antecedentes/vitales + inmutabilidad `vitals` / PR #84; `s7_32` Paciente Global F2 identidad global en `profiles` / PR #87; `s7_33` Paciente Global F3 sync espejo + guard / PR #90; `s7_34` cambio de teléfono por OTP — trigger sync `auth.users.phone` / PR #93; `s7_35` Paciente Global F5 — RPC `find_patient_match_candidates` dedup preventivo / PR #99; `s7_36` Mi equipo F2 — `expires_at` TTL 14d + `team_seats_used` excluye vencidas + `accept` ignora vencidas + RPC `resend_invitation` / PR #102; `s7_37` Catálogos — snapshot histórico de nombre en receta/diagnóstico / PR #106; `s7_38` Catálogos — global+personal (`doctor_id` nullable) + `doctor_catalog_hidden` + RLS + audit / PR #107; `s7_39` Catálogos — infra de-dup (`catalog_migration_map` + UNIQUE parcial global) / PR #110/#111).
 - **Tres frentes recién cerrados (no reabrir):**
@@ -214,7 +214,7 @@ Detalles en `docs/ANALISIS_PACIENTE_GLOBAL.md`.
 - D: dashboard tracción mensual.
 - E: UI sobre `admin_review_traceability` + moderar reseñas.
 - F: explorador de `audit_log` con filtros.
-- G: catálogos globales + onboarding manual de médico.
+- G: ~~catálogos globales~~ → ✅ **hecho (PR #114): `/admin/catalogos` administra la Base Lucy global** (diagnósticos + medicamentos; crear/editar/inactivar/reactivar; dedup amable; sin hard-delete). Queda onboarding manual de médico.
 
 Cada fase: 1 PR chico · migración `s7_NN` (si aplica) + `scripts/check-s7_NN.mjs` · `vite build` OK · preview validado · luego merge.
 
@@ -349,15 +349,14 @@ Leé en este orden:
 2. docs/HANDOFF_LUCYCARE_SPRINT7.md
 3. [docs/ANALISIS_*.md o docs/FASE_*.md según el objetivo]
 
-Estado: PRs #1–#112 mergeados (HEAD b8b7dee o posterior), migraciones hasta s7_39 (aplicadas en Supabase). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Gate clínico asistente ✅ (#67). **Frentes cerrados:** Correcciones post-firma COMPLETO (#74–#85, s7_28..s7_31); Paciente Global Fases 1–3 COMPLETO (#87/#88/#90/#91, s7_32/s7_33); Cambio de teléfono por OTP COMPLETO (#93/#94/#95, s7_34); Paciente Global Fase 5 dedup preventivo COMPLETO (#98/#99/#100, s7_35); **Mi equipo Fases 0–2 COMPLETO** (#67/#70/#102/#103, s7_36); **Catálogos personalizados por médico COMPLETO** (#105–#111, s7_37/s7_38/s7_39 + migración de base replicada: Base Lucy 127/736, "Míos" solo lo propio). Análisis pagos SaaS ✅ doc base (#62). Árbol limpio · build OK · tsc --noEmit OK.
+Estado: PRs #1–#114 mergeados (HEAD 3946ff1 o posterior), migraciones hasta s7_39 (aplicadas en Supabase; #114 sin migración). SMTP Resend + dominio `lucycare.app` + Fase 4 PR-B ✅. Afiliación Fase 1+2 + smoke ✅. Gate clínico asistente ✅ (#67). **Frentes cerrados:** Correcciones post-firma COMPLETO (#74–#85, s7_28..s7_31); Paciente Global Fases 1–3 COMPLETO (#87/#88/#90/#91, s7_32/s7_33); Cambio de teléfono por OTP COMPLETO (#93/#94/#95, s7_34); Paciente Global Fase 5 dedup preventivo COMPLETO (#98/#99/#100, s7_35); **Mi equipo Fases 0–2 COMPLETO** (#67/#70/#102/#103, s7_36); **Catálogos personalizados por médico — EJE 100% COMPLETO** (#105–#111 + #114, s7_37/s7_38/s7_39 + migración de base replicada: Base Lucy 127/736, "Míos" solo lo propio; **+ UI de LucyAdmin para Base Lucy global #114 `/admin/catalogos`, UI-only**). Análisis pagos SaaS ✅ doc base (#62). Árbol limpio · build OK · tsc --noEmit OK.
 
 Hoy hacemos: ___[siguiente frente a decidir — ninguno arrancado:
-  1. LucyAdmin: administrar Base Lucy global (crear/editar/inactivar globales + audit + anti-duplicados; cierra el último cabo del eje Catálogos);
-  2. Paciente Global Fase 4 (merge admin de duplicados — grande/delicado; ojo UNIQUE(clinic,document) de F3; F5 ya previene nuevos);
-  3. Recuperación de acceso sin sesión (LucyAdmin/soporte — complemento del cambio de teléfono);
-  4. Pasarela de pagos / IVA / DTE / Q1–Q11 (requiere validación del owner antes de código; desbloquea add-ons de asistentes de Mi equipo);
-  5. Pendientes acotados (vista global /admin/lista-espera, causa raíz PanelLayout/useClinicContext, paginación del Home);
-  6. Defensa en profundidad de F5: RPC find_patient_match_candidates tolerante a teléfono crudo (migración chica).
+  1. Paciente Global Fase 4 (merge admin de duplicados — grande/delicado; ojo UNIQUE(clinic,document) de F3; F5 ya previene nuevos);
+  2. Recuperación de acceso sin sesión (LucyAdmin/soporte — complemento del cambio de teléfono);
+  3. Pasarela de pagos / IVA / DTE / Q1–Q11 (requiere validación del owner antes de código; desbloquea add-ons de asistentes de Mi equipo);
+  4. Pendientes acotados (vista global /admin/lista-espera, causa raíz PanelLayout/useClinicContext, paginación del Home);
+  5. Defensa en profundidad de F5: RPC find_patient_match_candidates tolerante a teléfono crudo (migración chica).
 ]___
 ```
 
