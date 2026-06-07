@@ -840,7 +840,7 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
-          doctor_id: string
+          doctor_id: string | null
           id: string
           is_active: boolean
           name: string
@@ -849,7 +849,7 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
-          doctor_id: string
+          doctor_id?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -858,7 +858,7 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
-          doctor_id?: string
+          doctor_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -867,6 +867,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "diagnoses_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      doctor_catalog_hidden: {
+        Row: {
+          doctor_id: string
+          hidden_at: string
+          id: string
+          item_id: string
+          item_type: string
+        }
+        Insert: {
+          doctor_id: string
+          hidden_at?: string
+          id?: string
+          item_id: string
+          item_type: string
+        }
+        Update: {
+          doctor_id?: string
+          hidden_at?: string
+          id?: string
+          item_id?: string
+          item_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doctor_catalog_hidden_doctor_id_fkey"
             columns: ["doctor_id"]
             isOneToOne: false
             referencedRelation: "doctors"
@@ -997,7 +1029,7 @@ export type Database = {
           commercial_name: string
           concentration: string | null
           created_at: string
-          doctor_id: string
+          doctor_id: string | null
           id: string
           is_active: boolean
           presentation:
@@ -1010,7 +1042,7 @@ export type Database = {
           commercial_name: string
           concentration?: string | null
           created_at?: string
-          doctor_id: string
+          doctor_id?: string | null
           id?: string
           is_active?: boolean
           presentation?:
@@ -1023,7 +1055,7 @@ export type Database = {
           commercial_name?: string
           concentration?: string | null
           created_at?: string
-          doctor_id?: string
+          doctor_id?: string | null
           id?: string
           is_active?: boolean
           presentation?:
