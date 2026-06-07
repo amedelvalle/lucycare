@@ -598,6 +598,7 @@ function MedicationPicker({ doctorId, excludeIds, onPick }: { doctorId: string; 
       onSelect={(it) => onPick({ id: it.id, label: it.commercial_name })}
       onCreate={async (name) => { const c = await create.mutateAsync({ commercial_name: name }); onPick({ id: c.id, label: c.commercial_name }); }}
       getKey={(it) => it.id} getLabel={(it) => it.commercial_name} getSubLabel={(it) => [it.active_ingredient, it.concentration, it.presentation].filter(Boolean).join(' · ') || null}
+      getBadge={(it) => (it.doctor_id === null ? { label: 'Base Lucy', tone: 'lucy' } : { label: 'Mío', tone: 'mine' })}
       placeholder="Buscar medicamento… (nombre comercial o principio activo)" disabled={create.isPending} isLoading={isFetching} createLabel={(i) => `Crear nuevo medicamento: "${i}"`} />
   );
 }
@@ -612,6 +613,7 @@ function DiagnosisPicker({ doctorId, excludeIds, onPick }: { doctorId: string; e
       onSelect={(it) => onPick({ id: it.id, label: it.name })}
       onCreate={async (name) => { const c = await create.mutateAsync({ name }); onPick({ id: c.id, label: c.name }); }}
       getKey={(it) => it.id} getLabel={(it) => it.name} getSubLabel={(it) => it.description || null}
+      getBadge={(it) => (it.doctor_id === null ? { label: 'Base Lucy', tone: 'lucy' } : { label: 'Mío', tone: 'mine' })}
       placeholder="Buscar diagnóstico…" disabled={create.isPending} isLoading={isFetching} createLabel={(i) => `Crear nuevo diagnóstico: "${i}"`} />
   );
 }

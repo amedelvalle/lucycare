@@ -100,6 +100,11 @@ export default function PrescriptionsSection({
             ].filter(Boolean);
             return parts.length > 0 ? parts.join(' · ') : null;
           }}
+          getBadge={(it) =>
+            it.doctor_id === null
+              ? { label: 'Base Lucy', tone: 'lucy' }
+              : { label: 'Mío', tone: 'mine' }
+          }
           placeholder="Buscar medicamento... (nombre comercial o principio activo)"
           disabled={addPrescription.isPending || createMedication.isPending}
           isLoading={isFetching}

@@ -73,6 +73,11 @@ export default function DiagnosesSection({ consultationId, doctorId, readOnly }:
           getSubLabel={(it) =>
             it.usage_count > 0 ? `Usado ${it.usage_count} ${it.usage_count === 1 ? 'vez' : 'veces'}` : null
           }
+          getBadge={(it) =>
+            it.doctor_id === null
+              ? { label: 'Base Lucy', tone: 'lucy' }
+              : { label: 'Mío', tone: 'mine' }
+          }
           placeholder="Buscar diagnóstico... (ej: hipertensión arterial)"
           disabled={addAssignment.isPending || createDiagnosis.isPending}
           isLoading={isFetching}

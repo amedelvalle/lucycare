@@ -10,25 +10,46 @@ export interface DiagnosisCatalogItem {
   usage_count: number;
 }
 
+/** IDs de ítems globales que este médico ocultó (Catálogos PR-2). */
+async function getHiddenGlobalIds(
+  doctorId: string,
+  itemType: 'diagnosis' | 'medication'
+): Promise<string[]> {
+  const { data } = await supabase
+    .from('doctor_catalog_hidden')
+    .select('item_id')
+    .eq('doctor_id', doctorId)
+    .eq('item_type', itemType);
+  return (data ?? []).map((r) => r.item_id);
+}
+
 /**
- * Busca diagnósticos del catálogo del médico. Si query está vacío,
- * devuelve los más usados. Filtro case-insensitive sobre name.
+ * Busca diagnósticos visibles para el médico: **globales (base Lucy) + propios**,
+ * excluyendo los globales que el médico ocultó. Si query está vacío, devuelve los
+ * más usados. Filtro case-insensitive sobre name.
  */
 export async function searchDiagnoses(
   doctorId: string,
   query: string,
   limit = 20
 ): Promise<DiagnosisCatalogItem[]> {
+  const hiddenIds = await getHiddenGlobalIds(doctorId, 'diagnosis');
+
   let q = supabase
     .from('diagnoses')
     .select('id, doctor_id, name, description, is_active, usage_count')
-    .eq('doctor_id', doctorId)
+    // Propios del médico ∪ globales (doctor_id IS NULL). RLS ya lo permite;
+    // el filtro lo hace explícito.
+    .or(`doctor_id.eq.${doctorId},doctor_id.is.null`)
     .eq('is_active', true);
 
   const trimmed = query.trim();
   if (trimmed.length >= 1) {
     const escaped = trimmed.replace(/[%_]/g, '\\$&');
     q = q.ilike('name', `%${escaped}%`);
+  }
+  if (hiddenIds.length > 0) {
+    q = q.not('id', 'in', `(${hiddenIds.join(',')})`);
   }
 
   const { data, error } = await q
