@@ -225,3 +225,44 @@ visual donde haya UI.
   complemento natural — congela el texto al firmar.
 - Gate clínico del asistente (`s7_26`): refuerza la regla "asistente no crea".
 - `CLAUDE.md` → pendiente "Catálogos personalizados por médico" apunta a este doc.
+
+---
+
+## 9. Extensión: UI de LucyAdmin para Base Lucy global (siguiente frente — diseño)
+
+> Análisis hecho 2026-06-07. **No implementado.** Siguiente frente recomendado.
+
+**Objetivo:** que LucyAdmin pueda crear/editar/inactivar/reactivar ítems
+**globales** (`doctor_id IS NULL`) de Base Lucy desde una UI propia.
+
+**El backend YA está listo (sin migración nueva):**
+- **RLS `s7_38`:** `diagnoses_insert_admin`/`diagnoses_update_admin` y
+  `medications_insert_admin`/`medications_update_admin` (`WITH CHECK (is_admin())`)
+  → LucyAdmin ya puede insertar globales (`doctor_id NULL`) y editar/inactivar
+  cualquier global por RLS. Médicos/asistentes siguen bloqueados.
+- **Auditoría:** `audit_catalog` (s7_38) ya audita INSERT/UPDATE/DELETE
+  (ignora cambios solo de `usage_count`); con sesión admin → `user_id` del admin.
+- **Anti-duplicados:** UNIQUE parcial `s7_39` sobre globales ya lo impide.
+- **Histórico:** snapshot `s7_37` → editar/renombrar/inactivar un global **no**
+  cambia recetas/consultas históricas.
+
+**Diseño propuesto (1 PR, UI-only):**
+- **Ubicación:** página **`/admin/catalogos`** + NavLink "Catálogos" en
+  `AdminLayout` (`NAV`); ruta en `src/router/config.tsx` gateada por
+  `AdminOnlyRoute` (rol `admin`). Patrón espejo de `AdminDoctorsPage` + reusa
+  piezas de `/panel/catalogos`.
+- **Alcance:** tabs **Diagnósticos** y **Medicamentos** (solo Base Lucy);
+  **Antecedentes fuera** (no se hicieron globales). Por tab: búsqueda · toggle
+  activos/inactivos · crear · editar · inactivar/reactivar.
+- **Servicio:** `adminCatalog.service.ts` con list (globales activos+inactivos,
+  paginado, search), create (insert `doctor_id NULL`), update, toggle is_active.
+  Operan directo sobre las tablas con la **sesión admin** (RLS `is_admin` lo
+  permite); **sin RPCs nuevas**.
+- **Dedup:** chequeo proactivo case-insensitive + UNIQUE de DB como red final
+  (mapear `23505` a mensaje amable).
+- **`usage_count`:** ocultar en la UI admin (es cross-médico, no operativo).
+- **Borrado:** **no hard-delete** — solo inactivar/reactivar.
+- **Seguridad:** `AdminOnlyRoute` + RLS `is_admin` (defensa real); médicos/
+  asistentes no editan globales.
+- **Validación:** preview + validación visual del owner antes del merge.
+- **PR-0 docs separado:** opcional (este §9 ya documenta el diseño).

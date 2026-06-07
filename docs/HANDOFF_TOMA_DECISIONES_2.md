@@ -33,7 +33,7 @@
 - **PR #58** ✅ mergeado — **Afiliación Fase 2** (`s7_22` + `s7_23`). RPC `admin_approve_and_create_doctor` que en una transacción crea auth.users dormant + profile (UPSERT defensivo) + clinic + clinic_member + doctor en `listed_only`. Email override aceptado solo si lead no trajo email (regla server-side). UI: botón "Crear médico" + form overrides + checkbox confirm + pantalla éxito con link a ficha admin (no perfil público — doctor sigue no publicado). Badge "Datos por completar" → "Médico creado" cuando hay doctor_id. Smoke OK hasta ficha admin; claim end-to-end del médico creado pendiente de smoke operativo con test phone real del médico.
 - **PR #59** ✅ mergeado — refresh documental post-#58 (CLAUDE.md + HANDOFFs a PRs #1–#58 / migraciones s7_23).
 
-`main` HEAD esperado: `f4ae553` o posterior (+ el PR documental de cierre de esta ventana), **PRs #1–#111 mergeados**. Migraciones hasta `s7_39` (aplicadas en Supabase). Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).** **Paciente Global F5 (dedup preventivo): #98 diseño + #99 (`s7_35`) RPC `find_patient_match_candidates` + #100 UI `PatientMatchHints`.** **Mi equipo F2 (ciclo de vida de invitación): #102 (`s7_36`) backend + #103 UI `EquipoPage`.** **Catálogos personalizados COMPLETO: #105 diseño + #106 (`s7_37`) snapshot + #107 (`s7_38`) global+personal/RLS + #108 UI consulta + #109 UI admin + #110/#111 (`s7_39`) infra + migración de datos aplicada (Base Lucy 127/736, "Míos" solo lo propio, 11218 filas en `catalog_migration_map`).**
+`main` HEAD esperado: `b8b7dee` o posterior (+ el PR documental de handoff de esta ventana), **PRs #1–#112 mergeados**. Migraciones hasta `s7_39` (aplicadas en Supabase). Correcciones: #74–#85 (`s7_28..s7_31`). Paciente Global F2 #87 (`s7_32`) + #88, F3 #90 (`s7_33`) + #91. **Cambio de teléfono por OTP: #93 (`s7_34`) trigger de sync + #94 UI paciente + #95 UI médico (`ChangePhoneModal`).** **Paciente Global F5 (dedup preventivo): #98 diseño + #99 (`s7_35`) RPC `find_patient_match_candidates` + #100 UI `PatientMatchHints`.** **Mi equipo F2 (ciclo de vida de invitación): #102 (`s7_36`) backend + #103 UI `EquipoPage`.** **Catálogos personalizados COMPLETO: #105 diseño + #106 (`s7_37`) snapshot + #107 (`s7_38`) global+personal/RLS + #108 UI consulta + #109 UI admin + #110/#111 (`s7_39`) infra + migración de datos aplicada (Base Lucy 127/736, "Míos" solo lo propio, 11218 filas en `catalog_migration_map`).**
 
 **Correcciones post-firma — EJE COMPLETO (backend + UI), 5 bloques clínicos (PRs #74, #76, #79, #80, #81, #82, #84, #85):**
 - **A (PR #74, `s7_28`):** sin edición silenciosa por API. Firma vía RPC `sign_consultation()` + RLS endurecida (`signed_at IS NULL`). Sync cita→atendida y borradores sin regresión.
@@ -230,8 +230,8 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 
 ### Próximo arranque recomendado (nueva ventana)
 1. **Sincronizar repo:** `git fetch origin && git checkout main && git pull --ff-only`.
-2. **Confirmar HEAD final:** `f4ae553` o posterior (+ el PR documental de cierre de esta ventana).
-3. **Confirmar PRs mergeados hasta #111** (+ el PR documental de cierre de esta ventana).
+2. **Confirmar HEAD final:** `b8b7dee` o posterior (+ el PR documental de handoff de esta ventana).
+3. **Confirmar PRs mergeados hasta #112** (+ el PR documental de handoff de esta ventana).
 4. **Confirmar migraciones hasta `s7_39`** (aplicadas en Supabase).
 5. **Confirmar frentes cerrados:**
    - ✅ **Correcciones post-firma** COMPLETO (texto, receta, diagnósticos, antecedentes, vitales).
@@ -241,7 +241,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
    - ✅ **Mi equipo Fase 2 (ciclo de vida de invitación)** COMPLETO (backend `s7_36` #102 + UI #103).
    - ✅ **Catálogos personalizados por médico** COMPLETO (global+personal, snapshot histórico, ocultar/clonar, base replicada migrada — #105–#111, `s7_37`/`s7_38`/`s7_39`).
 6. **Árbol limpio · build OK · `tsc --noEmit` OK.**
-7. **Siguiente frente: a decidir** (ver "Próximos frentes" abajo). **No codificar hasta elegirlo y confirmar el estado.**
+7. **Siguiente frente recomendado: UI de LucyAdmin para administrar Base Lucy global** (análisis hecho; backend ya listo — ver "Próximos frentes" abajo). **No codificar hasta confirmar el frente y el estado.**
 
 ### Estado consolidado al cierre (qué está ✅ y qué ⏳)
 - **Infra:** dominio principal `https://lucycare.app`; `lucycare.vercel.app` = fallback temporal (no desactivar). SMTP Resend live.
@@ -256,7 +256,7 @@ Validado el claim end-to-end del médico creado vía Fase 2 con test phone médi
 - **Catálogos personalizados por médico ✅ COMPLETO (#105–#111, `s7_37`/`s7_38`/`s7_39` + migración de datos):** modelo **global (base Lucy, `doctor_id IS NULL`, read-only para médicos) + personal por médico**. Snapshot histórico (editar catálogo no altera históricos firmados). UI consulta (global∪propios + "Base Lucy"/"crear propio") + admin `/panel/catalogos` (segmento Míos|Base Lucy, ocultar/clonar, guard de rol). **De-dup de la base replicada aplicada:** Base Lucy **127 dx / 736 med**; "Míos" solo personalizaciones reales (4 dx + 4 med); **1650 dx + 9568 med inactivadas** (sin hard-delete); `catalog_migration_map` 11218 filas; **FK no reapuntados** (snapshot protege históricos); globales de prueba inactivados. **Regla:** médicos usan/ocultan/clonan; **no editan la base**; globales solo `is_admin` (backend/RLS). ⏳ **Pendiente futuro (frente aparte):** UI de **LucyAdmin para administrar la Base Lucy global**.
 
 ### Próximos frentes (backlog, elegir uno — ninguno arrancado)
-- **LucyAdmin: administrar Base Lucy global** — UI para que LucyAdmin cree/edite/inactive/reactive diagnósticos y medicamentos globales (`doctor_id IS NULL`); audit + anti-duplicados; los médicos no editan la base (solo usan/ocultan/clonan); impacto histórico ya protegido por el snapshot de `s7_37`. (Cierra el último cabo del eje Catálogos.)
+- **LucyAdmin: administrar Base Lucy global ← RECOMENDADO (análisis hecho).** UI para que LucyAdmin cree/edite/inactive/reactive diagnósticos y medicamentos globales (`doctor_id IS NULL`). **Backend YA listo (sin migración):** RLS `s7_38` (`*_insert_admin`/`*_update_admin` con `is_admin()`) permite el CRUD de globales; `audit_catalog` audita; `s7_39` UNIQUE evita duplicados; `s7_37` snapshot protege históricos. **Plan:** 1 PR UI-only — `/admin/catalogos` + NavLink "Catálogos" en `AdminLayout` (gate `AdminOnlyRoute`); tabs Diagnósticos + Medicamentos (Antecedentes fuera); buscar/activos-inactivos/crear/editar/inactivar-reactivar/dedup (mensaje amable ante `23505`); `usage_count` oculto; no hard-delete (solo inactivar); preview + validación visual. Diseño en `docs/ANALISIS_CATALOGOS_PERSONALIZADOS.md §7`. (Cierra el último cabo del eje Catálogos.)
 - **Paciente Global Fase 4** — merge admin de duplicados (`admin_merge_patients`, audit + reversibilidad + dry-run); considerar la nota del `UNIQUE` de F3. (Frente grande/delicado: mueve historial clínico. F5 ya previene nuevos duplicados de entrada.)
 - **Pasarela de pagos / IVA / DTE / Q1–Q11** — desbloquea add-ons de equipo + suscripción SaaS. Requiere validación del owner (pasarela viable SV) antes de código.
 - **Recuperación de acceso sin sesión** (perdió el teléfono, sin email/password) → herramienta LucyAdmin/soporte (complemento del cambio de teléfono).
