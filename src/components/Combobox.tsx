@@ -18,6 +18,8 @@ interface ComboboxProps<T> {
   getKey: (item: T) => string;
   getLabel: (item: T) => string;
   getSubLabel?: (item: T) => string | null;
+  /** Badge opcional junto al label (ej: "Base Lucy" / "Mío"). */
+  getBadge?: (item: T) => { label: string; tone: 'lucy' | 'mine' } | null;
   placeholder?: string;
   disabled?: boolean;
   isLoading?: boolean;
@@ -35,6 +37,7 @@ export default function Combobox<T>({
   getKey,
   getLabel,
   getSubLabel,
+  getBadge,
   placeholder,
   disabled,
   isLoading,
@@ -159,6 +162,7 @@ export default function Combobox<T>({
             <ul>
               {items.map((it) => {
                 const sub = getSubLabel?.(it);
+                const badge = getBadge?.(it);
                 return (
                   <li key={getKey(it)}>
                     <button
@@ -166,7 +170,14 @@ export default function Combobox<T>({
                       onClick={() => handleSelect(it)}
                       className="w-full text-left px-3 py-2 hover:bg-emerald-50/50 border-b border-gray-50 last:border-b-0"
                     >
-                      <p className="text-sm text-gray-900">{getLabel(it)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-900 flex-1 min-w-0 truncate">{getLabel(it)}</p>
+                        {badge && (
+                          <span className="flex-shrink-0 text-[10px] font-normal text-gray-400">
+                            {badge.label}
+                          </span>
+                        )}
+                      </div>
                       {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
                     </button>
                   </li>

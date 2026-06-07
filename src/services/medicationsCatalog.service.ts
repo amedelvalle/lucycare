@@ -43,15 +43,32 @@ export const PRESENTATIONS: { value: MedicationPresentation; label: string }[] =
   { value: 'otro', label: 'Otro' },
 ];
 
+/** IDs de medicamentos globales que este médico ocultó (Catálogos PR-2). */
+async function getHiddenGlobalMedIds(doctorId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('doctor_catalog_hidden')
+    .select('item_id')
+    .eq('doctor_id', doctorId)
+    .eq('item_type', 'medication');
+  return (data ?? []).map((r) => r.item_id);
+}
+
+/**
+ * Busca medicamentos visibles para el médico: **globales (base Lucy) + propios**,
+ * excluyendo los globales que el médico ocultó.
+ */
 export async function searchMedications(
   doctorId: string,
   query: string,
   limit = 20
 ): Promise<MedicationCatalogItem[]> {
+  const hiddenIds = await getHiddenGlobalMedIds(doctorId);
+
   let q = supabase
     .from('medications')
     .select('id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count')
-    .eq('doctor_id', doctorId)
+    // Propios ∪ globales (doctor_id IS NULL).
+    .or(`doctor_id.eq.${doctorId},doctor_id.is.null`)
     .eq('is_active', true);
 
   const trimmed = query.trim();
@@ -60,6 +77,9 @@ export async function searchMedications(
     q = q.or(
       `commercial_name.ilike.%${escaped}%,active_ingredient.ilike.%${escaped}%`
     );
+  }
+  if (hiddenIds.length > 0) {
+    q = q.not('id', 'in', `(${hiddenIds.join(',')})`);
   }
 
   const { data, error } = await q
