@@ -2,7 +2,8 @@ import { supabase } from '@/lib/supabase';
 
 export interface DiagnosisCatalogItem {
   id: string;
-  doctor_id: string;
+  /** null = ítem GLOBAL (catálogo base Lucy); seteado = personal del médico. */
+  doctor_id: string | null;
   name: string;
   description: string | null;
   is_active: boolean;
@@ -51,14 +52,36 @@ export async function createDiagnosis(
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Nombre requerido');
 
-  // Buscar existente por nombre exacto
-  const { data: existing } = await supabase
+  // Dedup (Catálogos PR-2): no duplicar contra el propio ni contra un GLOBAL
+  // visible (activo y no oculto por este médico).
+  // 1. ¿ya existe como propio?
+  const { data: own } = await supabase
     .from('diagnoses')
     .select('id, doctor_id, name, description, is_active, usage_count')
     .eq('doctor_id', doctorId)
     .ilike('name', trimmed)
     .maybeSingle();
-  if (existing) return existing;
+  if (own) return own;
+
+  // 2. ¿existe como global visible? (activo y no oculto por el médico) → reusarlo.
+  const { data: globals } = await supabase
+    .from('diagnoses')
+    .select('id, doctor_id, name, description, is_active, usage_count')
+    .is('doctor_id', null)
+    .eq('is_active', true)
+    .ilike('name', trimmed)
+    .limit(1);
+  const g = globals?.[0];
+  if (g) {
+    const { data: hidden } = await supabase
+      .from('doctor_catalog_hidden')
+      .select('id')
+      .eq('doctor_id', doctorId)
+      .eq('item_type', 'diagnosis')
+      .eq('item_id', g.id)
+      .maybeSingle();
+    if (!hidden) return g; // global visible → usar el existente, no duplicar
+  }
 
   const { data, error } = await supabase
     .from('diagnoses')

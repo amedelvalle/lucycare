@@ -17,7 +17,8 @@ export type MedicationPresentation =
 
 export interface MedicationCatalogItem {
   id: string;
-  doctor_id: string;
+  /** null = ítem GLOBAL (catálogo base Lucy); seteado = personal del médico. */
+  doctor_id: string | null;
   commercial_name: string;
   active_ingredient: string | null;
   concentration: string | null;
@@ -82,14 +83,38 @@ export async function createMedication(
   const trimmed = input.commercial_name.trim();
   if (!trimmed) throw new Error('Nombre comercial requerido');
 
-  // Buscar duplicado por nombre comercial (case-insensitive)
-  const { data: existing } = await supabase
+  const COLS = 'id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count';
+
+  // Dedup (Catálogos PR-2): no duplicar contra el propio ni contra un GLOBAL
+  // visible (activo y no oculto por este médico).
+  // 1. ¿ya existe como propio?
+  const { data: own } = await supabase
     .from('medications')
-    .select('id, doctor_id, commercial_name, active_ingredient, concentration, presentation, is_active, usage_count')
+    .select(COLS)
     .eq('doctor_id', doctorId)
     .ilike('commercial_name', trimmed)
     .maybeSingle();
-  if (existing) return existing;
+  if (own) return own;
+
+  // 2. ¿existe como global visible? → reusarlo.
+  const { data: globals } = await supabase
+    .from('medications')
+    .select(COLS)
+    .is('doctor_id', null)
+    .eq('is_active', true)
+    .ilike('commercial_name', trimmed)
+    .limit(1);
+  const g = globals?.[0];
+  if (g) {
+    const { data: hidden } = await supabase
+      .from('doctor_catalog_hidden')
+      .select('id')
+      .eq('doctor_id', doctorId)
+      .eq('item_type', 'medication')
+      .eq('item_id', g.id)
+      .maybeSingle();
+    if (!hidden) return g;
+  }
 
   const { data, error } = await supabase
     .from('medications')
