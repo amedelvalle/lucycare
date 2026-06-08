@@ -35,8 +35,11 @@ export default function PatientHeader() {
         {user === undefined ? (
           // Cargando — placeholder corto para no saltar el layout
           <div className="w-24 h-9 bg-gray-100 rounded-full animate-pulse" />
-        ) : user && user.role === 'patient' ? (
-          <PatientAccountMenu displayName={user.name || user.phone} />
+        ) : user && (user.role === 'patient' || user.role === 'doctor' || user.role === 'assistant') ? (
+          // Identidad múltiple (Fase 1): el área de paciente es accesible para
+          // patient/doctor/assistant. Para médico/asistente, el menú ofrece
+          // además "Ir al panel médico". Admin/anon no llegan acá (PatientOnlyRoute).
+          <PatientAccountMenu displayName={user.name || user.phone} role={user.role} />
         ) : null}
       </div>
     </header>

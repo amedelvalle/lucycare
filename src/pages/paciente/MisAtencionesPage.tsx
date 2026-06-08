@@ -5,8 +5,10 @@
  * Solo metadatos operativos. NO contenido clínico.
  *
  * Reglas:
- *  - Solo accesible para role=patient. El router fuerza esto via
- *    PatientOnlyRoute. Si llega otro rol, se redirige a /.
+ *  - Accesible para patient/doctor/assistant (identidad múltiple, Fase 1):
+ *    el lado paciente es la "cuenta personal" de la persona. PatientOnlyRoute
+ *    excluye admin/anon. Los datos siguen filtrados por RLS (cada quien ve solo
+ *    lo suyo, por auth.uid()/profile_id).
  *  - Paginada 20 por página.
  *  - Columnas: Fecha · Médico · Clínica · Especialidad · Servicio · Estado.
  *  - Fallbacks: "Consulta médica" / "No especificada".
@@ -19,6 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listMyAppointments } from '@/services/patientHistory.service';
 import PatientHeader from '@/components/PatientHeader';
 import ProfileIncompleteBanner from '@/components/ProfileIncompleteBanner';
+import PersonalAccountNote from '@/components/PersonalAccountNote';
 
 const PAGE_SIZE = 20;
 
@@ -74,10 +77,11 @@ export default function MisAtencionesPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Mis atenciones</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Historial de citas y atenciones con tus médicos en LucyCare.
+            Historial de citas y atenciones con tus médicos en LucyCare. Es tu cuenta personal.
           </p>
         </div>
 
+        <PersonalAccountNote />
         <ProfileIncompleteBanner />
 
         {/* Loading */}
