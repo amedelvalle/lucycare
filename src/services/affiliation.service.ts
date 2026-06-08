@@ -255,6 +255,8 @@ export interface ApproveAndCreateOverrides {
   addressLine?: string | null
   departmentId?: string | null
   municipalityId?: string | null
+  /** Confirmación explícita para reusar la cuenta de un paciente existente. */
+  confirmReuse?: boolean
 }
 
 export interface ApproveAndCreateResult {
@@ -263,6 +265,109 @@ export interface ApproveAndCreateResult {
   profileId: string
   /** True si el RPC aceptó el email del override (porque lead no tenía). */
   emailViaOverride?: boolean
+  /** True si se reusó la cuenta de un paciente existente (no se creó auth.user). */
+  reusedExistingUser?: boolean
+}
+
+// ─── Preflight de afiliación (s7_42) ───────────────────────────────────
+
+export type AffiliationClassification =
+  | 'new'
+  | 'reuse_patient'
+  | 'block_doctor'
+  | 'block_sensitive'
+  | 'block_identity_conflict'
+
+export interface AffiliationPreflight {
+  classification: AffiliationClassification
+  existingUserId: string | null
+  existingDoctorId: string | null
+  leadStatus: AffiliationStatus
+  alreadyLinked: boolean
+}
+
+/**
+ * Clasifica el lead ANTES de crear el médico (RPC `admin_affiliation_preflight`,
+ * s7_42, definer, `is_admin()`). No escribe. La UI lo usa para mostrar el
+ * copy/confirmación correctos (paciente existente → vincular; médico existente
+ * → bloquear con link; rol sensible / identidad ambigua → revisión manual).
+ */
+export async function adminAffiliationPreflight(
+  requestId: string,
+): Promise<AffiliationPreflight> {
+  const { data, error } = await supabase.rpc('admin_affiliation_preflight', {
+    p_request_id: requestId,
+  })
+  if (error) throw new Error(error.message)
+  const r = data as {
+    classification: AffiliationClassification
+    existing_user_id: string | null
+    existing_doctor_id: string | null
+    lead_status: AffiliationStatus
+    already_linked: boolean
+  }
+  return {
+    classification: r.classification,
+    existingUserId: r.existing_user_id,
+    existingDoctorId: r.existing_doctor_id,
+    leadStatus: r.lead_status,
+    alreadyLinked: r.already_linked,
+  }
+}
+
+/** Código de error amigable de la creación de médico desde afiliación. */
+export type AffiliationCreateErrorCode =
+  | 'block_doctor'             // P0010
+  | 'block_sensitive'          // P0011
+  | 'block_identity_conflict'  // P0012
+  | 'requires_confirmation'    // P0013
+  | 'invalid_email'            // P0005
+  | 'not_approved'             // P0002
+  | 'already_linked'           // P0003
+  | 'duplicate'                // 23505 (fallback — no debería ocurrir con s7_42)
+  | 'unknown'
+
+export class AffiliationCreateError extends Error {
+  readonly code: AffiliationCreateErrorCode
+  constructor(code: AffiliationCreateErrorCode, message: string) {
+    super(message)
+    this.name = 'AffiliationCreateError'
+    this.code = code
+  }
+}
+
+const CREATE_ERROR_COPY: Record<AffiliationCreateErrorCode, string> = {
+  block_doctor:
+    'Ya existe un médico registrado con este teléfono. Revisá su ficha; podría ser un duplicado.',
+  block_sensitive:
+    'Este teléfono pertenece a una cuenta con otro rol (asistente/administrador) o con una clínica activa. Requiere revisión manual.',
+  block_identity_conflict:
+    'El correo del lead pertenece a otra cuenta o no coincide con el teléfono. Identidad ambigua: requiere revisión manual.',
+  requires_confirmation:
+    'Este teléfono ya pertenece a una cuenta de paciente. Confirmá la vinculación para crear el médico sobre esa cuenta.',
+  invalid_email: 'El email indicado no tiene un formato válido.',
+  not_approved: 'La solicitud no está en estado aprobado.',
+  already_linked: 'Esta solicitud ya tiene un médico vinculado.',
+  duplicate:
+    'Ya existe una cuenta con esos datos (teléfono o email). Requiere revisión manual.',
+  unknown: 'No pudimos crear el médico. Revisá los datos e intentá de nuevo.',
+}
+
+function mapCreateError(err: { code?: string; message?: string } | null): AffiliationCreateError {
+  const sqlstate = err?.code ?? ''
+  const byCode: Record<string, AffiliationCreateErrorCode> = {
+    P0010: 'block_doctor',
+    P0011: 'block_sensitive',
+    P0012: 'block_identity_conflict',
+    P0013: 'requires_confirmation',
+    P0005: 'invalid_email',
+    P0002: 'not_approved',
+    P0003: 'already_linked',
+    '23505': 'duplicate',
+  }
+  const code: AffiliationCreateErrorCode =
+    byCode[sqlstate] ?? (/users_phone_key|users_email|duplicate key/i.test(err?.message ?? '') ? 'duplicate' : 'unknown')
+  return new AffiliationCreateError(code, CREATE_ERROR_COPY[code])
 }
 
 export async function adminApproveAndCreateDoctor(
@@ -280,22 +385,25 @@ export async function adminApproveAndCreateDoctor(
   if (overrides.addressLine && overrides.addressLine.trim()) payload.address_line = overrides.addressLine.trim()
   if (overrides.departmentId) payload.department_id = overrides.departmentId
   if (overrides.municipalityId) payload.municipality_id = overrides.municipalityId
+  if (overrides.confirmReuse) payload.confirm_reuse = 'true'
 
   const { data, error } = await supabase.rpc('admin_approve_and_create_doctor', {
     p_request_id: requestId,
     p_overrides: payload,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw mapCreateError(error)
   const row = data as {
     doctor_id: string
     clinic_id: string
     profile_id: string
     email_via_override?: boolean
+    reused_existing_user?: boolean
   }
   return {
     doctorId: row.doctor_id,
     clinicId: row.clinic_id,
     profileId: row.profile_id,
     emailViaOverride: !!row.email_via_override,
+    reusedExistingUser: !!row.reused_existing_user,
   }
 }
