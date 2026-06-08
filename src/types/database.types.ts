@@ -1602,6 +1602,33 @@ export type Database = {
         Args: { user_phone: string }
         Returns: number
       }
+      admin_list_waitlist: {
+        Args: {
+          p_status?: string
+          p_doctor_id?: string
+          p_specialty_id?: string
+          p_search?: string
+          p_date_from?: string
+          p_date_to?: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: {
+          id: string
+          doctor_id: string
+          doctor_name: string | null
+          specialty_name: string | null
+          clinic_name: string | null
+          patient_name: string
+          patient_phone: string
+          patient_message: string | null
+          status: string
+          contacted_at: string | null
+          notes: string | null
+          created_at: string
+          total_count: number
+        }[]
+      }
       find_patient_match_candidates: {
         Args: {
           p_clinic_id: string
