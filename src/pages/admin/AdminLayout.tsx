@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
     badgeQueryKey: 'admin-affiliation-pending-count',
   },
   { to: '/admin/catalogos', label: 'Catálogos', icon: 'ri-book-2-line' },
+  { to: '/admin/lista-espera', label: 'Lista de espera', icon: 'ri-time-line' },
 ];
 
 function NavBadge({ count }: { count: number }) {

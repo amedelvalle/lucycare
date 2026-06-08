@@ -135,6 +135,70 @@ export async function adminWaitlistPendingCountByDoctor(): Promise<Map<string, n
   return map;
 }
 
+/** Fila de la lista de espera global cross-médicos (admin). */
+export interface AdminWaitlistGlobalEntry extends AdminWaitlistEntry {
+  doctorId: string;
+  doctorName: string | null;
+  specialtyName: string | null;
+  clinicName: string | null;
+}
+
+export interface AdminListWaitlistFilters {
+  status?: 'pending' | 'contacted' | 'cancelled';
+  doctorId?: string;
+  specialtyId?: string;
+  search?: string;
+  dateFrom?: string; // 'YYYY-MM-DD' inclusivo
+  dateTo?: string;   // 'YYYY-MM-DD' inclusivo (UX) — el RPC aplica < date_to + 1 día
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminListWaitlistResult {
+  entries: AdminWaitlistGlobalEntry[];
+  total: number;
+}
+
+/**
+ * Lista de espera GLOBAL cross-médicos (solo LucyAdmin). Vía RPC
+ * `admin_list_waitlist` (s7_41, SECURITY DEFINER, gate `is_admin()`): join al
+ * médico/perfil/especialidad/clínica + filtros + paginación. El total viene en
+ * `total_count` (count(*) OVER()) de cada fila; si no hay filas, total = 0.
+ */
+export async function adminListWaitlist(
+  filters: AdminListWaitlistFilters = {},
+): Promise<AdminListWaitlistResult> {
+  const { data, error } = await supabase.rpc('admin_list_waitlist', {
+    p_status: filters.status ?? undefined,
+    p_doctor_id: filters.doctorId ?? undefined,
+    p_specialty_id: filters.specialtyId ?? undefined,
+    p_search: filters.search ?? undefined,
+    p_date_from: filters.dateFrom ?? undefined,
+    p_date_to: filters.dateTo ?? undefined,
+    p_limit: filters.limit ?? 25,
+    p_offset: filters.offset ?? 0,
+  });
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const entries: AdminWaitlistGlobalEntry[] = rows.map((row) => ({
+    id: row.id as string,
+    doctorId: (row.doctor_id as string) ?? '',
+    doctorName: (row.doctor_name as string | null) ?? null,
+    specialtyName: (row.specialty_name as string | null) ?? null,
+    clinicName: (row.clinic_name as string | null) ?? null,
+    patientName: (row.patient_name as string) ?? '',
+    patientPhone: (row.patient_phone as string) ?? '',
+    patientMessage: (row.patient_message as string | null) ?? null,
+    status: (row.status as AdminWaitlistEntry['status']) ?? 'pending',
+    contactedAt: (row.contacted_at as string | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    createdAt: row.created_at as string,
+  }));
+  const total = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  return { entries, total };
+}
+
 export async function adminUpdateWaitlistEntry(
   entryId: string,
   status: 'pending' | 'contacted' | 'cancelled',
