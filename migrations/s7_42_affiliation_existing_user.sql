@@ -289,11 +289,20 @@ BEGIN
 
   -- ─── Resolver el profile (crear nuevo vs reusar existente) ───
   IF v_c.o_class = 'reuse_patient' THEN
-    -- REUSAR: no se crea auth.user. Se conserva el profile del paciente
-    -- (role='patient' pre-claim), su email/nombre/teléfono intactos.
+    -- REUSAR: no se crea auth.user. Se conserva la cuenta del paciente.
+    -- NO se tocan phone/email/role (credenciales/contactos sensibles).
     v_user_id    := v_c.o_user_id;
     v_profile_id := v_c.o_user_id;
     v_reused     := true;
+
+    -- El médico no puede quedar "(sin nombre)": la ficha admin / el listado /
+    -- el directorio leen profiles.full_name. Si el paciente tiene full_name
+    -- vacío, lo completamos con el nombre público del lead. Solo si está
+    -- vacío → NO pisamos un nombre real ya cargado por el paciente.
+    UPDATE profiles
+       SET full_name = v_full_name, updated_at = now()
+     WHERE id = v_profile_id
+       AND coalesce(btrim(full_name), '') = '';
   ELSE
     -- NEW: auth.user dormant (path original de s7_24).
     v_user_id := gen_random_uuid();

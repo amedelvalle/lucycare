@@ -111,7 +111,13 @@ try {
     else if (prof.role === 'patient') ok('2.pre throwaway patient con profile listo');
     else ko('2.pre throwaway role inesperado: ' + prof.role);
 
+    // Forzar full_name vacío → reproduce el caso del bug (paciente OTP sin nombre).
+    await admin.from('profiles').update({ full_name: '' }).eq('id', reuseUserId);
+
     const reqId = await makeLead(P_REUSE);
+    const { data: leadRow } = await admin.from('doctor_affiliation_requests')
+      .select('full_name').eq('id', reqId).single();
+    const expectedName = leadRow?.full_name ?? '';
 
     // 2b preflight → reuse_patient + existing_user_id correcto
     const { data: pf } = await preflight(reqId);
@@ -136,9 +142,12 @@ try {
         if (data.profile_id === reuseUserId) ok('2c reuse → profile_id == paciente existente (sin nuevo auth.user)');
         else ko('2c reuse profile_id NO coincide con el paciente: ' + data.profile_id);
 
-        // role sigue patient
-        const { data: prof2 } = await admin.from('profiles').select('role').eq('id', reuseUserId).single();
+        // role sigue patient + full_name se completó con el nombre del lead (no "(sin nombre)")
+        const { data: prof2 } = await admin.from('profiles').select('role, full_name').eq('id', reuseUserId).single();
         if (prof2?.role === 'patient') ok('2c reuse → profiles.role sigue patient'); else ko('2c role cambió: ' + JSON.stringify(prof2));
+        if (prof2?.full_name && prof2.full_name === expectedName)
+          ok(`2c reuse → profiles.full_name completado con el nombre del lead ("${prof2.full_name}")`);
+        else ko('2c full_name NO se completó (médico quedaría sin nombre): ' + JSON.stringify(prof2));
 
         // doctor flags
         const { data: doc } = await admin.from('doctors')
