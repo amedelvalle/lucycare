@@ -33,8 +33,9 @@
    (a dónde te manda el login si no elegís), no como "la única cosa que sos".
 5. **Para el piloto**, el fix mínimo de alto valor es: **permitir que un médico/
    asistente acceda a "Mis atenciones" / perfil de paciente** (hoy bloqueado por
-   `PatientOnlyRoute`), porque un médico también se atiende. El resto (selector
-   de contexto, roles múltiples formales) es post-piloto.
+   `PatientOnlyRoute`), porque un médico también se atiende. Es **solo
+   frontend/gating** (relajar el guard de ruta), **sin tocar RLS ni DB**. El
+   resto (selector de contexto, roles múltiples formales) es post-piloto.
 6. **Mantener las decisiones de credenciales sensibles** (cerradas en `s7_42` y
    cambio de teléfono): email/phone **no** se copian/asumen automáticamente; se
    completan/validan en reclamo o flujo de cuenta.
@@ -160,11 +161,12 @@ paciente) hoy **solo ve uno** según su `profiles.role`. Si es `doctor`, pierde
 
 ### 4.2 Propuesta de experiencia (incremental)
 
-- **Fase corta (piloto):** si la persona tiene capacidad de paciente (tiene
-  `patients` vinculados o simplemente "puede serlo"), **permitir** el acceso a
-  `/paciente/mis-atenciones` y `/paciente/perfil` aunque su `role` sea
-  `doctor`/`assistant`. Es relajar `PatientOnlyRoute` a "no-admin" o
-  "capacidad-paciente", no a `role==='patient'`.
+- **Fase corta (piloto):** **permitir** el acceso a `/paciente/mis-atenciones` y
+  `/paciente/perfil` a toda persona autenticada con `role ∈ {patient, doctor,
+  assistant}` (excluye `admin` y anon), aunque su `role` sea `doctor`/
+  `assistant`. Es relajar `PatientOnlyRoute` de `role==='patient'` a ese
+  conjunto. **Sin selector de modo todavía** (eso es Fase media). Los datos
+  siguen protegidos por RLS — cada quien ve solo lo suyo.
 - **Fase media:** **selector de contexto** post-login cuando la persona tiene
   más de una capacidad ("Entrar como médico" / "Mi cuenta de paciente"), con un
   toggle visible para cambiar de modo sin cerrar sesión. El **panel se elige por
@@ -225,12 +227,35 @@ Fijar el modelo "identidad única + capacidades múltiples" como decisión de
 producto. Sin código.
 
 ### Fase 1 — Fix mínimo de piloto (chico, bajo riesgo)
-- **Permitir contexto paciente a médico/asistente**: relajar `PatientOnlyRoute`
-  para que una persona con sesión (no-admin, o con capacidad-paciente) acceda a
-  "Mis atenciones" / `/paciente/perfil`. 1 PR frontend, sin migración.
+
+**Alcance: SOLO frontend / gating de ruta. Sin cambios de RLS, sin migración,
+sin tocar `profiles.role` ni el modelo de datos.**
+
+- **`PatientOnlyRoute` deja de ser "solo `patient`".** Regla nueva: permite el
+  acceso a **personas autenticadas con rol `patient`, `doctor` o `assistant`**;
+  **excluye `admin`** (cuenta privilegiada de plataforma, separada en MVP) y
+  **excluye anon** (sin sesión → fuera). Es decir: gate = "hay sesión Y
+  `role ∈ {patient, doctor, assistant}`".
+- Aplica a `/paciente/mis-atenciones` y `/paciente/perfil`.
+- **Los datos siguen protegidos por RLS.** Abrir la ruta **no** abre datos de
+  otros: las páginas de paciente filtran por `auth.uid()` / `profile_id` vía
+  RLS. Una persona solo ve sus propias atenciones/perfil, venga del rol que
+  venga. La seguridad sigue viniendo de las policies y de la relación real de
+  datos, no del guard de navegación.
+- **NO hay selector de "modo paciente / modo médico" en esta fase** — eso es
+  Fase 2. Acá solo se desbloquea el acceso.
 - Copy de onboarding/activación que diferencie cuenta personal vs perfil
   profesional (especialmente en el éxito de `reuse_patient`).
-- **No** toca RLS ni `profiles.role`. Reversible.
+- Reversible (es un cambio de guard).
+
+**Validación esperada de Fase 1 (a ejecutar cuando se implemente):**
+- ✅ paciente entra a `/paciente/mis-atenciones`;
+- ✅ médico entra a `/paciente/mis-atenciones`;
+- ✅ asistente entra a `/paciente/mis-atenciones`;
+- ⛔ admin queda fuera (redirige);
+- ⛔ anon (sin sesión) queda fuera (redirige);
+- 🔒 ningún usuario ve datos que no le corresponden (RLS intacta: cada quien ve
+  solo lo suyo).
 
 ### Fase 2 — Capacidades derivadas + selector de contexto (medio)
 - Helper único de capacidades (frontend `useIdentity()` + opcional RPC
@@ -267,18 +292,25 @@ producto. Sin código.
 
 ---
 
-## 8. Decisiones para el owner (a validar)
+## 8. Decisiones del owner — ✅ APROBADAS (2026-06-08)
 
-1. **¿Confirmás el modelo "identidad única + capacidades múltiples derivadas de
-   filas; `profiles.role` = rol primario/default"?** (recomendado: sí)
-2. **¿Hacemos la Fase 1 (médico/asistente puede ver "Mis atenciones") para el
-   piloto?** (recomendado: sí — chico, alto valor, sin tocar RLS)
-3. **¿`admin` se mantiene como cuenta separada (no mezcla con paciente/médico)?**
-   (recomendado: sí — ya se bloquea en `s7_42`)
-4. **¿`claim` debe dejar de sobrescribir el rol (Fase 2) o lo dejamos como está
-   por ahora?** (recomendado: revisarlo en Fase 2, no urgente)
-5. **¿Confirmás que #3 (recuperación sin sesión) y #4 (merge admin) quedan
-   detrás de este modelo?** (recomendado: sí)
+1. ✅ **Modelo "identidad única + capacidades múltiples" confirmado.** Una
+   persona = una identidad base (`auth.users`/`profiles`) con capacidades/
+   contextos múltiples (paciente/médico/asistente/admin). `profiles.role` =
+   **rol primario/default (o legacy) de navegación**, no la única identidad.
+2. ✅ **Fase 1 para piloto: SÍ.** Médico y asistente deben poder acceder a su
+   lado paciente (`/paciente/mis-atenciones`, `/paciente/perfil`). **Sin tocar
+   RLS.** La seguridad sigue viniendo de las policies y la relación real de
+   datos. **Admin no se mezcla** en esta fase.
+3. ✅ **Admin se mantiene como cuenta separada** (cuenta privilegiada de
+   plataforma; no mezclar con paciente/médico en MVP).
+4. ✅ **No tocar el claim médico todavía.** Por ahora `claim` puede seguir
+   seteando `profiles.role='doctor'`; el cambio inmediato es que ese rol **ya
+   no bloquee** el acceso al lado paciente. En Fase 2 se revisa si `role` queda
+   como rol primario/default, contexto activo, o se migra a capacidades
+   explícitas.
+5. ✅ **#3 (recuperación sin sesión) y #4 (merge admin) quedan detrás de este
+   modelo.** No se diseñan sin la regla de identidad/capacidades clara.
 
 ---
 
