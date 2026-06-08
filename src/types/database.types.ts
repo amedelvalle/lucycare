@@ -1602,6 +1602,10 @@ export type Database = {
         Args: { user_phone: string }
         Returns: number
       }
+      admin_affiliation_preflight: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       admin_list_waitlist: {
         Args: {
           p_status?: string

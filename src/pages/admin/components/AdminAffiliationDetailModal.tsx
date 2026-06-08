@@ -6,9 +6,11 @@ import {
   adminRejectAffiliationRequest,
   adminMarkApprovedPendingCreation,
   adminApproveAndCreateDoctor,
+  adminAffiliationPreflight,
   type AffiliationRequestRow,
   type AffiliationStatus,
   type ApproveAndCreateResult,
+  type AffiliationPreflight,
 } from '../../../services/affiliation.service'
 import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory'
 
@@ -52,6 +54,8 @@ export default function AdminAffiliationDetailModal({
   const [createMode, setCreateMode] = useState(false)
   const [createConfirmed, setCreateConfirmed] = useState(false)
   const [createdResult, setCreatedResult] = useState<ApproveAndCreateResult | null>(null)
+  // Preflight (s7_42): clasifica el teléfono/email del lead antes de crear.
+  const [preflight, setPreflight] = useState<AffiliationPreflight | null>(null)
 
   // Overrides para la RPC (pre-rellenados desde el lead cuando entra
   // al sub-modo). Phone NUNCA se sobreescribe — es identidad validada
@@ -87,6 +91,13 @@ export default function AdminAffiliationDetailModal({
     onError: (e: Error) => setActionError(e.message),
   })
 
+  // Preflight: corre al entrar al sub-modo "Crear médico".
+  const preflightMut = useMutation({
+    mutationFn: () => adminAffiliationPreflight(requestId),
+    onSuccess: (pf) => setPreflight(pf),
+    onError: (e: Error) => setActionError(e.message),
+  })
+
   const createMut = useMutation({
     mutationFn: () =>
       adminApproveAndCreateDoctor(requestId, {
@@ -100,6 +111,8 @@ export default function AdminAffiliationDetailModal({
         addressLine: ovAddressLine,
         departmentId: ovDepartmentId,
         municipalityId: ovMunicipalityId,
+        // s7_42: confirmación explícita de reuso si el teléfono ya es de un paciente.
+        confirmReuse: preflight?.classification === 'reuse_patient',
       }),
     onSuccess: (result) => {
       setCreatedResult(result)
@@ -136,7 +149,9 @@ export default function AdminAffiliationDetailModal({
     setOvDepartmentId(row.departmentId ?? '')
     setOvMunicipalityId(row.municipalityId ?? '')
     setCreateConfirmed(false)
+    setPreflight(null)
     setCreateMode(true)
+    preflightMut.mutate()
   }
 
   const handleCloseAfterCreate = () => {
@@ -149,6 +164,11 @@ export default function AdminAffiliationDetailModal({
     approveMut.isPending ||
     rejectMut.isPending ||
     createMut.isPending
+
+  // Clasificación del preflight (s7_42): bloquea casos sensibles/duplicados.
+  const pfClass = preflight?.classification
+  const isBlocked = pfClass === 'block_doctor' || pfClass === 'block_sensitive' || pfClass === 'block_identity_conflict'
+  const isReuse = pfClass === 'reuse_patient'
 
   return (
     <div
@@ -276,6 +296,12 @@ export default function AdminAffiliationDetailModal({
                       los flags conservadores: <strong>no publicado</strong>, <strong>no operativo</strong>,
                       <strong>sin agenda</strong>. El médico debe reclamarlo via OTP+licencia para activarlo.
                     </p>
+                    {createdResult.reusedExistingUser && (
+                      <p className="text-sm text-emerald-800 mt-1">
+                        <i className="ri-links-line mr-1" />
+                        Se <strong>vinculó la cuenta de paciente existente</strong> (no se creó una cuenta nueva).
+                      </p>
+                    )}
                     <div className="mt-3 text-xs text-emerald-900 space-y-1 break-all">
                       <div>doctor_id: <code className="bg-white px-1 rounded">{createdResult.doctorId}</code></div>
                       <div>clinic_id: <code className="bg-white px-1 rounded">{createdResult.clinicId}</code></div>
@@ -325,7 +351,52 @@ export default function AdminAffiliationDetailModal({
                 Phone y email del lead NO se editan acá.
               </p>
 
-              <div className="space-y-3">
+              {/* Banner de preflight (s7_42): clasificación del teléfono/email */}
+              {preflightMut.isPending && (
+                <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+                  Verificando si el teléfono ya pertenece a una cuenta…
+                </div>
+              )}
+              {preflight && pfClass === 'new' && (
+                <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                  <i className="ri-user-add-line mr-1 text-gray-500" />
+                  Se creará una <strong>cuenta nueva</strong> para este médico.
+                </div>
+              )}
+              {preflight && isReuse && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+                  <i className="ri-links-line mr-1 text-blue-600" />
+                  Este teléfono <strong>ya pertenece a una cuenta de paciente</strong>. Al crear, se
+                  <strong> vinculará esa cuenta</strong> (no se crea una nueva). La persona seguirá como
+                  paciente hasta que reclame el perfil médico por OTP+licencia.
+                </div>
+              )}
+              {preflight && isBlocked && (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                  <i className="ri-error-warning-line mr-1 text-red-600" />
+                  {pfClass === 'block_doctor' && (
+                    <>Ya existe un <strong>médico</strong> registrado con este teléfono. No se puede crear otro desde acá.</>
+                  )}
+                  {pfClass === 'block_sensitive' && (
+                    <>Este teléfono pertenece a una cuenta con <strong>otro rol</strong> (asistente/administrador) o con una clínica activa. Requiere <strong>revisión manual</strong>.</>
+                  )}
+                  {pfClass === 'block_identity_conflict' && (
+                    <>El <strong>correo</strong> del lead pertenece a otra cuenta o no coincide con el teléfono. Identidad ambigua: requiere <strong>revisión manual</strong>.</>
+                  )}
+                  {pfClass === 'block_doctor' && preflight.existingDoctorId && (
+                    <div className="mt-2">
+                      <Link
+                        to={`/admin/medicos/${preflight.existingDoctorId}`}
+                        className="px-3 py-1.5 text-xs font-medium bg-red-700 text-white rounded-lg hover:bg-red-800 inline-block"
+                      >
+                        Ver médico existente
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className={`space-y-3 ${isBlocked ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Nombre público del médico <span className="text-red-600">*</span>
@@ -455,8 +526,9 @@ export default function AdminAffiliationDetailModal({
                       className="mt-1 w-4 h-4 text-emerald-700 rounded cursor-pointer flex-shrink-0"
                     />
                     <span className="text-amber-900">
-                      Confirmo que validé la identidad del médico. Se creará un auth.users dormant + profile
-                      + clinic + doctor en listed_only (sin publicar, sin agenda, sin verified).
+                      {isReuse
+                        ? 'Confirmo que validé la identidad del médico y autorizo vincular la cuenta de paciente existente. Se creará el doctor en listed_only (sin publicar, sin agenda, sin verified) sobre esa cuenta.'
+                        : 'Confirmo que validé la identidad del médico. Se creará un auth.users dormant + profile + clinic + doctor en listed_only (sin publicar, sin agenda, sin verified).'}
                     </span>
                   </label>
                 </div>
@@ -473,11 +545,14 @@ export default function AdminAffiliationDetailModal({
                     disabled={
                       loading ||
                       !createConfirmed ||
-                      ovFullName.trim().length === 0
+                      ovFullName.trim().length === 0 ||
+                      preflightMut.isPending ||
+                      !preflight ||
+                      isBlocked
                     }
                     className="px-4 py-2 text-sm font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {createMut.isPending ? 'Creando…' : 'Crear médico'}
+                    {createMut.isPending ? 'Creando…' : isReuse ? 'Vincular y crear médico' : 'Crear médico'}
                   </button>
                   <button
                     onClick={() => {
