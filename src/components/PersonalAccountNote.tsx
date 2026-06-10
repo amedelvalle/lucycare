@@ -32,9 +32,9 @@ export default function PersonalAccountNote() {
     <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-sm text-blue-900 flex items-start gap-2">
       <i className="ri-information-line text-blue-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
       <span>
-        Estás en tu <strong>cuenta personal de paciente</strong>. Tu perfil profesional y tu
-        panel médico son aparte — una misma persona puede tener cuenta personal y perfil médico.{' '}
-        <Link to="/panel" className="font-medium underline">Ir al panel médico</Link>.
+        Estás en tu <strong>cuenta personal de paciente</strong>. Tu panel de trabajo es
+        aparte — una misma persona puede tener cuenta personal y perfil profesional.{' '}
+        <Link to="/panel" className="font-medium underline">Ir al panel</Link>.
       </span>
     </div>
   );

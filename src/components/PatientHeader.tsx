@@ -38,7 +38,7 @@ export default function PatientHeader() {
         ) : user && (user.role === 'patient' || user.role === 'doctor' || user.role === 'assistant') ? (
           // Identidad múltiple (Fase 1): el área de paciente es accesible para
           // patient/doctor/assistant. Para médico/asistente, el menú ofrece
-          // además "Ir al panel médico". Admin/anon no llegan acá (PatientOnlyRoute).
+          // además "Ir al panel". Admin/anon no llegan acá (PatientOnlyRoute).
           <PatientAccountMenu displayName={user.name || user.phone} role={user.role} />
         ) : null}
       </div>
