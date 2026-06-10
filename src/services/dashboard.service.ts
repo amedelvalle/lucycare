@@ -71,6 +71,11 @@ function endOfWeek(date: Date): string {
 
 /**
  * Obtener doctor_id y clinic_id del usuario autenticado.
+ *
+ * @deprecated Sin callers desde Identidad múltiple Fase 1: asumía que el
+ * logueado SIEMPRE tiene fila en `doctors` (falso para asistentes → reventaba
+ * el home del panel). Usar `useClinicContext` (resuelve doctor propio o doctor
+ * activo del asistente). No importar desde código nuevo.
  */
 export async function getDoctorByProfile(profileId: string) {
   const { data, error } = await supabase

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import PatientHeader from '@/components/PatientHeader';
+import PersonalAccountNote from '@/components/PersonalAccountNote';
 import ChangePhoneModal from '@/components/ChangePhoneModal';
 import { useMyProfile, useLocalSuggestions, useUpdateMyProfile, patientProfileKeys } from '@/hooks/usePatientProfile';
 import { useDepartments, useMunicipalities } from '@/hooks/useDirectory';
@@ -149,8 +150,10 @@ export default function MiPerfilPage() {
 
         <div className="mb-5">
           <h1 className="text-2xl font-bold text-gray-900">Mi perfil</h1>
-          <p className="text-sm text-gray-600 mt-1">Tus datos personales en LucyCare.</p>
+          <p className="text-sm text-gray-600 mt-1">Tus datos personales en LucyCare (cuenta personal).</p>
         </div>
+
+        <PersonalAccountNote />
 
         {suggestions.length > 0 && (
           <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">

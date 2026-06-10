@@ -3,8 +3,15 @@
  *
  * Devuelve las atenciones (appointments) del paciente logueado
  * cross-clinic, vía las filas de `patients` que tienen
- * `profile_id = auth.uid()`. RLS asegura que solo devuelve las
- * filas propias.
+ * `profile_id = auth.uid()`.
+ *
+ * IMPORTANTE (Identidad múltiple Fase 1): el filtro "solo las mías como
+ * persona" es EXPLÍCITO (`patient.profile_id = uid`), no solo RLS. Para un
+ * paciente puro RLS bastaba; pero un médico/asistente también ve por RLS las
+ * citas de su clínica (su UI de trabajo), y sin el filtro explícito su
+ * "Mis atenciones" personal listaría las citas de la clínica como propias.
+ * RLS sigue siendo la defensa de autorización; este filtro define la
+ * SEMÁNTICA de la página (mi historial como paciente).
  *
  * Sin datos clínicos profundos: solo metadatos operativos
  * (fecha, médico, clínica, especialidad, servicio, estado).
@@ -36,7 +43,7 @@ const DEFAULT_PAGE_SIZE = 20;
 
 /**
  * Lista las atenciones del paciente logueado, paginada.
- * - RLS hace el filtro de "solo las mías".
+ * - Filtro explícito por persona (`patient.profile_id = uid`); RLS autoriza.
  * - Orden: más reciente primero.
  */
 export async function listMyAppointments(options: { page?: number; pageSize?: number } = {}): Promise<ListAppointmentsResult> {
@@ -45,6 +52,10 @@ export async function listMyAppointments(options: { page?: number; pageSize?: nu
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
+  const { data: { session } } = await supabase.auth.getSession();
+  const uid = session?.user?.id;
+  if (!uid) return { rows: [], total: 0 };
+
   const { data, error, count } = await supabase
     .from('appointments')
     .select(
@@ -52,6 +63,7 @@ export async function listMyAppointments(options: { page?: number; pageSize?: nu
       id,
       start_time,
       end_time,
+      patient:patient_id!inner ( profile_id ),
       doctor:doctor_id (
         id,
         profiles:profile_id (
@@ -75,6 +87,7 @@ export async function listMyAppointments(options: { page?: number; pageSize?: nu
       `,
       { count: 'exact' },
     )
+    .eq('patient.profile_id', uid)
     .order('start_time', { ascending: false })
     .range(from, to);
 

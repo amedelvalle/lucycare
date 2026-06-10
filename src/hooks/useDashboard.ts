@@ -2,38 +2,35 @@
  * Hook del Dashboard — S3-07
  * Carga datos del panel: doctor, citas de hoy, próximas 48h, métricas.
  *
- * ACCIÓN: CREAR este archivo nuevo
- * RUTA:   src/hooks/useDashboard.ts
+ * El doctor se resuelve vía useClinicContext (convención del panel): para un
+ * médico es su propio doctor; para un asistente es el doctor ACTIVO de su
+ * clínica (multi-doctor S5-07). Antes hacía un lookup inline de `doctors` por
+ * profile_id del logueado, que NUNCA existía para un asistente → el home del
+ * panel reventaba con "No se encontró perfil de doctor" (bug pre-existente,
+ * destapado por Identidad múltiple Fase 1).
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../lib/supabase'
 import {
-  getDoctorByProfile,
   getTodayAppointments,
   getUpcomingAppointments,
   getWeeklyStats,
 } from '../services/dashboard.service'
+import { useClinicContext } from './useClinicContext'
 
 export function useDashboard() {
-  // ─── 1. Obtener doctor_id del usuario autenticado ───
+  // ─── 1. Doctor activo desde el contexto del panel (doctor o asistente) ───
   const {
-    data: doctor,
+    data: ctx,
     isLoading: isDoctorLoading,
     error: doctorError,
-  } = useQuery({
-    queryKey: ['doctor-profile'],
-    queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) throw new Error('No autenticado')
-      return getDoctorByProfile(session.user.id)
-    },
-    staleTime: 1000 * 60 * 10,
-    retry: 1,
-  })
+  } = useClinicContext()
 
-  const doctorId = doctor?.id
-  const clinicId = doctor?.clinic_id
+  const doctor = ctx
+    ? { id: ctx.doctorId, clinic_id: ctx.clinicId, profile_id: ctx.profileId }
+    : undefined
+  const doctorId = ctx?.doctorId
+  const clinicId = ctx?.clinicId
 
   // ─── 2. Citas de hoy ───
   const { data: todayAppointments = [], isLoading: isTodayLoading } = useQuery({

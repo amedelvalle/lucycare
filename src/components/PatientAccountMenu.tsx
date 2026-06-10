@@ -1,7 +1,11 @@
 /**
- * Dropdown "Mi cuenta" para usuarios con role='patient'.
+ * Dropdown "Mi cuenta" del área de paciente. Lo usan personas con rol
+ * patient/doctor/assistant (identidad múltiple, Fase 1). Para doctor/assistant
+ * agrega "Ir al panel" (copy neutro: el asistente no es médico).
  *
- * Hoy expone 2 opciones:
+ * Opciones:
+ *   - Ir al panel → /panel  (solo doctor/assistant)
+ *   - Mi perfil → /paciente/perfil
  *   - Mis atenciones → /paciente/mis-atenciones
  *   - Cerrar sesión
  *
@@ -19,9 +23,16 @@ import { signOut } from '@/services/auth.service';
 
 interface PatientAccountMenuProps {
   displayName: string;
+  /**
+   * Rol del usuario en sesión. Si es doctor/assistant, el menú agrega
+   * "Ir al panel" (identidad múltiple, Fase 1) — la persona está en su
+   * cuenta personal de paciente y su panel de trabajo es aparte.
+   */
+  role?: string | null;
 }
 
-export default function PatientAccountMenu({ displayName }: PatientAccountMenuProps) {
+export default function PatientAccountMenu({ displayName, role }: PatientAccountMenuProps) {
+  const hasPanel = role === 'doctor' || role === 'assistant';
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -77,9 +88,23 @@ export default function PatientAccountMenu({ displayName }: PatientAccountMenuPr
         >
           {displayName && (
             <div className="px-4 py-3 border-b border-gray-100">
-              <p className="text-xs text-gray-500">Sesión activa</p>
+              <p className="text-xs text-gray-500">Cuenta personal</p>
               <p className="text-sm font-medium text-gray-900 truncate">{displayName}</p>
             </div>
+          )}
+          {hasPanel && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleNavigate('/panel')}
+                role="menuitem"
+                className="w-full text-left px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+              >
+                <i className="ri-layout-grid-line text-emerald-600" aria-hidden="true"></i>
+                Ir al panel
+              </button>
+              <div className="border-t border-gray-100" />
+            </>
           )}
           <button
             type="button"
