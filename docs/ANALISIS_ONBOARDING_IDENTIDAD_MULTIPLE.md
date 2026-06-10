@@ -226,7 +226,21 @@ paciente) hoy **solo ve uno** según su `profiles.role`. Si es `doctor`, pierde
 Fijar el modelo "identidad única + capacidades múltiples" como decisión de
 producto. Sin código.
 
-### Fase 1 — Fix mínimo de piloto (chico, bajo riesgo)
+### Fase 1 — Fix mínimo de piloto (chico, bajo riesgo) — ✅ IMPLEMENTADA (PR #125)
+
+> **Live desde PR #125** (frontend-only; validación visual del owner OK en los
+> 6 puntos del checklist de abajo). Implementación: `PatientOnlyRoute` con
+> `role ∈ {patient, doctor, assistant}`; menú "Mi cuenta" para los 3 roles con
+> "Ir al panel" (copy neutro para assistant); `PersonalAccountNote` (nota azul,
+> solo doctor/assistant). **2 fixes destapados durante la validación:**
+> (a) `useDashboard` migrado a `useClinicContext` — el home del panel reventaba
+> para asistentes por un lookup inline de `doctors` por profile_id (bug
+> PRE-existente: el login ya mandaba al asistente a /panel); (b)
+> `listMyAppointments` con **filtro explícito** `patient.profile_id = uid` —
+> confiar solo en RLS hacía que médico/asistente vieran las citas de su clínica
+> como "Mis atenciones" propias (Camilo 66→11; paciente puro sin cambio 4=4).
+> Lección general: **las páginas "mías como persona" deben filtrar explícito
+> por persona; RLS autoriza, no define la semántica.**
 
 **Alcance: SOLO frontend / gating de ruta. Sin cambios de RLS, sin migración,
 sin tocar `profiles.role` ni el modelo de datos.**
