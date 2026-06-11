@@ -44,6 +44,9 @@ const DEFAULT_PAGE_SIZE = 20;
 /**
  * Lista las atenciones del paciente logueado, paginada.
  * - Filtro explícito por persona (`patient.profile_id = uid`); RLS autoriza.
+ * - B2 (s7_43): SOLO fichas confirmadas (`link_confirmed_at IS NOT NULL`).
+ *   Las vinculadas sin confirmar viven en "Atenciones por confirmar"
+ *   (listUnconfirmedLinks) hasta que el paciente decida.
  * - Orden: más reciente primero.
  */
 export async function listMyAppointments(options: { page?: number; pageSize?: number } = {}): Promise<ListAppointmentsResult> {
@@ -63,7 +66,7 @@ export async function listMyAppointments(options: { page?: number; pageSize?: nu
       id,
       start_time,
       end_time,
-      patient:patient_id!inner ( profile_id ),
+      patient:patient_id!inner ( profile_id, link_confirmed_at ),
       doctor:doctor_id (
         id,
         profiles:profile_id (
@@ -88,6 +91,7 @@ export async function listMyAppointments(options: { page?: number; pageSize?: nu
       { count: 'exact' },
     )
     .eq('patient.profile_id', uid)
+    .not('patient.link_confirmed_at', 'is', null)
     .order('start_time', { ascending: false })
     .range(from, to);
 
@@ -151,4 +155,82 @@ export async function claimMyPatientRecords(): Promise<ClaimResult> {
     console.warn('[claimMyPatientRecords] exception (silenciado):', err);
     return { success: false, linkedCount: 0 };
   }
+}
+
+// ═════════════ B2 — Confirmación post-claim (s7_43) ═════════════
+
+/** Ficha vinculada pero NO confirmada por el paciente ("¿son tuyas?"). */
+export interface UnconfirmedLink {
+  patientId: string;
+  clinicName: string;
+  /** Médico de la atención más reciente de la ficha (si hay atenciones). */
+  doctorName: string | null;
+  appointmentCount: number;
+  /** ISO de la atención más reciente (si hay). */
+  lastAppointmentAt: string | null;
+}
+
+/**
+ * Fichas vinculadas a mi identidad con `link_confirmed_at IS NULL`.
+ * Solo metadatos mínimos para decidir (clínica, médico, cantidad, última
+ * fecha) — sin contenido clínico. La acción opera por ficha (`patient_id`).
+ */
+export async function listUnconfirmedLinks(): Promise<UnconfirmedLink[]> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const uid = session?.user?.id;
+  if (!uid) return [];
+
+  const { data: fichas, error } = await supabase
+    .from('patients')
+    .select('id, clinic:clinic_id ( name )')
+    .eq('profile_id', uid)
+    .is('link_confirmed_at', null);
+
+  if (error) {
+    console.warn('[listUnconfirmedLinks] error:', error.message);
+    return [];
+  }
+
+  const out: UnconfirmedLink[] = [];
+  for (const f of (fichas ?? []) as unknown as Array<{ id: string; clinic?: { name?: string } }>) {
+    // Volumen mínimo (1-3 fichas típicamente): un head-count + última cita.
+    const { count } = await supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('patient_id', f.id);
+    const { data: last } = await supabase
+      .from('appointments')
+      .select('start_time, doctor:doctor_id ( profiles:profile_id ( full_name ) )')
+      .eq('patient_id', f.id)
+      .order('start_time', { ascending: false })
+      .limit(1);
+    const lastRow = (last?.[0] ?? null) as unknown as
+      | { start_time: string; doctor?: { profiles?: { full_name?: string } } }
+      | null;
+
+    out.push({
+      patientId: f.id,
+      clinicName: f.clinic?.name?.trim() || 'Clínica no especificada',
+      doctorName: lastRow?.doctor?.profiles?.full_name ?? null,
+      appointmentCount: count ?? 0,
+      lastAppointmentAt: lastRow?.start_time ?? null,
+    });
+  }
+  return out;
+}
+
+/** "Sí, son mías" — sella la confirmación de la ficha (self-gated en la RPC). */
+export async function confirmPatientLink(patientId: string): Promise<void> {
+  const { error } = await supabase.rpc('confirm_patient_link', { p_patient_id: patientId });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * "No son mías" — desvincula la ficha, registra el rechazo (pending_review
+ * para LucyAdmin) y evita el re-link automático del mismo par en futuros
+ * logins (self-gated en la RPC).
+ */
+export async function rejectPatientLink(patientId: string): Promise<void> {
+  const { error } = await supabase.rpc('reject_patient_link', { p_patient_id: patientId });
+  if (error) throw new Error(error.message);
 }

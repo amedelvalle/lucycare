@@ -1189,6 +1189,7 @@ export type Database = {
           gender: Database["public"]["Enums"]["gender_type"]
           id: string
           is_active: boolean
+          link_confirmed_at: string | null
           notes: string | null
           patient_type: Database["public"]["Enums"]["patient_type"]
           phone: string | null
@@ -1212,6 +1213,7 @@ export type Database = {
           gender: Database["public"]["Enums"]["gender_type"]
           id?: string
           is_active?: boolean
+          link_confirmed_at?: string | null
           notes?: string | null
           patient_type?: Database["public"]["Enums"]["patient_type"]
           phone?: string | null
@@ -1235,6 +1237,7 @@ export type Database = {
           gender?: Database["public"]["Enums"]["gender_type"]
           id?: string
           is_active?: boolean
+          link_confirmed_at?: string | null
           notes?: string | null
           patient_type?: Database["public"]["Enums"]["patient_type"]
           phone?: string | null
@@ -1604,6 +1607,14 @@ export type Database = {
       }
       admin_affiliation_preflight: {
         Args: { p_request_id: string }
+        Returns: Json
+      }
+      confirm_patient_link: {
+        Args: { p_patient_id: string }
+        Returns: Json
+      }
+      reject_patient_link: {
+        Args: { p_patient_id: string }
         Returns: Json
       }
       admin_list_waitlist: {

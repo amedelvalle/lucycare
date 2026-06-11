@@ -17,8 +17,14 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { listMyAppointments } from '@/services/patientHistory.service';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  listMyAppointments,
+  listUnconfirmedLinks,
+  confirmPatientLink,
+  rejectPatientLink,
+  type UnconfirmedLink,
+} from '@/services/patientHistory.service';
 import PatientHeader from '@/components/PatientHeader';
 import ProfileIncompleteBanner from '@/components/ProfileIncompleteBanner';
 import PersonalAccountNote from '@/components/PersonalAccountNote';
@@ -83,6 +89,7 @@ export default function MisAtencionesPage() {
 
         <PersonalAccountNote />
         <ProfileIncompleteBanner />
+        <UnconfirmedLinksSection />
 
         {/* Loading */}
         {isLoading && (
@@ -197,5 +204,134 @@ export default function MisAtencionesPage() {
         )}
       </main>
     </div>
+  );
+}
+
+// ─── B2 (s7_43): Atenciones por confirmar ─────────────────────────────
+// Fichas vinculadas por teléfono (claim) que el paciente todavía no confirmó
+// como suyas. NO se mezclan con las atenciones normales: viven en esta
+// sección con metadatos mínimos (clínica, médico, cantidad, última fecha)
+// hasta que la persona decida. Acción por ficha (no "confirmar todo").
+function UnconfirmedLinksSection() {
+  const qc = useQueryClient();
+  const { data: links = [] } = useQuery({
+    queryKey: ['my-unconfirmed-links'],
+    queryFn: listUnconfirmedLinks,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['my-unconfirmed-links'] });
+    qc.invalidateQueries({ queryKey: ['my-appointments'] });
+  };
+
+  const confirmMut = useMutation({
+    mutationFn: (patientId: string) => confirmPatientLink(patientId),
+    onSuccess: invalidate,
+  });
+  const rejectMut = useMutation({
+    mutationFn: (patientId: string) => rejectPatientLink(patientId),
+    onSuccess: invalidate,
+  });
+
+  if (links.length === 0) return null;
+
+  const busy = confirmMut.isPending || rejectMut.isPending;
+
+  return (
+    <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <div className="flex items-start gap-2 mb-3">
+        <i className="ri-question-line text-amber-600 text-lg flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            Encontramos atenciones asociadas a tu número
+          </p>
+          <p className="text-xs text-amber-800 mt-0.5">
+            Confirmá si son tuyas. Si no lo son (por ejemplo, un número mal
+            registrado o compartido), marcalas y dejarán de aparecer.
+          </p>
+        </div>
+      </div>
+
+      <ul className="space-y-2">
+        {links.map((l) => (
+          <UnconfirmedLinkRow
+            key={l.patientId}
+            link={l}
+            busy={busy}
+            onConfirm={() => confirmMut.mutate(l.patientId)}
+            onReject={() => {
+              if (
+                window.confirm(
+                  'Vas a marcar estas atenciones como "no son mías". Dejarán de aparecer en tu cuenta y quedarán en revisión. ¿Continuar?',
+                )
+              ) {
+                rejectMut.mutate(l.patientId);
+              }
+            }}
+          />
+        ))}
+      </ul>
+
+      {(confirmMut.error || rejectMut.error) && (
+        <p className="text-xs text-red-700 mt-2">
+          No pudimos guardar tu respuesta. Intentá de nuevo.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function UnconfirmedLinkRow({
+  link,
+  busy,
+  onConfirm,
+  onReject,
+}: {
+  link: UnconfirmedLink;
+  busy: boolean;
+  onConfirm: () => void;
+  onReject: () => void;
+}) {
+  const meta: string[] = [];
+  if (link.doctorName) meta.push(link.doctorName);
+  meta.push(
+    `${link.appointmentCount} atencion${link.appointmentCount === 1 ? '' : 'es'}`,
+  );
+  if (link.lastAppointmentAt) {
+    try {
+      meta.push(
+        'última: ' +
+          new Date(link.lastAppointmentAt).toLocaleDateString('es-SV', {
+            day: '2-digit', month: 'short', year: 'numeric',
+          }),
+      );
+    } catch { /* fecha cruda no mostrable — se omite */ }
+  }
+
+  return (
+    <li className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-900 truncate">{link.clinicName}</p>
+        <p className="text-xs text-gray-500 mt-0.5 truncate">{meta.join(' · ')}</p>
+      </div>
+      <div className="flex gap-2 flex-shrink-0">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className="px-3 py-1.5 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+        >
+          Sí, son mías
+        </button>
+        <button
+          type="button"
+          onClick={onReject}
+          disabled={busy}
+          className="px-3 py-1.5 text-xs font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+        >
+          No son mías
+        </button>
+      </div>
+    </li>
   );
 }
