@@ -130,12 +130,23 @@ BEGIN
         USING ERRCODE = 'P0050';
     END IF;
 
-    -- Cuenta existente SIN historial de admin en el registro = paciente real
-    -- → bloquear (no se convierten cuentas en MVP). CON historial (ex-admin
-    -- revocado, cuenta dedicada) → re-invitable.
+    -- Paciente REAL (con fichas clínicas vinculadas) → nunca elegible,
+    -- tenga o no historial. "Cuenta dedicada" = sin vida de paciente.
+    IF EXISTS (SELECT 1 FROM patients pa WHERE pa.profile_id = v_user_id) THEN
+      RAISE EXCEPTION 'Este teléfono ya pertenece a una cuenta de paciente. El administrador debe usar una cuenta dedicada.'
+        USING ERRCODE = 'P0050';
+    END IF;
+
+    -- Cuenta existente SIN historial en el registro = cuenta orgánica de
+    -- paciente → bloquear (no se convierten cuentas en MVP). CON historial
+    -- (incluye 'pending': una pending solo existe si un admin invitó ese
+    -- teléfono a propósito — p. ej. el invitado entró con OTP con la
+    -- invitación ya vencida y el login le creó la cuenta-cáscara; sin esto,
+    -- ese teléfono quedaría bloqueado para siempre) → re-invitable.
     SELECT EXISTS (
       SELECT 1 FROM platform_admin_invitations r
-      WHERE r.phone_normalized = v_phone AND r.status IN ('active', 'revoked')
+      WHERE r.phone_normalized = v_phone
+        AND r.status IN ('pending', 'active', 'revoked')
     ) INTO v_has_history;
 
     IF NOT v_has_history THEN
@@ -251,10 +262,12 @@ BEGIN
   END IF;
 
   -- Defensa TOCTOU (regla "cuenta dedicada"): si entre la invitación y el
-  -- login la cuenta adquirió faceta clínica, NO se activa; queda pending.
+  -- login la cuenta adquirió faceta clínica O vida de paciente real (fichas
+  -- vinculadas), NO se activa; queda pending para revisión manual.
   IF v_role <> 'patient'
      OR EXISTS (SELECT 1 FROM doctors d WHERE d.profile_id = v_user_id)
      OR EXISTS (SELECT 1 FROM clinic_members cm WHERE cm.profile_id = v_user_id AND cm.is_active = true)
+     OR EXISTS (SELECT 1 FROM patients pa WHERE pa.profile_id = v_user_id)
   THEN
     RETURN jsonb_build_object('activated', false, 'reason', 'blocked_role');
   END IF;

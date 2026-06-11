@@ -214,6 +214,27 @@ try {
     else ko('8 re-invitar tras revocación falló: ' + JSON.stringify(error));
   }
 
+  // 8b. Cáscara que se volvió PACIENTE REAL (ficha vinculada) NO activa
+  //     (defensa "cuenta dedicada" en accept) y deja la invitación pending.
+  {
+    const { data: cl } = await admin.from('clinics').select('id').limit(1).single();
+    const { data: ficha, error: fErr } = await admin.from('patients').insert({
+      clinic_id: cl.id, profile_id: inviteeUid, full_name: 'S744 Ficha QA',
+      document_type: 'dui', document_number: null, date_of_birth: '1990-01-01',
+      gender: 'otro', patient_type: 'privado', phone: INVITEE_PHONE, is_active: true,
+      link_confirmed_at: new Date().toISOString(),
+    }).select('id').single();
+    if (fErr) { ko('8b fixture ficha falló: ' + fErr.message); }
+    else {
+      const { data: acc } = await invitee.rpc('accept_platform_admin_invitation');
+      const { data: prof } = await admin.from('profiles').select('role').eq('id', inviteeUid).single();
+      if (acc?.activated === false && acc?.reason === 'blocked_role' && prof?.role === 'patient')
+        ok('8b Cuenta con ficha de paciente vinculada NO activa (blocked_role)');
+      else ko('8b inesperado: ' + JSON.stringify({ acc, prof }));
+      await admin.from('patients').delete().eq('id', ficha.id);
+    }
+  }
+
   // 9. Guard último admin de nuevo (quedó 1 activo).
   {
     const { count } = await admin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin');
