@@ -179,6 +179,9 @@ async function getOrCreatePatient(
       date_of_birth: '2000-01-01',
       gender: 'otro',
       patient_type: 'privado',
+      // B2 (s7_43): la ficha la crea el PROPIO paciente al reservar → nace
+      // confirmada (no tiene sentido preguntarle "¿es tuya?").
+      link_confirmed_at: new Date().toISOString(),
     })
     .select('id')
     .single()
