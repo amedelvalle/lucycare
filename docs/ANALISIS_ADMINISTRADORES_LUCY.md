@@ -28,14 +28,34 @@
   y la afiliación bloquea cuentas sensibles. El único camino al rol admin es
   SQL directo — ese es exactamente el problema a resolver, pero también la
   garantía de que no hay escalamiento accidental hoy.
-- **Recomendación (Opción B):** mantener `profiles.role='admin'` como **único
-  bit de autorización** (cero cambios a `is_admin()` ni a las 22 superficies
-  RLS/RPC) y agregar un **registro de ciclo de vida**
-  (`platform_admin_invitations`-registry con `pending/active/revoked`) +
-  RPCs definer (`invite/accept/revoke/list`) + página `/admin/administradores`.
-  La activación ocurre **al primer OTP login del invitado** (prueba de
-  posesión del teléfono); la revocación baja el rol y queda trazada; un guard
-  server-side impide revocar al **último admin activo**.
+- **Recomendación (Opción B) — ✅ APROBADA por el owner (2026-06-11):**
+  mantener `profiles.role='admin'` como **único bit de autorización** (cero
+  cambios a `is_admin()` ni a las 22 superficies RLS/RPC) y agregar un
+  **registro de ciclo de vida** (`platform_admin_invitations`-registry con
+  `pending/active/revoked`) + RPCs definer (`invite/accept/revoke/list`) +
+  página `/admin/administradores`. La activación ocurre **al primer OTP login
+  del invitado** (prueba de posesión del teléfono); la revocación baja el rol
+  y queda trazada; un guard server-side impide revocar al **último admin
+  activo**.
+
+### Reglas vinculantes de Fase 1 (explícitas, decisión owner 2026-06-11)
+
+1. **Admin = cuenta dedicada.** El teléfono del invitado NO puede pertenecer
+   a una cuenta existente de paciente/médico/asistente → se **bloquea**. No
+   se convierten cuentas existentes a admin en MVP; si hiciera falta usar ese
+   número, pasa por revisión manual FUERA de este flujo.
+2. **La invitación pendiente NO otorga ningún privilegio.** Mientras el
+   estado sea `pending`, la persona no es admin, no pasa `is_admin()`, no ve
+   `/admin`. El poder solo existe tras la activación.
+3. **La activación requiere el primer login/OTP del invitado** (prueba de
+   posesión del teléfono). No se crean admins dormant con poder previo.
+4. **La revocación bloquea el backend de inmediato**: al bajar
+   `profiles.role`, `is_admin()` devuelve false en la siguiente llamada — el
+   revocado pierde TODA la superficie admin (RPCs + RLS + UI) al instante. Y
+   existe **guard server-side contra revocar/desactivar al último admin
+   activo**.
+5. **Owner/superadmin y capacidades granulares quedan en Fase 2** — no se
+   implementan ahora; quedan documentadas para cuando crezca el equipo.
 
 ---
 
@@ -182,26 +202,33 @@ SQL), y deja la puerta abierta a C si algún día hacen falta capacidades.
 
 ---
 
-## 7. Decisiones que necesita validar el owner
+## 7. Decisiones — ✅ APROBADAS por el owner (2026-06-11)
 
-- **D1 — ¿Quién puede invitar?** (a) cualquier admin activo (con audit +
-  confirmación) ← *recomendado para MVP con 1–2 admins*; (b) introducir
-  owner/superadmin ya en Fase 1.
-- **D2 — ¿Teléfono ya asociado a paciente/médico/asistente?** *Recomendado:
-  bloquear con copy claro ("el admin usa una cuenta dedicada") + revisión
-  manual* — coherente con la decisión de identidad múltiple ("admin separado
-  en MVP"). Alternativa: permitir convertir cuenta existente (NO recomendado
-  ahora; contradice la separación).
-- **D3 — ¿Revocar = `role→'patient'` + registro `revoked`?** La cuenta queda
-  como usuario normal, sin poderes, trazada. *Recomendado.* Alternativa:
-  desactivar también el auth (más agresivo; no recomendado por defecto).
-- **D4 — ¿Activación al primer OTP login** (sin admins dormant) **?**
-  *Recomendado.* Alternativa: alta inmediata (Opción A, descartada arriba).
-- **D5 — ¿Reenvío de invitación vencida en Fase 1** (patrón
-  `resend_invitation`) **o se re-invita creando otra?** *Recomendado: TTL 14d
-  + re-invitar simple en MVP; reenvío formal si sobra espacio en el PR.*
-- **D6 — Alcance Fase 1 confirmado:** invitar/activar/listar/revocar + guard
-  último admin + audit + página `/admin/administradores`. ¿OK?
+- **D1 ✅ — Invita cualquier admin activo (MVP).** Obligatorio: audit fuerte
+  de `invited_by`, fecha, teléfono/email invitado, estado y cada transición.
+  Owner/superadmin NO se implementa ahora — documentado como Fase 2 si crece
+  el equipo.
+- **D2 ✅ — Bloquear si el teléfono ya pertenece a paciente/médico/asistente.**
+  Admin = **cuenta dedicada**. No se convierten cuentas existentes a admin en
+  MVP. Si hace falta usar ese número → revisión manual fuera de este flujo.
+- **D3 ✅ — Revocar quita el rol admin** (`profiles.role → 'patient'` o el
+  estado seguro que el modelo permita) + registra `revoked`/`revoked_by`/
+  `revoked_at`. **No** se desactiva `auth.users` en Fase 1 (salvo que el
+  diseño lo soporte de forma limpia, que no es el caso hoy). El backend
+  bloquea de inmediato vía `is_admin()`. **Guard contra revocar/desactivar al
+  último admin activo.**
+- **D4 ✅ — Activación al primer OTP/login del invitado.** Sin admins dormant
+  con poder previo. La invitación pendiente NO otorga acceso admin.
+- **D5 ✅ — TTL 14 días + re-invitar simple en MVP.** Reenvío formal queda
+  para después si hace falta.
+- **D6 ✅ — Alcance Fase 1 aprobado:** invitar · activar · listar · revocar ·
+  guard de último admin · audit · página `/admin/administradores`.
+
+### Restricciones vinculantes para la implementación (owner)
+Sin capacidades granulares · sin tocar `is_admin()` salvo inevitable · sin
+superadmin/owner · sin self-service público · sin convertir cuentas
+existentes · nada fuera del ciclo de vida de LucyAdmins · sin refactor ni
+limpieza lateral.
 
 ## 8. Propuesta de PR mínimo (si se aprueba Fase 1)
 
