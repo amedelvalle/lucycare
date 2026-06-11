@@ -41,7 +41,7 @@ let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✅', m); pass++; };
 const ko = (m) => { console.log('  ❌', m); fail++; };
 
-let fichaA = null, fichaB = null, apptId = null, otherClinic = null;
+let fichaA = null, fichaB = null, apptId = null, otherClinic = null, availRuleId = null;
 const patient = mk();
 const camilo = mk();
 
@@ -51,8 +51,31 @@ try {
   const patientUid = await login(patient, PATIENT_PHONE);
   const camiloUid = await login(camilo, CAMILO_PHONE);
 
-  const { data: oc } = await admin.from('clinics').select('id').neq('id', CAMILO_CLINIC).limit(1).single();
-  otherClinic = oc.id;
+  // Clínicas para fixtures: el claim copia la identidad global→local (incl.
+  // DUI del perfil, s7_33). Si el usuario test YA tiene una ficha en esa
+  // clínica con ese DUI, el UPDATE choca con UNIQUE(clinic, doc_type, doc_num)
+  // y aborta el claim completo — edge PRE-existente documentado para Fase 4
+  // (CLAUDE.md). El smoke valida s7_43, no ese edge → elegimos clínicas donde
+  // NI el paciente test NI Camilo tengan fichas, y que tengan médico (para la
+  // cita del assert confirmed-only).
+  const { data: existing } = await admin.from('patients')
+    .select('clinic_id')
+    .or(`profile_id.eq.${patientUid},profile_id.eq.${camiloUid},phone.eq.${PATIENT_PHONE},phone.eq.${CAMILO_PHONE}`);
+  const excluded = new Set((existing ?? []).map((r) => r.clinic_id));
+
+  const { data: docRows } = await admin.from('doctors').select('id, clinic_id').limit(100);
+  const candidates = [];
+  const seen = new Set();
+  for (const d of docRows ?? []) {
+    if (!excluded.has(d.clinic_id) && !seen.has(d.clinic_id)) {
+      seen.add(d.clinic_id);
+      candidates.push(d); // {id: doctor, clinic_id}
+    }
+    if (candidates.length >= 2) break;
+  }
+  if (candidates.length < 2) throw new Error('No hay 2 clínicas con médico libres de fichas de los usuarios test');
+  const clinicA = candidates[0].clinic_id, doctorA = candidates[0].id;
+  otherClinic = candidates[1].clinic_id;
 
   // Fixtures: 2 fichas SIN dueño con el teléfono del paciente test.
   const mkFicha = async (clinicId, name) => {
@@ -64,20 +87,31 @@ try {
     if (error) throw new Error('fixture ' + name + ': ' + error.message);
     return data.id;
   };
-  fichaA = await mkFicha(CAMILO_CLINIC, 'S743 Ficha A');
+  fichaA = await mkFicha(clinicA, 'S743 Ficha A');
   fichaB = await mkFicha(otherClinic, 'S743 Ficha B');
+
+  // Disponibilidad temporal para doctorA: el trigger s6_04 exige una
+  // availability_rule activa que cubra el horario de la cita (hora local SV,
+  // UTC-6 sin DST). Regla de todo el día de hoy; se borra en cleanup.
+  const dowSV = new Date(Date.now() - 6 * 3600_000).getUTCDay();
+  const { data: ar, error: arErr } = await admin.from('availability_rules').insert({
+    doctor_id: doctorA, clinic_id: clinicA, day_of_week: dowSV,
+    start_time: '00:00:00', end_time: '23:59:59', is_active: true,
+  }).select('id').single();
+  if (arErr) throw new Error('fixture availability: ' + arErr.message);
+  availRuleId = ar.id;
 
   // Una cita en ficha A (para el assert del filtro confirmed-only).
   const { data: st } = await admin.from('appointment_statuses').select('id').limit(1).single();
   const now = new Date();
   const { data: appt, error: apErr } = await admin.from('appointments').insert({
-    clinic_id: CAMILO_CLINIC, doctor_id: CAMILO_DOCTOR, patient_id: fichaA,
+    clinic_id: clinicA, doctor_id: doctorA, patient_id: fichaA,
     status_id: st.id, start_time: now.toISOString(),
     end_time: new Date(now.getTime() + 30 * 60000).toISOString(), source: 'manual',
   }).select('id').single();
   if (apErr) throw new Error('fixture cita: ' + apErr.message);
   apptId = appt.id;
-  ok('Fixtures: ficha A (Camilo, con 1 cita) + ficha B (otra clínica), sin dueño');
+  ok('Fixtures: ficha A (clínica con médico, 1 cita) + ficha B (otra clínica), sin dueño');
 
   // 1. claim → vincula con link_confirmed_at NULL
   {
@@ -116,11 +150,13 @@ try {
       if (row?.link_confirmed_at) ok('3 confirm selló link_confirmed_at');
       else ko('3 link_confirmed_at sigue NULL');
 
+      // El trigger genérico de audit de patients escribe su propia fila sobre
+      // el mismo UPDATE → buscamos la entrada de la RPC entre las recientes.
       const { data: aud } = await admin.from('audit_log').select('new_data')
         .eq('table_name', 'patients').eq('record_id', fichaA)
-        .order('created_at', { ascending: false }).limit(1);
-      if (aud?.[0]?.new_data?.edited_via === 'link_confirmed') ok('3 audit edited_via=link_confirmed');
-      else ko('3 audit inesperado: ' + JSON.stringify(aud?.[0]?.new_data));
+        .order('created_at', { ascending: false }).limit(5);
+      if ((aud ?? []).some((r) => r.new_data?.edited_via === 'link_confirmed')) ok('3 audit edited_via=link_confirmed');
+      else ko('3 audit link_confirmed ausente: ' + JSON.stringify((aud ?? []).map((r) => r.new_data?.edited_via)));
 
       const { data: again } = await patient.rpc('confirm_patient_link', { p_patient_id: fichaA });
       if (again?.already_confirmed === true) ok('3 re-confirm idempotente (already_confirmed)');
@@ -151,9 +187,9 @@ try {
 
       const { data: aud } = await admin.from('audit_log').select('new_data')
         .eq('table_name', 'patients').eq('record_id', fichaB)
-        .order('created_at', { ascending: false }).limit(1);
-      if (aud?.[0]?.new_data?.edited_via === 'link_rejected') ok('4 audit edited_via=link_rejected');
-      else ko('4 audit inesperado: ' + JSON.stringify(aud?.[0]?.new_data));
+        .order('created_at', { ascending: false }).limit(5);
+      if ((aud ?? []).some((r) => r.new_data?.edited_via === 'link_rejected')) ok('4 audit edited_via=link_rejected');
+      else ko('4 audit link_rejected ausente: ' + JSON.stringify((aud ?? []).map((r) => r.new_data?.edited_via)));
     }
   }
 
@@ -195,6 +231,7 @@ try {
   console.log('\n— cleanup —');
   try {
     if (apptId) await admin.from('appointments').delete().eq('id', apptId);
+    if (availRuleId) await admin.from('availability_rules').delete().eq('id', availRuleId);
     for (const id of [fichaA, fichaB].filter(Boolean)) {
       await admin.from('patient_link_rejections').delete().eq('patient_id', id);
       await admin.from('patients').delete().eq('id', id);
