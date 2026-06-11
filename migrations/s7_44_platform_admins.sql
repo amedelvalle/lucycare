@@ -259,7 +259,15 @@ BEGIN
     RETURN jsonb_build_object('activated', false, 'reason', 'blocked_role');
   END IF;
 
-  UPDATE profiles SET role = 'admin'::user_role, updated_at = now()
+  -- Promover + llenar el nombre visible desde la invitación SOLO si está
+  -- vacío (handle_new_user crea profiles con full_name='' → sin esto, todo
+  -- admin invitado nacería "Sin nombre" en /admin/administradores). No pisa
+  -- un nombre real ya cargado.
+  UPDATE profiles
+     SET role = 'admin'::user_role,
+         full_name = CASE WHEN coalesce(btrim(full_name), '') = ''
+                          THEN v_inv.display_name ELSE full_name END,
+         updated_at = now()
    WHERE id = v_user_id;
 
   UPDATE platform_admin_invitations
@@ -272,6 +280,7 @@ BEGIN
     jsonb_build_object('role', v_role),
     jsonb_build_object(
       'role', 'admin', 'invitation_id', v_inv.id, 'invited_by', v_inv.invited_by,
+      'display_name', v_inv.display_name,
       'edited_via', 'platform_admin_activate'
     )
   );

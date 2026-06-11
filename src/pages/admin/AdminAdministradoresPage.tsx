@@ -4,10 +4,12 @@ import {
   listPlatformAdmins,
   invitePlatformAdmin,
   revokePlatformAdmin,
+  updateMyAdminName,
   type PlatformAdmin,
   type PlatformAdminInvitation,
 } from '../../services/platformAdmins.service';
 import { getSessionWithTimeout } from '../../lib/session';
+import { normalizePhoneSV } from '../../lib/phone';
 
 /**
  * /admin/administradores — Administración de LucyAdmins (Fase 1, s7_44).
@@ -207,13 +209,55 @@ function AdminRow({
   busy: boolean;
   onRevoke: () => void;
 }) {
+  const qc = useQueryClient();
+  // "Editar nombre": SOLO sobre la propia fila (self-update de full_name,
+  // permitido por RLS y auditado). No edita teléfono/email/role/auth.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(admin.fullName ?? '');
+  const nameMut = useMutation({
+    mutationFn: (n: string) => updateMyAdminName(n),
+    onSuccess: () => {
+      setEditingName(false);
+      qc.invalidateQueries({ queryKey: ['platform-admins'] });
+    },
+  });
+
   return (
     <li className="bg-white rounded-lg border border-gray-200 p-3 flex items-center justify-between gap-3 flex-wrap">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium text-gray-900 truncate">
-            {admin.fullName || 'Sin nombre'}
-          </p>
+          {editingName ? (
+            <span className="flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                maxLength={200}
+                autoFocus
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => nameMut.mutate(nameDraft)}
+                disabled={nameMut.isPending || nameDraft.trim().length < 2}
+                className="px-2.5 py-1 text-xs font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {nameMut.isPending ? 'Guardando…' : 'Guardar'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEditingName(false); setNameDraft(admin.fullName ?? ''); }}
+                disabled={nameMut.isPending}
+                className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+            </span>
+          ) : (
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {admin.fullName || 'Sin nombre'}
+            </p>
+          )}
           {isSelf && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
               vos
@@ -222,7 +266,22 @@ function AdminRow({
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
             Activo
           </span>
+          {isSelf && !editingName && (
+            <button
+              type="button"
+              onClick={() => setEditingName(true)}
+              className="text-xs text-emerald-700 hover:underline"
+              title="Editar tu nombre visible (solo el nombre; no toca teléfono/email/rol)"
+            >
+              Editar nombre
+            </button>
+          )}
         </div>
+        {nameMut.error && (
+          <p className="text-xs text-red-700 mt-1">
+            {nameMut.error instanceof Error ? nameMut.error.message : 'No se pudo guardar.'}
+          </p>
+        )}
         <p className="text-xs text-gray-500 mt-0.5">
           {admin.phone ?? '—'}
           {admin.activatedAt
@@ -296,12 +355,33 @@ function InvitationRow({
 
 // ─── Form de invitación ───────────────────────────────────────────────
 
+/**
+ * Sanitiza la entrada del teléfono mientras se tipea: solo dígitos,
+ * un '+' inicial opcional y separadores comunes (espacio/guion). Sin letras,
+ * con tope de longitud. La REGLA de validez es la misma del backend:
+ * normalizado con `normalizePhoneSV` debe quedar `503` + 8 dígitos
+ * (acepta `7XXXXXXX`, `503XXXXXXXX`, `+503 XXXX-XXXX` → se guarda `503XXXXXXXX`).
+ */
+function sanitizePhoneInput(raw: string): string {
+  let v = raw.replace(/[^\d+\s-]/g, '');           // sin letras ni símbolos raros
+  v = v.replace(/(?!^)\+/g, '');                    // '+' solo al inicio
+  return v.slice(0, 16);                            // tope: '+503 XXXX-XXXX' cabe
+}
+
+function isValidSvPhone(raw: string): boolean {
+  const norm = normalizePhoneSV(raw);
+  return !!norm && /^503\d{8}$/.test(norm);
+}
+
 function InviteForm({ onDone }: { onDone: (msg: string) => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const phoneValid = isValidSvPhone(phone);
+  const phoneTouchedInvalid = phone.trim().length > 0 && !phoneValid;
 
   const inviteMut = useMutation({
     mutationFn: () => invitePlatformAdmin({ phone, displayName: name, email: email || null }),
@@ -339,11 +419,18 @@ function InviteForm({ onDone }: { onDone: (msg: string) => void }) {
             </span>
             <input
               type="tel"
+              inputMode="numeric"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="7XXXXXXX o 503XXXXXXXX"
-              className={inputCls}
+              onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
+              maxLength={16}
+              placeholder="7XXXXXXX"
+              className={`${inputCls} ${phoneTouchedInvalid ? 'border-red-300 focus:border-red-400 focus:ring-red-200' : ''}`}
             />
+            <span className={`block text-[11px] mt-1 ${phoneTouchedInvalid ? 'text-red-600' : 'text-gray-500'}`}>
+              {phoneTouchedInvalid
+                ? 'Número inválido: ingresá un salvadoreño de 8 dígitos (también vale 503XXXXXXXX o +503).'
+                : 'Número salvadoreño de 8 dígitos. También acepta 503XXXXXXXX o +503; se guarda normalizado.'}
+            </span>
           </label>
           <label className="block">
             <span className="block text-xs font-medium text-gray-600 mb-1">Email (opcional)</span>
@@ -375,7 +462,7 @@ function InviteForm({ onDone }: { onDone: (msg: string) => void }) {
         <button
           type="button"
           onClick={() => { setError(null); inviteMut.mutate(); }}
-          disabled={inviteMut.isPending || !confirmed || name.trim().length < 2 || phone.replace(/\D/g, '').length < 8}
+          disabled={inviteMut.isPending || !confirmed || name.trim().length < 2 || !phoneValid}
           className="px-4 py-2 text-sm font-medium bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {inviteMut.isPending ? 'Invitando…' : 'Crear invitación'}

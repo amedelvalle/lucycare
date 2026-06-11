@@ -106,6 +106,32 @@ export async function invitePlatformAdmin(input: {
   return { invitationId: r.invitation_id, reinvited: !!r.reinvited }
 }
 
+/**
+ * Edita SOLO el nombre visible del PROPIO admin (self-update de
+ * `profiles.full_name`). No toca teléfono/email/role/auth. Usa el camino ya
+ * permitido por RLS (s7_32: cada usuario edita su propio full_name) y queda
+ * auditado por el trigger de identidad de profiles con el uid del caller.
+ * Pensado para el caso "admin bootstrap sin nombre" en /admin/administradores.
+ */
+export async function updateMyAdminName(fullName: string): Promise<void> {
+  const name = fullName.trim()
+  if (name.length < 2 || name.length > 200) {
+    throw new Error('El nombre debe tener entre 2 y 200 caracteres.')
+  }
+  const { data: { session } } = await supabase.auth.getSession()
+  const uid = session?.user?.id
+  if (!uid) throw new Error('Sesión no válida. Refrescá la página.')
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ full_name: name })
+    .eq('id', uid)
+    .select('id')
+  if (error || !data || data.length === 0) {
+    throw new Error('No se pudo guardar el nombre. Intentá de nuevo.')
+  }
+}
+
 export async function revokePlatformAdmin(profileId: string): Promise<void> {
   const { data, error } = await supabase.rpc('admin_revoke_platform_admin', {
     p_profile_id: profileId,

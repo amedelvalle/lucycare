@@ -88,6 +88,12 @@ try {
     const { error: e4 } = await inv('123');
     if (e4?.code === 'P0055') ok('1d Teléfono inválido → P0055');
     else ko('1d esperado P0055: ' + JSON.stringify(e4));
+    const { error: e5 } = await inv('77kk88zz');
+    if (e5?.code === 'P0055') ok('1e Teléfono con letras → P0055 (backend no confía en la UI)');
+    else ko('1e esperado P0055: ' + JSON.stringify(e5));
+    const { error: e6 } = await inv('777777777777777777777');
+    if (e6?.code === 'P0055') ok('1f Longitud absurda → P0055');
+    else ko('1f esperado P0055: ' + JSON.stringify(e6));
   }
 
   // 2. Invitar 99 → pending; duplicado vigente → P0053.
@@ -143,11 +149,14 @@ try {
     const { data: acc, error } = await invitee.rpc('accept_platform_admin_invitation');
     if (error) ko('5 accept error: ' + error.message);
     else {
-      const { data: prof } = await admin.from('profiles').select('role').eq('id', inviteeUid).single();
+      const { data: prof } = await admin.from('profiles').select('role, full_name').eq('id', inviteeUid).single();
       const { data: row } = await admin.from('platform_admin_invitations')
         .select('status, activated_at, activated_profile_id').eq('id', invId).single();
       if (acc?.activated === true && prof?.role === 'admin') ok('5a Activación al OTP login → role=admin');
       else ko('5a no activó: ' + JSON.stringify({ acc, prof }));
+      if (prof?.full_name === 'Admin QA s7_44')
+        ok('5a2 full_name llenado desde la invitación (no queda "Sin nombre")');
+      else ko('5a2 full_name inesperado: ' + JSON.stringify(prof?.full_name));
       if (row?.status === 'active' && row?.activated_at && row?.activated_profile_id === inviteeUid)
         ok('5b Registro → active (activated_at/profile)');
       else ko('5b registro inesperado: ' + JSON.stringify(row));
