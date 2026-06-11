@@ -98,6 +98,24 @@ export async function verifyOtp(
     console.warn('[verifyOtp] error procesando invitaciones (no crítico):', err)
   }
 
+  // Administración de LucyAdmins Fase 1 (s7_44): activar una invitación de
+  // admin pendiente al primer login/OTP (prueba de posesión del teléfono).
+  // Fail-safe: si la RPC falla o no hay invitación, el login sigue normal.
+  // La invitación pending NO otorga privilegios; recién acá se promueve.
+  try {
+    const { data: adminAct } = await supabase.rpc('accept_platform_admin_invitation')
+    if ((adminAct as { activated?: boolean } | null)?.activated) {
+      const { data: updated } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      if (updated?.role) finalRole = updated.role
+    }
+  } catch (err) {
+    console.warn('[verifyOtp] accept_platform_admin_invitation (silenciado):', err)
+  }
+
   // Paciente Global Fase 1 — vinculación retroactiva de patients legacy.
   // Si el usuario ya tenía filas en `patients` con su phone (creadas por
   // walk-in de algún médico antes de que él se logueara), las vincula a
