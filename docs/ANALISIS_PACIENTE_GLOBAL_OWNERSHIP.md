@@ -37,18 +37,29 @@ capas con semánticas distintas. Ninguno de estos riesgos requiere rediseño —
 requieren **reglas de producto explícitas** (sección 6) y 2–3 ítems de backlog
 acotados (sección 8).
 
-**Recomendación de siguiente PR real:** ninguno de los hallazgos exige código
-urgente pre-piloto. El frente que más refuerza la regla central es **Paciente
-Global Fase 4 (merge admin de duplicados)** — es la herramienta que le permite
-a Lucy ejercer la propiedad de la identidad (fusionar duplicados es un acto de
-"dueño de la identidad") — y este doc le deja el marco listo. La alternativa
-acotada es cerrar los riesgos R1/R2 de la ventana pre-reclamo.
+**Siguiente PR real (decisión del owner, 2026-06-11):** **B2 — confirmación
+post-claim** ("¿estas atenciones/fichas son tuyas?") por menor riesgo y alto
+impacto sobre R1/R2; idealmente en dos pasos (mini-análisis de alcance → PR
+pequeño y controlado). **B1 (Fase 4 merge admin) es importante pero delicado
+— mueve historia clínica — y NO debe arrancarse sin diseño específico propio.**
+Este doc le deja el marco de ownership listo para cuando se diseñe.
 
 ---
 
-## 2. Regla central (canónica, para futuros flujos)
+## 2. Regla central (canónica, para futuros flujos) — ✅ RATIFICADA por el owner (2026-06-11)
 
-> **Lucy es dueña de la identidad. El médico es dueño de su relación clínica.**
+> **"El médico gestiona una relación clínica local; LucyCare gobierna la
+> identidad global del usuario/paciente."**
+
+Reglas explícitas que derivan de la frase central:
+
+- El médico **no puede reclamar propiedad** sobre la identidad global del
+  paciente, **ni bloquear** que el paciente se relacione con otros médicos de
+  la plataforma. La relación clínica es suya; la persona no.
+- La etapa **pre-reclamo es operativa/provisional** — existe para que el
+  médico pueda atender sin fricción (DA3), **no es una excepción a la regla
+  de propiedad de Lucy**. La ficha pre-reclamo es un borrador de relación
+  clínica local, nunca la identidad global definitiva de la persona.
 
 Derivaciones operativas:
 
@@ -197,36 +208,34 @@ le quita la identidad de las manos (P0030 + read-only + sync unidireccional).
 
 ---
 
-## 7. Decisiones de producto recomendadas (a validar por el owner)
+## 7. Decisiones de producto — ✅ APROBADAS por el owner (2026-06-11)
 
-- **D1 — Ratificar la regla central** tal como está en §2, como criterio
-  vinculante para futuros flujos (recuperación, merge, onboarding, pagos).
-  *(Recomendado: sí — el código ya la implementa en su mayoría.)*
-- **D2 — Ventana pre-reclamo se mantiene (DA3), con límites explícitos:** la
-  ficha pre-reclamo es "borrador de relación clínica", no identidad; el
-  teléfono que el médico tipea es **dato de contacto candidato**, y la
-  vinculación sigue requiriendo OTP del dueño del número. *(Sin cambio de
-  código; es formalizar la semántica.)*
-- **D3 — Mitigar R1 con confirmación del lado del paciente (backlog, no
-  ahora):** al primer login, si el claim vinculó fichas, mostrar "Encontramos
-  N atenciones asociadas a tu número — ¿son tuyas?" con opción de reportar
-  ("no soy yo") que desvincula y notifica a LucyAdmin. Server-side simple
-  (des-vincular = `profile_id = NULL` + audit). *(Recomendado: post-piloto,
-  antes de escalar volumen.)*
-- **D4 — Teléfonos compartidos (R2):** regla propuesta — el claim vincula
-  por teléfono SOLO fichas cuyo nombre "matchee razonablemente" O mantener el
-  comportamiento actual + D3 como red. *(Recomendado: actual + D3; el match
-  por nombre genera falsos negativos y complejidad. Pero es decisión de
-  producto, no técnica.)*
-- **D5 — Email:** ratificar que `profiles.email`/`auth.users.email` es
-  credencial gestionada por el paciente (self-service en Fase Auth
-  post-piloto) y `patients.email` es contacto local de la clínica. El sync
-  global→local se mantiene; nunca local→global. *(Coherente con s7_42.)*
-- **D6 — Merge de identidades = potestad exclusiva de LucyAdmin** con
-  herramienta auditada y reversible (Fase 4). El médico nunca fusiona.
-- **D7 — Recuperación de cuenta = herramienta de LucyAdmin** con protocolo de
-  verificación de identidad definido por el owner (qué evidencia pedir).
-  El médico no recupera cuentas de pacientes.
+- **D1 ✅ — Regla central VINCULANTE.** El paciente/usuario es de LucyCare;
+  el médico no "posee" al paciente; el médico tiene una relación clínica/local
+  con una persona/paciente global. Criterio para futuros flujos (recuperación,
+  merge, onboarding, pagos).
+- **D2 ✅ — DA3 se mantiene, con semántica explícita.** La ficha pre-reclamo
+  es un **borrador de relación clínica/local**, no la identidad global
+  definitiva. El médico puede operarla para atender, pero **no apropiarse de
+  la identidad**. El teléfono tipeado es dato de contacto candidato; la
+  vinculación sigue requiriendo OTP del dueño del número.
+- **D3 ✅ — Confirmación post-claim, PRIORITARIA.** Debe existir confirmación
+  tipo "¿estas atenciones/fichas son tuyas?" para reducir el riesgo de
+  teléfono mal digitado o compartido. **Queda como siguiente frente
+  recomendado (B2)** — no se implementa dentro de este doc/PR.
+- **D4 ✅ — Sin match por nombre como bloqueo principal.** El nombre es señal
+  débil (abreviaturas, errores, tildes, familiares, pacientes dependientes).
+  Se mantiene el modelo actual reforzado con **confirmación post-claim +
+  flujo de rechazo/revisión** (D3/B2).
+- **D5 ✅ — Email en dos capas.** Email global (`profiles`/`auth.users`) =
+  credencial/contacto de cuenta Lucy. Email local (`patients`) = contacto
+  operativo de clínica/médico. **No sincronizar local→global automáticamente,
+  nunca.** Sync global→local solo cuando aplique y **con trazabilidad**.
+- **D6 ✅ — Merge solo LucyAdmin.** Nunca el médico. Con **dry-run,
+  auditoría, trazabilidad y criterios estrictos**. **No se arranca todavía
+  como código** (requiere diseño específico propio — ver §8/B1).
+- **D7 ✅ — Recuperación sin sesión = herramienta/protocolo LucyCare.** No se
+  delega al médico. Con **validación manual, auditoría y reglas de soporte**.
 
 ---
 
@@ -234,8 +243,8 @@ le quita la identidad de las manos (P0030 + read-only + sync unidireccional).
 
 | # | Ítem | Severidad | Tamaño | Cuándo |
 |---|---|---|---|---|
-| B1 | **Paciente Global Fase 4 — `admin_merge_patients`** (dry-run + audit + reversibilidad; resuelve R5; marco ya listo: identidad única) | 🟡 | Grande | Próximo frente grande recomendado |
-| B2 | **Confirmación post-claim "¿son tuyas?" + des-vinculación reportada** (D3; cierra R1/R2) | 🟡 | Medio | Post-piloto, antes de escalar |
+| B2 | **Confirmación post-claim "¿son tuyas?" + des-vinculación reportada** (D3/D4; cierra R1/R2) | 🟡 | Medio | **← PRÓXIMO FRENTE (decisión owner 2026-06-11):** mini-análisis de alcance → PR pequeño |
+| B1 | **Paciente Global Fase 4 — `admin_merge_patients`** (dry-run + audit + reversibilidad + criterios estrictos; resuelve R5) | 🟡 | Grande | Después de B2. **Delicado (mueve historia clínica): NO arrancar sin diseño específico propio.** |
 | B3 | **Recuperación de cuenta sin sesión (herramienta LucyAdmin + protocolo)** (R4, D7) | 🟢 | Medio | En cola (ya estaba; detrás del modelo de identidad) |
 | B4 | **Self-service de email del paciente** (R3, D5 — análogo al cambio de teléfono) | 🟢 | Medio | Fase Auth post-piloto (ya previsto) |
 | B5 | **Copy de onboarding del médico**: "la cuenta del paciente es de él; tu ficha clínica es tuya" (R7) | 🟢 | Chico | Oportunista |
