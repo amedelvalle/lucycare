@@ -243,8 +243,10 @@ le quita la identidad de las manos (P0030 + read-only + sync unidireccional).
 
 | # | Ítem | Severidad | Tamaño | Cuándo |
 |---|---|---|---|---|
-| B2 | **Confirmación post-claim "¿son tuyas?" + des-vinculación reportada** (D3/D4; cierra R1/R2) | 🟡 | Medio | **← PRÓXIMO FRENTE (decisión owner 2026-06-11):** mini-análisis de alcance → PR pequeño |
-| B1 | **Paciente Global Fase 4 — `admin_merge_patients`** (dry-run + audit + reversibilidad + criterios estrictos; resuelve R5) | 🟡 | Grande | Después de B2. **Delicado (mueve historia clínica): NO arrancar sin diseño específico propio.** |
+| B2 | ~~**Confirmación post-claim "¿son tuyas?" + des-vinculación reportada**~~ (D3/D4; cierra R1/R2) | 🟡 | Medio | ✅ **HECHO (PR #128 / `s7_43`):** `link_confirmed_at` + sección "por confirmar" separada de Mis atenciones + confirm/reject por ficha + `patient_link_rejections` `pending_review` (sin bandeja UI) + claim sin re-link de pares rechazados. Smoke 14/14 + OK visual. |
+| B1 | **Paciente Global Fase 4 — `admin_merge_patients`** (dry-run + audit + reversibilidad + criterios estrictos; resuelve R5) | 🟡 | Grande | Siguiente frente grande candidato. **Delicado (mueve historia clínica): NO arrancar sin diseño específico propio.** El choque DUI/`UNIQUE` del claim (nota F3/F4) quedó **confirmado empíricamente** en el smoke `s7_43`: si la persona ya tiene ficha con su DUI en una clínica, el claim aborta COMPLETO (silencioso por el fail-safe del login). |
+| B2.1 | **Verificación reforzada de "Sí, son mías"** (pedir dato adicional de la ficha: DOB, DUI parcial u otro — para teléfonos compartidos/mal digitados). Decisión owner 2026-06-11: MVP basta confirmación explícita + rechazo + audit. | 🟢 | Medio | Futuro, post-piloto |
+| B2.2 | **Términos/onboarding del paciente:** al crear o reclamar cuenta, aceptar que solo puede confirmar atenciones propias y no adjudicarse atenciones de terceros. (Documental/legal; sin funcionalidad aún.) | 🟢 | Chico | Futuro, junto a términos del piloto |
 | B3 | **Recuperación de cuenta sin sesión (herramienta LucyAdmin + protocolo)** (R4, D7) | 🟢 | Medio | En cola (ya estaba; detrás del modelo de identidad) |
 | B4 | **Self-service de email del paciente** (R3, D5 — análogo al cambio de teléfono) | 🟢 | Medio | Fase Auth post-piloto (ya previsto) |
 | B5 | **Copy de onboarding del médico**: "la cuenta del paciente es de él; tu ficha clínica es tuya" (R7) | 🟢 | Chico | Oportunista |
