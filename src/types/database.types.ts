@@ -1609,6 +1609,14 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: Json
       }
+      admin_invite_platform_admin: {
+        Args: { p_phone: string; p_display_name: string; p_email?: string }
+        Returns: Json
+      }
+      admin_revoke_platform_admin: {
+        Args: { p_profile_id: string }
+        Returns: Json
+      }
       confirm_patient_link: {
         Args: { p_patient_id: string }
         Returns: Json
