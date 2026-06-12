@@ -8,8 +8,9 @@
 > Snapshot de referencia: HEAD `a1e0adf`, migraciones hasta `s7_44`,
 > PRs #1–#133. Complementa `docs/ANALISIS_PACIENTE_GLOBAL.md` (Fase 4
 > original, esbozo 2026-05-25) y `docs/ANALISIS_PACIENTE_GLOBAL_OWNERSHIP.md`
-> (reglas D1–D7). **Nada de este documento se implementa sin la validación
-> explícita del owner sobre las decisiones de §10.**
+> (reglas D1–D7). **Decisiones DM1–DM9 CERRADAS por el owner el 2026-06-12
+> (§10). La implementación (F4-1+) arranca SOLO con señal explícita del
+> owner.**
 
 ---
 
@@ -45,17 +46,18 @@ son un duplicado** — son el modelo (una relación clínica por clínica, DA1).
 que se unifica cross-clínica es la **identidad** (ambas fichas apuntando al
 mismo `profile_id`), nunca la historia clínica entre clínicas.
 
-> **Alcance inmediato (ratificado preliminarmente por el owner, 2026-06-12;
-> cierre formal con DM1):** esta fase opera SOLO sobre fichas locales
-> (`patients`) dentro de la **misma clínica**. No toca `profiles`,
-> `auth.users`, credenciales ni roles. **Cross-clínica nunca se fusionan
-> expedientes** — ahí se unifica identidad, no historia clínica (F4-D,
-> diseño propio posterior).
+> **Alcance CERRADO (DM1 ✅, owner 2026-06-12):** esta fase opera SOLO sobre
+> fichas locales (`patients`) dentro de la **misma clínica**. Quedan FUERA
+> de esta fase: merge de identidades (`profiles`), merge de `auth.users`,
+> credenciales, roles, recuperación sin sesión y unión de expedientes
+> cross-clínica. Regla central: **cross-clínica no es duplicado de
+> expediente** — se resuelve por identidad global, no por fusión de ficha
+> clínica (F4-D, diseño propio posterior).
 
 Además, este diseño propone una **mitigación quirúrgica e independiente del
 claim** (vincular fila por fila, tolerante a la colisión) para cortar el daño
 activo del hallazgo F4 sin esperar a que el merge esté construido (§8/F4-1 —
-**DM2 ✅ aprobada preliminarmente**: primer PR real tras este docs-only).
+**DM2 ✅ cerrada**: primer PR real tras este docs-only, a señal del owner).
 
 ---
 
@@ -113,7 +115,7 @@ activo del hallazgo F4 sin esperar a que el merge esté construido (§8/F4-1 —
 | **E3** | Misma clínica, dos fichas vinculadas al **mismo** profile (no hay UNIQUE que lo impida; race de `getOrCreatePatient` o legado). Es la "nota F3": el sync espejo choca con el `UNIQUE` al propagar el mismo documento a ambas → el paciente no puede guardar su perfil | ficha | ✅ merge de fichas |
 | **E4** | Dos identidades Lucy (`profiles` + `auth.users`) de la misma persona — cambió de número antes de reclamar, o usó número viejo/nuevo en clínicas distintas | identidad | ⏳ F4-D (diseño propio posterior, ver §9) |
 | **E5** | Fichas de la misma persona en clínicas distintas vinculadas a profiles **distintos** (consecuencia de E4) | identidad | ⏳ se resuelve al fusionar identidades (E4); las fichas NO se fusionan entre clínicas |
-| **E6** | Ficha vinculada a la persona **equivocada** (R1/R2: teléfono mal tipeado o compartido) | vínculo | ❌ no es merge — es des-vinculación: B2 ya da el self-service (`reject_patient_link`) y deja cola `pending_review` (bandeja admin pendiente, DM8) |
+| **E6** | Ficha vinculada a la persona **equivocada** (R1/R2: teléfono mal tipeado o compartido) | vínculo | ❌ no es merge — es des-vinculación: B2 ya da el self-service (`reject_patient_link`) y deja cola `pending_review` (bandeja admin: entra en F4-3 como tab de `/admin/pacientes`, o F4-3b si agranda — DM8 ✅) |
 
 **Regla derivada del modelo (vinculante para la herramienta):** dos fichas en
 **clínicas distintas nunca se fusionan**. La unidad de fusión de historia
@@ -140,9 +142,9 @@ clínica es la clínica. Cross-clínica solo se unifica identidad (E4/E5).
   vista del médico (la ficha fuente queda inactiva pero existente).
 - **C3 — Merge durante atención en curso.** Si la clínica tiene una consulta
   borrador abierta sobre la ficha fuente en el momento del merge, el
-  re-point puede sorprender al médico a mitad de consulta. Mitigación:
-  preflight detecta borradores abiertos y lo reporta; decisión de bloquear o
-  avisar (parte de DM3).
+  re-point puede sorprender al médico a mitad de consulta. **Cerrado (DM3c,
+  2026-06-12): el merge se BLOQUEA** si hay consulta borrador abierta sobre
+  la ficha fuente — bloqueo, no advertencia (`P0067`).
 
 ### 4.2 Riesgos legales ⚖️
 
@@ -222,7 +224,7 @@ clínica es la clínica. Cross-clínica solo se unifica identidad (E4/E5).
    audit. La fuente queda `is_active=false` + marcada como fusionada.
 6. **Reversibilidad.** Log de merge con snapshot completo del estado previo
    (ficha fuente entera + IDs exactos de filas movidas) — suficiente para
-   deshacer con precisión (formal o documental según DM7).
+   deshacer con precisión vía **unmerge formal** (DM7 ✅ cerrada, §6.5).
 7. **Transacción única + locks.** `FOR UPDATE` de fuente y destino; o se
    mueve todo o no se mueve nada.
 8. **Sin contenido clínico en la herramienta.** Ni el preflight, ni la RPC,
@@ -248,34 +250,59 @@ fichas de la **misma clínica** que son la **misma persona**:
 2. Registra el merge en `patient_merge_log` (snapshot completo previo).
 3. Re-apunta `appointments.patient_id`, `consultations.patient_id`,
    `vitals.patient_id` de fuente → destino (bypass GUC activo).
-4. Neutraliza la fuente: `document_number → NULL` (snapshot ya guardado),
-   `profile_id → NULL`, `is_active → false`, marca
-   `merged_into_patient_id = target`, `merged_at = now()`.
+4. Neutraliza la fuente (DM5 ✅): `document_number → NULL` (snapshot ya
+   guardado), `profile_id → NULL`, `is_active → false`, marca
+   `merged_into_patient_id = target`, `merged_at = now()`. El **teléfono se
+   conserva** como traza histórica. **`document_type` NO necesita
+   neutralizarse** (respuesta a la consulta de DM5): es NOT NULL con default
+   y, con `document_number = NULL`, el `UNIQUE(clinic, doc_type, doc_number)`
+   deja de participar (NULLS DISTINCT) sin importar el tipo — se conserva
+   como parte de la traza. El mínimo obligatorio (liberar el UNIQUE sin
+   perder snapshot) se cumple con `document_number → NULL` + log.
 5. Audita (fila explícita + triggers) y devuelve resumen (conteos movidos).
 
 **El destino no se modifica** salvo `updated_at` (la identidad del destino ya
 la gobierna su profile vía sync espejo; los campos locales no se pisan — DM6).
 
-### 6.2 Elegibilidad (propuesta, a validar en DM3/DM4)
+### 6.2 Elegibilidad (✅ CERRADA por DM3/DM4, owner 2026-06-12)
 
 | Regla | Código propuesto |
 |---|---|
 | Ambas fichas existen y pertenecen a la **misma clínica** | `P0060` si no |
 | Ninguna está ya fusionada (`merged_into_patient_id IS NULL`) | `P0061` |
 | Fuente ≠ destino | `P0062` |
-| **Evidencia de misma persona** (al menos una): mismo `document_number` no-null; mismo `profile_id` no-null (E3); o override explícito del admin (`p_override_reason`) para el caso teléfono+nombre sin documento | `P0063` |
-| Si exactamente UNA está vinculada (`profile_id` no-null) → esa es **obligatoriamente el destino** (la vinculada gana: su identidad la gobierna el paciente) | `P0064` |
-| Si ambas vinculadas a profiles **distintos** → **bloqueo total** (eso es E4/E5, merge de identidades — fuera de alcance) | `P0065` |
+| **Evidencia fuerte de misma persona** (al menos una, DM3a): mismo `document_number` **normalizado y no vacío**; o mismo `profile_id` no-null (E3). Siempre con dry-run + confirmación LucyAdmin + motivo. **Anti-evidencia:** si nombre, fecha de nacimiento o sexo existen en ambas fichas y muestran conflicto evidente, NO se trata como match aunque la evidencia fuerte coincida — bloqueo y revisión manual. El preflight muestra SIEMPRE la evidencia usada | `P0063` |
+| **Teléfono+nombre sin documento = BLOQUEADO en V1** (DM3b): sin merge por "parecido razonable"; queda como revisión manual / backlog de override futuro | `P0063` |
+| Si exactamente UNA está vinculada (`profile_id` no-null) → esa es **obligatoriamente el destino** (DM4a: la identidad la gobierna el paciente/Lucy; no se mueve hacia una ficha local no vinculada) | `P0064` |
+| Si ambas vinculadas a profiles **distintos** → **bloqueo total** (DM4b: posible conflicto de identidad — E4/E5, va a diseño futuro de identidad/recuperación, no a F4) | `P0065` |
+| Si ambas SIN vincular → **LucyAdmin elige el destino** (DM4c); el sistema sugiere (más antigua / más historial / datos más completos) pero la decisión es explícita del admin y queda auditada | — |
 | Motivo ≥ 10 caracteres | `P0066` |
+| **Sin consulta borrador abierta sobre la ficha fuente** (DM3c: el merge se bloquea, no solo advierte) | `P0067` |
+
+**Regla de precaución — teléfonos compartidos / menores (DM9 ✅, vinculante
+también para versiones futuras):** el teléfono compartido **no prueba
+identidad**. Nunca se fusiona solo por teléfono cuando los nombres difieren;
+especial cuidado con menores, dependientes, familiares y teléfonos del
+responsable. La evidencia fuerte es documento o profile (DM3). Con DM3b
+bloqueado en V1 este riesgo queda mitigado de entrada; si alguna versión
+futura habilita un override, esta regla lo condiciona.
+
+> Nota de implementación (a precisar en F4-2): la definición operativa del
+> "conflicto evidente" de DM3a — propuesta: bloqueo duro server-side cuando
+> los campos estructurados (DOB/sexo) existen en ambas y difieren; el nombre
+> se muestra lado a lado en el preflight para el juicio del admin.
 
 ### 6.3 Dry-run: `admin_merge_patients_preflight(p_source_id, p_target_id)`
 
 Read-only, mismo gate `is_admin()`. Devuelve (sin PII clínica):
 
 - Clasificación: elegible / bloqueada (con código y explicación).
-- Evidencia detectada (documento igual / profile igual / solo teléfono).
+- **Evidencia detectada y mostrada** (DM3a): documento igual / profile igual
+  / solo teléfono (→ bloqueada en V1, DM3b) / anti-evidencia por conflicto
+  de nombre-DOB-sexo.
 - Conteos a mover: citas (por estado), consultas (firmadas vs borrador —
-  **alerta si hay borrador abierto**, riesgo C3), vitales.
+  **borrador abierto sobre la fuente = merge BLOQUEADO**, DM3c/`P0067`),
+  vitales.
 - Estado de vínculo de ambas (vinculada/no, confirmada/no
   `link_confirmed_at`, rechazos previos en `patient_link_rejections`).
 - Colisiones: ¿el documento de la fuente sobreviviría? (no — se neutraliza;
@@ -294,14 +321,15 @@ llamar al merge real. El merge **revalida todo** — el preflight es informativo
   merged_by (admin), reason, snapshot JSONB de la fuente completa, arrays de
   IDs movidos (`appointment_ids`, `consultation_ids`, `vitals_ids`),
   created_at, y campos de reversa (`unmerged_at`, `unmerged_by`,
-  `unmerge_reason`) si DM7 aprueba unmerge formal. RLS admin-only SELECT;
+  `unmerge_reason`) — **DM7 ✅: el log nace con la reversa formal prevista**.
+  RLS admin-only SELECT;
   escritura solo vía RPC definer (mismo patrón `platform_admin_invitations`).
 - **`claim_patient_records`:** agregar `AND p.merged_into_patient_id IS NULL`
   a los filtros (cierra T2). Cambio de una línea sobre la versión `s7_43`.
 - **Sin tocar `is_admin()` ni RLS existentes** de patients/consultations
   (el merge corre por definer; no se abren superficies nuevas).
 
-### 6.5 Reversibilidad (según DM7)
+### 6.5 Reversibilidad (DM7 ✅ cerrada)
 
 - **Opción mínima (documental):** el log contiene todo lo necesario; deshacer
   es un procedimiento documentado ejecutado como nueva operación auditada.
@@ -359,7 +387,7 @@ merge escriba puede imposibilitar el unmerge.
 
 ---
 
-## 8. Mitigación quirúrgica del claim (DM2 — ✅ aprobada preliminarmente, 2026-06-12)
+## 8. Mitigación quirúrgica del claim (DM2 — ✅ APROBADA, cerrada 2026-06-12)
 
 Mientras el merge se diseña/construye, el hallazgo F4 sigue activo: **cada
 login de un paciente con ficha duplicada-con-DUI pierde TODAS sus
@@ -391,8 +419,8 @@ Condiciones vinculantes:
   reporta; resolver el duplicado sigue siendo potestad del merge admin (F4-2+);
 - no toca identidades, no resuelve duplicados, sin UI grande.
 
-**No se arranca todavía** — espera el cierre formal de DM1–DM9 y la señal
-explícita del owner.
+**No se arranca todavía** — DM1–DM9 ya están cerradas (2026-06-12); falta
+únicamente la **señal explícita del owner** para arrancar este PR.
 
 ---
 
@@ -401,9 +429,9 @@ explícita del owner.
 | Fase | Contenido | Tipo | Riesgo |
 |---|---|---|---|
 | **F4-0** | Este diseño + decisiones DM1–DM9 validadas | docs-only | nulo |
-| **F4-1** | Mitigación del claim (fila por fila tolerante, §8) — **✅ aprobada (DM2): primer PR real tras este docs-only.** No arranca hasta cerrar DM1–DM9 + señal del owner | migración chica + check + smoke | bajo |
+| **F4-1** | Mitigación del claim (fila por fila tolerante, §8) — **✅ aprobada (DM2): primer PR real tras este docs-only.** DM1–DM9 cerradas; no arranca hasta la señal explícita del owner | migración chica + check + smoke | bajo |
 | **F4-2** | Backend del merge: columnas `merged_into_patient_id`/`merged_at` + tabla `patient_merge_log` (**con reversibilidad formal de nacimiento — DM7 ✅**) + RPC `admin_merge_patients_preflight` + RPC `admin_merge_patients` + exclusión de fusionadas en el claim. `admin_unmerge_patients` acá, o en F4-2b si agranda demasiado el PR | migración + check + smoke OTP completo | medio-alto |
-| **F4-3** | UI LucyAdmin: sección `/admin/pacientes` — búsqueda por teléfono/documento, detección de pares candidatos (mismo doc / mismo profile / mismo teléfono intra-clínica), comparación lado a lado (metadatos), preflight visual, confirmación con motivo, historial de merges | frontend-only | medio |
+| **F4-3** | UI LucyAdmin: sección `/admin/pacientes` — búsqueda por teléfono/documento, detección de pares candidatos (mismo doc / mismo profile / mismo teléfono intra-clínica), comparación lado a lado (metadatos), preflight visual, confirmación con motivo, historial de merges. **Incluye la bandeja de `patient_link_rejections` como sección/tab separada (DM8 ✅); si agranda demasiado el PR, se separa como subfase F4-3b.** La bandeja NO bloquea F4-1 ni F4-2 | frontend-only | medio |
 | **F4-D** | **Merge de identidades** (`profiles`/`auth.users`, escenarios E4/E5): diseño propio posterior. Hereda de este doc: §2.2, L3 (prueba de posesión / protocolo soporte), bloqueo de roles sensibles (si la identidad fuente es médico/asistente/admin → revisión manual, patrón `P0011`). Conecta con D7 (recuperación sin sesión) — probablemente convenga diseñarlos juntos | docs-only primero | alto |
 
 Cada fase = PR chico, server-side primero, smoke+check por migración,
@@ -417,53 +445,81 @@ puede ser automática, la fusión siempre es decisión explícita de LucyAdmin.
 
 ---
 
-## 10. Decisiones que el owner debe validar ANTES de implementar
+## 10. Decisiones DM1–DM9 — ✅ CERRADAS por el owner (2026-06-12)
 
-> Ninguna fase F4-1+ arranca sin estas respuestas. **Estado 2026-06-12:**
-> DM2 y DM7 con aprobación preliminar del owner; DM1 avalada en principio
-> (la tesis central fue ratificada) — cierre formal de las 9 pendiente.
+> Las 9 decisiones quedaron aprobadas formalmente. **La implementación
+> (F4-1+) arranca SOLO con señal explícita del owner.**
 
-- **DM1 — Alcance de la fase.** ¿Confirmás que F4 = **merge de fichas
-  intra-clínica** y que el merge de identidades (E4/E5) se difiere a F4-D
-  con diseño propio? *(Recomendación: sí — es lo que resuelve F4/E2/E3 con
-  el menor radio de daño. El owner ya avaló la tesis central el 2026-06-12;
-  falta el cierre formal.)*
-- **DM2 — Mitigación del claim (§8).** ✅ **APROBADA (preliminar,
-  2026-06-12):** PR chico separado, ANTES del merge; fila por fila; reporta
-  (no esconde) las fichas no vinculadas; **sin merge automático**; migración
-  propia + check + smoke. Es el **primer PR real recomendado** tras este
-  docs-only. No arranca hasta la señal explícita del owner.
-- **DM3 — Evidencia mínima para fusionar.** ¿Basta documento igual o profile
-  igual? ¿Se permite el override del admin (teléfono+nombre, sin documento)
-  con motivo reforzado, o ese caso queda bloqueado en V1? ¿Y los borradores
-  de consulta abiertos: bloquean o solo advierten?
-- **DM4 — Regla de dirección.** ¿Confirmás "la vinculada es siempre el
-  destino" y el bloqueo total cuando ambas están vinculadas a profiles
-  distintos (`P0065`)? Si ambas están sin vincular, ¿destino = la que elige
-  el admin (con sugerencia de "la más completa/antigua") o regla fija?
-- **DM5 — Neutralización de la fuente.** ¿OK con `document_number → NULL` +
-  `profile_id → NULL` + `is_active=false` + marca `merged_into`? ¿El
-  teléfono de la fuente se conserva (recomendado: sí — es traza; el claim ya
-  la excluye por la marca)?
-- **DM6 — Datos locales de la fuente** (alergias, sangre, contacto de
-  emergencia, notas). ¿V1 NO copia nada al destino (recomendado: el log lo
-  preserva y el médico puede completar a mano) o se copia campo a campo solo
-  donde el destino esté vacío?
-- **DM7 — Reversa.** ✅ **APROBADA (preliminar, 2026-06-12): unmerge formal
-  como diseño objetivo.** Log suficiente para revertir + motivo obligatorio +
-  actor admin + snapshots before/after + trazabilidad + no hard-delete +
-  rollback controlado por RPC. La RPC puede diferirse a una fase posterior si
-  agranda demasiado F4-2, pero el diseño del merge y su log **nace con la
-  reversibilidad formal prevista** (§6.5).
-- **DM8 — Bandeja de `patient_link_rejections`.** La UI F4-3 crea
-  `/admin/pacientes`; ¿absorbe también la cola `pending_review` de rechazos
-  de B2 (estaba diferida "si el piloto la pide"), o se mantiene fuera del
-  alcance?
-- **DM9 — Teléfonos compartidos / menores.** Para fichas de dependientes con
-  el teléfono del responsable (R2): ¿el merge las trata igual (la evidencia
-  manda) o se documenta una regla de precaución específica (p. ej. nunca
-  fusionar por solo-teléfono cuando los nombres difieren)? Conecta con la
-  pregunta abierta de menores del análisis de ownership (§10.3 de ese doc).
+- **DM1 — Alcance de F4. ✅ APROBADA.** F4 se limita a **merge de fichas
+  `patients` intra-clínica**. Quedan FUERA de esta fase: merge de
+  identidades (`profiles`), merge de `auth.users`, credenciales, roles,
+  recuperación sin sesión y unión de expedientes cross-clínica. Regla
+  central: cross-clínica **no es duplicado de expediente** — se resuelve por
+  identidad global, no por fusión de ficha clínica (F4-D, diseño propio
+  posterior).
+- **DM2 — Mitigación del claim (§8). ✅ APROBADA.** Primer PR real
+  recomendado tras el docs-only: claim tolerante **fila por fila**; una
+  colisión NO aborta todo el claim; **reporta/registra las fichas no
+  vinculadas** (el fallo no se esconde); **no hace merge automático**; no
+  resuelve duplicados; no toca identidades; **migración propia + check +
+  smoke**. **No arrancar hasta señal explícita del owner.**
+- **DM3 — Evidencia mínima para fusionar. ✅ APROBADA.**
+  **(a)** Documento igual o profile igual = evidencia fuerte de misma
+  persona, siempre con dry-run + confirmación LucyAdmin + motivo
+  obligatorio. Condiciones: documento **normalizado y no vacío**; NO se
+  trata como match si hay **conflicto evidente de nombre/fecha/sexo** cuando
+  esos datos existen; el **preflight muestra la evidencia usada**.
+  **(b)** Teléfono+nombre sin documento = **BLOQUEADO en V1** (sin merge por
+  "parecido razonable"; revisión manual / backlog de override futuro).
+  **(c)** Consulta borrador abierta sobre la ficha fuente = **el merge se
+  BLOQUEA** (no solo advertencia) — riesgo de merge a mitad de atención
+  clínica.
+- **DM4 — Regla de dirección. ✅ APROBADA.**
+  **(a)** Si exactamente una ficha está vinculada a `profile_id` → esa es
+  **obligatoriamente el destino** (la identidad la gobierna el
+  paciente/LucyCare; no se mueve hacia una ficha local no vinculada).
+  **(b)** Ambas vinculadas a profiles distintos → **bloqueo total** (posible
+  conflicto de identidad — va a diseño futuro de identidad/recuperación, no
+  a F4).
+  **(c)** Ambas sin vincular → **LucyAdmin elige el destino**; el sistema
+  puede sugerir (más antigua / más historial / datos más completos), pero la
+  decisión es **explícita del admin y auditada**.
+- **DM5 — Neutralización de la ficha fuente. ✅ APROBADA.** Neutralizada, no
+  borrada: `document_number → NULL` + `profile_id → NULL` +
+  `is_active = false` + `merged_into_patient_id` + `merged_at` + **snapshot
+  previo completo en el log**; el **teléfono se conserva** como traza
+  histórica; el **claim excluye fichas merged**; **no hard-delete**.
+  `document_type` se conserva — no hace falta neutralizarlo: con
+  `document_number = NULL` el UNIQUE (NULLS DISTINCT) deja de participar
+  (§6.1); el mínimo obligatorio (liberar el UNIQUE sin perder snapshot) se
+  cumple.
+- **DM6 — Datos locales de la fuente. ✅ APROBADA.** V1 **NO copia** datos
+  locales sueltos al destino: ni alergias, ni tipo de sangre, ni contacto de
+  emergencia, ni notas, ni campos administrativos locales (menos magia,
+  menos riesgo de contaminar el destino). La **historia clínica referenciada
+  por tablas dependientes SÍ se mueve** según el diseño del merge (§6.1);
+  los campos locales quedan **preservados en el log** y se revisan
+  manualmente si hace falta.
+- **DM7 — Reversa. ✅ APROBADA.** El diseño nace con **unmerge formal** como
+  objetivo: log suficiente para revertir + **actor obligatorio** + **motivo
+  obligatorio** + **snapshots before/after** + **no hard-delete** +
+  **trazabilidad completa** + **rollback por RPC**. La RPC de unmerge puede
+  diferirse si agranda demasiado F4-2, pero el diseño la deja **prevista
+  desde el inicio** (§6.5).
+- **DM8 — Bandeja de `patient_link_rejections`. ✅ APROBADA con alcance
+  controlado.** Conceptualmente se absorbe en `/admin/pacientes` (misma
+  categoría: salud de vínculos del paciente), idealmente como **sección/tab
+  separada** dentro de F4-3. **No bloquea F4-1 ni F4-2.** Si agranda
+  demasiado F4-3, entra como **subfase F4-3b**. Definición de fases
+  ratificada: F4-1 = claim tolerante; F4-2 = backend merge + dry-run + log;
+  F4-3 = UI `/admin/pacientes`.
+- **DM9 — Teléfonos compartidos / menores. ✅ APROBADA.** Regla explícita de
+  precaución (vinculante también para versiones futuras con override):
+  **nunca fusionar solo por teléfono cuando los nombres difieren**; especial
+  cuidado con menores, dependientes, familiares y teléfonos del responsable;
+  el **teléfono compartido no prueba identidad**; la evidencia fuerte sigue
+  siendo **documento/profile** (DM3). Con DM3(b) bloqueado en V1 el riesgo
+  queda mitigado desde el inicio; la regla queda documentada en §6.2.
 
 ---
 
