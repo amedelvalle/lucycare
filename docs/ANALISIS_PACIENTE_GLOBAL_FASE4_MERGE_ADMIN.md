@@ -45,10 +45,17 @@ son un duplicado** — son el modelo (una relación clínica por clínica, DA1).
 que se unifica cross-clínica es la **identidad** (ambas fichas apuntando al
 mismo `profile_id`), nunca la historia clínica entre clínicas.
 
+> **Alcance inmediato (ratificado preliminarmente por el owner, 2026-06-12;
+> cierre formal con DM1):** esta fase opera SOLO sobre fichas locales
+> (`patients`) dentro de la **misma clínica**. No toca `profiles`,
+> `auth.users`, credenciales ni roles. **Cross-clínica nunca se fusionan
+> expedientes** — ahí se unifica identidad, no historia clínica (F4-D,
+> diseño propio posterior).
+
 Además, este diseño propone una **mitigación quirúrgica e independiente del
 claim** (vincular fila por fila, tolerante a la colisión) para cortar el daño
-activo del hallazgo F4 sin esperar a que el merge esté construido (§9, F4-1 —
-decisión DM2).
+activo del hallazgo F4 sin esperar a que el merge esté construido (§8/F4-1 —
+**DM2 ✅ aprobada preliminarmente**: primer PR real tras este docs-only).
 
 ---
 
@@ -304,9 +311,22 @@ llamar al merge real. El merge **revalida todo** — el preflight es informativo
   marca el log como revertido. Solo revierte el **último** merge de esa ficha
   (cadenas se deshacen en orden inverso).
 
-Recomendación: **formal** — el riesgo C1 (fusionar personas distintas) es lo
-bastante grave como para que la reversa no dependa de un procedimiento manual
-bajo presión.
+**✅ Decisión del owner (DM7, 2026-06-12): unmerge formal como diseño
+objetivo.** El riesgo C1 (fusionar personas distintas) es lo bastante grave
+como para que la reversa no dependa de un procedimiento manual bajo presión.
+Criterios vinculantes:
+
+- toda fusión deja log suficiente para revertir;
+- motivo obligatorio + actor admin obligatorio;
+- snapshots before/after;
+- operación trazable de punta a punta;
+- no hard-delete;
+- rollback controlado mediante RPC.
+
+La RPC `admin_unmerge_patients` puede aterrizar en una fase posterior si
+agranda demasiado el primer PR de backend (F4-2), pero **el diseño del merge y
+de su log nace con la reversibilidad formal prevista** — nada de lo que el
+merge escriba puede imposibilitar el unmerge.
 
 ---
 
@@ -339,7 +359,7 @@ bajo presión.
 
 ---
 
-## 8. Mitigación quirúrgica del claim (propuesta paralela — DM2)
+## 8. Mitigación quirúrgica del claim (DM2 — ✅ aprobada preliminarmente, 2026-06-12)
 
 Mientras el merge se diseña/construye, el hallazgo F4 sigue activo: **cada
 login de un paciente con ficha duplicada-con-DUI pierde TODAS sus
@@ -358,8 +378,21 @@ Propuesta (PR chico, independiente del merge, migración propia):
   login sigue igual.
 
 No reabre B2 ni F3 — es hardening del mismo claim que `s7_43` ya reescribió,
-contra un bug real reproducido. **Recomendación: hacerlo ANTES o en paralelo
-al merge** (corta el daño activo con ~30 líneas de SQL).
+contra un bug real reproducido.
+
+**✅ Decisión del owner (2026-06-12): aprobado como primer PR real** después
+de este docs-only. PR muy acotado, con migración propia + check + smoke.
+Condiciones vinculantes:
+
+- el claim vincula **fila por fila**; una colisión NO aborta el resto;
+- las fichas que no se pudieron vincular **se registran y se devuelven** en el
+  resultado y en audit (`skipped_unique_conflict`) — **el fallo no se esconde**;
+- **NO hace merge** — ni automático ni implícito: solo tolera la colisión y la
+  reporta; resolver el duplicado sigue siendo potestad del merge admin (F4-2+);
+- no toca identidades, no resuelve duplicados, sin UI grande.
+
+**No se arranca todavía** — espera el cierre formal de DM1–DM9 y la señal
+explícita del owner.
 
 ---
 
@@ -368,8 +401,8 @@ al merge** (corta el daño activo con ~30 líneas de SQL).
 | Fase | Contenido | Tipo | Riesgo |
 |---|---|---|---|
 | **F4-0** | Este diseño + decisiones DM1–DM9 validadas | docs-only | nulo |
-| **F4-1** | Mitigación del claim (fila por fila tolerante, §8) — si DM2 aprueba | migración chica + check + smoke | bajo |
-| **F4-2** | Backend del merge: columnas `merged_into_patient_id`/`merged_at` + tabla `patient_merge_log` + RPC `admin_merge_patients_preflight` + RPC `admin_merge_patients` + exclusión de fusionadas en el claim + (si DM7) `admin_unmerge_patients` | migración + check + smoke OTP completo | medio-alto |
+| **F4-1** | Mitigación del claim (fila por fila tolerante, §8) — **✅ aprobada (DM2): primer PR real tras este docs-only.** No arranca hasta cerrar DM1–DM9 + señal del owner | migración chica + check + smoke | bajo |
+| **F4-2** | Backend del merge: columnas `merged_into_patient_id`/`merged_at` + tabla `patient_merge_log` (**con reversibilidad formal de nacimiento — DM7 ✅**) + RPC `admin_merge_patients_preflight` + RPC `admin_merge_patients` + exclusión de fusionadas en el claim. `admin_unmerge_patients` acá, o en F4-2b si agranda demasiado el PR | migración + check + smoke OTP completo | medio-alto |
 | **F4-3** | UI LucyAdmin: sección `/admin/pacientes` — búsqueda por teléfono/documento, detección de pares candidatos (mismo doc / mismo profile / mismo teléfono intra-clínica), comparación lado a lado (metadatos), preflight visual, confirmación con motivo, historial de merges | frontend-only | medio |
 | **F4-D** | **Merge de identidades** (`profiles`/`auth.users`, escenarios E4/E5): diseño propio posterior. Hereda de este doc: §2.2, L3 (prueba de posesión / protocolo soporte), bloqueo de roles sensibles (si la identidad fuente es médico/asistente/admin → revisión manual, patrón `P0011`). Conecta con D7 (recuperación sin sesión) — probablemente convenga diseñarlos juntos | docs-only primero | alto |
 
@@ -386,15 +419,20 @@ puede ser automática, la fusión siempre es decisión explícita de LucyAdmin.
 
 ## 10. Decisiones que el owner debe validar ANTES de implementar
 
-> Ninguna fase F4-1+ arranca sin estas respuestas.
+> Ninguna fase F4-1+ arranca sin estas respuestas. **Estado 2026-06-12:**
+> DM2 y DM7 con aprobación preliminar del owner; DM1 avalada en principio
+> (la tesis central fue ratificada) — cierre formal de las 9 pendiente.
 
 - **DM1 — Alcance de la fase.** ¿Confirmás que F4 = **merge de fichas
   intra-clínica** y que el merge de identidades (E4/E5) se difiere a F4-D
   con diseño propio? *(Recomendación: sí — es lo que resuelve F4/E2/E3 con
-  el menor radio de daño.)*
-- **DM2 — Mitigación del claim (§8).** ¿Aprobás el PR chico previo/paralelo
-  que hace el claim tolerante a la colisión (fila por fila)? *(Recomendación:
-  sí, primero — corta el daño activo hoy.)*
+  el menor radio de daño. El owner ya avaló la tesis central el 2026-06-12;
+  falta el cierre formal.)*
+- **DM2 — Mitigación del claim (§8).** ✅ **APROBADA (preliminar,
+  2026-06-12):** PR chico separado, ANTES del merge; fila por fila; reporta
+  (no esconde) las fichas no vinculadas; **sin merge automático**; migración
+  propia + check + smoke. Es el **primer PR real recomendado** tras este
+  docs-only. No arranca hasta la señal explícita del owner.
 - **DM3 — Evidencia mínima para fusionar.** ¿Basta documento igual o profile
   igual? ¿Se permite el override del admin (teléfono+nombre, sin documento)
   con motivo reforzado, o ese caso queda bloqueado en V1? ¿Y los borradores
@@ -411,9 +449,12 @@ puede ser automática, la fusión siempre es decisión explícita de LucyAdmin.
   emergencia, notas). ¿V1 NO copia nada al destino (recomendado: el log lo
   preserva y el médico puede completar a mano) o se copia campo a campo solo
   donde el destino esté vacío?
-- **DM7 — Reversa.** ¿Unmerge formal (RPC `admin_unmerge_patients`) en F4-2,
-  o reversibilidad documental (log + procedimiento) y la RPC después?
-  *(Recomendación: formal, por C1.)*
+- **DM7 — Reversa.** ✅ **APROBADA (preliminar, 2026-06-12): unmerge formal
+  como diseño objetivo.** Log suficiente para revertir + motivo obligatorio +
+  actor admin + snapshots before/after + trazabilidad + no hard-delete +
+  rollback controlado por RPC. La RPC puede diferirse a una fase posterior si
+  agranda demasiado F4-2, pero el diseño del merge y su log **nace con la
+  reversibilidad formal prevista** (§6.5).
 - **DM8 — Bandeja de `patient_link_rejections`.** La UI F4-3 crea
   `/admin/pacientes`; ¿absorbe también la cola `pending_review` de rechazos
   de B2 (estaba diferida "si el piloto la pide"), o se mantiene fuera del
