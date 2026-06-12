@@ -67,13 +67,16 @@ try {
   }
 
   // ── Profile QA: snapshot + setear DUI de prueba (el claim lo copiará).
+  // El UPDATE va con la SESIÓN del propio QA (no service_role): el trigger de
+  // audit de identidad (s7_32) exige auth.uid() no-null, y la RLS
+  // column-restricted permite al usuario editar su propio documento.
   {
     const { data: prof, error } = await admin.from('profiles')
       .select('full_name, email, document_type, document_number, date_of_birth, gender')
       .eq('id', uid).single();
     if (error || !prof) throw new Error('profile QA inexistente: ' + (error?.message || ''));
     profileSnapshot = prof;
-    const { error: upErr } = await admin.from('profiles')
+    const { error: upErr } = await qa.from('profiles')
       .update({ document_type: 'dui', document_number: SMOKE_DUI }).eq('id', uid);
     if (upErr) throw new Error('No se pudo setear DUI de prueba: ' + upErr.message);
   }
@@ -246,9 +249,10 @@ try {
       await admin.from('patients').delete().eq('id', id);
     }
     if (uid && profileSnapshot) {
-      // Restaurar identidad del profile QA (las fichas del smoke ya no existen
-      // → el sync s7_33 no propaga a nada).
-      await admin.from('profiles').update({
+      // Restaurar identidad del profile QA con la SESIÓN del QA (el trigger
+      // de audit de s7_32 exige auth.uid(); antes del signOut). Las fichas
+      // del smoke ya no existen → el sync s7_33 no propaga a nada.
+      await qa.from('profiles').update({
         document_type: profileSnapshot.document_type,
         document_number: profileSnapshot.document_number,
       }).eq('id', uid);
