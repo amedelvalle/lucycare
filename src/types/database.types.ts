@@ -1190,6 +1190,8 @@ export type Database = {
           id: string
           is_active: boolean
           link_confirmed_at: string | null
+          merged_at: string | null
+          merged_into_patient_id: string | null
           notes: string | null
           patient_type: Database["public"]["Enums"]["patient_type"]
           phone: string | null
@@ -1214,6 +1216,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           link_confirmed_at?: string | null
+          merged_at?: string | null
+          merged_into_patient_id?: string | null
           notes?: string | null
           patient_type?: Database["public"]["Enums"]["patient_type"]
           phone?: string | null
@@ -1238,6 +1242,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           link_confirmed_at?: string | null
+          merged_at?: string | null
+          merged_into_patient_id?: string | null
           notes?: string | null
           patient_type?: Database["public"]["Enums"]["patient_type"]
           phone?: string | null
@@ -1251,6 +1257,13 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_merged_into_patient_id_fkey"
+            columns: ["merged_into_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
           {
