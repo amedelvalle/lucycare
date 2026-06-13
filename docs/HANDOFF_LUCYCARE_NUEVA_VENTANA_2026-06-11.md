@@ -9,16 +9,40 @@
 ## 1. Estado final al cierre de esta ventana
 
 > **Actualizado 2026-06-13** (cierres #134 diseño F4, #135/`s7_45` claim
-> tolerante, #136 fix reserva móvil). El bloque original de cierre de la
-> ventana (a #132/`s7_44`) queda abajo como histórico.
+> tolerante, #136 fix reserva móvil, **#138/`s7_46` F4-2 backend del merge**).
+> El bloque original de cierre de la ventana (a #132/`s7_44`) queda abajo
+> como histórico.
 
-- **HEAD final:** `43bd0e9` (*fix(reserva): flujo real de reserva en móvil (#136)*) **+ el PR docs-only de este refresh** (verificar con `git log --oneline -5`).
-- **PRs mergeados:** #1–#136 (+ el docs-only de refresh).
-- **Migraciones aplicadas en Supabase:** hasta **`s7_45`** (verificables con `node scripts/check-s7_NN.mjs`).
+- **HEAD final:** `c559fd7` (*feat(paciente): backend del merge admin de fichas (F4-2 / s7_46) (#138)*) **+ el PR docs-only de este refresh** (verificar con `git log --oneline -6`).
+- **PRs mergeados:** #1–#138 (+ el docs-only de refresh).
+- **Migraciones aplicadas en Supabase:** hasta **`s7_46`** (verificables con `node scripts/check-s7_NN.mjs`).
 - **Árbol limpio · `main` al día con `origin/main` · `tsc --noEmit` OK · `npm run build` OK.**
 - **Sin frente de código abierto.** Admins activos de plataforma: 1 (el owner).
 
 ### Cierres recientes (2026-06-13)
+
+- **#138 / `s7_46` — F4-2: backend del merge admin de fichas (intra-clínica).**
+  `admin_merge_patients_preflight` (dry-run, no modifica DB) +
+  `admin_merge_patients` (transaccional) + helper interno
+  `_patient_merge_eligibility` + tabla `patient_merge_log` (snapshots /
+  `moved_ids` / `moved_counts` / reason / actor / evidence; campos
+  `unmerge_*` previstos para la reversa formal). **Bypass propio
+  `app.merging_patients`** añadido a los dos guards (firma de consulta `s7_29`
+  + identidad P0030 `s7_33`) — sus bypass previos intactos. El merge mueve
+  `appointments`/`consultations`/`vitals` source→target (incl. **consulta
+  firmada** vía bypass), **neutraliza la fuente** (`document_number→NULL`,
+  `profile_id→NULL`, `is_active=false`, `merged_into_patient_id`/`merged_at`;
+  **teléfono conservado** como traza; **no hard-delete**) y audita
+  (`edited_via='admin_merge'`). **V1 = evidencia `same_profile`** (E3): el
+  `UNIQUE(clinic,doc)` hace `same_document` inalcanzable intra-clínica
+  (soportado en la lógica para legacy; 0 dups hoy). Bloqueos **P0060–P0068**:
+  distinta clínica · ya fusionada · source==target · profiles distintos
+  (P0065) · dirección inválida (P0064) · evidencia insuficiente/anti-evidencia
+  (P0063) · motivo<10 (P0066) · **borrador abierto en la fuente bloquea
+  (P0067)** · ficha inactiva (P0068). **Borrador en el target = solo warning**
+  (DM3c). El claim ya ignora fichas merged (`s7_45`). **No merge por
+  teléfono/nombre, no override, no identidad global, no `auth.users`, no UI,
+  no unmerge implementado.** check 6/6 + smoke 19/19 + tsc + build + OK del owner.
 
 - **#134 — Diseño Paciente Global Fase 4 / merge admin (docs-only).** DM1–DM9
   cerradas. Análisis en `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md`.
@@ -85,6 +109,7 @@ git status --short
 | **Diseño Paciente Global Fase 4 — merge admin** | #134 (docs-only) | DM1–DM9 cerradas. `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md`. Alcance = fichas intra-clínica; reglas vinculantes (solo LucyAdmin, dry-run/motivo/audit, no hard-delete, unmerge formal). Ver §1 (cierres 2026-06-13). |
 | **F4-1 — claim tolerante fila por fila** | #135 / `s7_45` | El claim ya no aborta completo por colisión de DUI; skips auditados; columnas pasivas `merged_into_patient_id`/`merged_at`. check 5/5 + smoke 16/16. Ver §1. |
 | **Fix bug reserva móvil pública** | #136 (frontend-only) | CTA móvil pasó de scaffold mock a flujo real (`BookingCard`); fecha por defecto local; "Reintentar" en error; splash; mocks borrados. Ver §1. |
+| **F4-2 — backend merge admin de fichas** | #138 / `s7_46` | `patient_merge_log` + `admin_merge_patients_preflight` (dry-run) + `admin_merge_patients` (transaccional) + bypass `app.merging_patients`. V1 = `same_profile`; neutraliza fuente sin hard-delete; bloqueos P0060–P0068. Sin UI/unmerge/identidad global. check 6/6 + smoke 19/19. Ver §1. |
 
 ---
 
@@ -113,22 +138,22 @@ git status --short
 
 ## 5. Pendientes vivos (elegir con el owner; ninguno arrancado)
 
-> **Actualizado 2026-06-13.** El frente B1/F4 ya tiene diseño cerrado (#134)
-> y su primera fase live (#135/`s7_45`); el resto de F4 queda en cola.
+> **Actualizado 2026-06-13.** El frente B1/F4 tiene diseño cerrado (#134),
+> F4-1 (#135/`s7_45`) y **F4-2 backend (#138/`s7_46`) live**; el siguiente
+> paso del eje es la UI (F4-3).
 
-1. **F4-2 — Backend del merge admin de fichas** (`admin_merge_patients` +
-   `admin_merge_patients_preflight` + tabla `patient_merge_log` con reversa
-   formal prevista; columnas `merged_into_patient_id`/`merged_at` ya existen
-   pasivas desde `s7_45`). Diseño y decisiones cerradas en
-   `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` (§6, §10). **Siguiente
-   frente grande candidato.**
-2. **F4-3 — UI LucyAdmin `/admin/pacientes`** (búsqueda, pares candidatos,
-   preflight visual, confirmación con motivo, historial de merges). Detrás de
-   F4-2.
-3. **F4-3b — Bandeja de `patient_link_rejections`** (cola `pending_review` de
+1. **F4-3 — UI LucyAdmin `/admin/pacientes`** (búsqueda, pares candidatos,
+   comparación lado a lado con los metadatos de identidad que ya devuelve el
+   preflight, confirmación con motivo, historial de merges). **Consume las
+   RPCs ya live** (`admin_merge_patients_preflight` + `admin_merge_patients`,
+   `s7_46`). Frontend-only. **Siguiente candidato del eje.**
+2. **F4-3b — Bandeja de `patient_link_rejections`** (cola `pending_review` de
    B2) como tab de `/admin/pacientes`; opcional/separable si agranda F4-3.
-4. **F4-D — Merge de identidades** (`profiles`/`auth.users`, escenarios
+3. **F4-D — Merge de identidades** (`profiles`/`auth.users`, escenarios
    E4/E5) — diseño propio posterior; conviene junto a recuperación sin sesión.
+4. **Unmerge formal** (`admin_unmerge_patients`) — la reversa del merge; el
+   `patient_merge_log` ya nace con `source_snapshot`/`moved_ids` + campos
+   `unmerge_*` para soportarla. Pendiente de implementar.
 5. **Limpieza controlada del teléfono `50372608827`** (registro Katherine, QA
    de `s7_42`) — SOLO cuando el owner lo indique, con **dry-run/inventario
    previo** (auth.user, profile, doctor/clinic/membership, lead, fichas,
