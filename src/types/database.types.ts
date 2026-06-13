@@ -1172,6 +1172,96 @@ export type Database = {
           },
         ]
       }
+      patient_merge_log: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          evidence: Json
+          id: string
+          merged_by: string
+          moved_counts: Json
+          moved_ids: Json
+          reason: string
+          source_patient_id: string
+          source_snapshot: Json
+          target_patient_id: string
+          target_snapshot: Json
+          unmerge_reason: string | null
+          unmerged_at: string | null
+          unmerged_by: string | null
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          evidence: Json
+          id?: string
+          merged_by: string
+          moved_counts: Json
+          moved_ids: Json
+          reason: string
+          source_patient_id: string
+          source_snapshot: Json
+          target_patient_id: string
+          target_snapshot: Json
+          unmerge_reason?: string | null
+          unmerged_at?: string | null
+          unmerged_by?: string | null
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          evidence?: Json
+          id?: string
+          merged_by?: string
+          moved_counts?: Json
+          moved_ids?: Json
+          reason?: string
+          source_patient_id?: string
+          source_snapshot?: Json
+          target_patient_id?: string
+          target_snapshot?: Json
+          unmerge_reason?: string | null
+          unmerged_at?: string | null
+          unmerged_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_merge_log_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_merge_log_merged_by_fkey"
+            columns: ["merged_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_merge_log_source_patient_id_fkey"
+            columns: ["source_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_merge_log_target_patient_id_fkey"
+            columns: ["target_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_merge_log_unmerged_by_fkey"
+            columns: ["unmerged_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           allergies: string | null
