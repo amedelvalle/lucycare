@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import LoginModal from './LoginModal';
 import WaitlistModal from './WaitlistModal';
 import { getCurrentAuthUser, signOut } from '../../../services/auth.service';
-import { useAvailableSlots } from '../../../hooks/useBooking';
+import { useAvailableSlots, useAvailableDays } from '../../../hooks/useBooking';
 import { createBooking } from '../../../services/booking.service';
+import { localDateStr } from '../../../services/slots.service';
 import { supabase } from '../../../lib/supabase';
 import type { AuthUser } from '../../../services/auth.service';
 import type { DoctorService } from '../../../types/directory.types';
@@ -45,8 +46,9 @@ export default function BookingCard({
   const isAuthenticated = !!currentUser;
   const statusUpper = lucyStatus?.toUpperCase() || 'LISTED_ONLY';
 
-  // Fecha mínima = hoy
-  const today = new Date().toISOString().split('T')[0];
+  // Fecha mínima = hoy en hora LOCAL (toISOString es UTC: después de las
+  // 6 pm en El Salvador devolvía la fecha de mañana).
+  const today = localDateStr();
 
   // ─── Slots reales desde Supabase ───
   const { data: dayAvailability, isLoading: loadingSlots } = useAvailableSlots(
@@ -55,6 +57,54 @@ export default function BookingCard({
   );
 
   const availableSlots = (dayAvailability?.slots || []).filter(s => s.available);
+
+  // ─── Fecha por defecto: hoy si tiene agenda, o la próxima con agenda ───
+  // useAvailableDays da una vista rápida (día laboral + no bloqueado); el
+  // fetch real de slots decide. Si la candidata auto-elegida resulta sin
+  // slots reales (p. ej. hoy de noche, todos pasados), se avanza a la
+  // siguiente. El usuario puede cambiar la fecha cuando quiera (dateTouched
+  // apaga el modo automático).
+  const { data: availableDays, isLoading: loadingDays } = useAvailableDays(
+    canBook ? doctorId : undefined,
+    30
+  );
+  const [dateTouched, setDateTouched] = useState(false);
+  // Lista de fechas candidatas mientras se resuelve la fecha por defecto;
+  // null = modo automático terminado (resuelto o agotado).
+  const [autoCandidates, setAutoCandidates] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!canBook || dateTouched || selectedDate || !availableDays) return;
+    const candidates = availableDays.filter(d => d.hasSlots).map(d => d.date).slice(0, 7);
+    if (candidates.length > 0) {
+      setAutoCandidates(candidates);
+      setSelectedDate(candidates[0]);
+    }
+  }, [availableDays, canBook, dateTouched, selectedDate]);
+
+  useEffect(() => {
+    if (dateTouched || !selectedDate || loadingSlots || !autoCandidates) return;
+    if (!dayAvailability || dayAvailability.date !== selectedDate) return;
+    const hasReal = (dayAvailability.slots || []).some(s => s.available);
+    if (hasReal) {
+      setAutoCandidates(null); // fecha por defecto resuelta
+      return;
+    }
+    const next = autoCandidates[autoCandidates.indexOf(selectedDate) + 1];
+    if (next) {
+      setSelectedDate(next);
+    } else {
+      setAutoCandidates(null); // sin más candidatas: queda el estado vacío normal
+    }
+  }, [dayAvailability, loadingSlots, selectedDate, dateTouched, autoCandidates]);
+
+  // Modo automático activo: mientras dura, la sección de horarios muestra
+  // loading (nunca "No hay horarios" a medio buscar).
+  const autoSearching = canBook && !dateTouched && autoCandidates !== null;
+  const searchingDefaultDate = canBook && !dateTouched && !selectedDate && loadingDays;
+  const noUpcomingDays =
+    canBook && !dateTouched && !selectedDate && !loadingDays &&
+    !!availableDays && availableDays.filter(d => d.hasSlots).length === 0;
 
   // ─── Auth ───
   useEffect(() => {
@@ -270,19 +320,40 @@ export default function BookingCard({
                 value={selectedDate}
                 min={today}
                 onChange={(e) => {
+                  setDateTouched(true);
                   setSelectedDate(e.target.value);
                   setSelectedSlotStart('');
                   setSelectedSlotEnd('');
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
               />
+              {searchingDefaultDate && (
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                  <span className="inline-block animate-spin h-3 w-3 border-2 border-emerald-700 border-t-transparent rounded-full"></span>
+                  Buscando la próxima fecha disponible…
+                </p>
+              )}
+              {noUpcomingDays && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-800 mb-2">
+                    Este médico no tiene fechas con agenda en los próximos 30 días.
+                  </p>
+                  <button
+                    onClick={() => setShowWaitlistModal(true)}
+                    type="button"
+                    className="text-xs text-emerald-700 font-medium hover:underline cursor-pointer"
+                  >
+                    Unirme a lista de espera
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Time Selection */}
             {selectedDate && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Hora disponible</label>
-                {loadingSlots ? (
+                {loadingSlots || autoSearching ? (
                   <div className="text-center py-4">
                     <div className="animate-spin h-6 w-6 border-2 border-emerald-700 border-t-transparent rounded-full mx-auto mb-2"></div>
                     <p className="text-sm text-gray-500">Cargando horarios...</p>
