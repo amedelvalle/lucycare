@@ -8,11 +8,51 @@
 
 ## 1. Estado final al cierre de esta ventana
 
-- **HEAD final:** `22bef3b` (*feat(admin): administración de LucyAdmins — Fase 1 (s7_44) (#132)*) **+ el PR docs-only de este handoff** (verificar con `git log --oneline -3`).
-- **PRs mergeados:** #1–#132 (+ el docs-only de cierre).
-- **Migraciones aplicadas en Supabase:** hasta **`s7_44`** (verificables con `node scripts/check-s7_NN.mjs`).
+> **Actualizado 2026-06-13** (cierres #134 diseño F4, #135/`s7_45` claim
+> tolerante, #136 fix reserva móvil). El bloque original de cierre de la
+> ventana (a #132/`s7_44`) queda abajo como histórico.
+
+- **HEAD final:** `43bd0e9` (*fix(reserva): flujo real de reserva en móvil (#136)*) **+ el PR docs-only de este refresh** (verificar con `git log --oneline -5`).
+- **PRs mergeados:** #1–#136 (+ el docs-only de refresh).
+- **Migraciones aplicadas en Supabase:** hasta **`s7_45`** (verificables con `node scripts/check-s7_NN.mjs`).
 - **Árbol limpio · `main` al día con `origin/main` · `tsc --noEmit` OK · `npm run build` OK.**
 - **Sin frente de código abierto.** Admins activos de plataforma: 1 (el owner).
+
+### Cierres recientes (2026-06-13)
+
+- **#134 — Diseño Paciente Global Fase 4 / merge admin (docs-only).** DM1–DM9
+  cerradas. Análisis en `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md`.
+  Alcance F4 = merge de **fichas `patients` intra-clínica** (no identidades,
+  no `profiles`/`auth.users`, no expedientes cross-clínica). Reglas
+  vinculantes: solo LucyAdmin, dry-run + motivo + audit obligatorios, no
+  hard-delete, unmerge formal previsto. Fases F4-1 → F4-2 → F4-3 (+F4-3b,
+  +F4-D diferida).
+- **#135 / `s7_45` — F4-1: claim tolerante fila por fila.**
+  `claim_patient_records()` procesa fichas **fila por fila** (subtransacción
+  por ficha): una colisión `UNIQUE(clinic, doc)` ya **no aborta el claim
+  completo** (cierra el hallazgo F4); las fichas válidas se vinculan, la
+  conflictiva queda intacta (sin media-copia). Conflictos **auditados**
+  (`claim_skipped_unique`/`claim_skipped_error` + resumen con `skipped[]`);
+  el cliente recibe **solo conteos** (`linked_count`/`skipped_count`).
+  Columnas **pasivas** `merged_into_patient_id` (FK sin CASCADE + CHECK
+  anti self-reference) + `merged_at` (infra F4-2, nada las escribe; el claim
+  excluye fichas marcadas). **No hace merge, no toca identidad global ni
+  `auth.users`.** check 5/5 + smoke 16/16 + OK del owner.
+- **#136 — Fix bug público de reserva móvil (frontend-only).** El CTA móvil
+  "Reservar cita" abría un scaffold **mock** (horarios de cliente, servicios
+  inventados, `PaymentModal` falso sin crear cita). Ahora abre el **flujo
+  real** (`BookingCard`: servicios reales, slots reales, `createBooking`,
+  OTP). **Fecha por defecto** (hoy o próxima disponible) en hora **local**
+  (no UTC); **error de red → "Reintentar"** distinguido de médico inexistente;
+  **splash** en `index.html` contra pantalla blanca en el bootstrap.
+  Eliminados `PaymentModal.tsx` y `utils/auth.ts` (mocks sin imports reales).
+  Sin DB/SQL/migraciones/RLS; sin tocar reglas de agenda. tsc + build + OK
+  visual móvil del owner; fixture de cita de prueba limpiado.
+
+### (Histórico) Estado al cierre original de la ventana
+
+- **HEAD:** `22bef3b` (#132/`s7_44`) + el docs-only de cierre (#133).
+- **PRs:** #1–#132. **Migraciones:** hasta `s7_44`.
 
 ### Cómo arrancar la nueva ventana (obligatorio)
 
@@ -42,6 +82,9 @@ git status --short
 | **Navegación móvil LucyAdmin** | #130 | `AdminLayout` con header fijo + hamburguesa + drawer en móvil (antes no había NINGUNA navegación bajo 768px). Desktop intacto. Frontend-only. |
 | **Análisis administración LucyAdmins** | #131 | `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — Opción B aprobada, D1–D6 + reglas vinculantes. |
 | **Administración LucyAdmins — Fase 1** | #132 / `s7_44` | Ver §3. Smoke 24/24 + check 6/6 + OK visual. |
+| **Diseño Paciente Global Fase 4 — merge admin** | #134 (docs-only) | DM1–DM9 cerradas. `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md`. Alcance = fichas intra-clínica; reglas vinculantes (solo LucyAdmin, dry-run/motivo/audit, no hard-delete, unmerge formal). Ver §1 (cierres 2026-06-13). |
+| **F4-1 — claim tolerante fila por fila** | #135 / `s7_45` | El claim ya no aborta completo por colisión de DUI; skips auditados; columnas pasivas `merged_into_patient_id`/`merged_at`. check 5/5 + smoke 16/16. Ver §1. |
+| **Fix bug reserva móvil pública** | #136 (frontend-only) | CTA móvil pasó de scaffold mock a flujo real (`BookingCard`); fecha por defecto local; "Reintentar" en error; splash; mocks borrados. Ver §1. |
 
 ---
 
@@ -70,16 +113,48 @@ git status --short
 
 ## 5. Pendientes vivos (elegir con el owner; ninguno arrancado)
 
-1. **Limpieza controlada del teléfono `50372608827`** (registro Katherine, QA de `s7_42`) — SOLO cuando el owner lo indique, con **dry-run/inventario previo** (auth.user, profile, doctor/clinic/membership, lead, fichas, audit) antes de borrar nada.
-2. **Katherine:** decidir conservar/corregir o limpiar ese registro. Si se conserva: re-guardar el nombre desde la ficha admin y **verificar que persista** (el intento anterior NO persistió — posible save silencioso fallido; si se repite, investigar como bug de la ficha).
-3. **B1 / Paciente Global Fase 4 — merge admin de duplicados.** Grande y delicado (mueve historia clínica): **NO arrancar sin diseño específico propio.** Marco listo en `docs/ANALISIS_PACIENTE_GLOBAL_OWNERSHIP.md`; insumo: hallazgo F4 (el claim copia el DUI global y `UNIQUE(clinic,doc)` puede abortar el claim completo — reproducido en smoke `s7_43`).
-4. **Recuperación de acceso sin sesión** — herramienta/protocolo LucyAdmin (D7); detrás del modelo de identidad.
-5. **Identidad múltiple Fase 2** — selector "modo paciente/modo médico" + capacidades derivadas + revisar si `claim` deja de sobrescribir el rol.
-6. **Paginación del Home** (hoy carga todos los médicos; importa con volumen).
-7. **Normalización de teléfono literal en `accept_clinic_invitations`** (`+503…` ≠ `503…`; candidato a `normalize_phone_sv`; hallazgo QA #125).
-8. **B2.1** — verificación reforzada de "Sí, son mías" (DOB/DUI parcial; para teléfonos compartidos/mal digitados).
-9. **B2.2** — términos/onboarding del paciente: aceptar que solo puede confirmar atenciones propias (documental/legal).
-10. (Post-piloto, ya previstos): pagos SaaS/IVA/DTE/Q1–Q11 (requiere validación owner), self-service de email, 2FA admins, owner/superadmin Fase 2, bandeja admin de `patient_link_rejections` si el piloto la pide.
+> **Actualizado 2026-06-13.** El frente B1/F4 ya tiene diseño cerrado (#134)
+> y su primera fase live (#135/`s7_45`); el resto de F4 queda en cola.
+
+1. **F4-2 — Backend del merge admin de fichas** (`admin_merge_patients` +
+   `admin_merge_patients_preflight` + tabla `patient_merge_log` con reversa
+   formal prevista; columnas `merged_into_patient_id`/`merged_at` ya existen
+   pasivas desde `s7_45`). Diseño y decisiones cerradas en
+   `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` (§6, §10). **Siguiente
+   frente grande candidato.**
+2. **F4-3 — UI LucyAdmin `/admin/pacientes`** (búsqueda, pares candidatos,
+   preflight visual, confirmación con motivo, historial de merges). Detrás de
+   F4-2.
+3. **F4-3b — Bandeja de `patient_link_rejections`** (cola `pending_review` de
+   B2) como tab de `/admin/pacientes`; opcional/separable si agranda F4-3.
+4. **F4-D — Merge de identidades** (`profiles`/`auth.users`, escenarios
+   E4/E5) — diseño propio posterior; conviene junto a recuperación sin sesión.
+5. **Limpieza controlada del teléfono `50372608827`** (registro Katherine, QA
+   de `s7_42`) — SOLO cuando el owner lo indique, con **dry-run/inventario
+   previo** (auth.user, profile, doctor/clinic/membership, lead, fichas,
+   audit) antes de borrar nada.
+6. **Katherine:** decidir conservar/corregir o limpiar ese registro. Si se
+   conserva: re-guardar el nombre desde la ficha admin y **verificar que
+   persista** (el intento anterior NO persistió — posible save silencioso
+   fallido; si se repite, investigar como bug de la ficha).
+7. **Recuperación de acceso sin sesión** — herramienta/protocolo LucyAdmin
+   (D7); detrás del modelo de identidad (se diseña con F4-D).
+8. **Identidad múltiple Fase 2** — selector "modo paciente/modo médico" +
+   capacidades derivadas + revisar si `claim` deja de sobrescribir el rol.
+9. **Paginación del Home** (hoy carga todos los médicos; importa con volumen).
+10. **Normalización de teléfono literal en `accept_clinic_invitations`**
+    (`+503…` ≠ `503…`; candidato a `normalize_phone_sv`; hallazgo QA #125).
+11. **B2.1** — verificación reforzada de "Sí, son mías" (DOB/DUI parcial; para
+    teléfonos compartidos/mal digitados).
+12. **B2.2** — términos/onboarding del paciente: aceptar que solo puede
+    confirmar atenciones propias (documental/legal).
+13. (Post-piloto, ya previstos): pagos SaaS/IVA/DTE/Q1–Q11 (requiere
+    validación owner), self-service de email, 2FA admins, owner/superadmin
+    Fase 2 de admins.
+
+> **Nota:** el hallazgo F4 (claim abortado completo por colisión de DUI) ya
+> **no está activo** — `s7_45` (#135) lo mitigó: el claim ahora tolera la
+> colisión fila por fila. El merge de F4-2 resolverá el duplicado de fondo.
 
 ## 6. Reglas operativas que se mantienen
 
