@@ -6,18 +6,24 @@
  * claim-ignora-merged, y service_role para fixtures/cleanup. Todo aislado en
  * la clínica de Camilo; cleanup en finally.
  *
+ * EVIDENCIA EN V1 = `same_profile` (E3). El UNIQUE(clinic,doc) impide crear
+ * dos fichas con el mismo documento en una clínica → `same_document` es
+ * inalcanzable para datos nuevos; los casos de éxito usan dos fichas
+ * vinculadas al MISMO profile (decisión owner 2026-06-13, A). El profile de
+ * vínculo para las fixtures es el del QA (cuenta de prueba), no uno real.
+ *
  * Cubre (lista del owner):
- *  S1. dry-run (preflight) eligible sin aplicar nada.
- *  S2. merge exitoso: appointments + consulta FIRMADA + vitals movidos;
- *      fuente neutralizada; patient_merge_log con snapshots/moved_ids; audit;
- *      no hard-delete; consulta firmada movida sin violar el guard.
+ *  S1. dry-run (preflight) eligible (same_profile) sin aplicar nada.
+ *  S2. merge exitoso (E3): appointments + consulta FIRMADA + vitals movidos;
+ *      fuente vinculada CON documento neutralizada (ejerce el bypass P0030);
+ *      patient_merge_log con snapshots/moved_ids/reason/actor; audit admin_merge;
+ *      no hard-delete; consulta firmada movida sin violar el guard de firma.
  *  S3. bloqueo distinta clínica → P0060.
  *  S4. bloqueo ambas vinculadas a profiles distintos → P0065.
- *  S5. bloqueo evidencia insuficiente (solo teléfono, sin doc/profile) → P0063.
+ *  S5. bloqueo evidencia insuficiente (dos walk-ins sin doc/sin profile) → P0063.
  *  S6. bloqueo borrador abierto en la fuente → P0067.
  *  S7. borrador en el TARGET no bloquea, aparece como warning; merge procede.
- *  S8. P0030 NO bloquea la neutralización con el bypass (caso E3: ambas
- *      vinculadas al MISMO profile).
+ *  S8. P0030 bypass aislado (E3, fuente vinculada con documento, sin consulta).
  *  S9. claim ignora la ficha merged (regresión s7_45).
  *
  * Uso (SOLO tras aplicar s7_46): node scripts/_smoke-s7_46.mjs
@@ -49,8 +55,9 @@ const adminCli = mk();
 const qaCli = mk();
 const created = { patients: [], appointments: [], consultations: [], vitals: [], availability: [], mergeLogs: [] };
 
-// Segundo profile real distinto a Camilo, para el test de profiles distintos (S4).
-let SECOND_PROFILE = null;
+// PROFILE_MAIN (vínculo de las fixtures E3) = QA; PROFILE_OTHER (para P0065) = Camilo.
+let PROFILE_MAIN = null;
+const PROFILE_OTHER = CAMILO_PROFILE;
 
 const mkPatient = async (clinicId, name, { doc = null, dob = '1990-01-01', gender = 'otro', profileId = null, phone = null, active = true } = {}) => {
   const { data, error } = await admin.from('patients').insert({
@@ -74,43 +81,40 @@ const mkConsultation = async (clinicId, patientId, { signed = false } = {}) => {
   return data.id;
 };
 
-console.log('═══ SMOKE s7_46 (merge admin de fichas) ═══\n');
+console.log('═══ SMOKE s7_46 (merge admin de fichas — V1 same_profile) ═══\n');
 
 try {
   const adminUid = await login(adminCli, ADMIN_PHONE);
-  const qaUid = await login(qaCli, QA_PHONE);
-  // Confirmar que la sesión admin es realmente admin (gate is_admin()).
+  PROFILE_MAIN = await login(qaCli, QA_PHONE);
   {
     const { data: prof } = await admin.from('profiles').select('role').eq('id', adminUid).single();
     if (prof?.role !== 'admin') throw new Error('La cuenta ' + ADMIN_PHONE + ' no es admin (role=' + prof?.role + ')');
   }
-  // Segundo profile distinto a Camilo para S4 (usar el del QA).
-  SECOND_PROFILE = qaUid;
 
-  // ════ S1. Preflight dry-run (eligible) ════
+  // ════ S1. Preflight dry-run (eligible, same_profile) ════
   {
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S1 src', { doc: 'S746-DOC-1' });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S1 tgt', { doc: 'S746-DOC-1' });
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S1 src', { profileId: PROFILE_MAIN });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S1 tgt', { profileId: PROFILE_MAIN });
     const { data, error } = await adminCli.rpc('admin_merge_patients_preflight', { p_source_id: src, p_target_id: tgt });
     if (error) ko('S1 preflight error: ' + error.message);
-    else if (data?.eligible === true && data?.evidence?.type === 'same_document' && data?.is_preflight === true)
-      ok('S1 preflight eligible (evidence=same_document), sin aplicar');
+    else if (data?.eligible === true && data?.evidence?.type === 'same_profile' && data?.is_preflight === true)
+      ok('S1 preflight eligible (evidence=same_profile), sin aplicar');
     else ko('S1 preflight inesperado: ' + JSON.stringify(data));
-    // Confirmar que NO se aplicó nada (fichas intactas)
     const { data: rows } = await admin.from('patients').select('id, is_active, merged_into_patient_id').in('id', [src, tgt]);
     if ((rows ?? []).every((r) => r.is_active && r.merged_into_patient_id === null)) ok('S1 dry-run no modificó las fichas');
     else ko('S1 dry-run modificó algo: ' + JSON.stringify(rows));
   }
 
-  // ════ S2. Merge exitoso (con consulta firmada + appointment + vitals) ════
+  // ════ S2. Merge exitoso E3 (consulta firmada + appointment + vitals) ════
   {
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S2 src', { doc: 'S746-DOC-2', phone: QA_PHONE });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S2 tgt', { doc: 'S746-DOC-2', phone: '50370000746' });
+    // src vinculado a PROFILE_MAIN CON documento → la neutralización nulea el
+    // documento de una ficha vinculada → ejerce el bypass P0030. tgt sin doc
+    // (el UNIQUE permite NULL + un valor en la misma clínica).
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S2 src', { profileId: PROFILE_MAIN, doc: 'S746-DOC-2', phone: QA_PHONE });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S2 tgt', { profileId: PROFILE_MAIN, phone: '50370000746' });
 
-    // Consulta FIRMADA en la fuente (sin appointment → evita triggers de sync).
     const consId = await mkConsultation(CAMILO_CLINIC, src, { signed: true });
 
-    // Appointment válido (reglas de disponibilidad para hoy y mañana) + vitals.
     const dowToday = new Date(Date.now() - 6 * 3600_000).getUTCDay();
     const dowTomorrow = (dowToday + 1) % 7;
     for (const dow of [dowToday, dowTomorrow]) {
@@ -122,7 +126,7 @@ try {
       created.availability.push(ar.id);
     }
     const { data: st } = await admin.from('appointment_statuses').select('id').limit(1).single();
-    const start = new Date(Date.now() + 3600_000); // +1h
+    const start = new Date(Date.now() + 3600_000);
     const { data: appt, error: apErr } = await admin.from('appointments').insert({
       clinic_id: CAMILO_CLINIC, doctor_id: CAMILO_DOCTOR, patient_id: src,
       status_id: st.id, start_time: start.toISOString(),
@@ -137,7 +141,7 @@ try {
     created.vitals.push(vit.id);
 
     const { data, error } = await adminCli.rpc('admin_merge_patients', {
-      p_source_id: src, p_target_id: tgt, p_reason: 'Duplicado confirmado en QA s7_46',
+      p_source_id: src, p_target_id: tgt, p_reason: 'Duplicado E3 confirmado en QA s7_46',
     });
     if (error) { ko('S2 merge error: ' + error.message); }
     else {
@@ -147,7 +151,6 @@ try {
         ok('S2 merge OK: moved {appointments:1, consultations:1, vitals:1}');
       else ko('S2 moved_counts inesperado: ' + JSON.stringify(c));
 
-      // Referencias movidas al target
       const { data: a2 } = await admin.from('appointments').select('patient_id').eq('id', appt.id).single();
       const { data: c2 } = await admin.from('consultations').select('patient_id, signed_at').eq('id', consId).single();
       const { data: v2 } = await admin.from('vitals').select('patient_id').eq('id', vit.id).single();
@@ -157,33 +160,31 @@ try {
       if (c2?.signed_at) ok('S2 consulta FIRMADA movida sin violar el guard (signed_at intacto)');
       else ko('S2 la consulta perdió signed_at');
 
-      // Fuente neutralizada
       const { data: s2 } = await admin.from('patients')
         .select('is_active, profile_id, document_number, merged_into_patient_id, merged_at, phone').eq('id', src).single();
       if (s2 && s2.is_active === false && s2.profile_id === null && s2.document_number === null
-          && s2.merged_into_patient_id === tgt && s2.merged_at) ok('S2 fuente neutralizada (inactiva, doc NULL, marcada merged)');
+          && s2.merged_into_patient_id === tgt && s2.merged_at) ok('S2 fuente neutralizada (inactiva, doc NULL, profile NULL, marcada)');
       else ko('S2 fuente no neutralizada: ' + JSON.stringify(s2));
+      ok('S2 P0030 bypass OK (fuente VINCULADA con doc → doc nuleado sin disparar el guard)');
       if (s2?.phone === QA_PHONE) ok('S2 teléfono de la fuente CONSERVADO como traza');
       else ko('S2 teléfono fuente no conservado: ' + JSON.stringify(s2?.phone));
 
-      // no hard-delete: la fuente sigue existiendo
       const { data: stillThere } = await admin.from('patients').select('id').eq('id', src);
       if ((stillThere ?? []).length === 1) ok('S2 no hard-delete (la fuente sigue existiendo)');
       else ko('S2 ¡la fuente fue borrada!');
 
-      // patient_merge_log con snapshots + moved_ids
       const { data: log } = await admin.from('patient_merge_log').select('*').eq('id', data.merge_log_id).single();
       const movedIds = log?.moved_ids || {};
       if (log && log.source_patient_id === src && log.target_patient_id === tgt
+          && log.merged_by === adminUid && log.evidence?.type === 'same_profile'
           && log.source_snapshot && log.target_snapshot
           && (movedIds.consultation_ids || []).includes(consId)
           && (movedIds.appointment_ids || []).includes(appt.id)
           && (movedIds.vitals_ids || []).includes(vit.id)
           && log.reason?.length >= 10)
-        ok('S2 patient_merge_log con snapshots + moved_ids + motivo (base de la reversa)');
+        ok('S2 patient_merge_log con snapshots + moved_ids + reason + actor + evidence');
       else ko('S2 log incompleto: ' + JSON.stringify(log));
 
-      // audit explícito admin_merge
       const { data: aud } = await admin.from('audit_log').select('new_data')
         .eq('table_name', 'patients').eq('record_id', src)
         .order('created_at', { ascending: false }).limit(5);
@@ -193,7 +194,6 @@ try {
     }
 
     // ════ S9. claim ignora la ficha merged (regresión s7_45) ════
-    // src quedó como cáscara (merged_into set, phone=QA). Un claim del QA NO debe re-vincularla.
     {
       const { error: clErr } = await qaCli.rpc('claim_patient_records');
       const { data: srcRow } = await admin.from('patients').select('profile_id, merged_into_patient_id').eq('id', src).single();
@@ -205,12 +205,11 @@ try {
 
   // ════ S3. Bloqueo distinta clínica → P0060 ════
   {
-    // Otra clínica cualquiera distinta a la de Camilo.
     const { data: otherClinics } = await admin.from('clinics').select('id').neq('id', CAMILO_CLINIC).limit(1);
     if (!otherClinics?.length) { ko('S3 no hay otra clínica para el test'); }
     else {
-      const src = await mkPatient(CAMILO_CLINIC, 'S746 S3 src', { doc: 'S746-DOC-3' });
-      const tgt = await mkPatient(otherClinics[0].id, 'S746 S3 tgt', { doc: 'S746-DOC-3' });
+      const src = await mkPatient(CAMILO_CLINIC, 'S746 S3 src', { profileId: PROFILE_MAIN });
+      const tgt = await mkPatient(otherClinics[0].id, 'S746 S3 tgt', { profileId: PROFILE_MAIN });
       const { error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'intento distinta clinica' });
       if (error?.code === 'P0060') ok('S3 bloqueo distinta clínica → P0060');
       else ko('S3 inesperado: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
@@ -219,27 +218,27 @@ try {
 
   // ════ S4. Bloqueo profiles distintos → P0065 ════
   {
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S4 src', { doc: 'S746-DOC-4', profileId: CAMILO_PROFILE });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S4 tgt', { doc: 'S746-DOC-4', profileId: SECOND_PROFILE });
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S4 src', { profileId: PROFILE_MAIN, doc: 'S746-DOC-4' });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S4 tgt', { profileId: PROFILE_OTHER });
     const { error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'intento profiles distintos' });
-    if (error?.code === 'P0065') ok('S4 bloqueo profiles distintos → P0065');
+    if (error?.code === 'P0065') ok('S4 bloqueo profiles distintos → P0065 (alcanzable tras el reorder)');
     else ko('S4 inesperado: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
   }
 
-  // ════ S5. Bloqueo evidencia insuficiente (solo teléfono) → P0063 ════
+  // ════ S5. Bloqueo evidencia insuficiente (dos walk-ins) → P0063 ════
   {
     const src = await mkPatient(CAMILO_CLINIC, 'S746 S5 src', { phone: '50370000555' });
     const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S5 tgt', { phone: '50370000555' });
     const { error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'intento solo telefono' });
-    if (error?.code === 'P0063') ok('S5 bloqueo evidencia insuficiente (solo teléfono) → P0063');
+    if (error?.code === 'P0063') ok('S5 bloqueo evidencia insuficiente (dos walk-ins) → P0063');
     else ko('S5 inesperado: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
   }
 
   // ════ S6. Bloqueo borrador abierto en la FUENTE → P0067 ════
   {
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S6 src', { doc: 'S746-DOC-6' });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S6 tgt', { doc: 'S746-DOC-6' });
-    await mkConsultation(CAMILO_CLINIC, src, { signed: false }); // borrador en la fuente
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S6 src', { profileId: PROFILE_MAIN });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S6 tgt', { profileId: PROFILE_MAIN });
+    await mkConsultation(CAMILO_CLINIC, src, { signed: false });
     const { error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'intento con borrador en fuente' });
     if (error?.code === 'P0067') ok('S6 bloqueo borrador abierto en la fuente → P0067');
     else ko('S6 inesperado: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
@@ -247,9 +246,9 @@ try {
 
   // ════ S7. Borrador en el TARGET no bloquea (warning) + merge procede ════
   {
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S7 src', { doc: 'S746-DOC-7' });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S7 tgt', { doc: 'S746-DOC-7' });
-    await mkConsultation(CAMILO_CLINIC, tgt, { signed: false }); // borrador en el TARGET
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S7 src', { profileId: PROFILE_MAIN });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S7 tgt', { profileId: PROFILE_MAIN });
+    await mkConsultation(CAMILO_CLINIC, tgt, { signed: false });
 
     const { data: pf } = await adminCli.rpc('admin_merge_patients_preflight', { p_source_id: src, p_target_id: tgt });
     const hasWarning = (pf?.warnings || []).some((w) => w.code === 'W_TARGET_DRAFT');
@@ -258,25 +257,21 @@ try {
     else ko('S7 preflight inesperado: ' + JSON.stringify({ eligible: pf?.eligible, tod: pf?.target_open_drafts, warnings: pf?.warnings }));
 
     const { data, error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'merge con borrador en target OK' });
-    if (!error && data?.success) {
-      created.mergeLogs.push(data.merge_log_id);
-      ok('S7 merge PROCEDE pese al borrador en el target');
-    } else ko('S7 merge debió proceder: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
+    if (!error && data?.success) { created.mergeLogs.push(data.merge_log_id); ok('S7 merge PROCEDE pese al borrador en el target'); }
+    else ko('S7 merge debió proceder: ' + JSON.stringify({ code: error?.code, msg: error?.message }));
   }
 
-  // ════ S8. P0030 NO bloquea la neutralización con bypass (E3: mismo profile) ════
+  // ════ S8. P0030 bypass aislado (E3 mismo profile, fuente con documento) ════
   {
-    // Ambas vinculadas al MISMO profile (Camilo) → al neutralizar la fuente se
-    // cambia document_number/profile_id de una ficha vinculada → P0030 SIN bypass.
-    const src = await mkPatient(CAMILO_CLINIC, 'S746 S8 src', { doc: 'S746-DOC-8', profileId: CAMILO_PROFILE });
-    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S8 tgt', { doc: 'S746-DOC-8', profileId: CAMILO_PROFILE });
+    const src = await mkPatient(CAMILO_CLINIC, 'S746 S8 src', { profileId: PROFILE_MAIN, doc: 'S746-DOC-8' });
+    const tgt = await mkPatient(CAMILO_CLINIC, 'S746 S8 tgt', { profileId: PROFILE_MAIN });
     const { data, error } = await adminCli.rpc('admin_merge_patients', { p_source_id: src, p_target_id: tgt, p_reason: 'merge E3 mismo profile bypass P0030' });
     if (error) { ko('S8 merge E3 falló (¿bypass P0030?): ' + JSON.stringify({ code: error?.code, msg: error?.message })); }
     else {
       created.mergeLogs.push(data.merge_log_id);
       const { data: s8 } = await admin.from('patients').select('is_active, profile_id, document_number, merged_into_patient_id').eq('id', src).single();
       if (s8?.is_active === false && s8?.profile_id === null && s8?.document_number === null && s8?.merged_into_patient_id === tgt)
-        ok('S8 P0030 bypass OK: fuente vinculada neutralizada sin disparar el guard');
+        ok('S8 P0030 bypass OK: fuente vinculada con doc neutralizada sin disparar el guard');
       else ko('S8 neutralización E3 inesperada: ' + JSON.stringify(s8));
     }
   }
@@ -285,13 +280,13 @@ try {
 } finally {
   console.log('\n— cleanup —');
   try {
-    // Orden: vitals → appointments → consultations → merge_log → patients.
     for (const id of created.vitals) await admin.from('vitals').delete().eq('id', id);
     for (const id of created.appointments) await admin.from('appointments').delete().eq('id', id);
     for (const id of created.consultations) await admin.from('consultations').delete().eq('id', id);
     for (const id of created.mergeLogs) await admin.from('patient_merge_log').delete().eq('id', id);
     for (const id of created.availability) await admin.from('availability_rules').delete().eq('id', id);
-    // patients al final (merged_into se auto-resuelve al borrar ambas).
+    // Romper las auto-referencias merged_into antes de borrar (FK NO ACTION).
+    for (const id of created.patients) await admin.from('patients').update({ merged_into_patient_id: null }).eq('id', id);
     for (const id of created.patients) await admin.from('patients').delete().eq('id', id);
     await adminCli.auth.signOut().catch(() => {});
     await qaCli.auth.signOut().catch(() => {});

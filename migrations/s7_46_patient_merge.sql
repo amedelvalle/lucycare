@@ -35,6 +35,18 @@
 --
 -- Borrador abierto en el TARGET = warning informativo (no bloquea): no se
 -- mueve ni se modifica (DM3c). En la fuente SÍ bloquea (P0067).
+--
+-- ALCANCE DE EVIDENCIA EN V1 (decisión owner 2026-06-13, A): la ÚNICA
+-- evidencia fuerte fusionable en la práctica es `same_profile` (E3: dos
+-- fichas vinculadas al MISMO profile en la misma clínica). `same_document`
+-- queda soportado en la lógica pero es estructuralmente INALCANZABLE
+-- intra-clínica para datos nuevos: el UNIQUE(clinic_id, document_type,
+-- document_number) impide que coexistan dos fichas con el mismo documento en
+-- una clínica (0 duplicados de documento hoy). Los duplicados por teléfono
+-- (walk-ins, teléfono compartido, caso F4/E2) NO son fusionables en V1
+-- (DM3b: sin merge por teléfono+nombre ni override). Su daño activo ya está
+-- mitigado por s7_45 (el claim no aborta). Quedan como F4-2b / revisión
+-- futura de DM3b. NO se reabre DM3b aquí.
 -- ═══════════════════════════════════════════════════════════
 
 -- ─── 1. Tabla de log (trazabilidad + reversa formal futura) ──
@@ -185,19 +197,23 @@ BEGIN
   SELECT count(*) INTO v_cons_draft  FROM consultations WHERE patient_id = p_source_id AND signed_at IS NULL;
   SELECT count(*) INTO v_vitals      FROM vitals        WHERE patient_id = p_source_id;
 
-  -- Evaluación de bloqueos en orden (el primero que falle gana).
+  -- Evaluación de bloqueos en orden (el primero que falle gana):
+  -- estructura → identidad/dirección → evidencia → borrador.
+  -- Identidad/dirección ANTES que evidencia: dos fichas vinculadas a profiles
+  -- distintos deben dar "identidades distintas" (P0065), no "evidencia
+  -- insuficiente" (P0063) — y así P0065 es alcanzable (si no, P0063 lo tapaba).
   IF NOT v_same_clinic THEN
     v_block := 'P0060';
   ELSIF s.merged_into_patient_id IS NOT NULL OR t.merged_into_patient_id IS NOT NULL THEN
     v_block := 'P0061';
   ELSIF NOT s.is_active OR NOT t.is_active THEN
     v_block := 'P0068';
-  ELSIF (NOT (v_same_document OR v_same_profile)) OR v_anti THEN
-    v_block := 'P0063';
+  ELSIF v_src_linked AND v_tgt_linked AND s.profile_id <> t.profile_id THEN
+    v_block := 'P0065';   -- identidades distintas (antes que evidencia)
   ELSIF v_src_linked AND NOT v_tgt_linked THEN
     v_block := 'P0064';   -- la vinculada (fuente) debería ser el destino
-  ELSIF v_src_linked AND v_tgt_linked AND s.profile_id <> t.profile_id THEN
-    v_block := 'P0065';
+  ELSIF (NOT (v_same_document OR v_same_profile)) OR v_anti THEN
+    v_block := 'P0063';   -- evidencia insuficiente / anti-evidencia
   ELSIF v_src_drafts > 0 THEN
     v_block := 'P0067';
   END IF;
