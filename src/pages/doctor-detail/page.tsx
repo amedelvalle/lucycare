@@ -15,7 +15,7 @@ export default function DoctorDetail() {
   const [showMobileBooking, setShowMobileBooking] = useState(false);
 
   // ─── DATOS REALES desde Supabase ───
-  const { data: doctor, isLoading, error } = useDoctorDetail(id);
+  const { data: doctor, isLoading, error, refetch, isRefetching } = useDoctorDetail(id);
 
   // Loading state
   if (isLoading) {
@@ -42,8 +42,38 @@ export default function DoctorDetail() {
     );
   }
 
-  // Error o no encontrado
-  if (error || !doctor) {
+  // Error de carga (red/servidor): el perfil puede existir — ofrecer reintentar.
+  // fetchDoctorDetail devuelve null para "no encontrado" (sin error) y LANZA
+  // en fallas de red, así que acá los dos estados se distinguen limpio.
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center px-6">
+          <i className="ri-wifi-off-line text-6xl text-gray-400 mb-4"></i>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">No pudimos cargar el perfil</h2>
+          <p className="text-gray-600 mb-6">Revisá tu conexión e intentá de nuevo</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => refetch()}
+              disabled={isRefetching}
+              className="px-6 py-3 bg-emerald-700 text-white rounded-lg font-semibold hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              {isRefetching ? 'Cargando…' : 'Reintentar'}
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-100 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Volver al inicio
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No encontrado real (la consulta resolvió sin resultado)
+  if (!doctor) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -357,7 +387,7 @@ export default function DoctorDetail() {
         </div>
       )}
 
-      {/* Mobile Booking Bottom Sheet */}
+      {/* Mobile Booking Bottom Sheet — flujo real de reserva (BookingCard) */}
       <MobileBookingSheet
         isOpen={showMobileBooking}
         onClose={() => setShowMobileBooking(false)}
@@ -367,8 +397,8 @@ export default function DoctorDetail() {
         phone={doctor.clinicPhone || ''}
         canBook={canBook}
         lucyStatus={lucyStatus}
-        nextAvailableSlot={undefined}
-        onLucyActivated={() => {}}
+        services={doctor.services}
+        clinicId={doctor.clinicId}
       />
 
       {/* Footer */}

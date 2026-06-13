@@ -156,6 +156,15 @@ export async function getAvailableSlots(
 }
 
 /**
+ * Fecha YYYY-MM-DD en hora LOCAL del navegador (no UTC).
+ * `toISOString()` corre la fecha al día siguiente después de las 6 pm en
+ * El Salvador (UTC-6) — para "hoy"/min/fecha por defecto siempre usar esto.
+ */
+export function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
  * Obtiene los próximos N días con disponibilidad para un doctor.
  * Útil para mostrar un calendario con días habilitados/deshabilitados.
  */
@@ -172,11 +181,12 @@ export async function getAvailableDays(
 
   const workingDays = new Set((rules || []).map(r => r.day_of_week))
 
-  // Obtener bloqueos futuros
-  const today = new Date().toISOString().split('T')[0]
+  // Obtener bloqueos futuros (fechas en hora local: dateStr y getDay() deben
+  // referir al MISMO día — con toISOString() divergían después de las 6 pm).
+  const today = localDateStr()
   const futureDate = new Date()
   futureDate.setDate(futureDate.getDate() + daysAhead)
-  const futureStr = futureDate.toISOString().split('T')[0]
+  const futureStr = localDateStr(futureDate)
 
   const { data: overrides } = await supabase
     .from('availability_overrides')
@@ -192,7 +202,7 @@ export async function getAvailableDays(
   for (let i = 0; i < daysAhead; i++) {
     const d = new Date(currentDate)
     d.setDate(d.getDate() + i)
-    const dateStr = d.toISOString().split('T')[0]
+    const dateStr = localDateStr(d)
     const dayOfWeek = d.getDay()
 
     // ¿Trabaja este día de la semana?
