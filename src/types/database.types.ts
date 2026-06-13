@@ -1712,6 +1712,10 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: Json
       }
+      admin_list_patient_merge_candidates: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       admin_invite_platform_admin: {
         Args: { p_phone: string; p_display_name: string; p_email?: string }
         Returns: Json
