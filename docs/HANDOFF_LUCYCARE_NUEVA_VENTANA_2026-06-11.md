@@ -1,5 +1,10 @@
 # HANDOFF — Nueva ventana de contexto (cierre 2026-06-11)
 
+> ⚠️ **SUPERADO (2026-06-15).** El punto de entrada vigente es
+> **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-06-15.md`** (cierre a #142 / F4-3
+> UI PR A read-only). Este documento queda como **histórico** de la ventana
+> anterior (cierre a #133/`s7_44`, refrescado al 2026-06-13 hasta #140).
+
 > **Punto de entrada para retomar LucyCare en una conversación nueva.**
 > Leer ESTE documento primero; después `CLAUDE.md` y los `docs/ANALISIS_*.md`
 > del objetivo del día. No asumir nada sin confirmar el estado real del repo.
