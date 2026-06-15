@@ -1,13 +1,17 @@
 /**
  * Servicio de merge admin de fichas (Paciente Global Fase 4).
  *
- * PR A (read-only): descubre candidatos, corre el preflight (dry-run) y lee el
- * historial. **NO** incluye `admin_merge_patients` (la acción destructiva) —
- * eso entra en PR B.
+ * Descubre candidatos, corre el preflight (dry-run), ejecuta la fusión real y
+ * lee el historial.
  *
  * Backend: `admin_list_patient_merge_candidates` / `admin_merge_patients_preflight`
- * (s7_47 / s7_46, ambas `SECURITY DEFINER` admin-only) + lectura directa de
- * `patient_merge_log` (RLS admin-only SELECT).
+ * / `admin_merge_patients` (s7_47 / s7_46, las tres `SECURITY DEFINER` admin-only)
+ * + lectura directa de `patient_merge_log` (RLS admin-only SELECT).
+ *
+ * `admin_merge_patients` es destructivo (mueve expediente fuente→destino y
+ * neutraliza la fuente) y revalida TODO server-side: los bloqueos viajan como
+ * `RAISE EXCEPTION` con `ERRCODE = P006x`, que supabase-js expone en
+ * `error.code` → mapear con `MERGE_BLOCK_COPY`/`mergeBlockMessage`.
  *
  * Las RPCs devuelven `jsonb`; acá se castea a interfaces TS limpias. La UI
  * nunca recibe contenido clínico (las RPCs solo exponen identidad + conteos).
@@ -86,6 +90,13 @@ export interface MergeLogEntry {
   evidenceType: string | null
   movedCounts: { appointments: number; consultations: number; vitals: number }
   reason: string
+}
+
+export interface MergeResult {
+  sourceId: string
+  targetId: string
+  mergeLogId: string
+  movedCounts: { appointments: number; consultations: number; vitals: number }
 }
 
 // Códigos de bloqueo del merge backend (s7_46) → copy en español.
@@ -206,6 +217,37 @@ export async function mergePatientsPreflight(
     sourceOpenDrafts: v.source_open_drafts ?? 0,
     targetOpenDrafts: v.target_open_drafts ?? 0,
     warnings: mapWarnings(v.warnings),
+  }
+}
+
+/**
+ * Ejecuta la fusión real (DESTRUCTIVA). Mueve appointments/consultations/vitals
+ * de la fuente al destino y neutraliza la fuente. La RPC revalida elegibilidad y
+ * el motivo (≥10) server-side; un bloqueo llega como `error` con `error.code`
+ * (P006x) — el caller lo mapea con `mergeBlockMessage`. No hay unmerge: la reversa
+ * vive en `patient_merge_log` para una herramienta futura.
+ */
+export async function mergePatients(
+  sourceId: string,
+  targetId: string,
+  reason: string,
+): Promise<MergeResult> {
+  const { data, error } = await supabase.rpc('admin_merge_patients', {
+    p_source_id: sourceId,
+    p_target_id: targetId,
+    p_reason: reason,
+  })
+  if (error) throw error
+  const v = data as any
+  return {
+    sourceId: v.source_id ?? sourceId,
+    targetId: v.target_id ?? targetId,
+    mergeLogId: v.merge_log_id,
+    movedCounts: {
+      appointments: v.moved_counts?.appointments ?? 0,
+      consultations: v.moved_counts?.consultations ?? 0,
+      vitals: v.moved_counts?.vitals ?? 0,
+    },
   }
 }
 
