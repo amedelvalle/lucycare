@@ -129,7 +129,7 @@ preflight es informativo.
 10. Apagar el GUC. Devolver resumen (conteos devueltos, fuente restaurada,
     `merge_log_id`).
 
-## 6. Códigos de error (serie P0070+)
+## 6. Códigos de error (serie P0070–P0077)
 
 | Código | Significado | Cubre |
 |---|---|---|
@@ -141,13 +141,16 @@ preflight es informativo.
 | `P0074` | Conflicto de documento al restaurar la fuente (violaría el `UNIQUE`) | restauración |
 | `P0075` | `moved_ids` con drift: alguna fila ya no existe o ya no apunta al destino | reversa atómica |
 | `P0076` | Motivo < 10 caracteres | motivo obligatorio |
-| `P0077` *(propuesto)* | El `profile_id` de `source_snapshot` ya no existe → no se puede restaurar el vínculo previo | restauración / identidad |
+| `P0077` | El `profile_id` de `source_snapshot` ya no existe al intentar revertir → bloqueo de integridad de vínculo/perfil (no se puede restaurar el vínculo previo) | restauración / integridad |
 
-> **Nota (a confirmar):** el owner pidió validar que el `profile` del snapshot
-> exista antes de restaurar. Como es conceptualmente distinto del conflicto de
-> documento (`P0074`), propongo asignarle un código propio **`P0077`** en vez de
-> mezclarlo. Si el owner prefiere, se pliega bajo `P0074` ("restauración
-> inviable") y la serie queda P0070–P0076. Pendiente de confirmar.
+> **Decisión cerrada (owner, 2026-06-15):** `P0077` es un **código propio** para
+> el caso "`source_snapshot.profile_id` no es NULL pero ese `profile_id` ya no
+> existe al revertir". **No** se mezcla con `P0074`: `P0074` queda **reservado
+> para el conflicto de documento** al restaurar la ficha fuente, mientras que
+> `P0077` es un **bloqueo de integridad de vínculo/perfil**, conceptualmente
+> distinto. La serie de códigos del unmerge queda **`P0070–P0077`**. (Este
+> chequeo solo lee `profiles` para confirmar existencia; **no** modifica
+> `profiles`, `auth.users` ni la identidad global.)
 
 ## 7. Warnings (informativos, NO bloquean)
 
@@ -224,7 +227,7 @@ tocan):
   6. **cadena / destino fusionado a un tercero → `P0073`**.
   7. **fuente reactivada/fuera de estado → `P0072`**.
   8. **consulta firmada** devuelta a la fuente sin violar el guard (bypass OK).
-  9. *(si se confirma `P0077`)* profile del snapshot inexistente → bloqueo.
+  9. profile del snapshot inexistente → bloqueo (`P0077`).
 - **Fixtures aisladas:** dev-script con marcador propio (p. ej. `F48_FIXTURE`),
   `--apply`/`--clean`, **verificación de 0 residuales**, **nunca** datos reales,
   **jamás** Camilo (`db1fba98…`) ni Katherine (`50372608827`). Profile/clínica/
@@ -264,8 +267,12 @@ destino fue fusionado hacia un tercero; bloquear si fuente o destino ya no está
 en la clínica original del log; no tocar `profiles`/`auth.users`/roles/
 credenciales/identidad global; no hard-delete; log append-only.
 
-**Pendiente único de confirmar:** si el "profile del snapshot ya no existe" usa
-código propio `P0077` (propuesto) o se pliega bajo `P0074` (§6).
+**Decisión 6 cerrada (2026-06-15):** el caso "`profile_id` del snapshot ya no
+existe" usa **código propio `P0077`** (no se pliega bajo `P0074`, reservado a
+conflicto de documento). La serie del unmerge queda **`P0070–P0077`**. El chequeo
+**solo lee** `profiles` para confirmar existencia: **no** toca `profiles`,
+`auth.users`, roles, credenciales ni identidad global. No quedan decisiones
+abiertas.
 
 ## 13. Relación con otros docs
 
