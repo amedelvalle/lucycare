@@ -12,12 +12,12 @@
 
 ## 1. Estado confirmado al cierre
 
-- **HEAD final:** `19a597f` (*feat(admin): UI de fusión de fichas — vista previa read-only (F4-3 PR A) (#142)*) **+ el PR docs-only de este handoff** (verificar con `git log --oneline -5`).
-- **PRs mergeados:** #1–#142 (+ el docs-only de cierre).
-- **Migraciones aplicadas en Supabase:** hasta **`s7_47`** (verificables con `node scripts/check-s7_NN.mjs`).
+- **HEAD final:** `ff4ce93` (*feat(admin): habilitar el merge real en /admin/pacientes — F4-3 UI PR B (#144)*) **+ el PR docs-only de cierre de #144** (verificar con `git log --oneline -5`).
+- **PRs mergeados:** #1–#144 (+ el docs-only de cierre de #144).
+- **Migraciones aplicadas en Supabase:** hasta **`s7_47`** (#144 es frontend-only, sin migración; verificables con `node scripts/check-s7_NN.mjs`).
 - **`main` al día con `origin/main` · árbol limpio · `tsc --noEmit` OK · `npm run build` OK.**
 - **Documentación actualizada.** Admins activos de plataforma: 1 (el owner).
-- **Sin frente de código abierto.** Siguiente frente recomendado: **F4-3 UI PR B** (habilitar el merge real) — ver §4.
+- **Sin frente de código abierto.** **F4-3 UI PR B cerrado (#144)** — `/admin/pacientes` ya ejecuta el merge real. Pendientes F4 (ninguno arrancado): **F4-3b** bandeja `patient_link_rejections`, **unmerge formal**, **F4-D** identidades — ver §2 y §5.
 
 ### Cómo arrancar (obligatorio)
 
@@ -45,7 +45,7 @@ git status --short
 | **F4-2** backend merge + dry-run + log | ✅ cerrado (#138 / `s7_46`) |
 | **F4-3-search** RPC de candidatos | ✅ cerrado (#140 / `s7_47`) |
 | **F4-3 UI PR A** `/admin/pacientes` (read-only) | ✅ cerrado (#142) |
-| **F4-3 UI PR B** habilitar merge real | ⏳ **siguiente frente** |
+| **F4-3 UI PR B** habilitar merge real | ✅ cerrado (#144) |
 | **F4-3b** bandeja `patient_link_rejections` | ⏳ pendiente |
 | **Unmerge formal** (`admin_unmerge_patients`) | ⏳ pendiente |
 | **F4-D** merge de identidades (`profiles`/`auth.users`) | ⏳ diferido (diseño propio) |
@@ -93,8 +93,8 @@ el `UNIQUE(clinic,doc)` hace `same_document` inalcanzable para datos nuevos;
 ## 4. Decisión A/B y próximo frente (PR B)
 
 **Por seguridad se dividió F4-3 UI en dos PRs:**
-- **PR A (read-only)** — ya implementado en #142.
-- **PR B (acción destructiva)** — pendiente.
+- **PR A (read-only)** — implementado en #142.
+- **PR B (acción destructiva)** — ✅ implementado en **#144** (ver cierre abajo).
 
 **Motivo de la división:** es la primera UI de LucyAdmin que terminará
 ejecutando una **operación destructiva** (mover historial entre fichas +
@@ -102,18 +102,22 @@ neutralizar la fuente); **todavía no existe unmerge formal**; se prefirió
 validar navegación, comparación, preflight e historial **antes** de habilitar
 el merge real.
 
-### PR B — habilitar el merge real en `/admin/pacientes`
+### PR B — habilitar el merge real en `/admin/pacientes` — ✅ cerrado (#144)
 
-Debe incluir:
+Entregado en #144 (frontend-only, sin migración):
 - **Botón "Fusionar fichas"** solo si el preflight es **elegible**.
-- **Motivo obligatorio** (≥10) + **confirmación explícita** (checkbox/doble paso).
-- Llamada a **`admin_merge_patients`** (ya live, `s7_46`).
-- Manejo de **éxito/error** (P0060–P0068 ya mapeados) + **refresh** de
-  candidatos e historial.
-- **Validación solo con fixtures**; **nunca** ejecutar merge sobre pacientes
-  reales.
-- Mantener: **sin contenido clínico**, **sin JSON crudo**, **same_profile**,
-  **sin teléfono/nombre**, **sin fuzzy**, **sin override**.
+- **Motivo obligatorio** (≥10) + **confirmación reforzada**: teclear exactamente
+  `FUSIONAR FICHAS` (no solo checkbox).
+- Llamada a **`admin_merge_patients`** (`s7_46`); firma agregada a `database.types.ts`.
+- **Vista de éxito** (source/target/`merge_log_id`/conteos movidos) + manejo de
+  **errores P0060–P0068** por `error.code` (reusa `MERGE_BLOCK_COPY`) + Escape/X
+  bloqueados durante el submit + **invalidación** de candidatos e historial.
+- **Validación solo con fixtures** (`scripts/_fixtures-merge-ui.mjs`, marcador
+  `F43B_FIXTURE`, `--apply`/`--clean` con 0 residuales): apply → merge → P0061 →
+  clean, desktop + móvil, OK visual del owner, **0 datos reales tocados**.
+- Mantuvo: **sin contenido clínico**, **sin JSON crudo**, **same_profile**,
+  **sin teléfono/nombre**, **sin fuzzy**, **sin override**, **sin unmerge**
+  (reversa futura sobre `patient_merge_log`).
 
 ---
 
@@ -156,6 +160,10 @@ Debe incluir:
 
 ## 7. Bloque para nueva ventana — DEV (Claude Code)
 
+> ⚠️ **Histórico:** este bloque pedía arrancar **F4-3 UI PR B**, ya cerrado en
+> **#144**. Conservado como ejemplo de arranque/reglas; para una ventana nueva,
+> el frente se elige entre los pendientes F4 (§5) u otro del backlog.
+
 ```text
 Continuamos LucyCare en nueva ventana.
 
@@ -177,12 +185,13 @@ Leé en este orden:
 
 Estado esperado:
 
-- HEAD posterior a PR #142 y al docs-only final.
-- PRs mergeados al menos #1–#142.
+- HEAD posterior a PR #144 y al docs-only de cierre.
+- PRs mergeados al menos #1–#144.
 - Migraciones hasta s7_47.
 - main limpio y al día.
-- F4-3 UI PR A read-only cerrado.
-- Siguiente frente: F4-3 UI PR B, habilitar merge real.
+- F4-3 UI PR A read-only cerrado (#142).
+- F4-3 UI PR B merge real cerrado (#144).
+- Frente del día: elegir entre los pendientes F4 (F4-3b / unmerge formal / F4-D) u otro del backlog — ninguno arrancado.
 
 No codifiques todavía.
 
@@ -226,11 +235,12 @@ docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-06-15.md
 Asume rol de asesor de decisiones/producto/QA.
 
 Estado esperado:
-- PR #142 debe estar mergeado.
-- PRs mergeados al menos #1–#142.
+- PR #144 debe estar mergeado.
+- PRs mergeados al menos #1–#144.
 - Migraciones hasta s7_47.
-- F4-3 UI PR A read-only /admin/pacientes cerrado.
-- Próximo frente lógico: F4-3 UI PR B para habilitar merge real.
+- F4-3 UI PR A read-only /admin/pacientes cerrado (#142).
+- F4-3 UI PR B merge real cerrado (#144).
+- Próximo frente lógico: elegir entre los pendientes F4 (F4-3b / unmerge formal / F4-D), ninguno arrancado.
 
 Primero confirma el estado reportado por el dev:
 - HEAD;
@@ -261,7 +271,7 @@ Reglas vigentes:
 - no unmerge todavía.
 
 Siguiente decisión:
-Autorizar o ajustar PR B: habilitar `admin_merge_patients` con motivo obligatorio, confirmación explícita, manejo de errores y validación solo con fixtures.
+PR B (`admin_merge_patients` con motivo obligatorio, confirmación reforzada `FUSIONAR FICHAS`, manejo de errores y validación solo con fixtures) ya está **cerrado (#144)**. La próxima decisión es elegir el siguiente frente F4 (F4-3b bandeja de rechazos / unmerge formal / F4-D identidades) o del backlog general.
 ```
 
 ---
