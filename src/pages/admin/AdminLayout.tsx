@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   },
   { to: '/admin/catalogos', label: 'Catálogos', icon: 'ri-book-2-line' },
   { to: '/admin/lista-espera', label: 'Lista de espera', icon: 'ri-time-line' },
+  { to: '/admin/pacientes', label: 'Pacientes', icon: 'ri-user-shared-line' },
   { to: '/admin/administradores', label: 'Administradores', icon: 'ri-shield-user-line' },
 ];
 
