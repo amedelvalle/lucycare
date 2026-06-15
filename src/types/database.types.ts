@@ -1716,6 +1716,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      admin_merge_patients_preflight: {
+        Args: { p_source_id: string; p_target_id: string }
+        Returns: Json
+      }
       admin_invite_platform_admin: {
         Args: { p_phone: string; p_display_name: string; p_email?: string }
         Returns: Json
