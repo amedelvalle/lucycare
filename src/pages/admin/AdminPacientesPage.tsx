@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSessionWithTimeout } from '../../lib/session';
 import {
   listMergeCandidates,
   mergePatientsPreflight,
+  mergePatients,
   listPatientMerges,
   mergeBlockMessage,
   type MergeCandidateGroup,
   type MergeCandidatePatient,
   type MergePreflight,
+  type MergeResult,
 } from '../../services/patientMerge.service';
+
+/** Frase exacta que el admin debe teclear para confirmar la fusión (acción destructiva). */
+const CONFIRM_PHRASE = 'FUSIONAR FICHAS';
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return '—';
@@ -92,14 +97,37 @@ export default function AdminPacientesPage() {
 
   const groups = candidatesQ.data ?? [];
 
-  // Estado de análisis (modal de preflight). Read-only en PR A.
+  const queryClient = useQueryClient();
+
+  // Estado de análisis (modal de preflight).
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [preflight, setPreflight] = useState<MergePreflight | null>(null);
   const [preLoading, setPreLoading] = useState(false);
   const [preError, setPreError] = useState<string | null>(null);
 
+  // Estado del merge real (acción destructiva). Los bloqueos llegan con error.code (P006x).
+  const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
+  const [mergeError, setMergeError] = useState<{ code: string | null; message: string } | null>(null);
+
+  const mergeMut = useMutation({
+    mutationFn: (v: { sourceId: string; targetId: string; reason: string }) =>
+      mergePatients(v.sourceId, v.targetId, v.reason),
+    onSuccess: (res) => {
+      setMergeResult(res);
+      setMergeError(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-merge-candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-merge-history'] });
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code ?? null;
+      setMergeError({ code, message: e instanceof Error ? e.message : 'Error al fusionar fichas' });
+    },
+  });
+
+  const resetMerge = () => { setMergeResult(null); setMergeError(null); mergeMut.reset(); };
+
   const runPreflight = async (sourceId: string, targetId: string) => {
-    setPreLoading(true); setPreError(null); setPreflight(null);
+    setPreLoading(true); setPreError(null); setPreflight(null); resetMerge();
     try {
       const r = await mergePatientsPreflight(sourceId, targetId);
       setPreflight(r);
@@ -115,12 +143,17 @@ export default function AdminPacientesPage() {
     runPreflight(sourceId, targetId);
   };
   const swap = () => {
-    if (!analysis) return;
+    if (!analysis || mergeMut.isPending) return;
     const next = { ...analysis, sourceId: analysis.targetId, targetId: analysis.sourceId };
     setAnalysis(next);
     runPreflight(next.sourceId, next.targetId);
   };
-  const close = () => { setAnalysis(null); setPreflight(null); setPreError(null); };
+  const confirmMerge = (reason: string) => {
+    if (!analysis || mergeMut.isPending) return;
+    setMergeResult(null); setMergeError(null);
+    mergeMut.mutate({ sourceId: analysis.sourceId, targetId: analysis.targetId, reason });
+  };
+  const close = () => { setAnalysis(null); setPreflight(null); setPreError(null); resetMerge(); };
 
   return (
     <div className="max-w-5xl">
@@ -128,8 +161,8 @@ export default function AdminPacientesPage() {
         <h1 className="text-2xl font-bold text-gray-900">Pacientes — Fusión de fichas</h1>
         <p className="text-sm text-gray-600 mt-1">
           Fichas duplicadas de la <b>misma persona</b> (mismo perfil Lucy) dentro de una clínica.
-          Esta es una <b>vista previa</b>: podés analizar pares con el dry-run, pero la fusión
-          todavía no se ejecuta desde aquí.
+          Analizá el par con el dry-run y, si es elegible, fusionalas con motivo y confirmación
+          explícita. La ficha fuente se desactiva y su historia pasa al destino.
         </p>
       </div>
 
@@ -195,7 +228,7 @@ export default function AdminPacientesPage() {
         )}
       </section>
 
-      {/* ─── Modal de análisis (preflight, read-only) ─── */}
+      {/* ─── Modal de análisis (preflight) + confirmación + fusión ─── */}
       {analysis && (
         <PreflightModal
           loading={preLoading}
@@ -203,6 +236,10 @@ export default function AdminPacientesPage() {
           preflight={preflight}
           onSwap={swap}
           onClose={close}
+          onConfirmMerge={confirmMerge}
+          merging={mergeMut.isPending}
+          mergeResult={mergeResult}
+          mergeError={mergeError}
         />
       )}
     </div>
@@ -293,33 +330,58 @@ function GroupCard({
   );
 }
 
-/** Modal read-only: corre el preflight y muestra comparación + veredicto. */
+/** Modal: preflight (read-only) → confirmación reforzada → resultado de la fusión. */
 function PreflightModal({
-  loading, error, preflight, onSwap, onClose,
+  loading, error, preflight, onSwap, onClose, onConfirmMerge, merging, mergeResult, mergeError,
 }: {
   loading: boolean;
   error: string | null;
   preflight: MergePreflight | null;
   onSwap: () => void;
   onClose: () => void;
+  onConfirmMerge: (reason: string) => void;
+  merging: boolean;
+  mergeResult: MergeResult | null;
+  mergeError: { code: string | null; message: string } | null;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const [phrase, setPhrase] = useState('');
+
+  // No cerrar al click-outside ni durante el submit. Cierra solo por X / Escape / éxito.
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !merging) onClose(); };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [onClose]);
+  }, [onClose, merging]);
+
+  const reasonOk = reason.trim().length >= 10;
+  const phraseOk = phrase === CONFIRM_PHRASE;
+  const canConfirm = reasonOk && phraseOk && !merging;
+
+  const title = mergeResult
+    ? 'Fusión completada'
+    : confirming
+      ? 'Confirmar fusión'
+      : 'Análisis de fusión (vista previa)';
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Análisis de fusión (vista previa)</h3>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={onClose}
+            disabled={merging}
+            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             <i className="ri-close-line text-xl text-gray-700" />
           </button>
         </div>
 
-        {loading ? (
+        {mergeResult ? (
+          <MergeSuccess preflight={preflight} result={mergeResult} onClose={onClose} />
+        ) : loading ? (
           <div className="py-10 text-center">
             <div className="animate-spin h-6 w-6 border-2 border-emerald-700 border-t-transparent rounded-full mx-auto mb-2" />
             <p className="text-sm text-gray-500">Analizando par…</p>
@@ -334,9 +396,7 @@ function PreflightModal({
                 <p className="text-sm font-semibold text-emerald-900">
                   <i className="ri-checkbox-circle-line mr-1" />Elegible para fusión
                 </p>
-                <p className="text-xs text-emerald-700 mt-1">
-                  Evidencia: {preflight.evidence.type}. La fusión real se habilitará en una versión próxima.
-                </p>
+                <p className="text-xs text-emerald-700 mt-1">Evidencia: {preflight.evidence.type}.</p>
               </div>
             ) : (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
@@ -374,16 +434,143 @@ function PreflightModal({
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <button onClick={onSwap} className="text-sm text-emerald-700 font-medium hover:underline">
-                <i className="ri-swap-line mr-1" />Intercambiar fuente/destino
-              </button>
-              <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
-                Cerrar
-              </button>
-            </div>
+            {confirming && preflight.eligible ? (
+              /* ── Paso de confirmación reforzada ── */
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800">
+                  <i className="ri-alert-line mr-1" />
+                  Esta acción es <b>destructiva y no se puede deshacer desde esta herramienta</b>:
+                  mueve el expediente al destino y desactiva la ficha fuente.
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Motivo de la fusión</label>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                    disabled={merging}
+                    placeholder="Por qué estas dos fichas son la misma persona…"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                  {!reasonOk && (
+                    <p className="text-xs text-amber-600 mt-1">El motivo es obligatorio (mínimo 10 caracteres).</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Escribí <span className="font-mono font-semibold text-gray-900">{CONFIRM_PHRASE}</span> para confirmar
+                  </label>
+                  <input
+                    type="text"
+                    value={phrase}
+                    onChange={(e) => setPhrase(e.target.value)}
+                    disabled={merging}
+                    autoComplete="off"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+
+                {mergeError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    {mergeBlockMessage(mergeError.code, mergeError.message)}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => { if (!merging) { setConfirming(false); setPhrase(''); } }}
+                    disabled={merging}
+                    className="text-sm text-gray-600 font-medium hover:underline disabled:opacity-40"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    onClick={() => onConfirmMerge(reason.trim())}
+                    disabled={!canConfirm}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    {merging ? 'Fusionando…' : 'Confirmar fusión'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <button onClick={onSwap} className="text-sm text-emerald-700 font-medium hover:underline">
+                  <i className="ri-swap-line mr-1" />Intercambiar fuente/destino
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    Cerrar
+                  </button>
+                  {preflight.eligible && (
+                    <button
+                      onClick={() => setConfirming(true)}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700"
+                    >
+                      Fusionar fichas
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Vista de éxito tras la fusión: source/target, merge_log_id y conteos movidos. */
+function MergeSuccess({
+  preflight, result, onClose,
+}: {
+  preflight: MergePreflight | null;
+  result: MergeResult;
+  onClose: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+        <p className="text-sm font-semibold text-emerald-900">
+          <i className="ri-checkbox-circle-line mr-1" />Fichas fusionadas
+        </p>
+        <p className="text-xs text-emerald-700 mt-1">
+          La ficha fuente quedó desactivada; el expediente está en el destino.
+        </p>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 space-y-1">
+        <div>
+          <span className="text-gray-500">Fuente:</span>{' '}
+          <b>{preflight?.source.fullName || '—'}</b>{' '}
+          <span className="text-xs text-gray-400">({result.sourceId.slice(0, 8)})</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Destino:</span>{' '}
+          <b>{preflight?.target.fullName || '—'}</b>{' '}
+          <span className="text-xs text-gray-400">({result.targetId.slice(0, 8)})</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Registro de fusión:</span>{' '}
+          <span className="font-mono text-xs text-gray-700">{result.mergeLogId}</span>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
+        <p className="font-medium mb-1">Movido al destino:</p>
+        <div className="flex gap-4">
+          <span><b>{result.movedCounts.appointments}</b> citas</span>
+          <span><b>{result.movedCounts.consultations}</b> consultas</span>
+          <span><b>{result.movedCounts.vitals}</b> vitales</span>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800">
+          Cerrar
+        </button>
       </div>
     </div>
   );
