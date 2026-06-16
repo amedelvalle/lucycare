@@ -1732,6 +1732,14 @@ export type Database = {
         Args: { p_merge_log_id: string; p_reason: string }
         Returns: Json
       }
+      admin_list_patient_link_rejections: {
+        Args: { p_status?: string }
+        Returns: Json
+      }
+      admin_resolve_link_rejection: {
+        Args: { p_rejection_id: string; p_resolution_note: string; p_reopen?: boolean }
+        Returns: Json
+      }
       admin_invite_platform_admin: {
         Args: { p_phone: string; p_display_name: string; p_email?: string }
         Returns: Json
