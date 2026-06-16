@@ -4,13 +4,22 @@
 > fichas `patients` (`admin_unmerge_patients`), apoyada en el `patient_merge_log`
 > que ya nació preparado para esto (`s7_46`).
 >
-> **✅ BACKEND LIVE — #147 / `s7_48` (2026-06-16).** `admin_unmerge_patients_preflight`
-> + `admin_unmerge_patients` aplicados en Supabase. **check 5/5 + smoke 17/17**
-> (happy path merge→unmerge, P0071/P0073/P0074/P0075/P0076/P0077, historia nueva
-> en target como warning, consulta firmada devuelta sin romper guards, audit
-> `admin_unmerge`, `patient_merge_log.unmerged_*` rellenado, fixtures `F48_FIXTURE`
-> con 0 residuales, 0 datos reales tocados). Backend-only. **Pendiente: UI
-> "Deshacer fusión"** (§11). Migración: `migrations/s7_48_patient_unmerge.sql`.
+> **✅ BACKEND + UI LIVE.** **Backend — #147 / `s7_48` (2026-06-16):**
+> `admin_unmerge_patients_preflight` + `admin_unmerge_patients` aplicados en
+> Supabase. **check 5/5 + smoke 17/17** (happy path merge→unmerge,
+> P0071/P0073/P0074/P0075/P0076/P0077, historia nueva en target como warning,
+> consulta firmada devuelta sin romper guards, audit `admin_unmerge`,
+> `patient_merge_log.unmerged_*` rellenado, fixtures `F48_FIXTURE` con 0
+> residuales). Migración: `migrations/s7_48_patient_unmerge.sql`.
+> **UI "Deshacer fusión" — #149 (2026-06-16):** acción en el historial de
+> `/admin/pacientes` (botón solo si `unmerged_at IS NULL`; autoridad real = el
+> preflight; badge "Revertida" si ya revertida) → modal de 3 pasos (preflight
+> con warnings como info → confirmación reforzada motivo ≥10 + teclear
+> `DESHACER FUSIÓN` → resultado); errores P0070–P0077 por `error.code`; invalida
+> historial + candidatos; sin contenido clínico/JSON crudo; **frontend-only**,
+> `database.types.ts` no tocado (firmas RPC ya de #147); validado con fixtures
+> `F43B_FIXTURE` (merge UI → unmerge UI → 0 residuales), desktop + móvil, OK
+> visual del owner, 0 datos reales tocados. Implementación §11.
 >
 > Snapshot de diseño: HEAD `b2f611e`, PRs #1–#145. Base técnica: **`s7_46`
 > (merge admin) — LIVE, solo referencia.** Complementa
