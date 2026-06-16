@@ -165,7 +165,7 @@ BEGIN
     SELECT EXISTS(
       SELECT 1 FROM patients
       WHERE clinic_id = lg.clinic_id
-        AND document_type = v_snap_doctype
+        AND document_type = v_snap_doctype::document_type  -- columna enum vs texto del snapshot
         AND document_number = v_snap_doc
         AND id <> s.id
     ) INTO v_doc_conflict;
@@ -335,7 +335,7 @@ BEGIN
   UPDATE patients SET
     is_active              = true,
     profile_id             = v_snap_profile,
-    document_type          = coalesce(v_snap_doctype, document_type),
+    document_type          = coalesce(v_snap_doctype::document_type, document_type),
     document_number        = v_snap_doc,
     merged_into_patient_id = NULL,
     merged_at              = NULL,
