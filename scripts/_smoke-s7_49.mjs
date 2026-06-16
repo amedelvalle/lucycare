@@ -66,7 +66,8 @@ try {
     // Ficha desvinculada (como queda tras un reject real): profile_id NULL.
     const { data: pat, error: pe } = await admin.from('patients').insert({
       clinic_id: CLINIC, profile_id: null, full_name: `${MARK} Ficha rechazada`,
-      document_type: 'dui', patient_type: 'privado', phone: FAKE_PHONE, is_active: true, notes: MARK,
+      document_type: 'dui', date_of_birth: '1990-05-05', gender: 'otro',
+      patient_type: 'privado', phone: FAKE_PHONE, is_active: true, notes: MARK,
     }).select('id, profile_id, is_active').single();
     if (pe) throw new Error('patient: ' + pe.message);
     PATIENT = pat.id; created.patients.push(PATIENT);
