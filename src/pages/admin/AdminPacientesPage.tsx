@@ -10,6 +10,10 @@ import {
   unmergePatientsPreflight,
   unmergePatients,
   unmergeBlockMessage,
+  listLinkRejections,
+  resolveLinkRejection,
+  reopenLinkRejection,
+  linkRejectionBlockMessage,
   type MergeCandidateGroup,
   type MergeCandidatePatient,
   type MergePreflight,
@@ -17,6 +21,7 @@ import {
   type MergeLogEntry,
   type UnmergePreflight,
   type UnmergeResult,
+  type LinkRejection,
 } from '../../services/patientMerge.service';
 
 /** Frase exacta que el admin debe teclear para confirmar la fusión (acción destructiva). */
@@ -196,6 +201,38 @@ export default function AdminPacientesPage() {
     setUnmergeTarget(null); setUnmergeResult(null); setUnmergeError(null); unmergeMut.reset();
   };
 
+  // ── Bandeja de vínculos rechazados (F4-3b) ──
+  const [rejFilter, setRejFilter] = useState<'pending_review' | 'resolved' | 'all'>('pending_review');
+  const rejectionsQ = useQuery({
+    queryKey: ['admin-link-rejections', rejFilter],
+    queryFn: () => listLinkRejections(rejFilter === 'all' ? undefined : rejFilter),
+    enabled: authReady,
+    staleTime: 30_000,
+  });
+
+  const [resolveTarget, setResolveTarget] = useState<LinkRejection | null>(null);
+  const [rejActionError, setRejActionError] = useState<{ code: string | null; message: string } | null>(null);
+
+  const resolveMut = useMutation({
+    mutationFn: (v: { id: string; note: string }) => resolveLinkRejection(v.id, v.note),
+    onSuccess: () => {
+      setResolveTarget(null);
+      setRejActionError(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-link-rejections'] });
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code ?? null;
+      setRejActionError({ code, message: e instanceof Error ? e.message : 'Error al resolver el rechazo' });
+    },
+  });
+  const reopenMut = useMutation({
+    mutationFn: (id: string) => reopenLinkRejection(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-link-rejections'] }),
+  });
+
+  const openResolve = (r: LinkRejection) => { setRejActionError(null); resolveMut.reset(); setResolveTarget(r); };
+  const closeResolve = () => { if (!resolveMut.isPending) { setResolveTarget(null); setRejActionError(null); } };
+
   return (
     <div className="max-w-5xl">
       <div className="mb-6">
@@ -287,6 +324,92 @@ export default function AdminPacientesPage() {
         )}
       </section>
 
+      {/* ─── Vínculos rechazados (F4-3b) ─── */}
+      <section className="mt-10">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 className="text-sm font-semibold text-gray-700">Vínculos rechazados</h2>
+          <div className="flex gap-1">
+            {([['pending_review', 'Pendientes'], ['resolved', 'Resueltos'], ['all', 'Todos']] as const).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setRejFilter(val)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium ${rejFilter === val ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">
+          Fichas que un paciente marcó como "no son mías" (B2). <b>Resolver</b> = revisado
+          administrativamente: no re-vincula la ficha, no fusiona ni cambia datos del paciente.
+          La fila sigue impidiendo el re-vínculo automático de ese par.
+        </p>
+
+        {!authReady || rejectionsQ.isLoading ? (
+          <div className="text-sm text-gray-500 py-4">Cargando…</div>
+        ) : rejectionsQ.isError ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+            No se pudieron cargar los vínculos rechazados.
+            <button onClick={() => rejectionsQ.refetch()} className="ml-2 underline font-medium">Reintentar</button>
+          </div>
+        ) : (rejectionsQ.data ?? []).length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
+            <i className="ri-shield-check-line text-4xl text-gray-300" />
+            <p className="text-sm text-gray-600 mt-2">
+              {rejFilter === 'resolved' ? 'No hay rechazos resueltos.' : rejFilter === 'all' ? 'No hay vínculos rechazados.' : 'No hay rechazos pendientes de revisión.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs">
+                <tr>
+                  <th className="text-left font-medium px-4 py-2">Ficha</th>
+                  <th className="text-left font-medium px-4 py-2">Clínica</th>
+                  <th className="text-left font-medium px-4 py-2">Rechazó</th>
+                  <th className="text-left font-medium px-4 py-2">Teléfono</th>
+                  <th className="text-left font-medium px-4 py-2">Rechazado</th>
+                  <th className="text-left font-medium px-4 py-2">Estado</th>
+                  <th className="text-left font-medium px-4 py-2">Ficha hoy</th>
+                  <th className="text-left font-medium px-4 py-2">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(rejectionsQ.data ?? []).map((r) => (
+                  <tr key={r.id} className="border-t border-gray-100 align-top">
+                    <td className="px-4 py-2 text-gray-900">{r.patient.fullName || '—'}</td>
+                    <td className="px-4 py-2 text-gray-600">{r.patient.clinicName || '—'}</td>
+                    <td className="px-4 py-2 text-gray-600">{r.rejectedBy.fullName || '(sin nombre)'}</td>
+                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{r.phoneNormalized || '—'}</td>
+                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{formatDateTime(r.rejectedAt)}</td>
+                    <td className="px-4 py-2"><RejStatusBadge status={r.status} /></td>
+                    <td className="px-4 py-2"><FichaEstado p={r.patient} /></td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {r.status === 'pending_review' ? (
+                        <button onClick={() => openResolve(r)} className="text-sm font-medium text-emerald-700 hover:underline">
+                          Resolver
+                        </button>
+                      ) : (
+                        <div className="space-y-1">
+                          {r.resolutionNote && (
+                            <div className="text-xs text-gray-500 max-w-[16rem] truncate" title={r.resolutionNote}>“{r.resolutionNote}”</div>
+                          )}
+                          <button onClick={() => reopenMut.mutate(r.id)} disabled={reopenMut.isPending}
+                            className="text-sm font-medium text-gray-600 hover:underline disabled:opacity-40">
+                            <i className="ri-arrow-go-back-line mr-1" />Reabrir
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* ─── Modal de análisis (preflight) + confirmación + fusión ─── */}
       {analysis && (
         <PreflightModal
@@ -313,6 +436,114 @@ export default function AdminPacientesPage() {
           error={unmergeError}
         />
       )}
+
+      {/* ─── Modal de resolución de un vínculo rechazado ─── */}
+      {resolveTarget && (
+        <ResolveRejectionModal
+          rejection={resolveTarget}
+          onClose={closeResolve}
+          onConfirm={(note) => resolveMut.mutate({ id: resolveTarget.id, note })}
+          submitting={resolveMut.isPending}
+          error={rejActionError}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Badge de estado del rechazo. */
+function RejStatusBadge({ status }: { status: string }) {
+  return status === 'resolved' ? (
+    <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">Resuelto</span>
+  ) : (
+    <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">Pendiente</span>
+  );
+}
+
+/** Estado ACTUAL de la ficha (puede haber cambiado desde el rechazo). */
+function FichaEstado({ p }: { p: LinkRejection['patient'] }) {
+  let label: string;
+  let cls: string;
+  if (p.mergedIntoPatientId) { label = 'Fusionada'; cls = 'bg-purple-100 text-purple-800'; }
+  else if (!p.isActive) { label = 'Inactiva'; cls = 'bg-gray-100 text-gray-600'; }
+  else if (p.profileId === null) { label = 'Desvinculada'; cls = 'bg-blue-100 text-blue-800'; }
+  else { label = 'Re-vinculada'; cls = 'bg-emerald-100 text-emerald-800'; }
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
+}
+
+/** Modal: resolver un rechazo (bookkeeping). Motivo obligatorio ≥10; no destructivo. */
+function ResolveRejectionModal({
+  rejection, onClose, onConfirm, submitting, error,
+}: {
+  rejection: LinkRejection;
+  onClose: () => void;
+  onConfirm: (note: string) => void;
+  submitting: boolean;
+  error: { code: string | null; message: string } | null;
+}) {
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !submitting) onClose(); };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [onClose, submitting]);
+
+  const noteOk = note.trim().length >= 10;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Resolver rechazo</h3>
+          <button onClick={onClose} disabled={submitting} className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full disabled:opacity-40 disabled:cursor-not-allowed">
+            <i className="ri-close-line text-xl text-gray-700" />
+          </button>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 mb-4">
+          <p><b>{rejection.patient.fullName || '—'}</b> <span className="text-gray-400">· {rejection.patient.clinicName || 'clínica'}</span></p>
+          <p className="text-xs text-gray-500 mt-1">Rechazada por {rejection.rejectedBy.fullName || '(sin nombre)'} · tel {rejection.phoneNormalized || '—'}</p>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 mb-4">
+          <i className="ri-information-line mr-1" />
+          Resolver es <b>revisado administrativamente</b>: <b>no</b> re-vincula la ficha, <b>no</b> fusiona y
+          <b> no</b> cambia datos del paciente. La fila sigue impidiendo el re-vínculo automático de este par.
+        </div>
+
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Motivo de la resolución</label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            disabled={submitting}
+            placeholder="Qué revisaste y por qué se cierra…"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+          />
+          {!noteOk && <p className="text-xs text-amber-600 mt-1">El motivo es obligatorio (mínimo 10 caracteres).</p>}
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 mb-3">
+            {linkRejectionBlockMessage(error.code, error.message)}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={submitting} className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-40">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm(note.trim())}
+            disabled={!noteOk || submitting}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Resolviendo…' : 'Marcar como revisado'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
