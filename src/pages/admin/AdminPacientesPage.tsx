@@ -7,14 +7,22 @@ import {
   mergePatients,
   listPatientMerges,
   mergeBlockMessage,
+  unmergePatientsPreflight,
+  unmergePatients,
+  unmergeBlockMessage,
   type MergeCandidateGroup,
   type MergeCandidatePatient,
   type MergePreflight,
   type MergeResult,
+  type MergeLogEntry,
+  type UnmergePreflight,
+  type UnmergeResult,
 } from '../../services/patientMerge.service';
 
 /** Frase exacta que el admin debe teclear para confirmar la fusión (acción destructiva). */
 const CONFIRM_PHRASE = 'FUSIONAR FICHAS';
+/** Frase exacta para confirmar la reversa de una fusión (con tilde en la Ó). */
+const CONFIRM_PHRASE_UNMERGE = 'DESHACER FUSIÓN';
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return '—';
@@ -155,6 +163,39 @@ export default function AdminPacientesPage() {
   };
   const close = () => { setAnalysis(null); setPreflight(null); setPreError(null); resetMerge(); };
 
+  // ── Estado de la reversa (unmerge) desde el historial ──
+  const [unmergeTarget, setUnmergeTarget] = useState<MergeLogEntry | null>(null);
+  const [unmergeResult, setUnmergeResult] = useState<UnmergeResult | null>(null);
+  const [unmergeError, setUnmergeError] = useState<{ code: string | null; message: string } | null>(null);
+
+  const unmergeMut = useMutation({
+    mutationFn: (v: { mergeLogId: string; reason: string }) => unmergePatients(v.mergeLogId, v.reason),
+    onSuccess: (res) => {
+      setUnmergeResult(res);
+      setUnmergeError(null);
+      // La fuente restaurada reaparece como ficha viva → refrescar historial y candidatos.
+      queryClient.invalidateQueries({ queryKey: ['admin-merge-history'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-merge-candidates'] });
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code ?? null;
+      setUnmergeError({ code, message: e instanceof Error ? e.message : 'Error al revertir la fusión' });
+    },
+  });
+
+  const openUnmerge = (m: MergeLogEntry) => {
+    setUnmergeResult(null); setUnmergeError(null); unmergeMut.reset();
+    setUnmergeTarget(m);
+  };
+  const confirmUnmerge = (reason: string) => {
+    if (!unmergeTarget || unmergeMut.isPending) return;
+    setUnmergeResult(null); setUnmergeError(null);
+    unmergeMut.mutate({ mergeLogId: unmergeTarget.id, reason });
+  };
+  const closeUnmerge = () => {
+    setUnmergeTarget(null); setUnmergeResult(null); setUnmergeError(null); unmergeMut.reset();
+  };
+
   return (
     <div className="max-w-5xl">
       <div className="mb-6">
@@ -208,6 +249,7 @@ export default function AdminPacientesPage() {
                   <th className="text-left font-medium px-4 py-2">Evidencia</th>
                   <th className="text-left font-medium px-4 py-2">Movido</th>
                   <th className="text-left font-medium px-4 py-2">Motivo</th>
+                  <th className="text-left font-medium px-4 py-2">Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,6 +262,23 @@ export default function AdminPacientesPage() {
                       {m.movedCounts.appointments}c · {m.movedCounts.consultations}co · {m.movedCounts.vitals}v
                     </td>
                     <td className="px-4 py-2 text-gray-600">{m.reason}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {m.unmergedAt ? (
+                        <span
+                          className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600"
+                          title={`Revertida el ${formatDateTime(m.unmergedAt)}`}
+                        >
+                          Revertida
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => openUnmerge(m)}
+                          className="text-sm font-medium text-red-700 hover:text-red-800 hover:underline"
+                        >
+                          <i className="ri-arrow-go-back-line mr-1" />Deshacer fusión
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -240,6 +299,18 @@ export default function AdminPacientesPage() {
           merging={mergeMut.isPending}
           mergeResult={mergeResult}
           mergeError={mergeError}
+        />
+      )}
+
+      {/* ─── Modal de reversa (unmerge) desde el historial ─── */}
+      {unmergeTarget && (
+        <UnmergeModal
+          entry={unmergeTarget}
+          onClose={closeUnmerge}
+          onConfirm={confirmUnmerge}
+          reverting={unmergeMut.isPending}
+          result={unmergeResult}
+          error={unmergeError}
         />
       )}
     </div>
@@ -591,6 +662,252 @@ function SideCard({ title, tone, side }: { title: string; tone: 'red' | 'emerald
           <span>{side.linked ? 'Vinculada' : 'Sin vincular'}</span>
           {side.linked && <LinkBadge confirmedAt={side.linkConfirmedAt} />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Modal de reversa: corre el preflight de unmerge (la autoridad real, aunque la
+ * fila se muestre por `unmerged_at IS NULL`) → confirmación reforzada → resultado.
+ */
+function UnmergeModal({
+  entry, onClose, onConfirm, reverting, result, error,
+}: {
+  entry: MergeLogEntry;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+  reverting: boolean;
+  result: UnmergeResult | null;
+  error: { code: string | null; message: string } | null;
+}) {
+  const [preflight, setPreflight] = useState<UnmergePreflight | null>(null);
+  const [preLoading, setPreLoading] = useState(true);
+  const [preError, setPreError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const [phrase, setPhrase] = useState('');
+
+  // Preflight al abrir. Si bloquea (P0070–P0077), no se permite confirmar.
+  useEffect(() => {
+    let cancelled = false;
+    setPreLoading(true); setPreError(null); setPreflight(null);
+    unmergePatientsPreflight(entry.id)
+      .then((r) => { if (!cancelled) setPreflight(r); })
+      .catch((e: unknown) => { if (!cancelled) setPreError(e instanceof Error ? e.message : 'Error al analizar la reversa'); })
+      .finally(() => { if (!cancelled) setPreLoading(false); });
+    return () => { cancelled = true; };
+  }, [entry.id]);
+
+  // No cerrar al click-outside ni durante el submit. Cierra solo por X / Escape / éxito.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !reverting) onClose(); };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [onClose, reverting]);
+
+  const reasonOk = reason.trim().length >= 10;
+  const phraseOk = phrase === CONFIRM_PHRASE_UNMERGE;
+  const canConfirm = reasonOk && phraseOk && !reverting;
+
+  const title = result
+    ? 'Fusión revertida'
+    : confirming
+      ? 'Confirmar reversa'
+      : 'Deshacer fusión (vista previa)';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={onClose}
+            disabled={reverting}
+            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <i className="ri-close-line text-xl text-gray-700" />
+          </button>
+        </div>
+
+        {result ? (
+          <UnmergeSuccess entry={entry} result={result} onClose={onClose} />
+        ) : preLoading ? (
+          <div className="py-10 text-center">
+            <div className="animate-spin h-6 w-6 border-2 border-emerald-700 border-t-transparent rounded-full mx-auto mb-2" />
+            <p className="text-sm text-gray-500">Analizando la reversa…</p>
+          </div>
+        ) : preError ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">{preError}</div>
+        ) : preflight ? (
+          <>
+            {/* Resumen del merge (metadatos, sin contenido clínico ni JSON crudo) */}
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 mb-4">
+              <p>Fusión del <b>{formatDateTime(preflight.mergedAt)}</b></p>
+              <p className="mt-1">
+                {entry.sourceName || '—'} <span className="text-gray-400">(origen)</span> → {entry.targetName || '—'} <span className="text-gray-400">(destino)</span>
+              </p>
+              {preflight.mergeReason && <p className="text-xs text-gray-500 mt-1">Motivo del merge: {preflight.mergeReason}</p>}
+            </div>
+
+            {/* Veredicto */}
+            {preflight.eligible ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                <p className="text-sm font-semibold text-emerald-900"><i className="ri-checkbox-circle-line mr-1" />Reversible</p>
+                <p className="text-xs text-emerald-700 mt-1">
+                  Se devolverían al origen: <b>{preflight.movedExpected.appointments}</b> citas ·{' '}
+                  <b>{preflight.movedExpected.consultations}</b> consultas · <b>{preflight.movedExpected.vitals}</b> vitales. La ficha origen se reactiva.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-sm font-semibold text-red-900">
+                  <i className="ri-close-circle-line mr-1" />No reversible{preflight.blockCode ? ` (${preflight.blockCode})` : ''}
+                </p>
+                <p className="text-xs text-red-700 mt-1">{unmergeBlockMessage(preflight.blockCode, preflight.blockReason)}</p>
+              </div>
+            )}
+
+            {/* Warnings (informativos, no bloquean) */}
+            {preflight.warnings.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 space-y-1">
+                {preflight.warnings.map((w) => (
+                  <p key={w.code} className="text-xs text-amber-800"><i className="ri-error-warning-line mr-1" />{w.message}</p>
+                ))}
+              </div>
+            )}
+
+            {confirming && preflight.eligible ? (
+              /* ── Paso de confirmación reforzada ── */
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800">
+                  <i className="ri-alert-line mr-1" />
+                  Esta acción <b>devuelve el expediente a la ficha origen y la reactiva</b>. No hay re-deshacer automático.
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Motivo de la reversa</label>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                    disabled={reverting}
+                    placeholder="Por qué se revierte esta fusión…"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                  {!reasonOk && (
+                    <p className="text-xs text-amber-600 mt-1">El motivo es obligatorio (mínimo 10 caracteres).</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Escribí <span className="font-mono font-semibold text-gray-900">{CONFIRM_PHRASE_UNMERGE}</span> para confirmar
+                  </label>
+                  <input
+                    type="text"
+                    value={phrase}
+                    onChange={(e) => setPhrase(e.target.value)}
+                    disabled={reverting}
+                    autoComplete="off"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    {unmergeBlockMessage(error.code, error.message)}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => { if (!reverting) { setConfirming(false); setPhrase(''); } }}
+                    disabled={reverting}
+                    className="text-sm text-gray-600 font-medium hover:underline disabled:opacity-40"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    onClick={() => onConfirm(reason.trim())}
+                    disabled={!canConfirm}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    {reverting ? 'Revirtiendo…' : 'Confirmar reversa'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+                  Cerrar
+                </button>
+                {preflight.eligible && (
+                  <button
+                    onClick={() => setConfirming(true)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700"
+                  >
+                    Deshacer fusión
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Vista de éxito tras la reversa: origen reactivado, destino, merge_log_id, devueltos. */
+function UnmergeSuccess({
+  entry, result, onClose,
+}: {
+  entry: MergeLogEntry;
+  result: UnmergeResult;
+  onClose: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+        <p className="text-sm font-semibold text-emerald-900">
+          <i className="ri-checkbox-circle-line mr-1" />Fusión revertida
+        </p>
+        <p className="text-xs text-emerald-700 mt-1">
+          El expediente volvió a la ficha origen, que quedó reactivada.
+        </p>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 space-y-1">
+        <div>
+          <span className="text-gray-500">Origen (reactivado):</span>{' '}
+          <b>{entry.sourceName || '—'}</b>{' '}
+          <span className="text-xs text-gray-400">({result.sourceId.slice(0, 8)})</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Destino:</span>{' '}
+          <b>{entry.targetName || '—'}</b>{' '}
+          <span className="text-xs text-gray-400">({result.targetId.slice(0, 8)})</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Registro de fusión:</span>{' '}
+          <span className="font-mono text-xs text-gray-700">{result.mergeLogId}</span>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
+        <p className="font-medium mb-1">Devuelto al origen:</p>
+        <div className="flex gap-4">
+          <span><b>{result.movedBack.appointments}</b> citas</span>
+          <span><b>{result.movedBack.consultations}</b> consultas</span>
+          <span><b>{result.movedBack.vitals}</b> vitales</span>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800">
+          Cerrar
+        </button>
       </div>
     </div>
   );
