@@ -1,17 +1,23 @@
 # Análisis — Paciente Global Fase 4: Unmerge formal de fichas (reversa del merge)
 
-> Documento de diseño (docs-only, sin código ni SQL). Diseña la reversa formal
-> del merge admin de fichas `patients` (`admin_unmerge_patients`), apoyada en el
-> `patient_merge_log` que ya nació preparado para esto (`s7_46`).
+> Documento de diseño + estado. Diseña la reversa formal del merge admin de
+> fichas `patients` (`admin_unmerge_patients`), apoyada en el `patient_merge_log`
+> que ya nació preparado para esto (`s7_46`).
 >
-> Snapshot de referencia: HEAD `b2f611e`, migraciones hasta `s7_47`,
-> PRs #1–#145. Base técnica: **`s7_46` (merge admin) — LIVE, solo referencia;
-> NO se re-aplica ni se copia como migración nueva.** Complementa
+> **✅ BACKEND LIVE — #147 / `s7_48` (2026-06-16).** `admin_unmerge_patients_preflight`
+> + `admin_unmerge_patients` aplicados en Supabase. **check 5/5 + smoke 17/17**
+> (happy path merge→unmerge, P0071/P0073/P0074/P0075/P0076/P0077, historia nueva
+> en target como warning, consulta firmada devuelta sin romper guards, audit
+> `admin_unmerge`, `patient_merge_log.unmerged_*` rellenado, fixtures `F48_FIXTURE`
+> con 0 residuales, 0 datos reales tocados). Backend-only. **Pendiente: UI
+> "Deshacer fusión"** (§11). Migración: `migrations/s7_48_patient_unmerge.sql`.
+>
+> Snapshot de diseño: HEAD `b2f611e`, PRs #1–#145. Base técnica: **`s7_46`
+> (merge admin) — LIVE, solo referencia.** Complementa
 > `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` (DM1–DM9, donde DM7 dejó
 > la reversa formal "prevista desde el inicio").
 >
-> **Decisiones de diseño cerradas por el owner el 2026-06-15 (§12). La
-> implementación (`s7_48`) NO arranca sin señal explícita del owner.**
+> **Decisiones de diseño cerradas por el owner el 2026-06-15 (§12).**
 
 ---
 
