@@ -12,12 +12,12 @@
 
 ## 1. Estado confirmado al cierre
 
-- **HEAD final:** `2fd94cc` (*feat(paciente): backend del unmerge formal de fichas (F4 / s7_48) (#147)*) **+ el PR docs-only de cierre de #147** (verificar con `git log --oneline -5`).
-- **PRs mergeados:** #1–#147 (+ el docs-only de cierre de #147).
-- **Migraciones aplicadas en Supabase:** hasta **`s7_48`** (verificables con `node scripts/check-s7_NN.mjs`).
+- **HEAD final:** `a7b368d` (*feat(admin): UI "Deshacer fusión" en /admin/pacientes (F4 unmerge) (#149)*) **+ el PR docs-only de cierre de #149** (verificar con `git log --oneline -5`).
+- **PRs mergeados:** #1–#149 (+ el docs-only de cierre de #149).
+- **Migraciones aplicadas en Supabase:** hasta **`s7_48`** (#149 es frontend-only; verificables con `node scripts/check-s7_NN.mjs`).
 - **`main` al día con `origin/main` · árbol limpio · `tsc --noEmit` OK · `npm run build` OK.**
 - **Documentación actualizada.** Admins activos de plataforma: 1 (el owner).
-- **Sin frente de código abierto.** **Unmerge formal — backend cerrado (#147 / `s7_48`)**: `admin_unmerge_patients_preflight` + `admin_unmerge_patients` live (check 5/5 + smoke 17/17). **F4-3 UI PR B cerrado (#144)** — `/admin/pacientes` ya ejecuta el merge real. Pendientes F4 (ninguno arrancado): **UI "Deshacer fusión"** (sobre el unmerge backend ya live), **F4-3b** bandeja `patient_link_rejections`, **F4-D** identidades — ver §2 y §5.
+- **Sin frente de código abierto.** **F4 merge/unmerge cerrado de punta a punta** (merge backend `s7_46` + UI `#144`, unmerge backend `s7_48`/`#147` + **UI "Deshacer fusión" `#149`**): `/admin/pacientes` permite fusionar y revertir desde el historial. Pendientes F4 (ninguno arrancado): **F4-3b** bandeja `patient_link_rejections`, **F4-D** identidades — ver §2 y §5.
 
 ### Cómo arrancar (obligatorio)
 
@@ -47,7 +47,7 @@ git status --short
 | **F4-3 UI PR A** `/admin/pacientes` (read-only) | ✅ cerrado (#142) |
 | **F4-3 UI PR B** habilitar merge real | ✅ cerrado (#144) |
 | **Unmerge formal — backend** (`admin_unmerge_patients`) | ✅ cerrado (#147 / `s7_48`) |
-| **Unmerge — UI "Deshacer fusión"** | ⏳ pendiente |
+| **Unmerge — UI "Deshacer fusión"** | ✅ cerrado (#149) |
 | **F4-3b** bandeja `patient_link_rejections` | ⏳ pendiente |
 | **F4-D** merge de identidades (`profiles`/`auth.users`) | ⏳ diferido (diseño propio) |
 
@@ -124,13 +124,9 @@ Entregado en #144 (frontend-only, sin migración):
 
 ## 5. Otros pendientes vivos (no arrancados)
 
-- **Unmerge — UI "Deshacer fusión"**: el backend ya está live (#147/`s7_48`:
-  `admin_unmerge_patients_preflight` + `admin_unmerge_patients`). Falta la acción
-  en el historial de `/admin/pacientes` (dry-run visible + motivo + confirmación
-  reforzada `DESHACER FUSIÓN` + manejo de `P0070–P0077`, solo fixtures). Diseño en
-  `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` §11.
 - **F4-3b** bandeja de `patient_link_rejections` (cola `pending_review` de B2)
-  como tab de `/admin/pacientes`.
+  como tab de `/admin/pacientes`. (Con #149, el eje F4 merge/unmerge —backend+UI
+  de ambos— quedó cerrado; F4-3b y F4-D son lo único pendiente de F4.)
 - **F4-D** merge de identidades (`profiles`/`auth.users`, E4/E5) — junto a
   recuperación sin sesión (D7).
 - **Limpieza controlada `50372608827` / Katherine** — solo a señal del owner,
