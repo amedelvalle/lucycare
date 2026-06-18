@@ -12,12 +12,13 @@
 
 ## 1. Estado final al cierre (post-#154)
 
-- **HEAD final:** `e3cb6f1` (*docs: registrar F4-3b (bandeja de vínculos rechazados) como live (#151-#153) (#154)*).
-- **PRs mergeados:** **#1–#154**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_49`** (verificables con `node scripts/check-s7_NN.mjs`).
+- **HEAD final:** `e108c14` (*fix(equipo): aceptar invitación tolerante a formato de teléfono (s7_50) (#156)*).
+- **PRs mergeados:** **#1–#156**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_50`** (verificables con `node scripts/check-s7_NN.mjs`).
 - **`main == origin/main`** · **árbol limpio** · **sin SQL pendiente** · **sin trabajo en curso**.
 - **`tsc --noEmit` OK · `npm run build` OK.** Documentación al día. Admins activos de plataforma: 1 (el owner).
 - **Sin frente de código abierto.**
+- **Último cierre (#156 / `s7_50`) — fix de onboarding de asistentes:** `accept_clinic_invitations` ahora compara los teléfonos con `normalize_phone_sv(...)` en **ambos lados** del gate (`profiles.phone`) y del loop (`clinic_invitations.phone`). Cerró un **bug operativo ACTIVO**: la invitación se guardaba como `+503XXXXXXXX` y `profiles.phone` como `503XXXXXXXX`, así que el gate **literal** fallaba y la invitación no se aceptaba, con el error **silenciado** en el login. **Misma firma**, misma lógica de cupos, sin tocar UI/`database.types.ts`/identidad global/`auth.users`. Validado: `check-s7_50` verde + `_smoke-s7_50` verde (`pass=7 fail=0`; fixtures aisladas `F50_FIXTURE`; **0 residuales**; **0 datos reales tocados**). La primera corrida del smoke salió roja y fue útil: confirmó que el SQL aún no estaba efectivo en la DB; tras reaplicarlo, quedó verde.
 
 ### Cómo arrancar (obligatorio)
 
@@ -93,7 +94,7 @@ Diseños vinculantes: `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md`
 ## 6. Protocolo de arranque en nueva ventana (obligatorio)
 
 1. **Sincronizar `main`:** `git fetch origin && git checkout main && git pull --ff-only origin main`.
-2. **Confirmar HEAD / PRs / migraciones:** HEAD `e3cb6f1` o posterior · PRs #1–#154 · migraciones hasta `s7_49`.
+2. **Confirmar HEAD / PRs / migraciones:** HEAD `e108c14` o posterior · PRs #1–#156 · migraciones hasta `s7_50`.
 3. **Confirmar `git status --short` limpio.**
 4. **Confirmar `main == origin/main`** (`git rev-list --left-right --count origin/main...main` = `0 0`).
 5. **Definir el alcance del frente con el owner** antes de tocar nada.
