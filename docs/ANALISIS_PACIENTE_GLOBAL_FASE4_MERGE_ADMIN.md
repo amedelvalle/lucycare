@@ -11,6 +11,15 @@
 > (reglas D1–D7). **Decisiones DM1–DM9 CERRADAS por el owner el 2026-06-12
 > (§10). La implementación (F4-1+) arranca SOLO con señal explícita del
 > owner.**
+>
+> **✅ ESTADO (2026-06-18): eje F4 merge/unmerge + bandeja CERRADO y LIVE.**
+> F4-1 (#135/`s7_45`) · F4-2 backend merge (#138/`s7_46`) · F4-3-search
+> (#140/`s7_47`) · F4-3 UI A read-only (#142) · F4-3 UI B merge real (#144) ·
+> unmerge backend (#147/`s7_48`, diseño en `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md`)
+> · unmerge UI (#149) · **F4-3b bandeja `patient_link_rejections` (DM8): backend
+> #151/`s7_49` + UI #153** (resolver/reabrir con motivo + audit; bookkeeping, no
+> re-vincula/fusiona; V1 = solo rechazos, sin fuzzy/detección de pares débiles).
+> **Único pendiente: F4-D** (merge de identidades, §9, diferido).
 
 ---
 
