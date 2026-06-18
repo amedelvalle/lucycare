@@ -100,10 +100,12 @@ export default function Home() {
           <img
             src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
             alt="Lucy Care"
-            className="h-14 sm:h-16 cursor-pointer"
+            className="h-10 sm:h-16 cursor-pointer shrink-0"
           />
-          {/* Navigation */}
-          <nav className="flex items-center gap-2 sm:gap-4">
+          {/* Navigation. flex-wrap + min-w-0 evita que las pills (whitespace-nowrap)
+              desborden el viewport en móvil: si no caben, envuelven en vez de
+              forzar scroll horizontal. justify-end las mantiene alineadas a la derecha. */}
+          <nav className="flex flex-wrap items-center justify-end gap-2 sm:gap-4 min-w-0">
             {isAuthenticated && currentUser ? (
               <>
                 {currentUser.role === 'patient' ? (
@@ -151,7 +153,7 @@ export default function Home() {
             <button
               onClick={() => setShowAffiliationModal(true)}
               title="Soy médico y quiero aparecer en Lucy"
-              className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
             >
               {/* Etiqueta corta en mobile, completa en desktop.
                   El modal mantiene la copy completa "Soy médico,

@@ -119,11 +119,11 @@ export default function SearchSection({
       {/* Toggle de Agenda Online - MUY VISIBLE */}
       <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-5 border-2 border-emerald-600">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-full">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-full flex-shrink-0">
               <i className="ri-calendar-check-line text-xl sm:text-2xl text-emerald-600"></i>
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-base sm:text-lg font-bold text-white">
                 Solo médicos con agenda en línea
               </h3>
