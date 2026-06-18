@@ -60,19 +60,19 @@ BEGIN
   -- Gate: el teléfono debe coincidir con el del profile del usuario actual.
   -- s7_50: comparación normalizada (tolera +503… vs 503… vs separadores).
   IF NOT EXISTS (
-    SELECT 1 FROM profiles
-     WHERE id = current_user_id
-       AND normalize_phone_sv(phone) = normalize_phone_sv(user_phone)
+    SELECT 1 FROM profiles p
+     WHERE p.id = current_user_id
+       AND normalize_phone_sv(p.phone) = normalize_phone_sv(user_phone)
   ) THEN
     RAISE EXCEPTION 'El teléfono no coincide con la cuenta autenticada';
   END IF;
 
   FOR invitation IN
-    SELECT * FROM clinic_invitations
-    WHERE normalize_phone_sv(phone) = normalize_phone_sv(user_phone)  -- s7_50: normalizado
-      AND accepted_at IS NULL
-      AND cancelled_at IS NULL
-      AND expires_at > now()          -- ← no aceptar vencidas (s7_36)
+    SELECT * FROM clinic_invitations ci
+    WHERE normalize_phone_sv(ci.phone) = normalize_phone_sv(user_phone)  -- s7_50: normalizado
+      AND ci.accepted_at IS NULL
+      AND ci.cancelled_at IS NULL
+      AND ci.expires_at > now()          -- ← no aceptar vencidas (s7_36)
   LOOP
     -- Revalidar cupo para invitaciones de asistente (defensa ante carrera).
     IF invitation.role = 'assistant' THEN
