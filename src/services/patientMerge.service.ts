@@ -136,6 +136,29 @@ export interface UnmergeResult {
   movedBack: { appointments: number; consultations: number; vitals: number }
 }
 
+// ─── Vínculos rechazados (F4-3b, s7_49) ──────────────────────
+
+export interface LinkRejection {
+  id: string
+  status: string // 'pending_review' | 'resolved'
+  rejectedAt: string
+  resolvedAt: string | null
+  resolvedBy: string | null
+  resolvedByName: string | null
+  resolutionNote: string | null
+  phoneNormalized: string | null
+  patient: {
+    id: string | null
+    fullName: string | null
+    clinicId: string | null
+    clinicName: string | null
+    isActive: boolean
+    profileId: string | null // estado actual del vínculo de la ficha
+    mergedIntoPatientId: string | null
+  }
+  rejectedBy: { profileId: string | null; fullName: string | null }
+}
+
 // Códigos de bloqueo del merge backend (s7_46) → copy en español.
 export const MERGE_BLOCK_COPY: Record<string, string> = {
   P0001: 'Necesitás una sesión de administrador de plataforma.',
@@ -171,6 +194,18 @@ export const UNMERGE_BLOCK_COPY: Record<string, string> = {
 export function unmergeBlockMessage(code: string | null, fallback?: string | null): string {
   if (!code) return fallback || 'No se puede revertir esta fusión.'
   return UNMERGE_BLOCK_COPY[code] || fallback || `No reversible (${code}).`
+}
+
+// Códigos del backend de vínculos rechazados (s7_49) → copy en español.
+export const LINK_REJECTION_BLOCK_COPY: Record<string, string> = {
+  P0001: 'Necesitás una sesión de administrador de plataforma.',
+  P0080: 'El rechazo de vínculo ya no existe.',
+  P0081: 'El motivo es obligatorio (mínimo 10 caracteres).',
+}
+
+export function linkRejectionBlockMessage(code: string | null, fallback?: string | null): string {
+  if (!code) return fallback || 'No se pudo procesar el rechazo.'
+  return LINK_REJECTION_BLOCK_COPY[code] || fallback || `Error (${code}).`
 }
 
 // ─── Mapeo jsonb → TS ────────────────────────────────────────
@@ -389,5 +424,67 @@ export async function listPatientMerges(): Promise<MergeLogEntry[]> {
     unmergedAt: r.unmerged_at ?? null,
     unmergeReason: r.unmerge_reason ?? null,
   }))
+}
+
+// ─── Vínculos rechazados (F4-3b, s7_49) — admin-only vía RPCs ──
+
+function mapLinkRejection(r: any): LinkRejection {
+  return {
+    id: r.id,
+    status: r.status ?? 'pending_review',
+    rejectedAt: r.rejected_at,
+    resolvedAt: r.resolved_at ?? null,
+    resolvedBy: r.resolved_by ?? null,
+    resolvedByName: r.resolved_by_name ?? null,
+    resolutionNote: r.resolution_note ?? null,
+    phoneNormalized: r.phone_normalized ?? null,
+    patient: {
+      id: r.patient?.id ?? null,
+      fullName: r.patient?.full_name ?? null,
+      clinicId: r.patient?.clinic_id ?? null,
+      clinicName: r.patient?.clinic_name ?? null,
+      isActive: !!r.patient?.is_active,
+      profileId: r.patient?.profile_id ?? null,
+      mergedIntoPatientId: r.patient?.merged_into_patient_id ?? null,
+    },
+    rejectedBy: {
+      profileId: r.rejected_by?.profile_id ?? null,
+      fullName: r.rejected_by?.full_name ?? null,
+    },
+  }
+}
+
+/** Lista la cola de vínculos rechazados (B2). Admin-only (RPC gateada). */
+export async function listLinkRejections(status?: string): Promise<LinkRejection[]> {
+  const { data, error } = await supabase.rpc('admin_list_patient_link_rejections', {
+    p_status: status ?? undefined,
+  })
+  if (error) throw error
+  const rows = (data as any[]) ?? []
+  return rows.map(mapLinkRejection)
+}
+
+/**
+ * Resolver un rechazo (bookkeeping administrativo): marca "revisado" con motivo.
+ * NO re-vincula la ficha, NO fusiona, NO cambia datos del paciente. Motivo ≥10
+ * (el backend valida `P0081`); bloqueos por `error.code`.
+ */
+export async function resolveLinkRejection(id: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_resolve_link_rejection', {
+    p_rejection_id: id,
+    p_resolution_note: note,
+    p_reopen: false,
+  })
+  if (error) throw error
+}
+
+/** Reabre un rechazo resuelto (vuelve a `pending_review`). */
+export async function reopenLinkRejection(id: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_resolve_link_rejection', {
+    p_rejection_id: id,
+    p_resolution_note: '',
+    p_reopen: true,
+  })
+  if (error) throw error
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
