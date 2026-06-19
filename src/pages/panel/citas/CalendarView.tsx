@@ -116,7 +116,7 @@ export default function CalendarView({
     <>
       {/* Header sticky — fecha + view toggle + nueva cita siempre visible al scrollear */}
       <div className="sticky top-16 md:top-0 z-20 -mx-4 px-4 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 py-3 mb-4 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200/60">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-2 sm:gap-3">
           <div className="flex-1 min-w-0">
             <CalendarHeader
               currentDate={currentDate}

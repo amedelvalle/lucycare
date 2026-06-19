@@ -67,8 +67,11 @@ export default function WeekView({
           ))}
         </div>
 
-        {/* 7 columnas de días */}
-        <div className="flex-1 grid grid-cols-7 min-w-0 overflow-x-auto">
+        {/* 7 columnas de días. minmax(5.5rem,1fr): en móvil las columnas no se
+            comprimen por debajo de ~88px (legibles) y el overflow-x-auto hace
+            scroll horizontal INTERNO dentro del card (que es overflow-hidden),
+            sin generar scroll horizontal de página. En desktop caben las 7 (1fr). */}
+        <div className="flex-1 grid grid-cols-[repeat(7,minmax(5.5rem,1fr))] min-w-0 overflow-x-auto">
           {weekDates.map((dayDate) => {
             const isToday = dayDate === today;
             const dayObj = parseDateStr(dayDate);

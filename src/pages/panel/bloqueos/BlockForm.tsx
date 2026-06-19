@@ -139,13 +139,13 @@ export default function BlockForm({
                   key={type.id}
                   type="button"
                   onClick={() => setBlockTypeId(type.id)}
-                  className={`px-4 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                  className={`min-h-[2.75rem] px-3 sm:px-4 py-2.5 rounded-lg text-sm font-medium border transition-all flex items-center justify-center text-center leading-tight break-words ${
                     blockTypeId === type.id
                       ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200'
                       : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
                   }`}
                 >
-                  {getBlockTypeEmoji(type.name)} {type.name}
+                  <span>{getBlockTypeEmoji(type.name)} {type.name}</span>
                 </button>
               ))}
             </div>
@@ -153,7 +153,7 @@ export default function BlockForm({
         </div>
 
         {/* Fechas */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               <span className="flex items-center gap-1.5">
@@ -217,7 +217,7 @@ export default function BlockForm({
 
         {/* Horas */}
         {!allDay && (
-          <div className="grid grid-cols-2 gap-4 pl-7">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:pl-7">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 <span className="flex items-center gap-1.5"><ClockIcon /> Hora inicio</span>
