@@ -158,8 +158,54 @@ export default function CitasPage() {
       {view === 'list' ? (
         // ══════════ VISTA LISTA (original, sin cambios) ══════════
         <>
-          {/* Navegación de fecha */}
-          <div className="flex items-center justify-between mb-6 bg-white rounded-xl border border-gray-200 p-3">
+          {/* Navegación de fecha — móvil: 2 filas (flechas + fecha / input + Hoy)
+              para que input date, "Hoy" y flechas no queden forzados en una fila. */}
+          <div className="sm:hidden mb-6 bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={goPrev}
+                aria-label="Día anterior"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              >
+                <ChevronLeftIcon />
+              </button>
+              <div className="min-w-0 text-center">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {formatDateDisplay(selectedDate)}
+                </p>
+                {isToday && (
+                  <span className="text-xs text-emerald-600 font-medium">Hoy</span>
+                )}
+              </div>
+              <button
+                onClick={goNext}
+                aria-label="Día siguiente"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              >
+                <ChevronRightIcon />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600
+                  focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none"
+              />
+              {!isToday && (
+                <button
+                  onClick={goToday}
+                  className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                >
+                  Hoy
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Navegación de fecha — desktop (layout original sin cambios) */}
+          <div className="hidden sm:flex items-center justify-between mb-6 bg-white rounded-xl border border-gray-200 p-3">
             <button
               onClick={goPrev}
               className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
@@ -205,7 +251,7 @@ export default function CitasPage() {
           </div>
 
           {/* Stats rápidas */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <StatCard label="Total" value={totalCitas} color="text-gray-900" bg="bg-gray-50" />
             <StatCard label="Pendientes" value={pendientes} color="text-blue-700" bg="bg-blue-50" />
             <StatCard label="Atendidas" value={atendidas} color="text-emerald-700" bg="bg-emerald-50" />

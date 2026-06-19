@@ -69,9 +69,11 @@ export default function CalendarHeader({
           )}
         </div>
 
-        {/* Título central */}
-        <div className="flex-1 text-center min-w-0">
-          <p className="text-base font-semibold text-gray-900 capitalize truncate">
+        {/* Título central. En móvil ocupa su propia fila (order-last + w-full) y
+            NO se trunca, para que el rango semanal no quede cortado; en desktop
+            queda centrado entre navegación y selector como antes. */}
+        <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1 text-center min-w-0">
+          <p className="text-sm sm:text-base font-semibold text-gray-900 capitalize sm:truncate">
             {label}
           </p>
         </div>
