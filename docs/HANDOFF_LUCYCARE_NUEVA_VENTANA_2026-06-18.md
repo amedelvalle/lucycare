@@ -10,15 +10,20 @@
 
 ---
 
-## 1. Estado final al cierre (post-#154)
+## 1. Estado final al cierre (post-#160)
 
-- **HEAD final:** `e108c14` (*fix(equipo): aceptar invitación tolerante a formato de teléfono (s7_50) (#156)*).
-- **PRs mergeados:** **#1–#156**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_50`** (verificables con `node scripts/check-s7_NN.mjs`).
+- **HEAD final:** `967e254` (*feat(seguridad): cierre de sesión por inactividad + tope absoluto por rol (#160)*).
+- **PRs mergeados:** **#1–#160**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_50`** (verificables con `node scripts/check-s7_NN.mjs`). #157–#160 son **frontend/docs-only** (sin migración nueva).
 - **`main == origin/main`** · **árbol limpio** · **sin SQL pendiente** · **sin trabajo en curso**.
 - **`tsc --noEmit` OK · `npm run build` OK.** Documentación al día. Admins activos de plataforma: 1 (el owner).
 - **Sin frente de código abierto.**
-- **Último cierre (#156 / `s7_50`) — fix de onboarding de asistentes:** `accept_clinic_invitations` ahora compara los teléfonos con `normalize_phone_sv(...)` en **ambos lados** del gate (`profiles.phone`) y del loop (`clinic_invitations.phone`). Cerró un **bug operativo ACTIVO**: la invitación se guardaba como `+503XXXXXXXX` y `profiles.phone` como `503XXXXXXXX`, así que el gate **literal** fallaba y la invitación no se aceptaba, con el error **silenciado** en el login. **Misma firma**, misma lógica de cupos, sin tocar UI/`database.types.ts`/identidad global/`auth.users`. Validado: `check-s7_50` verde + `_smoke-s7_50` verde (`pass=7 fail=0`; fixtures aisladas `F50_FIXTURE`; **0 residuales**; **0 datos reales tocados**). La primera corrida del smoke salió roja y fue útil: confirmó que el SQL aún no estaba efectivo en la DB; tras reaplicarlo, quedó verde.
+- **Cierres frontend-only #157–#160 (post-handoff original):**
+  - **#157** docs-only: registro del cierre de `s7_50`.
+  - **#158 Responsive móvil — Home público:** eliminado el overflow horizontal del header (nav `flex-wrap`+`min-w-0`, logo `h-10` en móvil, "Soy médico" oculto en móvil cuando hay sesión). Desktop intacto; `scrollWidth===clientWidth` en 360/390/430.
+  - **#159 Responsive móvil — Panel/Citas/Calendario/Bloqueos:** fila de fecha de Citas en 2 filas en móvil + KPIs `grid-cols-2 sm:grid-cols-4`; `CalendarHeader` con el rango/fecha en su propia fila (sin truncar); botón "Nueva cita" integrado con los controles; `WeekView` con columnas legibles vía scroll horizontal **interno** del card; `BlockForm` con Fecha inicio/fin y horas apiladas en móvil + botones de tipo parejos. Desktop intacto.
+  - **#160 Seguridad de sesión (frontend-only):** cierre por **inactividad** + **tope absoluto por rol** + **modal de advertencia**. Wrapper central `SessionGuard` (montado 1 vez en `App.tsx` dentro de `BrowserRouter`; no toca `PanelLayout`/`AdminLayout`/área paciente) + `useIdleLogout` + `SessionTimeoutModal` + `sessionPolicy`. Política: **admin 15min/8h · médico/asistente 30min/12h · paciente 60min/24h · aviso 90s**. "Mantener sesión" resetea **solo** inactividad (no el tope absoluto, anclado a `last_sign_in_at`); la actividad **no revive** una sesión vencida (se evalúa el vencimiento antes de registrar actividad; re-evaluación en `visibilitychange`/`focus`). **Fallback ESTRICTO** para rol desconocido/nulo (= admin). Logout robusto: `signOut({scope:'local'})` best-effort + limpieza dura de tokens `sb-*` + recarga (evita el cuelgue conocido de `signOut` con el lock no-op). Override de tiempos **solo `import.meta.env.DEV`** (sin lógica por hostname). **Sin DB/RLS/migraciones/`database.types.ts`/identidad/`auth.users`; sin tocar login/OTP/reset.** Validado en dev (warning/keep/cerrar/auto-logout/tope absoluto/volver-tras-idle) + OK del owner.
+- **Cierre previo (#156 / `s7_50`) — fix de onboarding de asistentes:** `accept_clinic_invitations` compara los teléfonos con `normalize_phone_sv(...)` en **ambos lados** del gate (`profiles.phone`) y del loop (`clinic_invitations.phone`). Cerró un **bug operativo ACTIVO** (invitación `+503XXXXXXXX` vs `profiles.phone` `503XXXXXXXX` → el gate **literal** fallaba, con el error **silenciado** en el login). Misma firma, sin tocar UI/`database.types.ts`/identidad/`auth.users`. `check-s7_50` + `_smoke-s7_50` verdes (`pass=7 fail=0`, `F50_FIXTURE`, 0 residuales, 0 datos reales).
 
 ### Cómo arrancar (obligatorio)
 
