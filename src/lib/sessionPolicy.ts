@@ -30,6 +30,13 @@ const POLICY_BY_ROLE: Record<string, SessionPolicy> = {
 };
 
 /**
+ * Fallback ESTRICTO para rol desconocido / no resuelto / inesperado.
+ * Criterio: rol desconocido = política más segura (= la del admin: idle 15 min,
+ * aviso 90 s, máx 8 h). NUNCA caer al fallback laxo de paciente.
+ */
+const STRICT_POLICY: SessionPolicy = { idleMs: 15 * MIN, warnMs: WARN_MS, maxMs: 8 * HOUR };
+
+/**
  * Override SOLO en dev/test (import.meta.env.DEV) para validar el flujo sin
  * esperar 15/30/60 min. Se setea desde la consola del preview, p.ej.:
  *   localStorage.setItem('lc_session_test', JSON.stringify({idleMs:8000,warnMs:5000,maxMs:600000}))
@@ -52,6 +59,7 @@ function devOverride(base: SessionPolicy): SessionPolicy {
 }
 
 export function getSessionPolicy(role: string | null | undefined): SessionPolicy {
-  const base = (role && POLICY_BY_ROLE[role]) || POLICY_BY_ROLE.patient;
+  // Rol conocido → su política; rol nulo/desconocido/inesperado → ESTRICTA.
+  const base = (role && POLICY_BY_ROLE[role]) || STRICT_POLICY;
   return devOverride(base);
 }

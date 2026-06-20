@@ -113,11 +113,47 @@ export function useIdleLogout(): IdleLogoutState {
     supabase.auth.refreshSession().catch(() => {});
   }, []);
 
-  // ─── Listeners de actividad (ignorados mientras el aviso está visible) ──
+  // Cuánto falta (ms) para el deadline = min(inactividad, tope absoluto).
+  // Helper puro: NO muta nada; se usa para evaluar Y para el guard de actividad.
+  const remainingMs = useCallback((currentRole: string): number => {
+    const policy = getSessionPolicy(currentRole); // leído en caliente → override de dev
+    const now = Date.now();
+    const idleDeadline = lastActivityRef.current + policy.idleMs;
+    const absoluteDeadline = (loginAtRef.current ?? now) + policy.maxMs;
+    return Math.min(idleDeadline, absoluteDeadline) - now;
+  }, []);
+
+  // Evalúa el estado: si venció → logout; si está por vencer → aviso; si no →
+  // oculta el aviso. Compartido por el tick y por visibilitychange/focus.
+  const evaluate = useCallback(
+    (currentRole: string) => {
+      if (loggingOutRef.current) return;
+      const remaining = remainingMs(currentRole);
+      if (remaining <= 0) {
+        doLogout();
+        return;
+      }
+      if (remaining <= getSessionPolicy(currentRole).warnMs) {
+        setWarning(true);
+        setSecondsLeft(Math.max(0, Math.ceil(remaining / 1000)));
+      } else if (warningRef.current) {
+        setWarning(false);
+      }
+    },
+    [doLogout, remainingMs]
+  );
+
+  // ─── Listeners de actividad ─────────────────────────────────
+  // Orden defensivo: PRIMERO se evalúa si la sesión ya venció; solo si NO venció
+  // se registra actividad. Así un touch/scroll/focus al volver de background NO
+  // puede revivir una sesión ya vencida por inactividad o por tope absoluto.
+  // Durante el aviso tampoco extiende (solo el botón "Mantener sesión").
   useEffect(() => {
     if (!role) return;
     const onActivity = () => {
-      if (!warningRef.current) lastActivityRef.current = Date.now();
+      if (warningRef.current) return;       // aviso visible → no extender
+      if (remainingMs(role) <= 0) return;   // ya venció → NO renovar (el tick cierra)
+      lastActivityRef.current = Date.now();
     };
     ACTIVITY_EVENTS.forEach((e) =>
       window.addEventListener(e, onActivity, { passive: true })
@@ -125,35 +161,28 @@ export function useIdleLogout(): IdleLogoutState {
     return () => {
       ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
     };
-  }, [role]);
+  }, [role, remainingMs]);
 
-  // ─── Tick: evalúa el deadline una vez por segundo ───────────
+  // ─── Tick (1 s) + re-evaluación inmediata al volver al primer plano ──
+  // En móvil, al reabrir la app (visibilitychange/focus) se evalúa el
+  // vencimiento ANTES de cualquier actividad → si ya venció, cierra/avisa.
   useEffect(() => {
     if (!role) {
       setWarning(false);
       return;
     }
-    const id = setInterval(() => {
-      if (loggingOutRef.current) return;
-      const policy = getSessionPolicy(role); // leído cada tick → permite override de dev en caliente
-      const now = Date.now();
-      const idleDeadline = lastActivityRef.current + policy.idleMs;
-      const absoluteDeadline = (loginAtRef.current ?? now) + policy.maxMs;
-      const remaining = Math.min(idleDeadline, absoluteDeadline) - now;
-
-      if (remaining <= 0) {
-        void doLogout();
-        return;
-      }
-      if (remaining <= policy.warnMs) {
-        setWarning(true);
-        setSecondsLeft(Math.max(0, Math.ceil(remaining / 1000)));
-      } else if (warningRef.current) {
-        setWarning(false);
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [role, doLogout]);
+    const id = setInterval(() => evaluate(role), 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') evaluate(role);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [role, evaluate]);
 
   return { warning, secondsLeft, keepAlive, logoutNow: doLogout };
 }
