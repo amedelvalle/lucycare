@@ -13,6 +13,11 @@ import type { AuthUser } from '../../services/auth.service';
 import { DoctorGridSkeleton } from '../../components/skeletons/DirectorySkeletons';
 import type { DirectoryFilters } from '../../types/directory.types';
 
+// Render incremental del directorio (paginación frontend-only): cuántos médicos
+// se muestran por tanda. NO es paginación server-side — búsqueda, completitud,
+// toggle y orden por rating operan sobre el set completo ya cargado en cliente.
+const PAGE_SIZE = 12;
+
 export default function Home() {
   const navigate = useNavigate();
   const [showAffiliationModal, setShowAffiliationModal] = useState(false);
@@ -28,6 +33,9 @@ export default function Home() {
   // del usuario, así que no había con qué ordenar (caía a orden default).
   // Backlog: reintroducir cuando exista geo + UX de permisos de ubicación.
   const [sortBy, setSortBy] = useState<'default' | 'mejor_valorados'>('default');
+
+  // Render incremental: cuántos médicos del set filtrado se muestran.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const isAuthenticated = !!currentUser;
 
@@ -67,6 +75,14 @@ export default function Home() {
           return sb - sa;
         })
       : baseDoctors;
+
+  // Render incremental: solo se montan las primeras `visibleCount` cards.
+  const visibleDoctors = filteredDoctors.slice(0, visibleCount);
+
+  // Al cambiar búsqueda / filtros / toggle / orden, volver a la primera tanda.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchTerm, selectedSpecialty, selectedDepartment, selectedMunicipality, onlineBookingOnly, sortBy]);
 
   // ─── AUTH REAL con Supabase ───
   useEffect(() => {
@@ -260,7 +276,7 @@ export default function Home() {
         {/* Doctors Grid */}
         {!isLoading && !error && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {filteredDoctors.map((doctor) => {
+            {visibleDoctors.map((doctor) => {
               const st = ratingStats[doctor.id];
               return (
                 <DoctorCard
@@ -272,6 +288,23 @@ export default function Home() {
                 />
               );
             })}
+          </div>
+        )}
+
+        {/* Render incremental: contador "Mostrando N de M" + "Mostrar más médicos" */}
+        {!isLoading && !error && filteredDoctors.length > 0 && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <p className="text-sm text-gray-500">
+              Mostrando {visibleDoctors.length} de {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
+            </p>
+            {visibleCount < filteredDoctors.length && (
+              <button
+                onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Mostrar más médicos
+              </button>
+            )}
           </div>
         )}
 
