@@ -1,7 +1,11 @@
 # HANDOFF — Nueva ventana de contexto (cierre 2026-06-18)
 
-> **Punto de entrada VIGENTE para retomar LucyCare en una conversación nueva.**
-> Leer ESTE documento primero; después `CLAUDE.md` y los `docs/ANALISIS_*.md`
+> ⚠️ **HISTÓRICO.** Reemplazado como punto de entrada por
+> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-06-21.md` (estado post-#162 +
+> PR #163 abierto con `s7_51` sin aplicar). Leer ese primero.
+>
+> **(Histórico) Punto de entrada de la ventana anterior.**
+> Leer el handoff `2026-06-21`; después `CLAUDE.md` y los `docs/ANALISIS_*.md`
 > del objetivo del día. No asumir nada sin confirmar el estado real del repo.
 >
 > Reemplaza como punto de entrada a
