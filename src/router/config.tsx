@@ -19,6 +19,7 @@ import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
 import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
 import ServiciosPage from "../pages/panel/servicios/ServiciosPage";
 import EquipoPage from "../pages/panel/equipo/EquipoPage";
+import ListaEsperaPage from "../pages/panel/lista-espera/ListaEsperaPage";
 import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
 import CalificarPage from "../pages/calificar/CalificarPage";
 import ResetPasswordPage from "../pages/reset-password/ResetPasswordPage";
@@ -140,6 +141,10 @@ const routes: RouteObject[] = [
       {
         path: "pacientes",
         element: <PacientesPage />,
+      },
+      {
+        path: "lista-espera",
+        element: <ListaEsperaPage />,
       },
       {
         path: "pacientes/:id",

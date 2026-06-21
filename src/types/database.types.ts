@@ -1708,6 +1708,24 @@ export type Database = {
         Args: { user_phone: string }
         Returns: number
       }
+      clinic_list_waitlist: {
+        Args: { p_doctor_id: string; p_status?: string; p_limit?: number; p_offset?: number }
+        Returns: {
+          id: string
+          patient_name: string
+          patient_phone: string
+          patient_message: string | null
+          status: string
+          contacted_at: string | null
+          notes: string | null
+          created_at: string
+          total_count: number
+        }[]
+      }
+      clinic_update_waitlist_entry: {
+        Args: { p_entry_id: string; p_status: string; p_notes?: string }
+        Returns: undefined
+      }
       admin_affiliation_preflight: {
         Args: { p_request_id: string }
         Returns: Json
