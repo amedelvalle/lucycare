@@ -112,7 +112,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_doctor_id   uuid;
-  v_old         record;
+  v_old         waitlist_entries%ROWTYPE;
   v_clean_notes text := nullif(btrim(coalesce(p_notes, '')), '');
 BEGIN
   IF p_status NOT IN ('pending','contacted','cancelled') THEN
