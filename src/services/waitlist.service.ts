@@ -211,3 +211,57 @@ export async function adminUpdateWaitlistEntry(
   });
   if (error) throw new Error(error.message);
 }
+
+// ═════════════ Panel del médico / asistente (s7_51) ═════════════
+// RPCs scoped por clínica/propiedad (clinic_list_waitlist / clinic_update_waitlist_entry).
+// El gate server-side valida que el caller sea el médico dueño del doctor_id o
+// miembro de su clínica; NO confía en el doctor_id sin validar. NO usa las RPCs admin.
+
+export type WaitlistStatus = 'pending' | 'contacted' | 'cancelled';
+
+export interface ClinicWaitlistResult {
+  entries: AdminWaitlistEntry[];
+  total: number;
+}
+
+/** Lista de espera del médico para el panel (médico dueño o asistente de su clínica). */
+export async function clinicListWaitlist(
+  doctorId: string,
+  options: { status?: WaitlistStatus; limit?: number; offset?: number } = {},
+): Promise<ClinicWaitlistResult> {
+  const { data, error } = await supabase.rpc('clinic_list_waitlist', {
+    p_doctor_id: doctorId,
+    p_status: options.status ?? undefined,
+    p_limit: options.limit ?? 50,
+    p_offset: options.offset ?? 0,
+  });
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const entries: AdminWaitlistEntry[] = rows.map((row) => ({
+    id: row.id as string,
+    patientName: (row.patient_name as string) ?? '',
+    patientPhone: (row.patient_phone as string) ?? '',
+    patientMessage: (row.patient_message as string | null) ?? null,
+    status: (row.status as WaitlistStatus) ?? 'pending',
+    contactedAt: (row.contacted_at as string | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    createdAt: row.created_at as string,
+  }));
+  const total = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  return { entries, total };
+}
+
+/** Cambia estado / nota de una entrada (panel médico/asistente). */
+export async function clinicUpdateWaitlistEntry(
+  entryId: string,
+  status: WaitlistStatus,
+  notes?: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('clinic_update_waitlist_entry', {
+    p_entry_id: entryId,
+    p_status: status,
+    p_notes: notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+}

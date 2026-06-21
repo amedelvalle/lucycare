@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/panel/bloqueos', label: 'Bloqueos', icon: 'ri-calendar-close-line' },
   { path: '/panel/citas', label: 'Citas', icon: 'ri-list-check-2' },
   { path: '/panel/pacientes', label: 'Pacientes', icon: 'ri-user-3-line' },
+  { path: '/panel/lista-espera', label: 'Lista de espera', icon: 'ri-time-line' },
   { path: '/panel/catalogos', label: 'Catálogos', icon: 'ri-book-2-line', doctorOnly: true },
   { path: '/panel/equipo', label: 'Mi equipo', icon: 'ri-team-line', doctorOnly: true },
   { path: '/panel/servicios', label: 'Mis servicios', icon: 'ri-price-tag-3-line', doctorOnly: true },
