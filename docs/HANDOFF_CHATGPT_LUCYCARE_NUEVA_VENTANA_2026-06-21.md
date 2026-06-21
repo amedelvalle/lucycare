@@ -9,12 +9,13 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `4ee9b65` (*feat(home): render incremental del directorio — Mostrar más médicos (Opción A) (#162)*).
-- **PRs mergeados:** **#1–#162**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_50`**.
-  - ⚠️ **`s7_51` NO está aplicada en producción.** Existe **solo** en la rama `claude/panel-waitlist` (PR #163, abierto). **No asumir que `s7_51` está en la DB.**
+- **HEAD de `main`:** `352b44a` (*feat(panel): "Mi lista de espera" para médico/asistente (s7_51) (#163)*).
+- **PRs mergeados:** **#1–#164**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
+
+> ⚠️ **Actualización (cierre #163):** este handoff se redactó con #163 abierto; **#163 quedó MERGEADO** y **`s7_51` aplicada/validada**. La rama `claude/panel-waitlist` fue borrada (local + remoto). §3–§5 quedan como **registro histórico** del frente, ya cerrado.
 
 ### Arranque obligatorio
 ```bash
@@ -24,7 +25,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `4ee9b65` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `352b44a` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
@@ -39,14 +40,15 @@ Detalle completo de todo lo previo: `CLAUDE.md` + `docs/HANDOFF_LUCYCARE_SPRINT7
 
 ---
 
-## 3. Próximo frente abierto: PR #163 — Mi lista de espera en panel médico
+## 3. ✅ CERRADO: PR #163 — Mi lista de espera en panel médico/asistente (s7_51 LIVE)
 
-- **PR:** `lucycare#163` — https://github.com/amedelvalle/lucycare/pull/163
-- **Rama:** `claude/panel-waitlist`
-- **Estado:** **ABIERTO, NO mergeado.**
-- **Migración pendiente de aplicar:** `migrations/s7_51_clinic_waitlist.sql` (existe en la rama; **NO aplicada en Supabase**).
-- **Validación local ya hecha:** `tsc --noEmit` OK · `npm run build` OK · `node --check` de ambos scripts OK.
-- **Validación PENDIENTE (requiere aplicar `s7_51` primero):** `check-s7_51`, `_smoke-s7_51`, preview médico/asistente, móvil 360/390/430, OK funcional/visual del owner.
+- **PR:** `lucycare#163` — https://github.com/amedelvalle/lucycare/pull/163 — **MERGEADO** (squash, HEAD de `main` `352b44a`).
+- **Rama:** `claude/panel-waitlist` — **borrada** (local + remoto) tras el merge.
+- **Migración:** `migrations/s7_51_clinic_waitlist.sql` — **aplicada en Supabase y validada**.
+- **Fix durante la validación:** `clinic_update_waitlist_entry` declaraba `v_old record` y el `SELECT … INTO v_old.status/…` abortaba toda actualización con `55000 record "v_old" is not assigned yet` → corregido a **`v_old waitlist_entries%ROWTYPE`** (idempotente, re-aplicada).
+- **Validación completa:** `check-s7_51` 3/3 · `_smoke-s7_51` 9/9 (T1–T8) · cleanup 0 residuales (`F51_FIXTURE`) · **preview médico Y asistente con sesión real** (NavLink visible, `/panel/lista-espera` carga sin error, listado autorizado, cambio de estado, audit `edited_via='clinic'` con `contacted_by` correcto) · móvil 360/390/430 sin overflow · desktop sin regresión · tsc/build verdes · **0 datos reales tocados** (test user `50375000001` como asistente temporal, rol restaurado a `patient`; jamás Camilo ni Katherine).
+
+> Lo que sigue en esta §3 (y §4–§5) es el **registro técnico/operativo histórico** del frente, ya cerrado. Se conserva como referencia.
 
 ### Archivos principales de #163 (en `claude/panel-waitlist`)
 - `migrations/s7_51_clinic_waitlist.sql` — RPCs nuevas + helper de gate.
