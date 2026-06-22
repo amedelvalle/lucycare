@@ -29,12 +29,12 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
 
   return (
     <div className="hidden print:block print-receta">
-      {/* Header — datos del médico */}
+      {/* Header — datos del médico + fechas (emisión / corrección, una sola vez) */}
       <header className="border-b-2 border-gray-800 pb-4 mb-6">
         <div className="flex justify-between items-start gap-6">
           <div className="flex-1">
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Receta médica</p>
-            <h1 className="text-2xl font-bold text-gray-900">Dr. {ctx.doctor.full_name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{doctorTitleName(ctx.doctor.full_name)}</h1>
             {ctx.doctor.specialty_name && (
               <p className="text-sm text-gray-700 mt-0.5">{ctx.doctor.specialty_name}</p>
             )}
@@ -47,21 +47,26 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
             <p className="font-semibold text-gray-900 text-sm mt-0.5">
               {formatLongDate(signedDate)}
             </p>
+            {isCorrected && correctedDate && (
+              <>
+                <p className="mt-1.5">Corregida</p>
+                <p className="font-semibold text-gray-900 text-sm mt-0.5">
+                  {formatLongDate(correctedDate)}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Aviso de corrección — solo si la consulta fue corregida tras la firma */}
+      {/* Marca de corrección — clara pero compacta; la fecha vive en el encabezado */}
       {isCorrected && (
         <div className="border-2 border-gray-800 rounded-md px-4 py-2 mb-6">
           <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">
             Receta corregida
-            {correctedDate && (
-              <span className="font-semibold"> · {formatLongDate(correctedDate)}</span>
-            )}
           </p>
           <p className="text-xs text-gray-700 mt-0.5">
-            Esta receta reemplaza versiones anteriores.
+            Reemplaza versiones anteriores.
           </p>
         </div>
       )}
@@ -111,18 +116,11 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
         <div className="flex justify-end">
           <div className="text-right">
             <div className="border-b border-gray-800 w-64 mb-1" />
-            <p className="text-sm font-semibold text-gray-900">Dr. {ctx.doctor.full_name}</p>
+            <p className="text-sm font-semibold text-gray-900">{doctorTitleName(ctx.doctor.full_name)}</p>
             {ctx.doctor.license_number && (
               <p className="text-xs text-gray-600">JVPM: {ctx.doctor.license_number}</p>
             )}
-            <p className="text-[11px] text-gray-500 mt-2">
-              Firmado digitalmente · {formatLongDate(signedDate)}
-            </p>
-            {isCorrected && correctedDate && (
-              <p className="text-[11px] text-gray-500">
-                Corregida · {formatLongDate(correctedDate)}
-              </p>
-            )}
+            <p className="text-[11px] text-gray-500 mt-2">Firmado digitalmente</p>
           </div>
         </div>
       </footer>
@@ -134,18 +132,20 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
 
 function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
   const subParts = [p.medication.active_ingredient, p.medication.concentration, p.medication.presentation].filter(Boolean);
-
-  const dosageParts = [];
-  if (p.dosage) dosageParts.push(p.dosage);
-  if (p.frequency) dosageParts.push(p.frequency);
-  const dosageLine = dosageParts.join(' · ');
-
   const durationLine = formatDuration(p.duration_value, p.duration_unit);
+
+  // Solo se rotula lo que el médico cargó; nada se infiere ni se completa.
+  // Un valor suelto como "1" queda como "Dosis: 1" (claro, no ambiguo).
+  const detailRows: { label: string; value: string }[] = [];
+  if (p.dosage) detailRows.push({ label: 'Dosis', value: p.dosage });
+  if (p.frequency) detailRows.push({ label: 'Frecuencia', value: p.frequency });
+  if (durationLine) detailRows.push({ label: 'Duración', value: durationLine });
+  if (p.instructions) detailRows.push({ label: 'Indicaciones', value: p.instructions });
 
   return (
     <li className="text-sm text-gray-800 break-inside-avoid">
       <div className="flex items-baseline gap-2">
-        <span className="font-bold text-gray-900">{index}.</span>
+        <span className="font-bold text-gray-900 tabular-nums">{index}.</span>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-900">
             {p.medication.commercial_name}
@@ -158,14 +158,15 @@ function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
           {subParts.length > 0 && (
             <p className="text-xs text-gray-600 mt-0.5">{subParts.join(' · ')}</p>
           )}
-          {dosageLine && (
-            <p className="mt-1.5">{dosageLine}</p>
-          )}
-          {durationLine && (
-            <p className="text-gray-700">Duración: {durationLine}</p>
-          )}
-          {p.instructions && (
-            <p className="mt-1 italic text-gray-700">{p.instructions}</p>
+          {detailRows.length > 0 && (
+            <dl className="mt-1.5 space-y-0.5">
+              {detailRows.map((r) => (
+                <div key={r.label} className="flex gap-1.5">
+                  <dt className="font-medium text-gray-700 flex-shrink-0">{r.label}:</dt>
+                  <dd className="text-gray-800 min-w-0">{r.value}</dd>
+                </div>
+              ))}
+            </dl>
           )}
           {p.alternatives && (
             <p className="mt-1 text-xs text-gray-600">
@@ -179,6 +180,20 @@ function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Antepone "Dr." al nombre del médico SOLO si no trae ya un título.
+ * Evita "Dr. Dr. X" / "Dr. Dra. Y" cuando el `full_name` ya incluye el
+ * prefijo (caso real de algunos médicos importados/creados por afiliación).
+ * No infiere género: si ya hay título lo respeta tal cual; si no, usa "Dr.".
+ */
+function doctorTitleName(fullName: string): string {
+  const name = (fullName ?? '').trim();
+  if (!name) return 'Dr.';
+  // Ya trae título: "Dr", "Dr.", "Dra", "Dra." seguido de espacio.
+  if (/^dra?\.?\s/i.test(name)) return name;
+  return `Dr. ${name}`;
+}
 
 function calculateAge(dateOfBirth: string): number | null {
   if (!dateOfBirth) return null;
