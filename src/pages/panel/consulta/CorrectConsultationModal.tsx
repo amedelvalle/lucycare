@@ -394,28 +394,33 @@ export default function CorrectConsultationModal({
 
         {/* ─── Receta ─── */}
         <Accordion title="Receta / Medicamentos" modified={hasReceta} isOpen={open.has('receta')} onToggle={() => toggle('receta')}>
-          <div className="space-y-2">
+          {/* Bloque para agregar — ARRIBA de la lista (UX: ver primero lo que se agrega). */}
+          {rxPicker?.mode !== 'add' ? (
+            <AddButton label="Agregar medicamento" onClick={() => setRxPicker({ mode: 'add' })} disabled={isSubmitting} />
+          ) : (
+            <div className="bg-gray-50 rounded-lg p-3 mb-2">
+              <MedicationPicker doctorId={doctorId} excludeIds={usedMedIds} onPick={pickMedication} />
+              <CancelLink onClick={() => setRxPicker(null)} />
+            </div>
+          )}
+          {/* Nuevos arriba (más reciente primero), existentes debajo. Esto es SOLO la
+              vista del modal: el orden persistido y el del PDF NO cambian (prescriptionOps
+              se sigue armando en orden cronológico; [...added].reverse() copia para no
+              mutar el estado). */}
+          <div className="space-y-2 mt-2">
             {existing.length === 0 && added.length === 0 && <p className="text-xs text-gray-400 italic">Esta consulta no tiene medicamentos.</p>}
+            {[...added].reverse().map((n) => (
+              <NewRxCard key={n.tempId} rx={n} disabled={isSubmitting}
+                onField={(patch) => setAdded((p) => p.map((x) => x.tempId === n.tempId ? { ...x, ...patch } : x))}
+                onDrop={() => setAdded((p) => p.filter((x) => x.tempId !== n.tempId))} />
+            ))}
             {existing.map((r) => (
               <ExistingRxCard key={r.prescriptionId} rx={r} disabled={isSubmitting}
                 onField={(patch) => setExisting((p) => p.map((x) => x.prescriptionId === r.prescriptionId ? { ...x, ...patch } : x))}
                 onToggleRemove={() => setExisting((p) => p.map((x) => x.prescriptionId === r.prescriptionId ? { ...x, removed: !x.removed } : x))}
                 onSubstitute={() => setRxPicker({ mode: 'sub', id: r.prescriptionId })} />
             ))}
-            {added.map((n) => (
-              <NewRxCard key={n.tempId} rx={n} disabled={isSubmitting}
-                onField={(patch) => setAdded((p) => p.map((x) => x.tempId === n.tempId ? { ...x, ...patch } : x))}
-                onDrop={() => setAdded((p) => p.filter((x) => x.tempId !== n.tempId))} />
-            ))}
           </div>
-          {rxPicker?.mode !== 'add' ? (
-            <AddButton label="Agregar medicamento" onClick={() => setRxPicker({ mode: 'add' })} disabled={isSubmitting} />
-          ) : (
-            <div className="bg-gray-50 rounded-lg p-3 mt-2">
-              <MedicationPicker doctorId={doctorId} excludeIds={usedMedIds} onPick={pickMedication} />
-              <CancelLink onClick={() => setRxPicker(null)} />
-            </div>
-          )}
         </Accordion>
 
         {/* Substitución de receta (overlay) */}
