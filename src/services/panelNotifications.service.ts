@@ -3,8 +3,11 @@
  *
  * NO usa la tabla `notifications` (que es para SMS/email salientes a pacientes).
  * Aquí computamos eventos relevantes para el doctor desde appointments:
- *  - new_booking: cita creada con source='lucy_directorio' (paciente reservó)
- *  - cancellation: cita cancelada en las últimas 24h
+ *  - new_booking: cita creada con source='lucy_directorio' (paciente reservó),
+ *    fechada por `created_at`.
+ *  - cancellation: cita en estado 'cancelada' (status_id → appointment_statuses)
+ *    actualizada en las últimas 24h. `appointments` no tiene timestamp de
+ *    cancelación, así que se usa `updated_at` como aproximación operativa.
  *
  * El estado de leído/no leído se maneja con un timestamp en localStorage
  * (ver usePanelNotifications.ts) — no requiere cambios de schema.
@@ -21,7 +24,7 @@ export interface PanelNotification {
   patientId: string;
   patientName: string;
   appointmentStartTime: string;
-  /** Cuándo ocurrió el evento (created_at o cancelled_at) — usado para read/unread */
+  /** Cuándo ocurrió el evento (created_at de la reserva o updated_at de la cancelación) — usado para read/unread */
   eventAt: string;
 }
 
@@ -31,20 +34,26 @@ interface RawAppointment {
   id: string;
   start_time: string;
   created_at: string;
-  cancelled_at: string | null;
+  updated_at: string;
+  status_id: string;
   source: string;
   patient: { id: string; full_name: string } | null;
 }
+
+/** Nombre del estado que representa una cita cancelada (ver `appointment_statuses`). */
+const CANCELLED_STATUS_NAME = 'cancelada';
 
 export async function getRecentPanelNotifications(
   doctorId: string
 ): Promise<PanelNotification[]> {
   const since = new Date(Date.now() - HOURS_24_MS).toISOString();
+  const SELECT =
+    'id, start_time, created_at, updated_at, status_id, source, patient:patients(id, full_name)';
 
   // 1. Reservas desde el directorio público (últimas 24h)
   const { data: bookings, error: bErr } = await supabase
     .from('appointments')
-    .select('id, start_time, created_at, cancelled_at, source, patient:patients(id, full_name)')
+    .select(SELECT)
     .eq('doctor_id', doctorId)
     .eq('source', 'lucy_directorio')
     .gte('created_at', since)
@@ -52,15 +61,32 @@ export async function getRecentPanelNotifications(
     .limit(20);
   if (bErr) throw bErr;
 
-  // 2. Cancelaciones recientes
-  const { data: cancels, error: cErr } = await supabase
-    .from('appointments')
-    .select('id, start_time, created_at, cancelled_at, source, patient:patients(id, full_name)')
-    .eq('doctor_id', doctorId)
-    .gte('cancelled_at', since)
-    .order('cancelled_at', { ascending: false })
-    .limit(20);
-  if (cErr) throw cErr;
+  // 2. Cancelaciones recientes. `appointments` NO tiene una columna de
+  // timestamp de cancelación: el estado vive en `status_id`
+  // (→ appointment_statuses.name = 'cancelada') y el único timestamp
+  // disponible es `updated_at`. Resolvemos el id del estado y filtramos por él,
+  // usando `updated_at` como timestamp operativo del evento — aproximado: una
+  // edición posterior puede moverlo, suficiente para un feed de 24h.
+  const { data: cancelledStatuses, error: sErr } = await supabase
+    .from('appointment_statuses')
+    .select('id')
+    .eq('name', CANCELLED_STATUS_NAME);
+  if (sErr) throw sErr;
+  const cancelledIds = (cancelledStatuses ?? []).map((s) => s.id);
+
+  let cancels: unknown[] = [];
+  if (cancelledIds.length > 0) {
+    const { data, error: cErr } = await supabase
+      .from('appointments')
+      .select(SELECT)
+      .eq('doctor_id', doctorId)
+      .in('status_id', cancelledIds)
+      .gte('updated_at', since)
+      .order('updated_at', { ascending: false })
+      .limit(20);
+    if (cErr) throw cErr;
+    cancels = data ?? [];
+  }
 
   const items: PanelNotification[] = [];
 
@@ -77,8 +103,8 @@ export async function getRecentPanelNotifications(
     });
   }
 
-  for (const apt of (cancels ?? []) as unknown as RawAppointment[]) {
-    if (!apt.patient || !apt.cancelled_at) continue;
+  for (const apt of cancels as unknown as RawAppointment[]) {
+    if (!apt.patient) continue;
     items.push({
       id: `cancel-${apt.id}`,
       type: 'cancellation',
@@ -86,7 +112,7 @@ export async function getRecentPanelNotifications(
       patientId: apt.patient.id,
       patientName: apt.patient.full_name,
       appointmentStartTime: apt.start_time,
-      eventAt: apt.cancelled_at,
+      eventAt: apt.updated_at,
     });
   }
 
