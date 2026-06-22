@@ -12,7 +12,7 @@ import {
   useConsultationDiagnoses,
   useConsultationFamilyHistory,
 } from '@/hooks/useConsultation';
-import { computeBmi, type VitalsInput } from '@/services/vitals.service';
+import { computeBmi, lbToKg, kgToLb, type VitalsInput } from '@/services/vitals.service';
 import type { ConsultationUpdate } from '@/services/consultations.service';
 import DiagnosesSection from './DiagnosesSection';
 import PrescriptionsSection from './PrescriptionsSection';
@@ -37,7 +37,7 @@ interface VitalsFormState {
   respiratory_rate: string;
   temperature: string;
   spo2: string;
-  weight_kg: string;
+  weight_lb: string;
   height_cm: string;
 }
 
@@ -56,7 +56,7 @@ const EMPTY_VITALS: VitalsFormState = {
   respiratory_rate: '',
   temperature: '',
   spo2: '',
-  weight_kg: '',
+  weight_lb: '',
   height_cm: '',
 };
 
@@ -118,18 +118,20 @@ export default function ConsultaPage() {
         respiratory_rate: vitals.respiratory_rate?.toString() ?? '',
         temperature: vitals.temperature?.toString() ?? '',
         spo2: vitals.spo2?.toString() ?? '',
-        weight_kg: vitals.weight_kg?.toString() ?? '',
+        // weight_kg (DB, kg) → input en libras
+        weight_lb: vitals.weight_kg != null ? String(kgToLb(vitals.weight_kg)) : '',
         height_cm: vitals.height_cm?.toString() ?? '',
       });
     }
   }, [vitals?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // IMC calculado en vivo desde el formulario (no de la query)
+  // IMC calculado en vivo desde el formulario (no de la query). El peso se
+  // digita en libras → se convierte a kg para el cálculo (kg/m²).
   const bmiPreview = useMemo(() => {
-    const w = parseFloat(vitalsForm.weight_kg);
+    const wLb = parseFloat(vitalsForm.weight_lb);
     const h = parseFloat(vitalsForm.height_cm);
-    return computeBmi(isNaN(w) ? null : w, isNaN(h) ? null : h);
-  }, [vitalsForm.weight_kg, vitalsForm.height_cm]);
+    return computeBmi(isNaN(wLb) ? null : lbToKg(wLb), isNaN(h) ? null : h);
+  }, [vitalsForm.weight_lb, vitalsForm.height_cm]);
 
   // ─── Handlers ────────────────────────────────────────────────
   const handleSaveDraft = async () => {
@@ -388,13 +390,13 @@ export default function ConsultaPage() {
           />
           <NumberField
             label="Peso"
-            unit="kg"
+            unit="lb"
             step="0.1"
-            min={0.5} max={400}
-            value={vitalsForm.weight_kg}
+            min={1} max={900}
+            value={vitalsForm.weight_lb}
             disabled={readOnly}
-            onChange={(v) => setVitalsForm({ ...vitalsForm, weight_kg: v })}
-            warningCheck={validators.weightKg}
+            onChange={(v) => setVitalsForm({ ...vitalsForm, weight_lb: v })}
+            warningCheck={validators.weightLb}
           />
           <NumberField
             label="Talla"
@@ -431,7 +433,7 @@ export default function ConsultaPage() {
                         <svg className="w-3 h-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
                         </svg>
-                        IMC fuera de rango razonable. Verificá unidades de peso (kg) y talla (cm).
+                        IMC fuera de rango razonable. Verificá el peso (lb) y la talla (cm).
                       </p>
                     )}
                   </>
@@ -856,12 +858,10 @@ const validators = {
     if (v > 100) return 'SpO₂ no puede exceder 100%';
     return null;
   },
-  weightKg: (v: number) => {
-    if (v < 1) return 'Peso muy bajo — verificá';
-    if (v > 250) {
-      // 250 kg ≈ 550 lb. Si está entre 100-250 podría ser libras.
-      return '¿Tal vez ingresaste libras? Esperamos kg (1 lb ≈ 0.45 kg)';
-    }
+  weightLb: (v: number) => {
+    // Rangos en LIBRAS (el peso se digita en lb). 2 lb ≈ 0.9 kg · 700 lb ≈ 317 kg.
+    if (v < 2) return 'Peso muy bajo — verificá';
+    if (v > 700) return 'Peso fuera de rango — verificá';
     return null;
   },
   heightCm: (v: number) => {
@@ -1039,6 +1039,7 @@ function parseVitalsForm(f: VitalsFormState): VitalsInput {
     const n = parseFloat(s);
     return isNaN(n) ? null : n;
   };
+  const wLb = num(f.weight_lb);
   return {
     systolic_bp: num(f.systolic_bp),
     diastolic_bp: num(f.diastolic_bp),
@@ -1046,7 +1047,8 @@ function parseVitalsForm(f: VitalsFormState): VitalsInput {
     respiratory_rate: num(f.respiratory_rate),
     temperature: num(f.temperature),
     spo2: num(f.spo2),
-    weight_kg: num(f.weight_kg),
+    // El input es libras → se persiste en kg.
+    weight_kg: wLb === null ? null : lbToKg(wLb),
     height_cm: num(f.height_cm),
   };
 }

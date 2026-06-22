@@ -47,6 +47,26 @@ export interface BmiResult {
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 /**
+ * Conversión peso libras ⇄ kilogramos.
+ *
+ * El médico digita el peso en LIBRAS, pero Lucy almacena internamente en
+ * `weight_kg` (sin migración, sin reinterpretar históricos) y calcula el IMC
+ * con kg (`computeBmi`). Estos helpers son el ÚNICO punto de conversión:
+ *   - `lbToKg`: al guardar (input → DB). Redondea a 2 decimales (precisión
+ *     clínica suficiente y roundtrip limpio: 150 lb → 68.04 kg → 150.0 lb).
+ *   - `kgToLb`: al mostrar/hidratar (DB → input). Redondea a 1 decimal.
+ */
+const KG_PER_LB = 0.45359237; // 1 lb exactos en kg
+
+export function lbToKg(lb: number): number {
+  return Math.round(lb * KG_PER_LB * 100) / 100;
+}
+
+export function kgToLb(kg: number): number {
+  return Math.round((kg / KG_PER_LB) * 10) / 10;
+}
+
+/**
  * Calcula IMC y devuelve categoría OMS.
  * Devuelve null si faltan datos o son inválidos.
  */
