@@ -24,7 +24,7 @@ import {
   type DiagnosisStatus,
 } from '@/services/consultationDiagnoses.service';
 import type { ConsultationFamilyHistory } from '@/services/consultationFamilyHistory.service';
-import { computeBmi, type Vitals } from '@/services/vitals.service';
+import { computeBmi, lbToKg, kgToLb, type Vitals } from '@/services/vitals.service';
 import Combobox from '@/components/Combobox';
 
 /**
@@ -52,7 +52,7 @@ const VITALS_FIELDS: { key: VitalsField; label: string; unit: string; step?: str
   { key: 'respiratory_rate', label: 'Frecuencia respiratoria', unit: 'rpm' },
   { key: 'temperature', label: 'Temperatura', unit: '°C', step: '0.1' },
   { key: 'spo2', label: 'Sat. O₂', unit: '%' },
-  { key: 'weight_kg', label: 'Peso', unit: 'kg', step: '0.1' },
+  { key: 'weight_kg', label: 'Peso', unit: 'lb', step: '0.1' },
   { key: 'height_cm', label: 'Talla', unit: 'cm' },
 ];
 
@@ -128,7 +128,10 @@ export default function CorrectConsultationModal({
     systolic_bp: vStr(initialVitals?.systolic_bp), diastolic_bp: vStr(initialVitals?.diastolic_bp),
     heart_rate: vStr(initialVitals?.heart_rate), respiratory_rate: vStr(initialVitals?.respiratory_rate),
     temperature: vStr(initialVitals?.temperature), spo2: vStr(initialVitals?.spo2),
-    weight_kg: vStr(initialVitals?.weight_kg), height_cm: vStr(initialVitals?.height_cm),
+    // weight_kg vive en kg en DB pero se muestra/edita en libras (la clave del
+    // form sigue siendo weight_kg = VitalsField; el valor es lb).
+    weight_kg: initialVitals?.weight_kg != null ? String(kgToLb(initialVitals.weight_kg)) : '',
+    height_cm: vStr(initialVitals?.height_cm),
   }), [initialVitals]);
   const [vForm, setVForm] = useState<VitalsValues>(origVitals);
 
@@ -202,12 +205,13 @@ export default function CorrectConsultationModal({
       if (vForm[key].trim() === origVitals[key].trim()) continue;
       const t = vForm[key].trim();
       if (t !== '' && Number.isNaN(Number(t))) continue; // inválido → no incluir
-      vc[key] = t === '' ? null : Number(t);
+      // weight_kg se digita en libras → se persiste en kg.
+      vc[key] = t === '' ? null : (key === 'weight_kg' ? lbToKg(Number(t)) : Number(t));
       touched = true;
     }
     if (touched) {
-      const w = parseFloat(vForm.weight_kg), h = parseFloat(vForm.height_cm);
-      const b = computeBmi(isNaN(w) ? null : w, isNaN(h) ? null : h);
+      const wLb = parseFloat(vForm.weight_kg), h = parseFloat(vForm.height_cm);
+      const b = computeBmi(isNaN(wLb) ? null : lbToKg(wLb), isNaN(h) ? null : h);
       vc.bmi = b ? b.bmi : null;
     }
     return vc;
@@ -221,7 +225,11 @@ export default function CorrectConsultationModal({
   const hasChanges = hasText || hasReceta || hasDx || hasFh || hasVitals;
   const reasonOk = reason.trim().length > 0;
 
-  const bmiPreview = useMemo(() => computeBmi(parseFloat(vForm.weight_kg) || null, parseFloat(vForm.height_cm) || null), [vForm.weight_kg, vForm.height_cm]);
+  const bmiPreview = useMemo(() => {
+    const wLb = parseFloat(vForm.weight_kg); // el valor del form está en libras
+    const h = parseFloat(vForm.height_cm);
+    return computeBmi(isNaN(wLb) ? null : lbToKg(wLb), isNaN(h) ? null : h);
+  }, [vForm.weight_kg, vForm.height_cm]);
   const paWarn = (() => { const s = parseFloat(vForm.systolic_bp), d = parseFloat(vForm.diastolic_bp); return !isNaN(s) && !isNaN(d) && s <= d; })();
 
   // Ids ya usados (no duplicar)
