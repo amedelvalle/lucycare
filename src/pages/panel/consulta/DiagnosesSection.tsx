@@ -8,11 +8,7 @@ import {
   useRemoveConsultationDiagnosis,
 } from '@/hooks/useConsultation';
 import {
-  DIAGNOSIS_TYPES,
-  DIAGNOSIS_STATUSES,
   type ConsultationDiagnosis,
-  type DiagnosisType,
-  type DiagnosisStatus,
 } from '@/services/consultationDiagnoses.service';
 import Combobox from '@/components/Combobox';
 
@@ -114,11 +110,7 @@ function DiagnosisRow({
 }: {
   cd: ConsultationDiagnosis;
   readOnly: boolean;
-  onUpdate: (updates: {
-    diagnosis_type?: DiagnosisType;
-    diagnosis_status?: DiagnosisStatus;
-    notes?: string | null;
-  }) => void;
+  onUpdate: (updates: { notes?: string | null }) => void;
   onRemove: () => void;
 }) {
   const [notes, setNotes] = useState(cd.notes ?? '');
@@ -150,35 +142,6 @@ function DiagnosisRow({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <label className="block">
-          <span className="block text-[11px] text-gray-500 mb-0.5">Tipo</span>
-          <select
-            value={cd.diagnosis_type}
-            disabled={readOnly}
-            onChange={(e) => onUpdate({ diagnosis_type: e.target.value as DiagnosisType })}
-            className={selectCls}
-          >
-            {DIAGNOSIS_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="block text-[11px] text-gray-500 mb-0.5">Estado</span>
-          <select
-            value={cd.diagnosis_status}
-            disabled={readOnly}
-            onChange={(e) => onUpdate({ diagnosis_status: e.target.value as DiagnosisStatus })}
-            className={selectCls}
-          >
-            {DIAGNOSIS_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
       <label className="block">
         <span className="block text-[11px] text-gray-500 mb-0.5">Notas (opcional)</span>
         <input
@@ -207,5 +170,3 @@ const inputCls =
   'w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 bg-white text-gray-800 ' +
   'focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none ' +
   'disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed';
-
-const selectCls = inputCls + ' cursor-pointer';

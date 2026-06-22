@@ -19,8 +19,6 @@ import type {
 } from '@/services/consultations.service';
 import { DURATION_UNITS, type Prescription, type DurationUnit } from '@/services/prescriptions.service';
 import {
-  DIAGNOSIS_TYPES,
-  DIAGNOSIS_STATUSES,
   type ConsultationDiagnosis,
   type DiagnosisType,
   type DiagnosisStatus,
@@ -367,7 +365,7 @@ export default function CorrectConsultationModal({
                     </div>
                   </div>
                   {!d.removed && (
-                    <DxFieldsEditor type={d.type} status={d.status} notes={d.notes} disabled={isSubmitting}
+                    <DxFieldsEditor notes={d.notes} disabled={isSubmitting}
                       onChange={(patch) => setDx((p) => p.map((x) => x.id === d.id ? { ...x, ...patch } : x))} />
                   )}
                 </div>
@@ -379,7 +377,7 @@ export default function CorrectConsultationModal({
                   <p className="text-sm font-medium text-gray-900">{n.diagnosisLabel}<span className="ml-2 text-[11px] font-semibold text-emerald-700 uppercase">· nuevo</span></p>
                   <button type="button" disabled={isSubmitting} onClick={() => setDxAdded((p) => p.filter((x) => x.tempId !== n.tempId))} className="text-xs text-red-600 hover:text-red-700 disabled:opacity-50">Quitar</button>
                 </div>
-                <DxFieldsEditor type={n.type} status={n.status} notes={n.notes} disabled={isSubmitting}
+                <DxFieldsEditor notes={n.notes} disabled={isSubmitting}
                   onChange={(patch) => setDxAdded((p) => p.map((x) => x.tempId === n.tempId ? { ...x, ...patch } : x))} />
               </div>
             ))}
@@ -527,18 +525,10 @@ function SummaryBlock({ title, lines }: { title: string; lines: string[] }) {
   );
 }
 
-function DxFieldsEditor({ type, status, notes, disabled, onChange }: { type: DiagnosisType; status: DiagnosisStatus; notes: string; disabled: boolean; onChange: (patch: { type?: DiagnosisType; status?: DiagnosisStatus; notes?: string }) => void }) {
+function DxFieldsEditor({ notes, disabled, onChange }: { notes: string; disabled: boolean; onChange: (patch: { notes?: string }) => void }) {
   return (
     <div className="space-y-2 mt-2">
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Tipo</span>
-          <select value={type} disabled={disabled} onChange={(e) => onChange({ type: e.target.value as DiagnosisType })} className={selectCls}>{DIAGNOSIS_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
-        </label>
-        <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Estado</span>
-          <select value={status} disabled={disabled} onChange={(e) => onChange({ status: e.target.value as DiagnosisStatus })} className={selectCls}>{DIAGNOSIS_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
-        </label>
-      </div>
-      <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Notas</span>
+      <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Notas (opcional)</span>
         <textarea rows={2} value={notes} disabled={disabled} onChange={(e) => onChange({ notes: e.target.value })} className={textareaCls} />
       </label>
     </div>
