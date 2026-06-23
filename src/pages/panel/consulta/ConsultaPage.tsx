@@ -645,6 +645,7 @@ export default function ConsultaPage() {
             history_present_illness: ctx.history_present_illness ?? '',
             physical_exam: ctx.physical_exam ?? '',
             internal_analysis: ctx.internal_analysis ?? '',
+            family_history_notes: ctx.family_history_notes ?? '',
             plan: ctx.plan ?? '',
           }}
           initialPrescriptions={prescriptions}

@@ -357,13 +357,16 @@ export async function signConsultation(consultationId: string): Promise<void> {
 
 // ─── Corrección controlada de consulta firmada (B2) ───────────────────
 
-/** Campos de texto corregibles por la UI de corrección (subset del whitelist
- * de amend_consultation; diagnósticos/antecedentes/vitales NO acá — B1.5). */
+/** Campos de texto corregibles por la UI de corrección. Todos están en el
+ * whitelist server-side de amend_consultation (s7_31). `family_history_notes`
+ * = antecedentes familiares como texto libre (PR-E2; la corrección estructurada
+ * de antecedentes queda como histórico read-only). */
 export type ConsultationTextField =
   | 'chief_complaint'
   | 'history_present_illness'
   | 'physical_exam'
   | 'internal_analysis'
+  | 'family_history_notes'
   | 'plan';
 
 export type ConsultationTextChanges = Partial<Record<ConsultationTextField, string | null>>;

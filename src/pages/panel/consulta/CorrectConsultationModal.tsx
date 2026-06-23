@@ -5,8 +5,6 @@ import {
   useCreateMedication,
   useDiagnosesSearch,
   useCreateDiagnosis,
-  useFamilyHistorySearch,
-  useCreateFamilyHistory,
 } from '@/hooks/useConsultation';
 import type {
   ConsultationTextField,
@@ -66,8 +64,6 @@ interface NewRx extends RxFields { tempId: string; medicationId: string; medicat
 interface ExistingDx { id: string; diagnosisId: string; diagnosisLabel: string; type: DiagnosisType; status: DiagnosisStatus; notes: string; removed: boolean; orig: { diagnosisId: string; type: DiagnosisType; status: DiagnosisStatus; notes: string }; }
 interface NewDx { tempId: string; diagnosisId: string; diagnosisLabel: string; type: DiagnosisType; status: DiagnosisStatus; notes: string; }
 
-interface ExistingFh { id: string; familyHistoryId: string; familyHistoryLabel: string; notes: string; removed: boolean; orig: { notes: string } }
-interface NewFh { tempId: string; familyHistoryId: string; familyHistoryLabel: string; notes: string; }
 
 interface Props {
   consultationId: string;
@@ -116,12 +112,8 @@ export default function CorrectConsultationModal({
   const [dxAdded, setDxAdded] = useState<NewDx[]>([]);
   const [dxPicker, setDxPicker] = useState<{ mode: 'add' } | { mode: 'sub'; id: string } | null>(null);
 
-  // Antecedentes
-  const [fh, setFh] = useState<ExistingFh[]>(() =>
-    initialFamilyHistory.map((f) => ({ id: f.id, familyHistoryId: f.family_history_id, familyHistoryLabel: f.family_history.name, notes: f.notes ?? '', removed: false, orig: { notes: f.notes ?? '' } }))
-  );
-  const [fhAdded, setFhAdded] = useState<NewFh[]>([]);
-  const [fhPickerOpen, setFhPickerOpen] = useState(false);
+  // Antecedentes: solo texto libre (family_history_notes vía `text`). Los
+  // estructurados previos se muestran read-only desde initialFamilyHistory.
 
   // Vitales
   const origVitals = useMemo<VitalsValues>(() => ({
@@ -149,17 +141,21 @@ export default function CorrectConsultationModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || isSubmitting) return;
       if (showSummary) setShowSummary(false);
-      else if (rxPicker || dxPicker || fhPickerOpen) { setRxPicker(null); setDxPicker(null); setFhPickerOpen(false); }
+      else if (rxPicker || dxPicker) { setRxPicker(null); setDxPicker(null); }
       else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isSubmitting, showSummary, rxPicker, dxPicker, fhPickerOpen, onClose]);
+  }, [isSubmitting, showSummary, rxPicker, dxPicker, onClose]);
 
   // ─── Diffs → payload ───
   const textChanges = useMemo<ConsultationTextChanges>(() => {
     const out: ConsultationTextChanges = {};
     for (const { key } of TEXT_FIELDS) if (text[key].trim() !== initialText[key].trim()) out[key] = text[key].trim() === '' ? null : text[key];
+    // Antecedentes familiares (texto libre) — se corrige por p_consultation_changes
+    // (family_history_notes ya está en el whitelist de amend_consultation, s7_31).
+    if (text.family_history_notes.trim() !== initialText.family_history_notes.trim())
+      out.family_history_notes = text.family_history_notes.trim() === '' ? null : text.family_history_notes;
     return out;
   }, [text, initialText]);
 
@@ -188,15 +184,10 @@ export default function CorrectConsultationModal({
     return ops;
   }, [dx, dxAdded]);
 
-  const familyHistoryOps = useMemo<FamilyHistoryOp[]>(() => {
-    const ops: FamilyHistoryOp[] = [];
-    for (const f of fh) {
-      if (f.removed) { ops.push({ op: 'remove', id: f.id }); continue; }
-      if (norm(f.notes) !== norm(f.orig.notes)) ops.push({ op: 'replace', id: f.id, notes: f.notes.trim() });
-    }
-    for (const n of fhAdded) ops.push({ op: 'add', family_history_id: n.familyHistoryId, notes: n.notes.trim() || null });
-    return ops;
-  }, [fh, fhAdded]);
+  // PR-E2: los antecedentes estructurados quedan histórico/solo lectura — NO se
+  // generan ops de antecedentes. La corrección de antecedentes va por el texto
+  // libre (family_history_notes) en textChanges/p_consultation_changes.
+  const familyHistoryOps: FamilyHistoryOp[] = [];
 
   const vitalsChanges = useMemo<VitalsChanges>(() => {
     const vc: VitalsChanges = {};
@@ -217,12 +208,12 @@ export default function CorrectConsultationModal({
     return vc;
   }, [vForm, origVitals]);
 
-  const hasText = Object.keys(textChanges).length > 0;
+  const hasClinicalText = TEXT_FIELDS.some(({ key }) => text[key].trim() !== initialText[key].trim());
+  const hasFhNotes = text.family_history_notes.trim() !== initialText.family_history_notes.trim();
   const hasReceta = prescriptionOps.length > 0;
   const hasDx = diagnosisOps.length > 0;
-  const hasFh = familyHistoryOps.length > 0;
   const hasVitals = Object.keys(vitalsChanges).length > 0;
-  const hasChanges = hasText || hasReceta || hasDx || hasFh || hasVitals;
+  const hasChanges = hasClinicalText || hasFhNotes || hasReceta || hasDx || hasVitals;
   const reasonOk = reason.trim().length > 0;
 
   const bmiPreview = useMemo(() => {
@@ -235,7 +226,6 @@ export default function CorrectConsultationModal({
   // Ids ya usados (no duplicar)
   const usedMedIds = useMemo(() => new Set<string>([...existing.filter((r) => !r.removed).map((r) => r.medicationId), ...added.map((n) => n.medicationId)]), [existing, added]);
   const usedDxIds = useMemo(() => new Set<string>([...dx.filter((d) => !d.removed).map((d) => d.diagnosisId), ...dxAdded.map((n) => n.diagnosisId)]), [dx, dxAdded]);
-  const usedFhIds = useMemo(() => new Set<string>([...fh.filter((f) => !f.removed).map((f) => f.familyHistoryId), ...fhAdded.map((n) => n.familyHistoryId)]), [fh, fhAdded]);
 
   // ─── Pickers ───
   const pickMedication = (med: { id: string; label: string }) => {
@@ -248,11 +238,6 @@ export default function CorrectConsultationModal({
     else setDxAdded((p) => [...p, { tempId: `dx-${Date.now()}-${p.length}`, diagnosisId: d.id, diagnosisLabel: d.label, type: 'presuntivo', status: 'activo', notes: '' }]);
     setDxPicker(null);
   };
-  const pickFh = (f: { id: string; label: string }) => {
-    setFhAdded((p) => [...p, { tempId: `fh-${Date.now()}-${p.length}`, familyHistoryId: f.id, familyHistoryLabel: f.label, notes: '' }]);
-    setFhPickerOpen(false);
-  };
-
   const doSubmit = async () => {
     setErrorMsg(null);
     try {
@@ -287,7 +272,7 @@ export default function CorrectConsultationModal({
         </div>
 
         {/* ─── Texto clínico ─── */}
-        <Accordion title="Texto clínico" modified={hasText} isOpen={open.has('texto')} onToggle={() => toggle('texto')}>
+        <Accordion title="Texto clínico" modified={hasClinicalText} isOpen={open.has('texto')} onToggle={() => toggle('texto')}>
           <div className="space-y-3">
             {TEXT_FIELDS.map(({ key, label, rows }) => {
               const changed = text[key].trim() !== initialText[key].trim();
@@ -323,35 +308,35 @@ export default function CorrectConsultationModal({
           <p className="text-[11px] text-gray-400 mt-1">Dejá un campo vacío para borrar ese signo.</p>
         </Accordion>
 
-        {/* ─── Antecedentes familiares ─── */}
-        <Accordion title="Antecedentes familiares" modified={hasFh} isOpen={open.has('antecedentes')} onToggle={() => toggle('antecedentes')}>
-          <div className="space-y-2">
-            {fh.length === 0 && fhAdded.length === 0 && <p className="text-xs text-gray-400 italic">Sin antecedentes registrados.</p>}
-            {fh.map((f) => (
-              <div key={f.id} className={`rounded-lg p-3 border ${f.removed ? 'bg-red-50/50 border-red-200' : 'bg-gray-50 border-transparent'}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <p className={`text-sm font-medium ${f.removed ? 'text-red-700 line-through' : 'text-gray-900'}`}>{f.familyHistoryLabel}{!f.removed && norm(f.notes) !== norm(f.orig.notes) && <ModBadge />}</p>
-                  <button type="button" disabled={isSubmitting} onClick={() => setFh((p) => p.map((x) => x.id === f.id ? { ...x, removed: !x.removed } : x))} className={`text-xs disabled:opacity-50 ${f.removed ? 'text-gray-600 hover:text-gray-800' : 'text-red-600 hover:text-red-700'}`}>{f.removed ? 'Deshacer' : 'Quitar'}</button>
-                </div>
-                {!f.removed && <textarea rows={2} value={f.notes} disabled={isSubmitting} onChange={(e) => setFh((p) => p.map((x) => x.id === f.id ? { ...x, notes: e.target.value } : x))} placeholder="Notas (parentesco, edad de aparición, etc.)" className={`${textareaCls} mt-2`} />}
-              </div>
-            ))}
-            {fhAdded.map((n) => (
-              <div key={n.tempId} className="rounded-lg p-3 border border-emerald-200 bg-emerald-50/40">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-gray-900">{n.familyHistoryLabel}<span className="ml-2 text-[11px] font-semibold text-emerald-700 uppercase">· nuevo</span></p>
-                  <button type="button" disabled={isSubmitting} onClick={() => setFhAdded((p) => p.filter((x) => x.tempId !== n.tempId))} className="text-xs text-red-600 hover:text-red-700 disabled:opacity-50">Quitar</button>
-                </div>
-                <textarea rows={2} value={n.notes} disabled={isSubmitting} onChange={(e) => setFhAdded((p) => p.map((x) => x.tempId === n.tempId ? { ...x, notes: e.target.value } : x))} placeholder="Notas" className={`${textareaCls} mt-2`} />
-              </div>
-            ))}
+        {/* ─── Antecedentes familiares (texto libre, corregible) ─── */}
+        <Accordion title="Antecedentes familiares" modified={hasFhNotes} isOpen={open.has('antecedentes')} onToggle={() => toggle('antecedentes')}>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Antecedentes familiares{hasFhNotes && <ModBadge />}
+            </label>
+            <textarea
+              rows={4}
+              value={text.family_history_notes}
+              disabled={isSubmitting}
+              onChange={(e) => setText({ ...text, family_history_notes: e.target.value })}
+              placeholder="Ej: Padre con hipertensión arterial; madre con diabetes tipo 2 (dx a los 50)..."
+              className={textareaCls}
+            />
           </div>
-          {!fhPickerOpen ? (
-            <AddButton label="Agregar antecedente" onClick={() => setFhPickerOpen(true)} disabled={isSubmitting} />
-          ) : (
-            <div className="bg-gray-50 rounded-lg p-3 mt-2">
-              <FamilyHistoryPicker doctorId={doctorId} excludeIds={usedFhIds} onPick={pickFh} />
-              <CancelLink onClick={() => setFhPickerOpen(false)} />
+
+          {/* Histórico: antecedentes estructurados de versiones anteriores
+              (solo lectura). No editables en corrección; se conservan tal cual. */}
+          {initialFamilyHistory.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs text-gray-500 mb-1.5">Antecedentes registrados anteriormente (solo lectura)</p>
+              <div className="space-y-2">
+                {initialFamilyHistory.map((f) => (
+                  <div key={f.id} className="rounded-lg p-3 bg-gray-50 border border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">{f.family_history.name}</p>
+                    {f.notes && <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">{f.notes}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </Accordion>
@@ -468,7 +453,7 @@ export default function CorrectConsultationModal({
 
             <SummaryBlock title="Texto clínico" lines={textSummary(text, initialText)} />
             <SummaryBlock title="Signos vitales" lines={vitalsSummary(vForm, origVitals)} />
-            <SummaryBlock title="Antecedentes" lines={fhSummary(fh, fhAdded)} />
+            <SummaryBlock title="Antecedentes" lines={hasFhNotes ? ['Modificar: Antecedentes familiares'] : []} />
             <SummaryBlock title="Diagnósticos" lines={dxSummary(dx, dxAdded)} />
             <SummaryBlock title="Receta" lines={recetaSummary(existing, added)} />
 
@@ -621,20 +606,6 @@ function DiagnosisPicker({ doctorId, excludeIds, onPick }: { doctorId: string; e
   );
 }
 
-function FamilyHistoryPicker({ doctorId, excludeIds, onPick }: { doctorId: string; excludeIds: Set<string>; onPick: (f: { id: string; label: string }) => void }) {
-  const [search, setSearch] = useState(''); const [deb, setDeb] = useState('');
-  useEffect(() => { const t = setTimeout(() => setDeb(search), 250); return () => clearTimeout(t); }, [search]);
-  const { data: items = [], isFetching } = useFamilyHistorySearch(doctorId, deb);
-  const create = useCreateFamilyHistory(doctorId);
-  return (
-    <Combobox items={items.filter((it) => !excludeIds.has(it.id))} searchValue={search} onSearch={setSearch}
-      onSelect={(it) => onPick({ id: it.id, label: it.name })}
-      onCreate={async (name) => { const c = await create.mutateAsync({ name }); onPick({ id: c.id, label: c.name }); }}
-      getKey={(it) => it.id} getLabel={(it) => it.name} getSubLabel={(it) => it.description || null}
-      placeholder="Buscar antecedente…" disabled={create.isPending} isLoading={isFetching} createLabel={(i) => `Crear nuevo antecedente: "${i}"`} />
-  );
-}
-
 // ─── Resúmenes ────────────────────────────────────────────────────────
 
 function textSummary(t: TextValues, init: TextValues): string[] {
@@ -654,12 +625,6 @@ function dxSummary(rows: ExistingDx[], addedRows: NewDx[]): string[] {
     else if (d.type !== d.orig.type || d.status !== d.orig.status || norm(d.notes) !== norm(d.orig.notes)) out.push(`Modificar: ${d.diagnosisLabel}`);
   }
   for (const n of addedRows) out.push(`Agregar: ${n.diagnosisLabel}`);
-  return out;
-}
-function fhSummary(rows: ExistingFh[], addedRows: NewFh[]): string[] {
-  const out: string[] = [];
-  for (const f of rows) { if (f.removed) out.push(`Quitar: ${f.familyHistoryLabel}`); else if (norm(f.notes) !== norm(f.orig.notes)) out.push(`Modificar notas: ${f.familyHistoryLabel}`); }
-  for (const n of addedRows) out.push(`Agregar: ${n.familyHistoryLabel}`);
   return out;
 }
 function recetaSummary(existing: ExistingRx[], added: NewRx[]): string[] {
