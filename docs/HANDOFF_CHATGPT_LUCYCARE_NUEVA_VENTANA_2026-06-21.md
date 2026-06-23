@@ -9,13 +9,25 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `352b44a` (*feat(panel): "Mi lista de espera" para médico/asistente (s7_51) (#163)*).
-- **PRs mergeados:** **#1–#164**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3).
+- **HEAD de `main`:** `409f608` (*feat(consulta): corrección post-firma de antecedentes texto libre (PR-E2) (#172)*).
+- **PRs mergeados:** **#1–#172**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#172 NO agregaron migración nueva** (frontend-only; ver §2bis).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
 > ⚠️ **Actualización (cierre #163):** este handoff se redactó con #163 abierto; **#163 quedó MERGEADO** y **`s7_51` aplicada/validada**. La rama `claude/panel-waitlist` fue borrada (local + remoto). §3–§5 quedan como **registro histórico** del frente, ya cerrado.
+
+### 2bis. Serie correcciones clínicas / receta / PDF (#167–#172) — CERRADA, frontend-only, sin migración
+Cierra los 5 puntos de las observaciones del owner sobre consulta/receta/PDF. **Ninguno agregó migración** (`s7_51` sin cambios).
+- **#167 (PR-A)** — PDF de receta limpio: helper `doctorTitleName` (evita "Dr. Dr."/"Dra. Dra."), fechas emisión/corrección una sola vez en el encabezado, dosis **rotulada** (Dosis/Frecuencia/Duración/Indicaciones) sin inventar datos. Solo `RecetaPrint.tsx`.
+- **#168 (PR-B)** — Diagnósticos sin Tipo/Estado en la UI (consulta + modal de corrección); quedan nombre + Notas; defaults internos `presuntivo`/`activo` por `addConsultationDiagnosis`; columnas/datos intactos.
+- **#169 (PR-C)** — Orden en el modal de corrección de receta: "Agregar" arriba + nuevos arriba (solo display del modal; orden persistido y PDF **no cambian** — `prescriptions.id` es UUID).
+- **#170 (PR-D)** — Peso en **libras** con almacenamiento interno en `weight_kg` (helpers `lbToKg`/`kgToLb`); IMC con kg; sin reinterpretar históricos.
+- **#171 (PR-E1)** — Antecedentes familiares **texto libre** en consulta normal (ligado a `consultations.family_history_notes`); estructurados previos read-only; catálogo oculto para nuevos.
+- **#172 (PR-E2)** — Corrección **post-firma** de antecedentes texto libre vía `p_consultation_changes`; **sin migración** porque `amend_consultation` (`s7_31`) ya whitelisteaba `family_history_notes`; estructurados read-only, sin `familyHistoryOps`.
+- **Validación de la serie:** `tsc`+`build` por PR, fixtures aisladas / paciente demo (Pepe Toro), cleanup 0 residuales, preview + móvil 360/390/430, OK visual del owner por PR. **Regla vigente:** jamás Katherine ni datos reales sensibles, ni en read-only — usar fixtures aisladas o paciente demo.
+
+> Otro cierre frontend-only post-#163: **#166** — fix del 400 del `NotificationBell` (la query usaba `appointments.cancelled_at` inexistente; se reescribió por `status_id`='cancelada' + `updated_at`). Sin migración.
 
 ### Arranque obligatorio
 ```bash
@@ -25,7 +37,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `352b44a` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `409f608` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
