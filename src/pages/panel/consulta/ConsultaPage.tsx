@@ -27,6 +27,7 @@ interface FormState {
   history_present_illness: string;
   physical_exam: string;
   internal_analysis: string;
+  family_history_notes: string;
   plan: string;
 }
 
@@ -46,6 +47,7 @@ const EMPTY_FORM: FormState = {
   history_present_illness: '',
   physical_exam: '',
   internal_analysis: '',
+  family_history_notes: '',
   plan: '',
 };
 
@@ -100,6 +102,7 @@ export default function ConsultaPage() {
         history_present_illness: ctx.history_present_illness ?? '',
         physical_exam: ctx.physical_exam ?? '',
         internal_analysis: ctx.internal_analysis ?? '',
+        family_history_notes: ctx.family_history_notes ?? '',
         plan: ctx.plan ?? '',
       });
     }
@@ -141,6 +144,7 @@ export default function ConsultaPage() {
       history_present_illness: form.history_present_illness || null,
       physical_exam: form.physical_exam || null,
       internal_analysis: form.internal_analysis || null,
+      family_history_notes: form.family_history_notes || null,
       plan: form.plan || null,
     };
     const vitalsInput = parseVitalsForm(vitalsForm);
@@ -454,16 +458,37 @@ export default function ConsultaPage() {
         })()}
       </Section>
 
-      {/* ─── Sección: Antecedentes familiares ─────────────────── */}
+      {/* ─── Sección: Antecedentes familiares (texto libre) ───── */}
       <Section
         title="Antecedentes familiares"
-        subtitle="Busca en tu catálogo o agrega uno nuevo. Por cada antecedente podés escribir detalles específicos (parentesco, edad de aparición, etc.)"
+        subtitle="Escribilos en texto libre (parentesco, edad de aparición, complicaciones, etc.)."
       >
-        <AntecedentesSection
-          consultationId={ctx.id}
-          doctorId={ctx.doctor_id}
-          readOnly={readOnly}
-        />
+        <Field label="Antecedentes familiares">
+          <textarea
+            rows={4}
+            value={form.family_history_notes}
+            disabled={readOnly}
+            onChange={(e) => setForm({ ...form, family_history_notes: e.target.value })}
+            placeholder="Ej: Padre con hipertensión arterial; madre con diabetes tipo 2 (dx a los 50)..."
+            className={textareaCls}
+          />
+        </Field>
+
+        {/* Histórico: antecedentes estructurados de versiones anteriores (solo
+            lectura). No se editan ni se borran; los nuevos van en el texto
+            libre de arriba. Solo se muestran si la consulta ya los tenía. */}
+        {familyHistory.length > 0 && (
+          <div className="mt-1">
+            <p className="text-xs text-gray-500 mb-1.5">
+              Antecedentes registrados anteriormente (solo lectura)
+            </p>
+            <AntecedentesSection
+              consultationId={ctx.id}
+              doctorId={ctx.doctor_id}
+              readOnly
+            />
+          </div>
+        )}
       </Section>
 
       {/* ─── Sección: Diagnósticos ──────────────────────────── */}
