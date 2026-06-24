@@ -8,6 +8,10 @@
  * brief de las últimas consultas.
  *
  * Seguridad / scoping (defensa en profundidad):
+ *  - GATE DE ROL: solo el médico (`isDoctorContext === true`) obtiene datos. Un
+ *    asistente puede tener `doctorId` (useClinicContext se lo entrega), así que
+ *    `doctorId` NO basta. Sin contexto médico → payload vacío ANTES de cualquier
+ *    query (no se consulta `patients` ni alergias/tipo de sangre/notas/clínica).
  *  - SOLO consultas `status='signed'` ("atención clínica documentada").
  *  - Filtro EXPLÍCITO por `patient_id` + `doctor_id` (no se confía solo en RLS).
  *  - La RLS clínica (s7_26/s7_28/s7_29) ya gatea por `doctor_id =
@@ -91,15 +95,24 @@ const clean = (s: string | null | undefined): string | null => {
  * Devuelve el resumen rápido del paciente para el médico.
  * @param patientId  ficha del paciente (patients.id).
  * @param doctorId   médico actual (de useClinicContext). Sin él → payload vacío.
+ * @param isDoctorContext  `true` SOLO si el usuario es médico (`role==='doctor'`).
+ *                         Cualquier otro valor → payload vacío ANTES de tocar la
+ *                         DB. Un asistente puede traer `doctorId`, así que este
+ *                         flag es el gate real, no `doctorId`.
  * @param currentConsultationId  si se pasa, se excluye del historial (es la
  *                               consulta en curso, no "previa").
  */
 export async function getPatientQuickSummary(
   patientId: string,
   doctorId: string | null | undefined,
+  isDoctorContext: boolean,
   currentConsultationId?: string,
 ): Promise<PatientQuickSummary> {
-  // Gate de contenido clínico: sin médico no se devuelve nada clínico.
+  // Gate de ROL (primero, antes de CUALQUIER query): solo el médico ve datos.
+  // Asistente/paciente/admin/rol desconocido → vacío sin tocar `patients` ni
+  // alergias/tipo de sangre/notas. No basta con `doctorId` (el asistente lo trae).
+  if (isDoctorContext !== true) return emptySummary(patientId);
+  // Gate de contenido clínico: sin médico/ficha no se devuelve nada clínico.
   if (!patientId || !doctorId) return emptySummary(patientId);
 
   // 1. Consultas FIRMADAS del paciente con este médico (excl. la actual),
