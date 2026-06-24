@@ -9,9 +9,9 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `053346d` (*feat(consulta): tarjeta "Resumen rápido del paciente" (PR-2) (#175)*).
-- **PRs mergeados:** **#1–#175**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#175 NO agregaron migración nueva** (frontend-only; ver §2bis y §2ter).
+- **HEAD de `main`:** `446a4c4` (*feat(panel): tarjeta "Primeros pasos" en el dashboard médico (Onboarding PR-2) (#178)*).
+- **PRs mergeados:** **#1–#178**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#178 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter y §2quater).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
@@ -39,6 +39,18 @@ Ayuda breve dentro de la consulta para que el médico entienda en <10s su histor
   - Validado: `tsc`+`build` + **smoke SSR 16/16** (componente real: médico+historia → tarjeta con todo el contenido; asistente / rol undefined / `hasHistory=false` / error / carga → no se renderiza) + **preview en vivo bajo sesión real de Camilo (RLS)** sobre **paciente demo (Pepe Toro)** + móvil 360/390/430 sin overflow + 0 errores de consola + 0 residuales.
 - **Regla de validación vinculante:** fixtures aisladas / paciente demo (Pepe Toro), **jamás Katherine ni datos reales sensibles**, ni en read-only.
 
+### 2quater. Frente "Onboarding médico operativo V1" (#177–#178) — CERRADO, frontend-only, sin migración
+Ayuda dentro del panel para que un médico **ya operativo** entienda qué le falta para quedar **visible y reservable**. **Alcance V1 = solo Gate 2 (configuración en panel); Gate 1 (reclamo/habilitación por LucyAdmin) queda FUERA de V1.** Ninguno agregó migración (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**.
+- **#177 (PR-1) read model `doctorActivation.service.ts` + hook `useDoctorActivation`** — `getDoctorActivation(doctorId, clinicId, isDoctorContext)` → `{ steps, completedCount, total, allDone, clinicStatus }`, read-only, sin UI. **Checklist principal = 5 pasos self-service** (cuentan para el progreso): (1) completar perfil (foto+especialidad), (2) configurar agenda/disponibilidad, (3) agregar servicios, (4) activar reserva en línea (`booking_enabled`), (5) revisar publicación / cómo lo ven los pacientes (`is_published`). `done` por **señal real** (reusa `getMyDoctorProfile`/`getMyAvailabilityRules`/`listDoctorServices` + query read-only de `clinics`).
+  - **`clinicStatus` = info NO bloqueante** (`{ label, complete, actionable:false, href:null, message }`): la ubicación de la clínica solo la edita LucyAdmin (`admin_update_doctor_clinic`), así que **no es un paso del médico y NO suma ni resta progreso** (`allDone` depende solo de los 5).
+  - **Scoping (igual que el resumen rápido):** gate de rol `isDoctorContext` → vacío seguro **antes de cualquier query** si no es médico (`doctorId` solo NO basta); verdad de la sesión (`getMyDoctorProfile`, RLS doctor-scoped); ids del caller solo como verificación de consistencia (mismatch → vacío sin leer clínica/agenda/servicios); nunca cross-médico/cross-clínica.
+  - Validado: `tsc`+`build` + smoke 17/17 (no-médico/asistente → vacío sin queries; clínica incompleta NO bloquea `allDone`; sesión real de Camilo/RLS = 4/5, le falta foto).
+- **#178 (PR-2) tarjeta UI `DoctorActivationCard.tsx`** — montada en el dashboard (`/panel`, **arriba de las métricas**). "Primeros pasos para activar tu perfil": progreso "**N de 5 pasos listos**" + barra, lista de los 5 pasos (listo/pendiente por señal real; pendiente → link directo), `clinicStatus` **discreto** (solo el mensaje de soporte si está incompleta; si completa se omite).
+  - **Gate VISUAL:** solo `role==='doctor'` (nunca asistente/admin/paciente/null; `doctorId` solo NO es criterio), **se oculta si `allDone`** (V1: no dejar 5/5 fijo), payload vacío, error o carga.
+  - **Reemplaza** el banner de "Completá tu perfil con una foto" (la foto es parte del paso "Completá tu perfil") → sin duplicar.
+  - Validado: `tsc`+`build` + smoke SSR 13/13 (gates negativos) + preview en vivo bajo sesión real de Camilo (RLS) → 4/5, móvil 360/390/430 sin overflow, 0 errores de consola.
+- **Regla de validación vinculante:** fixtures aisladas / paciente demo (Camilo/Pepe Toro), **jamás Katherine ni datos reales sensibles**.
+
 ### Arranque obligatorio
 ```bash
 git fetch origin
@@ -47,7 +59,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `053346d` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `446a4c4` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
@@ -145,7 +157,7 @@ Sincronizá y confirmá estado:
   git log --oneline -5 && git status --short
 
 Estado esperado de main:
-- HEAD 053346d · PRs #1–#175 · migraciones aplicadas hasta s7_51.
+- HEAD 446a4c4 · PRs #1–#178 · migraciones aplicadas hasta s7_51.
 - main == origin/main · árbol limpio.
 - tsc --noEmit OK · npm run build OK.
 
@@ -156,10 +168,12 @@ Leé en este orden:
 
 CERRADO/LIVE en main (sin frente abierto): "Mi lista de espera" en panel
 médico/asistente (#163 / s7_51 aplicada), serie correcciones clínicas/receta/PDF
-(#167–#172), y frente "Resumen rápido del paciente" — read model
-PatientQuickSummary (#174 PR-1, servicio+hook, read-only, sin UI) + tarjeta UI
-QuickSummaryCard en la consulta (#175 PR-2). Todo frontend-only, SIN migración
-nueva. Migraciones aplicadas hasta s7_51.
+(#167–#172), frente "Resumen rápido del paciente" — read model
+PatientQuickSummary (#174 PR-1) + tarjeta UI QuickSummaryCard en la consulta
+(#175 PR-2), y frente "Onboarding médico operativo V1" — read model
+doctorActivation/useDoctorActivation (#177 PR-1) + tarjeta "Primeros pasos" en
+el dashboard (#178 PR-2). Todo frontend-only, SIN migración nueva. Migraciones
+aplicadas hasta s7_51.
 
 Recordatorio de scoping del "Resumen rápido": gate de rol isDoctorContext →
 vacío seguro antes de cualquier query si no es médico (doctorId solo NO basta);
