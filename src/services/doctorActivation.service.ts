@@ -2,8 +2,15 @@
  * Read model "Activación del médico" (Onboarding operativo — PR-1).
  *
  * Calcula — SOLO LECTURA — el checklist de Gate 2 (configuración en panel) para
- * un médico que YA es operativo: los pasos que le faltan para quedar **visible y
- * reservable**. NO cubre Gate 1 (reclamo/habilitación por LucyAdmin).
+ * un médico que YA es operativo: los pasos **self-service** que le faltan para
+ * quedar **visible y reservable**. NO cubre Gate 1 (reclamo/habilitación por
+ * LucyAdmin).
+ *
+ * Regla de producto: el checklist principal (`steps`) responde "¿qué puede hacer
+ * el médico AHORA para quedar visible y reservable?". Solo pasos que el médico
+ * resuelve por sí mismo cuentan para el progreso (`completedCount`/`total`/
+ * `allDone`). Lo que depende de LucyAdmin/soporte (datos de clínica) va aparte,
+ * como info **no bloqueante** (`clinicStatus`).
  *
  * Seguridad / scoping (mismo criterio que el "Resumen rápido del paciente"):
  *  - GATE DE ROL: solo médico (`isDoctorContext === true`). Un asistente trae
@@ -22,9 +29,9 @@ import { getMyDoctorProfile } from './doctorProfile.service';
 import { getMyAvailabilityRules } from './availability.service';
 import { listDoctorServices } from './services.service';
 
+/** Pasos self-service del checklist principal (cuentan para el progreso). */
 export type DoctorActivationStepKey =
   | 'profile'
-  | 'clinic'
   | 'availability'
   | 'services'
   | 'booking'
@@ -35,18 +42,44 @@ export interface DoctorActivationStep {
   /** Copy no técnico, listo para la UI (PR-2). */
   label: string;
   done: boolean;
-  /** Pantalla del panel que resuelve el paso. `null` si no es self-service. */
-  href: string | null;
-  /** `false` = el médico no puede resolverlo solo (ej. clínica = admin/soporte). */
-  actionable: boolean;
+  /** Pantalla del panel que el médico abre para resolver el paso (self-service). */
+  href: string;
+}
+
+/**
+ * Estado de los datos de clínica — info NO bloqueante. La ubicación
+ * (nombre/dirección/depto/muni) hoy solo la edita LucyAdmin
+ * (`admin_update_doctor_clinic`), así que NO es un paso accionable del médico
+ * y NO cuenta para el progreso principal.
+ */
+export interface ClinicStatus {
+  label: string;
+  complete: boolean;
+  actionable: false;
+  href: null;
+  /** Mensaje cuando faltan datos; `null` si está completa. */
+  message: string | null;
 }
 
 export interface DoctorActivation {
   doctorId: string | null;
+  /** Checklist principal: solo pasos self-service. */
   steps: DoctorActivationStep[];
+  /** Pasos self-service completados (no incluye clínica). */
   completedCount: number;
+  /** Total de pasos self-service. */
   total: number;
+  /** True solo si TODOS los pasos self-service están listos (clínica no influye). */
   allDone: boolean;
+  /** Datos de clínica: info no bloqueante, fuera del progreso principal. */
+  clinicStatus: ClinicStatus;
+}
+
+const CLINIC_INCOMPLETE_MESSAGE =
+  'Contactá a soporte para actualizar los datos de tu clínica.';
+
+function emptyClinicStatus(): ClinicStatus {
+  return { label: 'Datos de clínica', complete: false, actionable: false, href: null, message: null };
 }
 
 function emptyActivation(doctorId: string | null | undefined): DoctorActivation {
@@ -56,6 +89,7 @@ function emptyActivation(doctorId: string | null | undefined): DoctorActivation 
     completedCount: 0,
     total: 0,
     allDone: false,
+    clinicStatus: emptyClinicStatus(),
   };
 }
 
@@ -102,38 +136,46 @@ export async function getDoctorActivation(
     | { name: string | null; address_line: string | null; department_id: string | null; municipality_id: string | null }
     | null;
 
-  // Paso 1 — perfil: foto + especialidad (lo mínimo que ve el paciente).
+  // ── Pasos SELF-SERVICE (cuentan para el progreso) ───────────────────────
+  // Perfil: foto + especialidad (lo mínimo que ve el paciente).
   const profileDone = filled(profile.avatar_url) && filled(profile.specialty_id);
-  // Paso 2 — clínica completa para el directorio (D1): nombre + dirección + depto + muni.
-  const clinicDone =
-    !!clinic && filled(clinic.name) && filled(clinic.address_line) && !!clinic.department_id && !!clinic.municipality_id;
-  // Paso 3 — agenda: al menos una regla de disponibilidad activa.
+  // Agenda: al menos una regla de disponibilidad activa.
   const availabilityDone = rules.some((r) => r.isActive);
-  // Paso 4 — servicios: al menos un servicio activo (reservable).
+  // Servicios: al menos un servicio activo (reservable).
   const servicesDone = services.some((s) => s.is_active);
-  // Paso 5 — reserva en línea activa.
+  // Reserva en línea activa.
   const bookingDone = profile.booking_enabled === true;
-  // Paso 6 — visible en el directorio.
+  // Visible en el directorio.
   const publishedDone = profile.is_published === true;
 
   const steps: DoctorActivationStep[] = [
-    { key: 'profile', label: 'Completá tu perfil', done: profileDone, href: '/panel/perfil', actionable: true },
-    // La ubicación de la clínica hoy solo la edita LucyAdmin (admin_update_doctor_clinic),
-    // no el médico desde el panel → no self-service (decisión de copy/CTA queda para PR-2).
-    { key: 'clinic', label: 'Confirmá los datos de tu clínica', done: clinicDone, href: null, actionable: false },
-    { key: 'availability', label: 'Configurá tu agenda', done: availabilityDone, href: '/panel/disponibilidad', actionable: true },
-    { key: 'services', label: 'Agregá tus servicios', done: servicesDone, href: '/panel/servicios', actionable: true },
-    { key: 'booking', label: 'Activá la reserva en línea', done: bookingDone, href: '/panel/perfil', actionable: true },
-    { key: 'published', label: 'Revisá cómo te ven los pacientes', done: publishedDone, href: '/panel/perfil', actionable: true },
+    { key: 'profile', label: 'Completá tu perfil', done: profileDone, href: '/panel/perfil' },
+    { key: 'availability', label: 'Configurá tu agenda', done: availabilityDone, href: '/panel/disponibilidad' },
+    { key: 'services', label: 'Agregá tus servicios', done: servicesDone, href: '/panel/servicios' },
+    { key: 'booking', label: 'Activá la reserva en línea', done: bookingDone, href: '/panel/perfil' },
+    { key: 'published', label: 'Revisá cómo te ven los pacientes', done: publishedDone, href: '/panel/perfil' },
   ];
 
   const completedCount = steps.filter((s) => s.done).length;
+
+  // ── Clínica: info NO bloqueante (admin/soporte), fuera del progreso ──────
+  const clinicComplete =
+    !!clinic && filled(clinic.name) && filled(clinic.address_line) && !!clinic.department_id && !!clinic.municipality_id;
+  const clinicStatus: ClinicStatus = {
+    label: 'Datos de clínica',
+    complete: clinicComplete,
+    actionable: false,
+    href: null,
+    message: clinicComplete ? null : CLINIC_INCOMPLETE_MESSAGE,
+  };
 
   return {
     doctorId: effDoctorId,
     steps,
     completedCount,
     total: steps.length,
+    // El progreso principal NO depende de la clínica (paso no accionable).
     allDone: completedCount === steps.length,
+    clinicStatus,
   };
 }
