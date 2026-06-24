@@ -20,7 +20,9 @@ import AntecedentesSection from './AntecedentesSection';
 import FollowUpScheduler from './FollowUpScheduler';
 import RecetaPrint from './RecetaPrint';
 import CorrectConsultationModal from './CorrectConsultationModal';
+import QuickSummaryCard from './QuickSummaryCard';
 import { usePrescriptions } from '@/hooks/useConsultation';
+import { useClinicContext } from '@/hooks/useClinicContext';
 
 interface FormState {
   chief_complaint: string;
@@ -67,6 +69,7 @@ export default function ConsultaPage() {
   const navigate = useNavigate();
 
   const { data: ctx, isLoading, error } = useConsultationByAppointment(appointmentId);
+  const { data: clinicCtx } = useClinicContext();
   const { data: vitals } = useVitals(appointmentId);
   const { data: prescriptions = [] } = usePrescriptions(ctx?.id);
 
@@ -234,6 +237,15 @@ export default function ConsultaPage() {
         savedAt={savedAt}
         onBack={() => navigate(-1)}
         readOnly={readOnly}
+      />
+
+      {/* ─── Resumen rápido del paciente (solo médico, solo con historia) ─── */}
+      <QuickSummaryCard
+        patientId={ctx.patient_id}
+        doctorId={ctx.doctor_id}
+        role={clinicCtx?.role}
+        currentConsultationId={ctx.id}
+        patientName={ctx.patient.full_name}
       />
 
       {/* ─── Historial de correcciones (consulta firmada con adendas) ─── */}
