@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
 import type { DoctorCard as DoctorCardData } from '../../../types/directory.types';
-import { formatNextSlot } from '../../../utils/date';
 import DoctorAvatar from '../../../components/DoctorAvatar';
 
 interface DoctorCardProps {
@@ -40,9 +39,8 @@ export default function DoctorCard({
   // Mapear lucyStatus de DB a formato display
   const lucyStatus = doctor.lucyStatus?.toUpperCase() || 'LISTED_ONLY';
 
-  // TODO Sprint 2: nextAvailableSlot vendrá del motor de agenda
-  const nextAvailableSlot: string | undefined = undefined;
-  const nextSlot = nextAvailableSlot ? formatNextSlot(nextAvailableSlot) : null;
+  // Precio: solo si existe y es > 0 (no mostrar "$0" ni vacíos).
+  const hasFee = consultationFee > 0;
 
   // Rating y reviews — data real (Fase D)
   const rating = ratingProp ?? 0;
@@ -164,19 +162,20 @@ export default function DoctorCard({
             </div>
 
             {/* Booking Status & CTA */}
-            {bookingEnabled && nextSlot ? (
+            {bookingEnabled ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 rounded-lg">
-                  <i className="ri-time-line text-emerald-700"></i>
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-700">Próximo disponible</p>
-                    <p className="text-sm font-bold text-emerald-700">{nextSlot}</p>
+                {hasFee && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-emerald-50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs text-emerald-700">
+                      <i className="ri-calendar-check-line"></i>
+                      <span>Agenda en línea</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-slate-600">Consulta</p>
+                      <p className="text-sm font-bold text-gray-900">${consultationFee}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-600">Consulta</p>
-                    <p className="text-sm font-bold text-gray-900">${consultationFee}</p>
-                  </div>
-                </div>
+                )}
                 <button
                   onClick={handleNavigate}
                   className="w-full px-4 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap relative z-10"
@@ -192,22 +191,19 @@ export default function DoctorCard({
                     <i className="ri-information-line"></i>
                     <span>Perfil informativo</span>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">Consulta</p>
-                    <p className="text-sm font-bold text-gray-900">${consultationFee}</p>
-                  </div>
+                  {hasFee && (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Consulta</p>
+                      <p className="text-sm font-bold text-gray-900">${consultationFee}</p>
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleNavigate}
-                    className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap relative z-10"
-                  >
-                    Ver perfil
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 text-center">
-                  Reserva online disponible solo con agenda activa en Lucy
-                </p>
+                <button
+                  onClick={handleNavigate}
+                  className="w-full px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap relative z-10"
+                >
+                  Ver perfil
+                </button>
               </div>
             )}
           </div>
