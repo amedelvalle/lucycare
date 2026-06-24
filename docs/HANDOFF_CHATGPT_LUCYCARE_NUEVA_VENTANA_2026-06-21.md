@@ -9,9 +9,9 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `409f608` (*feat(consulta): corrección post-firma de antecedentes texto libre (PR-E2) (#172)*).
-- **PRs mergeados:** **#1–#172**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#172 NO agregaron migración nueva** (frontend-only; ver §2bis).
+- **HEAD de `main`:** `053346d` (*feat(consulta): tarjeta "Resumen rápido del paciente" (PR-2) (#175)*).
+- **PRs mergeados:** **#1–#175**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#175 NO agregaron migración nueva** (frontend-only; ver §2bis y §2ter).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
@@ -29,6 +29,16 @@ Cierra los 5 puntos de las observaciones del owner sobre consulta/receta/PDF. **
 
 > Otro cierre frontend-only post-#163: **#166** — fix del 400 del `NotificationBell` (la query usaba `appointments.cancelled_at` inexistente; se reescribió por `status_id`='cancelada' + `updated_at`). Sin migración.
 
+### 2ter. Frente "Resumen rápido del paciente" (#174–#175) — CERRADO, frontend-only, sin migración
+Ayuda breve dentro de la consulta para que el médico entienda en <10s su historia clínica con este paciente. **Ninguno agregó migración** (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**. (#173 fue docs-only de cierre de la serie de correcciones #167–#172, **no** parte de este frente; #176 es el docs-only de cierre de este frente.)
+- **#174 (PR-1) read model `PatientQuickSummary`** — `src/services/patientQuickSummary.service.ts` + `src/hooks/usePatientQuickSummary.ts`. **Read-only desde datos, sin UI.** Devuelve, del paciente **con este médico**: total de consultas **firmadas** previas, última atención + motivo, diagnósticos previos (distinct por recencia), **medicamentos permanentes/vigentes/relevantes** (reusa `getPermanentPrescriptionsForPatient`), notas relevantes (alergias/tipo de sangre/notas/`family_history_notes` reciente), últimos vitales (kg→lb) y brief de las últimas 3.
+  - **Scoping crítico (seguridad):** gate de ROL **`isDoctorContext`** → `emptySummary()` **antes de cualquier query** si no es médico (un asistente trae `doctorId`, así que `doctorId` por sí solo **NO** basta y **no se consulta `patients`/alergias/sangre/notas**); filtro **EXPLÍCITO** por `patient_id` + `doctor_id` (defensa en profundidad sobre la RLS doctor-scoped); **SOLO `status='signed'`**; **excluye la consulta actual**; **payload vacío seguro** sin historia. **Nunca mezclar pacientes/médicos/clínicas/perfiles.**
+  - Validado: `tsc`+`build` + **smoke 24/24** contra el módulo real (no-médico → 0 queries, no toca `patients`; médico bajo **sesión real de Camilo/RLS**).
+- **#175 (PR-2) tarjeta UI `QuickSummaryCard.tsx`** — montada en `ConsultaPage.tsx` **debajo del header del paciente, antes de la evaluación clínica**. Tarjeta compacta: total de atenciones, última atención (fecha+motivo), chips de diagnósticos, chips de medicamentos vigentes, **alergias en amber** (único color de alerta), tipo de sangre, antecedente familiar, últimos vitales en **lb**, **"Ver últimas atenciones" colapsado** por defecto.
+  - **Gate VISUAL:** se muestra **solo si `role==='doctor'`** (nunca asistente/admin/paciente/rol desconocido; `doctorId` solo NO es criterio), **solo si `hasHistory===true`**, y **se oculta ante payload vacío/inseguro o error/carga** (nunca un error técnico al médico).
+  - Validado: `tsc`+`build` + **smoke SSR 16/16** (componente real: médico+historia → tarjeta con todo el contenido; asistente / rol undefined / `hasHistory=false` / error / carga → no se renderiza) + **preview en vivo bajo sesión real de Camilo (RLS)** sobre **paciente demo (Pepe Toro)** + móvil 360/390/430 sin overflow + 0 errores de consola + 0 residuales.
+- **Regla de validación vinculante:** fixtures aisladas / paciente demo (Pepe Toro), **jamás Katherine ni datos reales sensibles**, ni en read-only.
+
 ### Arranque obligatorio
 ```bash
 git fetch origin
@@ -37,7 +47,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `409f608` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `053346d` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
@@ -135,7 +145,7 @@ Sincronizá y confirmá estado:
   git log --oneline -5 && git status --short
 
 Estado esperado de main:
-- HEAD 4ee9b65 · PRs #1–#162 · migraciones aplicadas hasta s7_50.
+- HEAD 053346d · PRs #1–#175 · migraciones aplicadas hasta s7_51.
 - main == origin/main · árbol limpio.
 - tsc --noEmit OK · npm run build OK.
 
@@ -144,34 +154,25 @@ Leé en este orden:
 2. CLAUDE.md
 3. docs/HANDOFF_LUCYCARE_SPRINT7.md (si necesitás detalle histórico)
 
-CERRADO/LIVE en main: responsive móvil (#158/#159), seguridad de sesión por
-inactividad + tope absoluto por rol (#160), paginación/render incremental del
-Home (#162), accept_clinic_invitations tolerante a teléfono (#156/s7_50).
+CERRADO/LIVE en main (sin frente abierto): "Mi lista de espera" en panel
+médico/asistente (#163 / s7_51 aplicada), serie correcciones clínicas/receta/PDF
+(#167–#172), y frente "Resumen rápido del paciente" — read model
+PatientQuickSummary (#174 PR-1, servicio+hook, read-only, sin UI) + tarjeta UI
+QuickSummaryCard en la consulta (#175 PR-2). Todo frontend-only, SIN migración
+nueva. Migraciones aplicadas hasta s7_51.
 
-ABIERTO (NO mergeado): PR #163 "Mi lista de espera en panel médico"
-(rama claude/panel-waitlist). Tiene migración migrations/s7_51_clinic_waitlist.sql
-que AÚN NO está aplicada en Supabase. NO asumir s7_51 en producción.
+Recordatorio de scoping del "Resumen rápido": gate de rol isDoctorContext →
+vacío seguro antes de cualquier query si no es médico (doctorId solo NO basta);
+filtro explícito patient_id + doctor_id; SOLO status='signed'; excluye la
+consulta actual; la tarjeta se muestra solo si role==='doctor' y hasHistory.
 
-Alcance aprobado de #163 (V1): médico + asistente ven/gestionan la lista de
-espera del médico desde /panel/lista-espera (filtrar por estado, marcar
-contactado, volver a pendiente, descartar, nota interna, contacto manual
-llamar/WhatsApp/copiar). RPCs scoped clinic_list_waitlist /
-clinic_update_waitlist_entry (SECURITY DEFINER, gate por médico dueño o miembro
-de clínica). Sin agendar, sin mensajería automática, sin tocar admin global /
-submit_waitlist_entry / dedup.
-
-Para CONTINUAR #163 (en orden):
-1. (OWNER) Aplicar migrations/s7_51_clinic_waitlist.sql en Supabase SQL Editor.
-2. (OWNER) Confirmar que quedó aplicada.
-3. (DEV) git checkout claude/panel-waitlist; node scripts/check-s7_51.mjs;
-   node scripts/_smoke-s7_51.mjs.
-4. (OWNER) Validar preview médico/asistente + móvil 360/390/430.
-5. Solo entonces decidir el squash-merge de #163.
+NO hay PR abierto. El próximo frente se define con el owner antes de tocar nada.
 
 NO TOCAR: datos reales, Katherine (50372608827), Camilo salvo patrón de test sin
 mutar datos, F4-D, pagos, recuperación sin sesión, identidad múltiple, Backstop
-Supabase Auth, seguridad de sesión. Fixtures aisladas F51_FIXTURE + cleanup a 0
-residuales. NO abrir otro frente antes de cerrar o pausar #163.
+Supabase Auth, seguridad de sesión. Validar con fixtures aisladas / paciente
+demo (Pepe Toro) + cleanup a 0 residuales. NO abrir un frente nuevo sin acordarlo
+con el owner.
 
 Reglas: PRs chicos, squash-merge, database.types.ts en el mismo PR que su
 migración. El owner aplica SQL; el dev entrega SQL + corre check/smoke + documenta.
