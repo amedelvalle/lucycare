@@ -29,9 +29,8 @@ Cierra los 5 puntos de las observaciones del owner sobre consulta/receta/PDF. **
 
 > Otro cierre frontend-only post-#163: **#166** — fix del 400 del `NotificationBell` (la query usaba `appointments.cancelled_at` inexistente; se reescribió por `status_id`='cancelada' + `updated_at`). Sin migración.
 
-### 2ter. Frente "Resumen rápido del paciente" (#173–#175) — CERRADO, frontend-only, sin migración
-Ayuda breve dentro de la consulta para que el médico entienda en <10s su historia clínica con este paciente. **Ninguno agregó migración** (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**.
-- **#173 (docs)** — consolidación de la serie #167–#172 en `CLAUDE.md` + handoff.
+### 2ter. Frente "Resumen rápido del paciente" (#174–#175) — CERRADO, frontend-only, sin migración
+Ayuda breve dentro de la consulta para que el médico entienda en <10s su historia clínica con este paciente. **Ninguno agregó migración** (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**. (#173 fue docs-only de cierre de la serie de correcciones #167–#172, **no** parte de este frente; #176 es el docs-only de cierre de este frente.)
 - **#174 (PR-1) read model `PatientQuickSummary`** — `src/services/patientQuickSummary.service.ts` + `src/hooks/usePatientQuickSummary.ts`. **Read-only desde datos, sin UI.** Devuelve, del paciente **con este médico**: total de consultas **firmadas** previas, última atención + motivo, diagnósticos previos (distinct por recencia), **medicamentos permanentes/vigentes/relevantes** (reusa `getPermanentPrescriptionsForPatient`), notas relevantes (alergias/tipo de sangre/notas/`family_history_notes` reciente), últimos vitales (kg→lb) y brief de las últimas 3.
   - **Scoping crítico (seguridad):** gate de ROL **`isDoctorContext`** → `emptySummary()` **antes de cualquier query** si no es médico (un asistente trae `doctorId`, así que `doctorId` por sí solo **NO** basta y **no se consulta `patients`/alergias/sangre/notas**); filtro **EXPLÍCITO** por `patient_id` + `doctor_id` (defensa en profundidad sobre la RLS doctor-scoped); **SOLO `status='signed'`**; **excluye la consulta actual**; **payload vacío seguro** sin historia. **Nunca mezclar pacientes/médicos/clínicas/perfiles.**
   - Validado: `tsc`+`build` + **smoke 24/24** contra el módulo real (no-médico → 0 queries, no toca `patients`; médico bajo **sesión real de Camilo/RLS**).
