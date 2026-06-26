@@ -79,6 +79,34 @@ export default function Home() {
   // Render incremental: solo se montan las primeras `visibleCount` cards.
   const visibleDoctors = filteredDoctors.slice(0, visibleCount);
 
+  // ── Contadores honestos del directorio ──
+  // total de resultados del set actual (ya filtrado server-side por
+  // búsqueda/especialidad/ubicación, y client-side por el toggle).
+  const totalResults = filteredDoctors.length;
+  const isFiltered =
+    !!searchTerm || !!selectedSpecialty || !!selectedDepartment || !!selectedMunicipality || onlineBookingOnly;
+  // Médicos con agenda en línea dentro del set de búsqueda/ubicación (sin
+  // depender del toggle): dato real para diferenciar "publicados" de "reservables".
+  const bookableCount = doctors.filter((d) => d.bookingEnabled).length;
+  // Sustantivo correcto (sin claims): "resultado(s)" si hay filtros,
+  // "médico(s) publicado(s)" si no.
+  const resultNoun = isFiltered
+    ? (totalResults === 1 ? 'resultado' : 'resultados')
+    : (totalResults === 1 ? 'médico publicado' : 'médicos publicados');
+
+  // Título neutro/comercial + conteo como línea secundaria discreta (sin claims
+  // inflados, pero sin convertir "N médicos publicados" en el mensaje principal).
+  const directoryTitle = searchTerm
+    ? 'Resultados para tu búsqueda'
+    : onlineBookingOnly
+      ? 'Médicos con agenda en línea'
+      : isFiltered
+        ? 'Resultados'
+        : 'Médicos en Lucy';
+  let directoryCount = `Mostrando ${visibleDoctors.length} de ${totalResults} ${resultNoun}`;
+  if (searchTerm) directoryCount += ` para "${searchTerm}"`;
+  else if (!isFiltered && bookableCount > 0) directoryCount += ` · ${bookableCount} con agenda en línea`;
+
   // Al cambiar búsqueda / filtros / toggle / orden, volver a la primera tanda.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -221,16 +249,12 @@ export default function Home() {
             ) : (
               <>
                 <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
-                  {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda en línea' : 'disponibles')}
+                  {directoryTitle}
                 </h2>
-                {searchTerm && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    Resultados ordenados por mejor coincidencia
-                  </p>
-                )}
-                {!searchTerm && onlineBookingOnly && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    Reserva tu cita al instante
+                <p className="text-sm text-gray-600 mt-1">{directoryCount}</p>
+                {onlineBookingOnly && (
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Reservá directamente con médicos que tienen agenda en línea.
                   </p>
                 )}
               </>
@@ -291,20 +315,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* Render incremental: contador "Mostrando N de M" + "Mostrar más médicos" */}
-        {!isLoading && !error && filteredDoctors.length > 0 && (
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <p className="text-sm text-gray-500">
-              Mostrando {visibleDoctors.length} de {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
-            </p>
-            {visibleCount < filteredDoctors.length && (
-              <button
-                onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
-                className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
-              >
-                Mostrar más médicos
-              </button>
-            )}
+        {/* Render incremental: "Mostrar más médicos" (el conteo "Mostrando N de M"
+            vive ahora en la línea bajo el título de la sección). */}
+        {!isLoading && !error && visibleCount < filteredDoctors.length && (
+          <div className="mt-8 flex justify-center">
+            <button
+              onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+              className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Mostrar más médicos
+            </button>
           </div>
         )}
 
