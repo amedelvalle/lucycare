@@ -209,20 +209,27 @@ export default function DoctorDetail() {
               </div>
             )}
 
-            {/* Mobile Booking Card */}
-            <div className="lg:hidden mb-8">
-              <BookingCard
-                doctorId={doctor.id}
-                doctorName={doctor.fullName}
-                consultationFee={consultationFee}
-                phone={doctor.clinicPhone || ''}
-                canBook={canBook}
-                lucyStatus={lucyStatus}
-                nextAvailableSlot={undefined}
-                services={doctor.services}
-                clinicId={doctor.clinicId}
-              />
-            </div>
+            {/* Bloque de contacto móvil — SOLO para médicos NO reservables.
+                Para reservables, el CTA móvil vive en la barra fija inferior
+                "Reservar cita" + bottom sheet (no se duplica el formulario
+                arriba para no empujar la información de confianza bajo el fold).
+                Los no reservables conservan acá su única acción: "Sin agenda en
+                línea" + Llamar/WhatsApp/Lista de espera. */}
+            {!canBook && (
+              <div className="lg:hidden mb-8">
+                <BookingCard
+                  doctorId={doctor.id}
+                  doctorName={doctor.fullName}
+                  consultationFee={consultationFee}
+                  phone={doctor.clinicPhone || ''}
+                  canBook={canBook}
+                  lucyStatus={lucyStatus}
+                  nextAvailableSlot={undefined}
+                  services={doctor.services}
+                  clinicId={doctor.clinicId}
+                />
+              </div>
+            )}
 
             {/* Divider */}
             <div className="border-t border-gray-200 my-8"></div>
