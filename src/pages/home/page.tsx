@@ -79,6 +79,21 @@ export default function Home() {
   // Render incremental: solo se montan las primeras `visibleCount` cards.
   const visibleDoctors = filteredDoctors.slice(0, visibleCount);
 
+  // ── Contadores honestos del directorio ──
+  // total de resultados del set actual (ya filtrado server-side por
+  // búsqueda/especialidad/ubicación, y client-side por el toggle).
+  const totalResults = filteredDoctors.length;
+  const isFiltered =
+    !!searchTerm || !!selectedSpecialty || !!selectedDepartment || !!selectedMunicipality || onlineBookingOnly;
+  // Médicos con agenda en línea dentro del set de búsqueda/ubicación (sin
+  // depender del toggle): dato real para diferenciar "publicados" de "reservables".
+  const bookableCount = doctors.filter((d) => d.bookingEnabled).length;
+  // Sustantivo correcto (sin claims): "resultado(s)" si hay filtros,
+  // "médico(s) publicado(s)" si no.
+  const resultNoun = isFiltered
+    ? (totalResults === 1 ? 'resultado' : 'resultados')
+    : (totalResults === 1 ? 'médico publicado' : 'médicos publicados');
+
   // Al cambiar búsqueda / filtros / toggle / orden, volver a la primera tanda.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -221,18 +236,23 @@ export default function Home() {
             ) : (
               <>
                 <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
-                  {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''} {searchTerm ? `para "${searchTerm}"` : (onlineBookingOnly ? 'con agenda en línea' : 'disponibles')}
+                  {searchTerm
+                    ? `${totalResults} ${totalResults === 1 ? 'resultado' : 'resultados'} para "${searchTerm}"`
+                    : onlineBookingOnly
+                      ? `${totalResults} médico${totalResults !== 1 ? 's' : ''} con agenda en línea`
+                      : `${totalResults} ${resultNoun}`}
                 </h2>
-                {searchTerm && (
+                {searchTerm ? (
+                  <p className="text-sm text-gray-600 mt-1">Resultados para tu búsqueda</p>
+                ) : onlineBookingOnly ? (
                   <p className="text-sm text-gray-600 mt-1">
-                    Resultados ordenados por mejor coincidencia
+                    Reservá directamente con médicos que tienen agenda en línea
                   </p>
-                )}
-                {!searchTerm && onlineBookingOnly && (
+                ) : bookableCount > 0 ? (
                   <p className="text-sm text-gray-600 mt-1">
-                    Reserva tu cita al instante
+                    {bookableCount} con agenda en línea
                   </p>
-                )}
+                ) : null}
               </>
             )}
           </div>
@@ -295,7 +315,7 @@ export default function Home() {
         {!isLoading && !error && filteredDoctors.length > 0 && (
           <div className="mt-8 flex flex-col items-center gap-3">
             <p className="text-sm text-gray-500">
-              Mostrando {visibleDoctors.length} de {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
+              Mostrando {visibleDoctors.length} de {totalResults} {resultNoun}
             </p>
             {visibleCount < filteredDoctors.length && (
               <button
