@@ -129,16 +129,6 @@ export default function DoctorDetail() {
               onClick={() => navigate('/')}
             />
           </div>
-          <div className="flex items-center gap-4">
-            <button className="hidden md:flex items-center gap-2 px-4 py-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer whitespace-nowrap">
-              <i className="ri-share-line text-lg"></i>
-              <span>Compartir</span>
-            </button>
-            <button className="hidden md:flex items-center gap-2 px-4 py-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer whitespace-nowrap">
-              <i className="ri-heart-line text-lg"></i>
-              <span>Guardar</span>
-            </button>
-          </div>
         </div>
       </header>
 
@@ -411,7 +401,7 @@ export default function DoctorDetail() {
       {/* Footer */}
       <footer className="bg-[#EDEDED] border-t border-gray-200 mt-20">
         <div className="max-w-7xl mx-auto px-6 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
             <div>
               <div className="flex items-center mb-4">
                 <img
@@ -434,36 +424,22 @@ export default function DoctorDetail() {
                   <span className="font-medium text-gray-900">Información Valiosa:</span> Acceso a datos y análisis detallados para tomar decisiones informadas.
                 </li>
                 <li className="text-sm text-gray-600">
-                  <span className="font-medium text-gray-900">Acceso Gratuito:</span> Información y consultas con expertos médicos de calidad sin costo.
+                  <span className="font-medium text-gray-900">Búsqueda sin costo:</span> Explorar el directorio de Lucy es gratis. El precio de la consulta lo define cada médico.
                 </li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold text-gray-900 mb-4">Empresa</h4>
               <ul className="space-y-3">
-                <li className="text-sm text-gray-600"><a href="#" className="hover:text-[#3C2285] cursor-pointer"><span className="font-medium text-gray-900">Acerca de</span> — Conectamos pacientes y profesionales.</a></li>
-                <li className="text-sm text-gray-600"><a href="#" className="hover:text-[#3C2285] cursor-pointer"><span className="font-medium text-gray-900">Contacto</span> — Soporte para pacientes y médicos.</a></li>
-                <li className="text-sm text-gray-600"><a href="#" className="hover:text-[#3C2285] cursor-pointer"><span className="font-medium text-gray-900">Privacidad</span> — Cómo protegemos tus datos.</a></li>
-                <li className="text-sm text-gray-600"><a href="#" className="hover:text-[#3C2285] cursor-pointer"><span className="font-medium text-gray-900">Términos</span> — Condiciones de uso.</a></li>
+                <li className="text-sm text-gray-600"><span className="font-medium text-gray-900">Acerca de</span> — Conectamos pacientes y profesionales.</li>
+                <li className="text-sm text-gray-600"><span className="font-medium text-gray-900">Contacto</span> — Soporte para pacientes y médicos.</li>
+                <li className="text-sm text-gray-600"><a href="/privacidad" className="text-gray-600 hover:text-gray-900 cursor-pointer"><span className="font-medium text-gray-900">Privacidad</span> — Cómo protegemos tus datos.</a></li>
+                <li className="text-sm text-gray-600"><span className="font-medium text-gray-900">Términos</span> — Condiciones de uso.</li>
               </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-4">Síguenos</h4>
-              <div className="flex gap-4">
-                <a href="#" className="w-10 h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-facebook-fill text-xl text-gray-700"></i>
-                </a>
-                <a href="#" className="w-10 h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-twitter-fill text-xl text-gray-700"></i>
-                </a>
-                <a href="#" className="w-10 h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-instagram-fill text-xl text-gray-700"></i>
-                </a>
-              </div>
             </div>
           </div>
           <div className="pt-8 border-t border-gray-300 text-center text-gray-600">
-            <p>© 2024 Lucy Care. Todos los derechos reservados.</p>
+            <p>© {new Date().getFullYear()} Lucy Care. Todos los derechos reservados.</p>
           </div>
         </div>
       </footer>
