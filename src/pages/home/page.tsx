@@ -217,7 +217,7 @@ export default function Home() {
               Encuentra al médico perfecto para ti
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-8 sm:mb-12">
-              Busca por nombre, especialidad o ubicación. Reserva tu cita al instante con médicos verificados.
+              Busca por nombre, especialidad o ubicación. Reserva en línea con los médicos que tienen agenda activa.
             </p>
           </div>
 
@@ -357,7 +357,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-[#EDEDED] border-t border-gray-200 mt-12 sm:mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-6 sm:mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 mb-6 sm:mb-8">
             <div>
               <div className="flex items-center mb-4">
                 <img
@@ -380,7 +380,7 @@ export default function Home() {
                   <span className="font-medium text-gray-900">Información Valiosa:</span> Acceso a datos y análisis detallados para tomar decisiones informadas.
                 </li>
                 <li className="text-sm sm:text-base text-gray-600">
-                  <span className="font-medium text-gray-900">Acceso Gratuito:</span> Información y consultas con expertos médicos de calidad sin costo.
+                  <span className="font-medium text-gray-900">Búsqueda sin costo:</span> Explorar el directorio de Lucy es gratis. El precio de la consulta lo define cada médico.
                 </li>
               </ul>
             </div>
@@ -388,44 +388,24 @@ export default function Home() {
               <h4 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Empresa</h4>
               <ul className="space-y-3">
                 <li className="text-sm sm:text-base text-gray-600">
-                  <a href="#" className="hover:text-[#3C2285] cursor-pointer">
-                    <span className="font-medium text-gray-900">Acerca de</span> — Conectamos pacientes y profesionales para una atención de calidad en una sola plataforma.
-                  </a>
+                  <span className="font-medium text-gray-900">Acerca de</span> — Conectamos pacientes y profesionales para una atención de calidad en una sola plataforma.
                 </li>
                 <li className="text-sm sm:text-base text-gray-600">
-                  <a href="#" className="hover:text-[#3C2285] cursor-pointer">
-                    <span className="font-medium text-gray-900">Contacto</span> — Soporte para pacientes y médicos; también prensa y alianzas.
-                  </a>
+                  <span className="font-medium text-gray-900">Contacto</span> — Soporte para pacientes y médicos.
                 </li>
                 <li className="text-sm sm:text-base text-gray-600">
-                  <a href="#" className="hover:text-[#3C2285] cursor-pointer">
+                  <a href="/privacidad" className="text-gray-600 hover:text-gray-900 cursor-pointer">
                     <span className="font-medium text-gray-900">Privacidad</span> — Cómo protegemos tus datos y tus derechos.
                   </a>
                 </li>
                 <li className="text-sm sm:text-base text-gray-600">
-                  <a href="#" className="hover:text-[#3C2285] cursor-pointer">
-                    <span className="font-medium text-gray-900">Términos</span> — Condiciones de uso del servicio.
-                  </a>
+                  <span className="font-medium text-gray-900">Términos</span> — Condiciones de uso del servicio.
                 </li>
               </ul>
             </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Síguenos</h4>
-              <div className="flex gap-3 sm:gap-4">
-                <a href="#" className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-facebook-fill text-lg sm:text-xl text-gray-700"></i>
-                </a>
-                <a href="#" className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-twitter-fill text-lg sm:text-xl text-gray-700"></i>
-                </a>
-                <a href="#" className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white rounded-full hover:bg-emerald-100 transition-colors cursor-pointer">
-                  <i className="ri-instagram-fill text-lg sm:text-xl text-gray-700"></i>
-                </a>
-              </div>
-            </div>
           </div>
           <div className="pt-6 sm:pt-8 border-t border-gray-300 text-center text-xs sm:text-sm text-gray-600">
-            <p>© 2024 Lucy Care. Todos los derechos reservados. <a href="https://readdy.ai/?origin=logo" className="hover:text-[#3C2285] cursor-pointer">Website Builder</a></p>
+            <p>© {new Date().getFullYear()} Lucy Care. Todos los derechos reservados.</p>
           </div>
         </div>
       </footer>
