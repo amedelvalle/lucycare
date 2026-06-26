@@ -13,6 +13,33 @@ export default function DoctorDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [showMobileBooking, setShowMobileBooking] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  // Compartir el perfil público: share nativo del dispositivo si existe (el
+  // usuario elige WhatsApp/SMS/correo/…), si no copia el enlace al portapapeles.
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareData = {
+      title: 'Perfil médico en Lucy',
+      text: 'Mirá este perfil médico en Lucy.',
+      url,
+    };
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        /* el usuario canceló el share nativo: no es un error */
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMsg('Enlace copiado');
+    } catch {
+      setShareMsg('No se pudo copiar el enlace');
+    }
+    setTimeout(() => setShareMsg(null), 2000);
+  };
 
   // ─── DATOS REALES desde Supabase ───
   const { data: doctor, isLoading, error, refetch, isRefetching } = useDoctorDetail(id);
@@ -129,8 +156,29 @@ export default function DoctorDetail() {
               onClick={() => navigate('/')}
             />
           </div>
+          {/* Compartir (funcional): share nativo o copiar enlace. Discreto en
+              móvil (solo ícono), con etiqueta en desktop. */}
+          <button
+            onClick={handleShare}
+            title="Compartir perfil"
+            className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer whitespace-nowrap text-gray-700"
+          >
+            <i className="ri-share-line text-lg"></i>
+            <span className="hidden sm:inline">Compartir</span>
+          </button>
         </div>
       </header>
+
+      {/* Confirmación transitoria del fallback de copiar enlace (el share nativo
+          ya da su propio feedback). Centrada, visible en desktop y móvil. */}
+      {shareMsg && (
+        <div
+          role="status"
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-gray-900 text-white text-sm px-4 py-2 rounded-full shadow-lg"
+        >
+          {shareMsg}
+        </div>
+      )}
 
       {/* Image Gallery */}
       {galleryImages.length > 0 && (
