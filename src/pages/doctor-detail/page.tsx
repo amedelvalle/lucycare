@@ -15,23 +15,33 @@ export default function DoctorDetail() {
   const [showMobileBooking, setShowMobileBooking] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
 
-  // Compartir el perfil público: share nativo del dispositivo si existe (el
-  // usuario elige WhatsApp/SMS/correo/…), si no copia el enlace al portapapeles.
+  // Compartir el perfil público, diferenciado por contexto:
+  //  - móvil/touch (pointer: coarse) con share nativo → share sheet del sistema
+  //    (el usuario elige WhatsApp/SMS/contactos/correo/…);
+  //  - desktop → copiar el enlace al portapapeles (no abrir el panel nativo del
+  //    sistema, que en escritorio se siente pesado), con confirmación.
+  // El pointer se evalúa en el click (estable por dispositivo, fácil de validar).
   const handleShare = async () => {
     const url = window.location.href;
-    const shareData = {
-      title: 'Perfil médico en Lucy',
-      text: 'Mirá este perfil médico en Lucy.',
-      url,
-    };
-    if (typeof navigator !== 'undefined' && navigator.share) {
+    const isTouch =
+      typeof window !== 'undefined' &&
+      !!window.matchMedia &&
+      window.matchMedia('(pointer: coarse)').matches;
+
+    if (isTouch && typeof navigator !== 'undefined' && navigator.share) {
       try {
-        await navigator.share(shareData);
+        await navigator.share({
+          title: 'Perfil médico en Lucy',
+          text: 'Mirá este perfil médico en Lucy.',
+          url,
+        });
       } catch {
         /* el usuario canceló el share nativo: no es un error */
       }
       return;
     }
+
+    // Desktop (o móvil sin share nativo): copiar enlace.
     try {
       await navigator.clipboard.writeText(url);
       setShareMsg('Enlace copiado');
@@ -156,15 +166,16 @@ export default function DoctorDetail() {
               onClick={() => navigate('/')}
             />
           </div>
-          {/* Compartir (funcional): share nativo o copiar enlace. Discreto en
-              móvil (solo ícono), con etiqueta en desktop. */}
+          {/* Compartir (funcional): móvil/touch → share nativo; desktop → copiar
+              enlace. Discreto en móvil (solo ícono); en desktop, como la acción
+              es copiar, la etiqueta dice "Copiar enlace". */}
           <button
             onClick={handleShare}
-            title="Compartir perfil"
+            title="Copiar enlace del perfil"
             className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer whitespace-nowrap text-gray-700"
           >
             <i className="ri-share-line text-lg"></i>
-            <span className="hidden sm:inline">Compartir</span>
+            <span className="hidden sm:inline">Copiar enlace</span>
           </button>
         </div>
       </header>
