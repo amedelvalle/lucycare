@@ -410,8 +410,8 @@ export default function BookingCard({
                 ) : isAuthenticated ? 'Reservar ahora' : 'Inicia sesión para reservar'}
               </button>
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
-                <i className="ri-shield-check-line text-emerald-700"></i>
-                <span>Pago seguro • Confirmación inmediata</span>
+                <i className="ri-calendar-check-line text-emerald-700"></i>
+                <span>Reserva en línea · el pago se coordina con el médico</span>
               </div>
             </div>
           </div>
