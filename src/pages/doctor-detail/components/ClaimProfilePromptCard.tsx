@@ -1,49 +1,110 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getSessionWithTimeout } from '../../../lib/session';
 import ClaimProfileModal from './ClaimProfileModal';
+
+type ClaimViewerKind = 'loading' | 'owner' | 'anon' | 'other';
 
 interface ClaimProfilePromptCardProps {
   doctorId: string;
   doctorName: string;
+  /** profile_id del dueño del perfil. Se compara con auth.uid() para decidir el viewer. */
+  doctorProfileId?: string | null;
+  /**
+   * 'full'     → bloque emerald destacado. SOLO para el médico dueño logueado.
+   * 'discrete' → entrada secundaria (link). SOLO para visitante anónimo.
+   */
+  variant: 'full' | 'discrete';
   onClaimed?: () => void;
 }
 
 /**
- * CTA destacada para que el médico (o quien diga serlo) inicie el
- * flujo de "Reclamar perfil". Se monta SOLO cuando lucy_status='listed_only'.
+ * CTA para iniciar el flujo de "Reclamar perfil". El padre la monta SOLO
+ * cuando lucy_status === 'listed_only' (gate explícito, sin fail-open).
  *
- * No promete agenda online ni publicación — sólo "confirmar que este
- * perfil es mío". El onboarding posterior lo hace LucyAdmin.
+ * La visibilidad depende del viewer para no mostrarle al paciente un llamado
+ * de captación de médicos:
+ *   - dueño logueado (auth.uid() === doctorProfileId) → card completa (variant 'full').
+ *   - visitante anónimo (sin sesión) → entrada discreta abajo (variant 'discrete').
+ *   - cualquier otro autenticado que no es dueño → nada.
+ *
+ * Mientras la sesión resuelve no se muestra nada (sin flash de contenido).
+ * Cada variante lleva su propio margen para no dejar un gap fantasma cuando
+ * el componente devuelve null.
  */
 export default function ClaimProfilePromptCard({
   doctorId,
   doctorName,
+  doctorProfileId,
+  variant,
   onClaimed,
 }: ClaimProfilePromptCardProps) {
   const [open, setOpen] = useState(false);
+  const [viewer, setViewer] = useState<ClaimViewerKind>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const session = await getSessionWithTimeout(3000);
+      if (cancelled) return;
+      if (!session) {
+        setViewer('anon');
+      } else if (doctorProfileId && session.userId === doctorProfileId) {
+        setViewer('owner');
+      } else {
+        setViewer('other');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorProfileId]);
+
+  const showFull = variant === 'full' && viewer === 'owner';
+  const showDiscrete = variant === 'discrete' && viewer === 'anon';
+
+  if (!showFull && !showDiscrete) return null;
 
   return (
     <>
-      <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/60 border-2 border-emerald-200 rounded-2xl p-5 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-full flex items-center justify-center flex-shrink-0 border border-emerald-200">
-            <i className="ri-user-star-line text-2xl sm:text-3xl text-emerald-700"></i>
+      {showFull && (
+        <div className="mb-8 bg-gradient-to-br from-emerald-50 to-emerald-100/60 border-2 border-emerald-200 rounded-2xl p-5 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-full flex items-center justify-center flex-shrink-0 border border-emerald-200">
+              <i className="ri-user-star-line text-2xl sm:text-3xl text-emerald-700"></i>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">¿Eres este profesional?</h3>
+              <p className="text-sm text-gray-700 mt-1">
+                Reclamá tu perfil para confirmar que es tuyo. Después, junto con Lucy, lo dejamos listo para recibir
+                pacientes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="w-full sm:w-auto px-5 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Reclamar mi perfil
+            </button>
           </div>
-          <div className="flex-1">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900">¿Eres este profesional?</h3>
-            <p className="text-sm text-gray-700 mt-1">
-              Reclamá tu perfil para confirmar que es tuyo. Después, junto con Lucy, lo dejamos listo para recibir
-              pacientes.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            Reclamar mi perfil
-          </button>
         </div>
-      </div>
+      )}
+
+      {showDiscrete && (
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
+            <i className="ri-user-star-line text-gray-400"></i>
+            <span>¿Eres este profesional?</span>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="font-medium text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
+            >
+              Reclamá tu perfil
+            </button>
+          </div>
+        </div>
+      )}
 
       <ClaimProfileModal
         isOpen={open}
