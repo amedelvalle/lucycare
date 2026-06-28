@@ -9,9 +9,9 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `446a4c4` (*feat(panel): tarjeta "Primeros pasos" en el dashboard médico (Onboarding PR-2) (#178)*).
-- **PRs mergeados:** **#1–#178**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#178 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter y §2quater).
+- **HEAD de `main`:** `0258328` (*fix(perfil): limpieza del perfil público — footer + botones muertos (#184)*).
+- **PRs mergeados:** **#1–#184**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#184 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter, §2quater y §2quinquies).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
@@ -51,6 +51,16 @@ Ayuda dentro del panel para que un médico **ya operativo** entienda qué le fal
   - Validado: `tsc`+`build` + smoke SSR 13/13 (gates negativos) + preview en vivo bajo sesión real de Camilo (RLS) → 4/5, móvil 360/390/430 sin overflow, 0 errores de consola.
 - **Regla de validación vinculante:** fixtures aisladas / paciente demo (Camilo/Pepe Toro), **jamás Katherine ni datos reales sensibles**.
 
+### 2quinquies. Frente "Perfil público / visibilidad comercial" (#180–#184) — CERRADO, frontend-only, sin migración
+Mejoras públicas de conversión en directorio/Home + perfil del médico. Ninguno agregó migración (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**.
+- **#180 — CTA "Reservar cita" en la tarjeta (`DoctorCard.tsx`):** reservable → "Agenda en línea" + CTA "Reservar cita" (navega a `/doctor/:id`); no reservable → "Ver perfil"; sin copy contradictorio; precio solo si >0 (sin `$0`). Fix: el CTA dependía de `nextAvailableSlot` hardcodeado a `undefined`.
+- **#181 — contador honesto del Home:** título neutro "Médicos en Lucy" + conteo discreto "Mostrando X de Y médicos publicados · Z con agenda en línea"; variantes para búsqueda/toggle; sin claims inflados; `PAGE_SIZE=12` y "Mostrar más médicos" intactos.
+- **#182 — limpieza copy/footer del Home:** hero honesto; "Acceso Gratuito" → "Búsqueda sin costo"; footer con año dinámico (sin "© 2024"), sin "Website Builder", sin links muertos, Privacidad → `/privacidad`, sin "Síguenos" (grid 4→3).
+- **#183 — perfil público móvil más liviano:** en `/doctor/:id` móvil, reservable ya NO muestra el `BookingCard` inline arriba (lidera info/confianza); reserva desde barra fija → `MobileBookingSheet`; desktop conserva `BookingCard` sticky; no reservables conservan contacto/lista de espera (sin barra fija ni promesa); eliminado "Pago seguro • Confirmación inmediata" → "Reserva en línea · el pago se coordina con el médico" (Lucy no cobra en línea).
+- **#184 — footer del perfil + "Compartir" funcional:** footer alineado con el Home; "Guardar" eliminado (no se simula); "Compartir" diferenciado por contexto (`matchMedia('(pointer: coarse)')` en el click): móvil/touch + `navigator.share` → share nativo; desktop o móvil sin share → copiar URL + toast "Enlace copiado" (no abre el panel del sistema en desktop); etiqueta desktop "Copiar enlace", ícono discreto en móvil.
+- **Validación del frente:** tsc+build verdes por PR · preview desktop + móvil 360/390/430 sin overflow · 0 errores de consola · 0 residuales · **directorio público / paciente demo (Camilo/Pepe Toro), jamás Katherine ni datos reales sensibles**.
+- **Pendientes explícitos (backlog, NO implementado):** mapa condicional; card "Reclamar perfil" en perfiles públicos `listed_only`; señales de confianza / credenciales (decisión de privacidad sobre `license_number`); branding emerald unificado (quitar `#3C2285`); remover duplicado muerto `src/pages/Home/`; migrar assets del logo fuera de `static.readdy.ai`; próximo-slot-real en la tarjeta.
+
 ### Arranque obligatorio
 ```bash
 git fetch origin
@@ -59,7 +69,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `446a4c4` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `0258328` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
@@ -157,7 +167,7 @@ Sincronizá y confirmá estado:
   git log --oneline -5 && git status --short
 
 Estado esperado de main:
-- HEAD 446a4c4 · PRs #1–#178 · migraciones aplicadas hasta s7_51.
+- HEAD 0258328 · PRs #1–#184 · migraciones aplicadas hasta s7_51.
 - main == origin/main · árbol limpio.
 - tsc --noEmit OK · npm run build OK.
 
@@ -172,8 +182,12 @@ médico/asistente (#163 / s7_51 aplicada), serie correcciones clínicas/receta/P
 PatientQuickSummary (#174 PR-1) + tarjeta UI QuickSummaryCard en la consulta
 (#175 PR-2), y frente "Onboarding médico operativo V1" — read model
 doctorActivation/useDoctorActivation (#177 PR-1) + tarjeta "Primeros pasos" en
-el dashboard (#178 PR-2). Todo frontend-only, SIN migración nueva. Migraciones
-aplicadas hasta s7_51.
+el dashboard (#178 PR-2), y frente "Perfil público / visibilidad comercial"
+(#180–#184): CTA "Reservar cita" en la tarjeta del directorio (#180), contador
+honesto "Médicos en Lucy" (#181), copy/footer del Home honesto (#182), perfil
+público móvil más liviano + copy honesto en BookingCard (#183), footer del
+perfil + "Compartir" funcional móvil-nativo/desktop-copiar (#184). Todo
+frontend-only, SIN migración nueva. Migraciones aplicadas hasta s7_51.
 
 Recordatorio de scoping del "Resumen rápido": gate de rol isDoctorContext →
 vacío seguro antes de cualquier query si no es médico (doctorId solo NO basta);
