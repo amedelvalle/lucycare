@@ -9,9 +9,9 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `0258328` (*fix(perfil): limpieza del perfil público — footer + botones muertos (#184)*).
-- **PRs mergeados:** **#1–#184**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#184 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter, §2quater y §2quinquies).
+- **HEAD de `main`:** `ceb7116` (*fix(perfil): card "Reclamar perfil" visible por viewer en perfiles listed_only (#187)*).
+- **PRs mergeados:** **#1–#187**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#184 y #187 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter, §2quater y §2quinquies).
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
@@ -51,13 +51,14 @@ Ayuda dentro del panel para que un médico **ya operativo** entienda qué le fal
   - Validado: `tsc`+`build` + smoke SSR 13/13 (gates negativos) + preview en vivo bajo sesión real de Camilo (RLS) → 4/5, móvil 360/390/430 sin overflow, 0 errores de consola.
 - **Regla de validación vinculante:** fixtures aisladas / paciente demo (Camilo/Pepe Toro), **jamás Katherine ni datos reales sensibles**.
 
-### 2quinquies. Frente "Perfil público / visibilidad comercial" (#180–#184) — CERRADO, frontend-only, sin migración
+### 2quinquies. Frente "Perfil público / visibilidad comercial" (#180–#184, #187) — CERRADO, frontend-only, sin migración
 Mejoras públicas de conversión en directorio/Home + perfil del médico. Ninguno agregó migración (`s7_51` sin cambios); **sin DB, sin `database.types.ts`**.
 - **#180 — CTA "Reservar cita" en la tarjeta (`DoctorCard.tsx`):** reservable → "Agenda en línea" + CTA "Reservar cita" (navega a `/doctor/:id`); no reservable → "Ver perfil"; sin copy contradictorio; precio solo si >0 (sin `$0`). Fix: el CTA dependía de `nextAvailableSlot` hardcodeado a `undefined`.
 - **#181 — contador honesto del Home:** título neutro "Médicos en Lucy" + conteo discreto "Mostrando X de Y médicos publicados · Z con agenda en línea"; variantes para búsqueda/toggle; sin claims inflados; `PAGE_SIZE=12` y "Mostrar más médicos" intactos.
 - **#182 — limpieza copy/footer del Home:** hero honesto; "Acceso Gratuito" → "Búsqueda sin costo"; footer con año dinámico (sin "© 2024"), sin "Website Builder", sin links muertos, Privacidad → `/privacidad`, sin "Síguenos" (grid 4→3).
 - **#183 — perfil público móvil más liviano:** en `/doctor/:id` móvil, reservable ya NO muestra el `BookingCard` inline arriba (lidera info/confianza); reserva desde barra fija → `MobileBookingSheet`; desktop conserva `BookingCard` sticky; no reservables conservan contacto/lista de espera (sin barra fija ni promesa); eliminado "Pago seguro • Confirmación inmediata" → "Reserva en línea · el pago se coordina con el médico" (Lucy no cobra en línea).
 - **#184 — footer del perfil + "Compartir" funcional:** footer alineado con el Home; "Guardar" eliminado (no se simula); "Compartir" diferenciado por contexto (`matchMedia('(pointer: coarse)')` en el click): móvil/touch + `navigator.share` → share nativo; desktop o móvil sin share → copiar URL + toast "Enlace copiado" (no abre el panel del sistema en desktop); etiqueta desktop "Copiar enlace", ícono discreto en móvil.
+- **#187 — card "Reclamar perfil" visible por viewer en perfiles `listed_only`** (`ClaimProfilePromptCard.tsx` + `doctor-detail/page.tsx`): antes se mostraba idéntica a todos (anónimo/paciente/admin) como bloque emerald destacado arriba del fold → ruido/desconfianza para el paciente. Ahora depende del viewer (mismo patrón `getSessionWithTimeout` que `ClaimedProfileNoticeCard`): **dueño logueado** (`auth.uid() === doctor.profileId`) → card completa arriba; **anónimo** → entrada **discreta** (link "¿Eres este profesional? Reclamá tu perfil") al final de la columna, fuera del 1er pantallazo, abre el mismo `ClaimProfileModal`; **otro autenticado no-dueño / mientras resuelve** → nada (sin flash). Gate **explícito** `isListedOnly` (`=== 'LISTED_ONLY'`) → un `lucy_status` faltante/null ya NO hace fail-open. Solo 2 `.tsx`; **sin DB/migraciones/`database.types.ts`/fixtures; no toca reserva/mapa/credenciales/Home/branding/`lucycare-code/`**. Estado "dueño logueado" validado por paridad de código (sin fixture DB). Pendiente de este frente que sigue VIVO: mapa condicional, señales de confianza/credenciales, branding emerald, assets del logo fuera de readdy, próximo-slot-real.
 - **Validación del frente:** tsc+build verdes por PR · preview desktop + móvil 360/390/430 sin overflow · 0 errores de consola · 0 residuales · **directorio público / paciente demo (Camilo/Pepe Toro), jamás Katherine ni datos reales sensibles**.
 - **Pendientes explícitos (backlog, NO implementado):** mapa condicional; card "Reclamar perfil" en perfiles públicos `listed_only`; señales de confianza / credenciales (decisión de privacidad sobre `license_number`); branding emerald unificado (quitar `#3C2285`); migrar assets del logo fuera de `static.readdy.ai`; próximo-slot-real en la tarjeta. **(Nota: NO existe un duplicado real `src/pages/Home/` — fue un artefacto de filesystem case-insensitive; descartado del backlog por verificación: `git ls-files 'src/pages/Home/'` vacío + `core.ignorecase=true`; el único Home es `src/pages/home/`.)**
 
@@ -69,7 +70,7 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `0258328` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `ceb7116` o posterior · `main == origin/main` · árbol limpio.
 
 ---
 
@@ -167,7 +168,7 @@ Sincronizá y confirmá estado:
   git log --oneline -5 && git status --short
 
 Estado esperado de main:
-- HEAD 0258328 · PRs #1–#184 · migraciones aplicadas hasta s7_51.
+- HEAD ceb7116 · PRs #1–#187 · migraciones aplicadas hasta s7_51.
 - main == origin/main · árbol limpio.
 - tsc --noEmit OK · npm run build OK.
 
