@@ -131,6 +131,10 @@ export default function DoctorDetail() {
   // Mapear datos
   const canBook = doctor.bookingEnabled;
   const lucyStatus = doctor.lucyStatus?.toUpperCase() || 'LISTED_ONLY';
+  // Gate explícito para la card de reclamo: un estado faltante/null NO debe
+  // hacer fail-open a 'LISTED_ONLY' (a diferencia del default de `lucyStatus`,
+  // que existe por compatibilidad de badges/BookingCard).
+  const isListedOnly = doctor.lucyStatus?.toUpperCase() === 'LISTED_ONLY';
   const isVerified = doctor.isVerified;
   const locationDisplay = [doctor.municipality, doctor.department].filter(Boolean).join(', ') || 'Sin ubicación';
   const fullAddress = [doctor.addressLine, doctor.municipality, doctor.department, 'El Salvador'].filter(Boolean).join(', ');
@@ -239,14 +243,19 @@ export default function DoctorDetail() {
               </div>
             </div>
 
-            {/* CTA: Reclamar perfil (solo cuando aún está listed_only) */}
-            {lucyStatus === 'LISTED_ONLY' && (
-              <div className="mb-8">
-                <ClaimProfilePromptCard
-                  doctorId={doctor.id}
-                  doctorName={doctor.fullName}
-                />
-              </div>
+            {/* CTA: Reclamar perfil (solo cuando aún está listed_only).
+                La card decide internamente la visibilidad por viewer:
+                  - dueño logueado → bloque completo (variant 'full');
+                  - cualquier otro autenticado / mientras resuelve → nada.
+                El visitante anónimo NO ve este bloque destacado: para él hay una
+                entrada discreta al final de la columna (variant 'discrete'). */}
+            {isListedOnly && (
+              <ClaimProfilePromptCard
+                doctorId={doctor.id}
+                doctorName={doctor.fullName}
+                doctorProfileId={doctor.profileId}
+                variant="full"
+              />
             )}
 
             {/* Aviso: perfil reclamado pero todavía sin agenda online ni verificación.
@@ -406,6 +415,18 @@ export default function DoctorDetail() {
             <div className="mb-8">
               <ReviewsSection doctorId={doctor.id} />
             </div>
+
+            {/* Entrada discreta de reclamo para el visitante anónimo (fuera del
+                primer pantallazo). La card solo renderiza para 'anon'; para el
+                dueño/otros autenticados devuelve null (sin gap fantasma). */}
+            {isListedOnly && (
+              <ClaimProfilePromptCard
+                doctorId={doctor.id}
+                doctorName={doctor.fullName}
+                doctorProfileId={doctor.profileId}
+                variant="discrete"
+              />
+            )}
           </div>
 
           {/* Right Column - Booking Card (Desktop only) */}
