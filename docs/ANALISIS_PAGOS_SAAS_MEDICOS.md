@@ -107,6 +107,13 @@ feliz.
 
 ## 2. Modelo comercial
 
+> ⚠️ **PRECIOS SUPERSEDED — ver §14 (modelo comercial APROBADO 2026-06-29).**
+> Los montos de §2.1/§2.2 ($55/mes, $594/año, 10% off, $5/usuario) son la
+> **propuesta original (2026-06-01)** y quedan como histórico. **Los precios
+> vigentes y aprobados están en §14** ($59/mes, $601.80/año, 15% off,
+> $6/usuario), con desglose IVA-incluido y montos en centavos. Ante cualquier
+> contradicción, **mandan §14**.
+
 ### 2.1 Planes
 
 | Plan | Precio | Equivalente mensual | Incluye |
@@ -574,3 +581,394 @@ pasarela en ENV/dashboard, **nunca en repo**.
 **Siguiente paso:** el owner ejecuta la validación de pasarela (§4.5) y
 responde §10. Con pasarela elegida + Q cerradas, se arma el plan operativo
 del primer PR (Fase 1: modelo de datos).
+
+---
+
+## 14. Pricing configurable / modelo comercial APROBADO (2026-06-29)
+
+> Esta sección **reemplaza** los precios de §2 (que quedan como histórico de la
+> propuesta original). Aprobada por el owner el 2026-06-29. Sigue siendo
+> **diseño/decisión comercial** — **NO implica implementación** (no hay tablas,
+> no hay pasarela elegida, no hay código).
+
+### 14.1 Precios aprobados (USD, IVA 13% incluido)
+
+Unidad comercial = **médico titular**; cada plan base incluye **1 titular + 2
+asistentes** (3 accesos). Todos los montos son **IVA incluido** (el monto bruto
+es lo que se cobra). Moneda **USD** (curso legal en SV).
+
+| Concepto | Bruto (IVA incl.) | Base s/IVA | IVA 13% | Centavos (bruto / base / IVA) |
+|---|---|---|---|---|
+| **Plan mensual** | **$59.00 / mes** | $52.21 | $6.79 | **5900 / 5221 / 679** |
+| **Plan anual** (−15% vs 12 mensuales) | **$601.80 / año** | $532.57 | $69.23 | **60180 / 53257 / 6923** |
+| Plan anual — equivalente visible | $50.15 / mes | — | — | — |
+| **Usuario adicional / mes** | **$6.00 / usuario / mes** | $5.31 | $0.69 | **600 / 531 / 69** |
+| **Usuario adicional / año** (−15%) | **$61.20 / usuario / año** | $54.16 | $7.04 | **6120 / 5416 / 704** |
+
+Verificaciones: mensual×12 = $708 → −15% = **$601.80**; $601.80/12 = **$50.15/mes**;
+adicional mensual×12 = $72 → −15% = **$61.20**; en las 4 filas `base + IVA = bruto`.
+
+- **Usuario adicional anual — CONFIRMADO:** aplica el **mismo 15%** que el plan
+  anual → **$61.20/usuario/año IVA incluido** (consistencia comercial).
+- **IVA:** los precios son **IVA-incluido** (resuelve la parte de presentación de
+  Q6). La **emisión de comprobante/DTE sigue pendiente** (legal/contable, §14.5).
+
+### 14.2 Prorrateo (MVP) — CONFIRMADO
+- **No** automatizar prorrateo intra-ciclo en la primera versión.
+- Los usuarios adicionales **self-service** se **cobran y habilitan desde el
+  siguiente ciclo** (no a mitad de período).
+- Si se necesita **habilitación inmediata**, queda como **caso manual de
+  LucyAdmin/soporte** con **nota + auditoría**.
+- **No** construir motor de proration en MVP.
+
+### 14.3 Principio obligatorio — precios configurables, NO hardcoded
+- **Fuente de verdad futura = servidor/DB.** El **frontend solo muestra** precios
+  entregados por el backend; **nunca** calcula dinero crítico ni asume el IVA.
+- **Dinero en centavos enteros** (`*_cents`), **nunca floats**.
+- **IVA y descuentos en basis points** (IVA `1300`, descuento anual `1500`).
+- **Filas de precio versionadas e inmutables:** cambiar un precio público =
+  **insertar una fila nueva** (`effective_from` nuevo) + **desactivar** la
+  anterior (`active=false`, `effective_to`). **Nunca editar el monto de una fila
+  viva (sin edición silenciosa).**
+- **Grandfathering:** cada suscripción guarda el **`plan_price_id`** con el que se
+  contrató; cambiar el precio público **no** modifica suscripciones existentes.
+  **No re-preciar médicos antiguos sin decisión explícita** (nunca retroactivo
+  silencioso).
+- **IDs de la pasarela** (`provider_product_id` / `provider_price_id`) viven
+  **asociados a la fila de precio/configuración**, **no quemados en componentes**.
+
+**Riesgos de hardcodear** (por qué la regla anterior): cambio de precio/IVA
+exigiría deploy; inconsistencia entre componentes; imposible grandfathering ni
+promos; drift con los IDs de la pasarela; errores de redondeo si el front calcula
+dinero con floats.
+
+### 14.4 Diseño futuro `subscription_plan_prices` (PROPUESTA — NO implementar)
+Tabla única para el MVP (2 planes + 1 add-on = pocas filas); más simple que el
+split en 3 tablas (`subscription_plans`/`subscription_prices`/`subscription_addons`),
+que queda para si el catálogo crece. **Filas append-only / inmutables.**
+
+```
+subscription_plan_prices
+  id
+  code                       -- 'base_monthly' | 'base_annual' | 'extra_seat_monthly' | 'extra_seat_annual'
+  name                       -- label visible ("Plan Mensual")
+  kind                       -- 'base' | 'addon_seat'
+  billing_interval           -- 'monthly' | 'annual'
+  currency                   -- 'USD'
+  gross_amount_cents         -- CANÓNICO (5900 / 60180 / 600 / 6120)
+  tax_included               -- true
+  tax_rate_bps               -- 1300
+  net_amount_cents           -- derivado (CHECK: net + tax = gross)
+  tax_amount_cents           -- derivado
+  included_assistant_seats   -- 2 en base; 0/null en addon
+  annual_discount_bps        -- 1500 (auditoría del cálculo)
+  provider                   -- 'wompi'|'pagadito'|'n1co'|'stripe'|null (pre-integración)
+  provider_product_id        -- nullable hasta integrar pasarela
+  provider_price_id          -- nullable hasta integrar pasarela
+  active                     -- bool
+  effective_from / effective_to
+  created_at / updated_at
+```
+- Canónico = `gross_amount_cents` + `tax_rate_bps` + `tax_included`; `net`/`tax`
+  se derivan (`net = round(gross/(1+rate))`, `tax = gross − net`) — si se
+  almacenan, **CHECK `net_amount_cents + tax_amount_cents = gross_amount_cents`**.
+- Relación futura: `subscriptions.plan_price_id` → FK a esta tabla
+  (grandfathering). `subscriptions` y `subscription_events` (§8) **NO existen aún**.
+- **NO se implementa en este PR** (docs-only).
+
+### 14.5 Pendientes vigentes (no cerrados por esta aprobación)
+- **Pasarela: NO decidida.** Matriz de validación (Wompi SV / Pagadito / N1CO /
+  Stripe-referencia) pendiente de ejecutar (§4.5 + reporte de validación). Criterio
+  bloqueante: **recurring nativo + webhooks firmados + settlement USD a cuenta SV**.
+- **DTE / IVA / facturación:** emisión de comprobante sigue **pendiente legal/
+  contable** (los precios ya son IVA-incluido, pero falta cómo se factura/emite).
+- Resto de Q1–Q11 (§10): gracia, suspensión exacta, reactivación, cancelación,
+  trial, multi-doctor, self-service vs portal.
+
+### 14.6 Separación de ejes (VINCULANTE, reconfirmado)
+- **Pago (`subscription='active'`) ≠ `verified`** — pagar no da el sello de
+  confianza (lo decide LucyAdmin).
+- **Pago ≠ `claimed`** — la identidad/reclamo no depende del pago.
+- **El pago impacta solo operatividad SaaS** (`is_operational`, `booking_enabled`,
+  asientos/asistentes), **nunca** identidad ni confianza.
+
+---
+
+## 15. Autoservicio de suscripción / customer portal (APROBADO 2026-06-29)
+
+> Diseño/decisión de producto. Extiende §14. **NO implica implementación**
+> (sin tablas, sin pasarela elegida, sin código). Alineado al principio:
+> el camino feliz es autoservicio; LucyAdmin solo para excepciones auditadas.
+
+### 15.1 Decisión de producto
+El médico debe poder gestionar su suscripción **sin intervención manual** de
+LucyCare, idealmente desde **la pasarela o un portal externo seguro**:
+1. cancelar la suscripción;
+2. cambiar método de pago / tarjeta;
+3. reactivar si corresponde;
+4. ajustar usuarios adicionales cuando tenga más de 2 asistentes.
+
+### 15.2 Cambio de método de pago
+- **LucyCare NO captura ni almacena datos de tarjeta** (PCI fuera de alcance).
+- El médico se **redirige a la pasarela / portal seguro** para actualizar tarjeta.
+- LucyCare solo guarda **identificadores seguros del proveedor** y **estado
+  derivado** (nunca el PAN).
+- La confirmación real viene por **webhook firmado** o verificación server-side;
+  **la URL de retorno NO es fuente de verdad**.
+
+### 15.3 Cancelación (regla MVP)
+- Efectiva **al final del período ya pagado** (`cancel_at_period_end`).
+- **No** suspender inmediatamente si el período actual está pagado: mantener
+  servicio activo hasta **`current_period_end`**.
+- Al vencimiento, si no hay renovación/reactivación → **suspender operatividad
+  SaaS** según reglas (§6).
+- **Default MVP: sin reembolso automático** por período parcial.
+
+### 15.4 Usuarios adicionales / asientos
+- Plan base = **1 titular + 2 asistentes incluidos**.
+- Regla conceptual: **`extra_seats = max(asistentes_activos − 2, 0)`**.
+  - 2 asistentes → 0 adicionales · 3 → 1 adicional · 4 → 2 adicionales.
+- Precios (§14): adicional **$6.00/mes** o **$61.20/año** (−15%), IVA incluido.
+
+### 15.5 Quitar asistentes
+Separar **dos cosas distintas**:
+1. **quitar/desactivar a una persona** del equipo (operación de equipo);
+2. **reducir el cobro** de usuarios adicionales (operación de facturación).
+
+Regla MVP:
+- Si al quitar un asistente baja la cantidad de adicionales necesarios, el
+  **cambio de cobro aplica en el siguiente ciclo** (sin prorrateo intra-ciclo).
+- Ajuste inmediato = **caso manual LucyAdmin/soporte** con **nota + auditoría**.
+- **Nunca borrar historial clínico ni auditoría** por quitar un asistente
+  (el usuario se desactiva/bloquea, no se hard-delete).
+- Ejemplo: 4 asistentes (paga 2 adicionales) → elimina 1 → 3 asistentes →
+  **desde el próximo ciclo paga 1 adicional**.
+
+### 15.6 Agregar asistentes
+- **Self-service automático:** el nuevo adicional se **cobra/habilita desde el
+  siguiente ciclo** (consistente con §14.2, sin prorrateo).
+- **Habilitación inmediata:** caso manual LucyAdmin/soporte, **o** fase futura si
+  la pasarela soporta *quantity update* con cobro inmediato.
+- **No** construir motor de prorrateo propio en MVP.
+
+### 15.7 Modelo conceptual futuro (campos a considerar — NO implementar)
+A considerar en `subscriptions` (o estructura equivalente) cuando se diseñe la
+Fase 1; **no se crea nada en este PR**:
+```
+included_assistant_seats        -- 2
+paid_extra_seats_quantity       -- adicionales pagados vigentes
+active_assistant_count          -- asistentes activos (derivado / cache)
+pending_extra_seats_quantity    -- cambio de cantidad que aplica el próximo ciclo
+pending_change_effective_at     -- cuándo aplica el cambio pendiente
+billing_interval                -- 'monthly' | 'annual'
+current_period_start
+current_period_end
+cancel_at_period_end            -- bool
+canceled_at
+payment_method_update_required  -- bool (tarjeta vencida/rechazada)
+provider_customer_portal_url    -- o mecanismo equivalente
+```
+- Los eventos relacionados (cambio de tarjeta, cancelación, update de cantidad,
+  `past_due`, etc.) quedan en **`subscription_events`** (log inmutable, idempotente).
+
+### 15.8 Enforcement futuro (server-side, NO solo frontend)
+- El límite de asistentes **no debe depender solo del frontend**.
+- Regla futura: **`team_seat_limit` = 2 incluidos + `paid_extra_seats_quantity`**.
+  - Hoy `team_seat_limit(p_clinic_id)` retorna `2` fijo (`s7_27`) con `TODO(pagos)`
+    — ese es el punto exacto a cablear (§0bis.2).
+- **No permitir** más asistentes activos / invitaciones aceptables que asientos
+  permitidos; **conservar enforcement server-side** (trigger + revalidación en
+  `accept_clinic_invitations`, ya existentes).
+
+### 15.9 Matriz de pasarela — criterios adicionales (extiende §4.2/§4.5)
+Sumar a la validación de pasarela (Wompi/Pagadito/N1CO/Stripe-referencia) estos
+criterios, **pendientes de validar** con cada proveedor:
+- customer portal / portal de cliente;
+- actualización de método de pago;
+- cancelación self-service;
+- cancelación **al final del período**;
+- reactivación self-service;
+- modificación de **cantidad de add-ons/asientos**;
+- webhooks de cambio de tarjeta;
+- webhooks de cancelación;
+- webhooks de actualización de suscripción;
+- manejo de **`past_due`**;
+- reintentos de cobro;
+- **dunning**;
+- estado de suscripción claro/consultable.
+
+> **Riesgo:** si la pasarela **no** soporta **portal de cliente** ni
+> **modificación de cantidad/asientos**, LucyCare tendría que construir más
+> lógica propia o manejar esos cambios **manualmente desde LucyAdmin**. Eso
+> **baja la conveniencia** de esa pasarela para el MVP y debe pesar en la
+> decisión de §4.
+
+---
+
+## 16. LucyAdmin Billing — administración y reportería de pagos (APROBADO 2026-06-29)
+
+> Diseño/decisión de producto. **NO implica implementación** (sin módulo admin,
+> sin tablas, sin pasarela elegida, sin código). Define qué debe poder hacer y
+> ver LucyAdmin para operar el negocio SaaS — independiente del panel de la pasarela.
+
+### 16.1 Decisión de producto
+LucyCare necesita un **módulo administrativo de billing** para controlar ingresos,
+pagos, suscripciones, usuarios incluidos/adicionales y suspensión/reactivación por
+impago. **La pasarela cobra; LucyAdmin gobierna el negocio.** Indispensable para
+operar como SaaS.
+
+### 16.2 Objetivos (qué debe poder saberse)
+1. qué médicos tienen suscripción activa; 2. quién pagó; 3. cuánto pagó cada uno;
+4. qué plan tiene (mensual/anual); 5. asistentes incluidos; 6. usuarios adicionales
+que paga; 7. cuánto debe pagar el próximo ciclo; 8. cuándo vence el período actual;
+9. estado (`active`/`past_due`/`suspended`/`canceled`/…); 10. quién debe darse de
+baja por impago; 11. quién fue reactivado; 12. ingreso cobrado del mes; 13. MRR
+proyectado; 14. ARR; 15. pendiente / fallido / vencido.
+
+### 16.3 Dashboard mínimo (MVP futuro) — KPIs
+- ingresos cobrados del mes; **MRR** estimado; **ARR** estimado;
+- médicos activos por pago; en período de gracia; vencidos/`past_due`; suspendidos;
+  cancelados;
+- usuarios adicionales activos; ingresos por usuarios adicionales;
+- próximos vencimientos; pagos fallidos recientes; reactivaciones recientes.
+
+### 16.4 Lista administrativa de suscripciones
+Vista tabla con **filtros**: estado de suscripción · plan mensual/anual · médico ·
+clínica · próximo cobro · último pago · estado de pago · pasarela · pago fallido ·
+en gracia · suspendibles.
+
+**Columnas sugeridas:** médico · clínica · plan · estado de suscripción · monto
+bruto · base s/IVA · IVA · usuarios incluidos · usuarios adicionales cobrados ·
+total estimado próximo ciclo · último pago · próximo vencimiento/cobro · proveedor ·
+`provider_customer_id` · `provider_subscription_id` · fecha de cancelación (si
+aplica) · `cancel_at_period_end` · estado operativo resultante · notas/override
+manual.
+
+### 16.5 Detalle por médico / suscripción
+- plan actual; precio contratado (`plan_price_id`); historial de pagos; historial
+  de eventos de la pasarela; usuarios incluidos; usuarios adicionales; estado
+  actual; fechas de período; intentos fallidos; motivo de suspensión;
+  reactivaciones; overrides manuales; notas internas.
+
+### 16.6 Control operativo (acciones LucyAdmin)
+1. ver quién debe suspenderse; 2. suspender manualmente si corresponde;
+3. reactivar manualmente; 4. aplicar **override temporal**; 5. registrar
+nota/motivo; 6. **exportar reporte**; 7. revisar **conciliación** pasarela↔LucyCare.
+Toda acción → **`audit_log`** (override/suspensión/reactivación auditados).
+
+### 16.7 Reglas de suspensión (pendiente de cerrar, pero necesaria)
+- pago fallido → `past_due`; **período de gracia configurable**; gracia vencida →
+  **suspensión operativa**.
+- la suspensión afecta **operatividad SaaS** (`is_operational`/`booking_enabled`),
+  **no** identidad ni confianza; **se conservan perfil/historial/datos**.
+- reactivación al pagar **o** por override LucyAdmin; **todo cambio auditado**.
+- (Reafirma §6 y la separación pago ≠ verified ≠ claimed.)
+
+### 16.8 Reportería financiera (reportes mínimos)
+ingresos cobrados por mes · por plan mensual · por plan anual · por usuarios
+adicionales · pagos fallidos · pagos pendientes · cancelaciones · reactivaciones ·
+médicos suspendidos por impago · **churn** · **MRR** · **ARR** · **export CSV/XLS**
+(futuro).
+
+### 16.9 Conciliación
+Fuente principal de eventos = **webhook firmado** de la pasarela; además LucyAdmin
+debe permitir **conciliar**:
+- comparar pagos recibidos en pasarela vs estado en LucyCare;
+- detectar **webhook fallido/perdido**; **pago duplicado**;
+- **activa en pasarela pero suspendida en LucyCare** (y viceversa: **activa en
+  LucyCare sin pago vigente**);
+- permitir **revisión manual segura** (con audit).
+
+### 16.10 Modelo de datos futuro (para reportería, NO implementar)
+El diseño debe soportar **reportería y trazabilidad**, no solo activación. Además de
+`subscriptions` y `subscription_events`, considerar conceptos como:
+```
+pagos recibidos / intentos de cobro / invoices internos
+  período facturado, gross_amount_cents, net_amount_cents, tax_amount_cents,
+  currency, plan_price_id, extra_seats_quantity,
+  provider_payment_id, provider_invoice_id (si aplica), provider_event_id,
+  reconciliation_status, timestamps auditables
+```
+- **No** crear todas las tablas en MVP, **pero sí diseñar para no perder
+  trazabilidad** (montos en centavos, `plan_price_id` para grandfathering, IDs del
+  proveedor, estado de conciliación).
+
+### 16.11 Principio importante (VINCULANTE)
+**No depender solo del panel de la pasarela para administrar el negocio.** La
+pasarela procesa el pago; **LucyAdmin** debe tener visibilidad operativa y
+financiera suficiente para **activar / suspender / reactivar / conciliar / reportar
+/ auditar**.
+
+---
+
+## 17. Separación arquitectónica: Lucy SaaS vs LucyAdmin Billing (APROBADO 2026-06-29)
+
+> Decisión de producto/arquitectura. **NO implica implementación** (sin módulo,
+> sin rutas, sin tablas, sin pasarela, sin código). Las partes ya detalladas en
+> §14/§15/§16 **no se repiten** acá: se referencian y se reconfirman bajo esta
+> separación (ver §17.5).
+
+### 17.1 Decisión de arquitectura
+**LucyAdmin Billing es un módulo administrativo separado del SaaS operativo del
+médico.** No se mezcla con el panel médico ni con las vistas clínicas. Cuatro
+responsabilidades distintas:
+- **Lucy SaaS** — operación del médico (panel, agenda, ficha clínica, reserva).
+- **LucyAdmin Billing** — control financiero: suscripciones, pagos, reportería,
+  conciliación, auditoría, suspensión/reactivación.
+- **Pasarela externa** — cobro, tarjeta, cancelación y/o portal de cliente.
+- **Webhooks / backend** — sincronización **confiable** del estado de pago
+  (fuente de verdad firmada, idempotente).
+
+En **MVP** puede vivir **dentro del mismo proyecto/app** como **rutas protegidas
+de LucyAdmin**, pero **conceptualmente es un backoffice separado**. Lo importante
+no es separar repos/DB, sino **separar permisos, rutas, auditoría y
+responsabilidad**.
+
+### 17.2 Ubicación sugerida (MVP futuro)
+Rutas dentro de LucyAdmin, p. ej.:
+`/admin/billing` · `/admin/billing/dashboard` · `/admin/billing/suscripciones` ·
+`/admin/billing/pagos` · `/admin/billing/conciliacion` · `/admin/billing/reportes` ·
+`/admin/billing/precios` · `/admin/billing/eventos`.
+
+A futuro podría migrar a **subdominio / app administrativa separada** (p. ej.
+`admin.lucycare.app`). **En MVP NO hace falta** otro repo ni otra base de datos
+solo por separación visual.
+
+### 17.3 Qué ve el médico (Lucy SaaS) vs qué NO ve
+**El médico ve solo una vista limitada de SU suscripción:**
+- plan actual; estado de suscripción; próxima fecha de cobro/vencimiento;
+  asistentes incluidos; usuarios adicionales; botón/enlace para **pagar**, para
+  **cambiar método de pago**, y para **gestionar/cancelar** en la pasarela;
+  mensajes de pago fallido / período de gracia / suspensión.
+
+**El médico NO ve (pertenece solo a LucyAdmin Billing):**
+- ingresos globales; pagos de otros médicos; conciliación; reportería financiera;
+  overrides; eventos internos de webhook; decisiones administrativas globales.
+
+### 17.4 Separación de permisos (roles futuros posibles)
+- `super_admin` · `billing_admin` · `billing_readonly` · `support_admin`.
+- Reglas:
+  - **No todo admin clínico debe poder modificar pagos.**
+  - **Todo override de pago / suspensión / reactivación → auditado** (`audit_log`).
+  - **Reportes financieros con acceso restringido.**
+- (Hoy `profiles.role='admin'` es el único bit de autorización admin; estos roles
+  de billing son **diseño futuro**, no se implementan acá. Se alinean con la Fase 2
+  de `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — capacidades granulares.)
+
+### 17.5 Lo ya documentado (reconfirmado bajo esta arquitectura — no se repite)
+- **Autoservicio del médico** (cancelar / cambiar tarjeta / reactivar / ajustar
+  asientos), **cambio de método de pago**, **cancelación a fin de período**,
+  **usuarios adicionales/asientos** (`extra_seats = max(asistentes−2,0)`,
+  agregar/quitar sin prorrateo MVP) → **§15** (precios en **§14**).
+- **LucyAdmin Billing** (objetivos, **dashboard/KPIs**, **lista filtrable** +
+  columnas, **detalle por médico**, **control operativo**, **reportería**,
+  **conciliación**, **modelo de datos futuro**) → **§16**.
+- **Pricing configurable / no-hardcoded** y separación **pago ≠ verified ≠
+  claimed** → **§14**.
+
+### 17.6 Principio (VINCULANTE)
+**No depender solo del panel de la pasarela para administrar el negocio.** La
+pasarela procesa pagos; **LucyAdmin Billing** debe dar visibilidad operativa y
+financiera suficiente para **activar / suspender / reactivar / conciliar /
+reportar / auditar** — y debe estar **separado** del SaaS operativo del médico
+(permisos, rutas, auditoría, responsabilidad).
