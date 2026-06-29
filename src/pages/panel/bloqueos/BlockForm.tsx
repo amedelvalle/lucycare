@@ -139,13 +139,19 @@ export default function BlockForm({
                   key={type.id}
                   type="button"
                   onClick={() => setBlockTypeId(type.id)}
-                  className={`min-h-[2.75rem] px-3 sm:px-4 py-2.5 rounded-lg text-sm font-medium border transition-all flex items-center justify-center text-center leading-tight break-words ${
+                  className={`min-h-[2.75rem] px-3 sm:px-4 py-2.5 rounded-lg text-sm font-medium border transition-all flex items-center justify-center text-center leading-tight ${
                     blockTypeId === type.id
                       ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200'
                       : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
                   }`}
                 >
-                  <span>{getBlockTypeEmoji(type.name)} {type.name}</span>
+                  {/* min-w-0 deja que el span (flex item) se encoja por debajo de su
+                      contenido; break-words (overflow-wrap:break-word) parte el token
+                      largo sin espacio solo cuando no entra, respetando los cortes
+                      naturales (espacios) de los demás labels. displayBlockTypeName
+                      agrega un punto de corte invisible tras la "/" SOLO para render
+                      (no altera type.name) → "Congreso/Capacitación" corta en la barra. */}
+                  <span className="min-w-0 break-words">{getBlockTypeEmoji(type.name)} {displayBlockTypeName(type.name)}</span>
                 </button>
               ))}
             </div>
@@ -304,6 +310,16 @@ export default function BlockForm({
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Nombre del tipo de bloqueo para MOSTRAR. Inserta un zero-width space (U+200B)
+ * después de cada "/" para dar un punto de corte natural en labels sin espacio
+ * como "Congreso/Capacitación" → envuelve "Congreso/" · "Capacitación" en móvil.
+ * SOLO para render: el valor real (`type.name`, búsquedas, emoji) no cambia.
+ */
+function displayBlockTypeName(name: string): string {
+  return name.split('/').join('/' + String.fromCharCode(0x200B));
+}
 
 function getBlockTypeEmoji(name: string): string {
   const lower = name.toLowerCase();
