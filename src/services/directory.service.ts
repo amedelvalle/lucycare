@@ -191,7 +191,6 @@ export async function fetchDoctorDetail(
       id,
       profile_id,
       specialty_id,
-      license_number,
       bio,
       consultation_fee,
       experience_years,
@@ -321,7 +320,6 @@ export async function fetchDoctorDetail(
     municipalityId: doc.clinics?.municipality_id || null,
     addressLine: doc.clinics?.address_line || null,
     startingPrice,
-    licenseNumber: doc.license_number,
     education,
     clinicPhone: doc.clinics?.phone || null,
     clinicLatitude: null,  // TODO: Agregar cuando se añada lat/lng a clinics
