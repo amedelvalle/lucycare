@@ -802,3 +802,99 @@ criterios, **pendientes de validar** con cada proveedor:
 > lógica propia o manejar esos cambios **manualmente desde LucyAdmin**. Eso
 > **baja la conveniencia** de esa pasarela para el MVP y debe pesar en la
 > decisión de §4.
+
+---
+
+## 16. LucyAdmin Billing — administración y reportería de pagos (APROBADO 2026-06-29)
+
+> Diseño/decisión de producto. **NO implica implementación** (sin módulo admin,
+> sin tablas, sin pasarela elegida, sin código). Define qué debe poder hacer y
+> ver LucyAdmin para operar el negocio SaaS — independiente del panel de la pasarela.
+
+### 16.1 Decisión de producto
+LucyCare necesita un **módulo administrativo de billing** para controlar ingresos,
+pagos, suscripciones, usuarios incluidos/adicionales y suspensión/reactivación por
+impago. **La pasarela cobra; LucyAdmin gobierna el negocio.** Indispensable para
+operar como SaaS.
+
+### 16.2 Objetivos (qué debe poder saberse)
+1. qué médicos tienen suscripción activa; 2. quién pagó; 3. cuánto pagó cada uno;
+4. qué plan tiene (mensual/anual); 5. asistentes incluidos; 6. usuarios adicionales
+que paga; 7. cuánto debe pagar el próximo ciclo; 8. cuándo vence el período actual;
+9. estado (`active`/`past_due`/`suspended`/`canceled`/…); 10. quién debe darse de
+baja por impago; 11. quién fue reactivado; 12. ingreso cobrado del mes; 13. MRR
+proyectado; 14. ARR; 15. pendiente / fallido / vencido.
+
+### 16.3 Dashboard mínimo (MVP futuro) — KPIs
+- ingresos cobrados del mes; **MRR** estimado; **ARR** estimado;
+- médicos activos por pago; en período de gracia; vencidos/`past_due`; suspendidos;
+  cancelados;
+- usuarios adicionales activos; ingresos por usuarios adicionales;
+- próximos vencimientos; pagos fallidos recientes; reactivaciones recientes.
+
+### 16.4 Lista administrativa de suscripciones
+Vista tabla con **filtros**: estado de suscripción · plan mensual/anual · médico ·
+clínica · próximo cobro · último pago · estado de pago · pasarela · pago fallido ·
+en gracia · suspendibles.
+
+**Columnas sugeridas:** médico · clínica · plan · estado de suscripción · monto
+bruto · base s/IVA · IVA · usuarios incluidos · usuarios adicionales cobrados ·
+total estimado próximo ciclo · último pago · próximo vencimiento/cobro · proveedor ·
+`provider_customer_id` · `provider_subscription_id` · fecha de cancelación (si
+aplica) · `cancel_at_period_end` · estado operativo resultante · notas/override
+manual.
+
+### 16.5 Detalle por médico / suscripción
+- plan actual; precio contratado (`plan_price_id`); historial de pagos; historial
+  de eventos de la pasarela; usuarios incluidos; usuarios adicionales; estado
+  actual; fechas de período; intentos fallidos; motivo de suspensión;
+  reactivaciones; overrides manuales; notas internas.
+
+### 16.6 Control operativo (acciones LucyAdmin)
+1. ver quién debe suspenderse; 2. suspender manualmente si corresponde;
+3. reactivar manualmente; 4. aplicar **override temporal**; 5. registrar
+nota/motivo; 6. **exportar reporte**; 7. revisar **conciliación** pasarela↔LucyCare.
+Toda acción → **`audit_log`** (override/suspensión/reactivación auditados).
+
+### 16.7 Reglas de suspensión (pendiente de cerrar, pero necesaria)
+- pago fallido → `past_due`; **período de gracia configurable**; gracia vencida →
+  **suspensión operativa**.
+- la suspensión afecta **operatividad SaaS** (`is_operational`/`booking_enabled`),
+  **no** identidad ni confianza; **se conservan perfil/historial/datos**.
+- reactivación al pagar **o** por override LucyAdmin; **todo cambio auditado**.
+- (Reafirma §6 y la separación pago ≠ verified ≠ claimed.)
+
+### 16.8 Reportería financiera (reportes mínimos)
+ingresos cobrados por mes · por plan mensual · por plan anual · por usuarios
+adicionales · pagos fallidos · pagos pendientes · cancelaciones · reactivaciones ·
+médicos suspendidos por impago · **churn** · **MRR** · **ARR** · **export CSV/XLS**
+(futuro).
+
+### 16.9 Conciliación
+Fuente principal de eventos = **webhook firmado** de la pasarela; además LucyAdmin
+debe permitir **conciliar**:
+- comparar pagos recibidos en pasarela vs estado en LucyCare;
+- detectar **webhook fallido/perdido**; **pago duplicado**;
+- **activa en pasarela pero suspendida en LucyCare** (y viceversa: **activa en
+  LucyCare sin pago vigente**);
+- permitir **revisión manual segura** (con audit).
+
+### 16.10 Modelo de datos futuro (para reportería, NO implementar)
+El diseño debe soportar **reportería y trazabilidad**, no solo activación. Además de
+`subscriptions` y `subscription_events`, considerar conceptos como:
+```
+pagos recibidos / intentos de cobro / invoices internos
+  período facturado, gross_amount_cents, net_amount_cents, tax_amount_cents,
+  currency, plan_price_id, extra_seats_quantity,
+  provider_payment_id, provider_invoice_id (si aplica), provider_event_id,
+  reconciliation_status, timestamps auditables
+```
+- **No** crear todas las tablas en MVP, **pero sí diseñar para no perder
+  trazabilidad** (montos en centavos, `plan_price_id` para grandfathering, IDs del
+  proveedor, estado de conciliación).
+
+### 16.11 Principio importante (VINCULANTE)
+**No depender solo del panel de la pasarela para administrar el negocio.** La
+pasarela procesa el pago; **LucyAdmin** debe tener visibilidad operativa y
+financiera suficiente para **activar / suspender / reactivar / conciliar / reportar
+/ auditar**.
