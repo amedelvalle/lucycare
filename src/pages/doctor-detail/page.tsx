@@ -139,6 +139,14 @@ export default function DoctorDetail() {
   const locationDisplay = [doctor.municipality, doctor.department].filter(Boolean).join(', ') || 'Sin ubicación';
   const fullAddress = [doctor.addressLine, doctor.municipality, doctor.department, 'El Salvador'].filter(Boolean).join(', ');
   const mapUrl = `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${encodeURIComponent(fullAddress)}`;
+  // El mapa embebido depende de geocoding por texto (no hay lat/lng). Solo lo
+  // mostramos si la dirección es útil; si no, evitamos el "mapa de ciudad/país"
+  // con falsa precisión. Ver isUsefulAddress() abajo.
+  const addressUseful = isUsefulAddress(doctor.addressLine);
+  const hasArea = !!(doctor.municipality || doctor.department);
+  const areaMapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    [doctor.municipality, doctor.department, 'El Salvador'].filter(Boolean).join(', ')
+  )}`;
   const consultationFee = doctor.consultationFee || doctor.startingPrice || 0;
 
   // Imágenes para la galería
@@ -377,7 +385,7 @@ export default function DoctorDetail() {
                 <div className="flex items-start gap-3">
                   <i className="ri-map-pin-line text-2xl text-emerald-700 mt-1"></i>
                   <div>
-                    {doctor.addressLine && (
+                    {addressUseful && (
                       <p className="text-gray-900 font-medium">{doctor.addressLine}</p>
                     )}
                     <p className="text-gray-600">{locationDisplay}</p>
@@ -392,19 +400,35 @@ export default function DoctorDetail() {
                   </div>
                 )}
 
-                {/* Map */}
-                <div className="mt-4 rounded-xl overflow-hidden h-80">
-                  <iframe
-                    src={mapUrl}
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    allowFullScreen
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    title="Ubicación del consultorio"
-                  ></iframe>
-                </div>
+                {/* Mapa:
+                    - dirección útil → iframe embebido (pin del consultorio);
+                    - sin dirección útil pero con municipio/departamento → link
+                      discreto de "zona aproximada" (no simula ubicación exacta);
+                    - sin nada → ni iframe ni link (el texto ya dice "Sin ubicación"). */}
+                {addressUseful ? (
+                  <div className="mt-4 rounded-xl overflow-hidden h-80">
+                    <iframe
+                      src={mapUrl}
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      allowFullScreen
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      title="Ubicación del consultorio"
+                    ></iframe>
+                  </div>
+                ) : hasArea ? (
+                  <a
+                    href={areaMapsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                  >
+                    <i className="ri-map-pin-line"></i>
+                    Ver zona aproximada en Google Maps
+                  </a>
+                ) : null}
               </div>
             </div>
 
@@ -525,4 +549,24 @@ export default function DoctorDetail() {
       </footer>
     </div>
   );
+}
+
+// Direcciones triviales que no representan una ubicación real.
+const TRIVIAL_ADDRESSES = new Set([
+  'sin ubicación', 'sin ubicacion', 'n/a', 'na', 'no disponible', '-', '.', '...',
+]);
+
+/**
+ * ¿La dirección libre sirve para mostrar un mapa embebido? Validación simple
+ * frontend (no toca la DB): mínimo 6 chars, debe contener letras/números y no
+ * ser un valor trivial. Si no es útil, evitamos el mapa de ciudad/país con
+ * falsa precisión y caemos al texto + link de zona aproximada.
+ */
+function isUsefulAddress(addr: string | null | undefined): boolean {
+  if (!addr) return false;
+  const trimmed = addr.trim();
+  if (trimmed.length < 6) return false;
+  if (!/[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/.test(trimmed)) return false;
+  if (TRIVIAL_ADDRESSES.has(trimmed.toLowerCase())) return false;
+  return true;
 }
