@@ -26,8 +26,9 @@ interface AvatarUploaderProps {
  *  - busy:    está subiendo o quitando.
  *  - error:   muestra mensaje y permite reintentar.
  *
- * Sin crop. Sin drag&drop. Sin librerías externas. Cámara móvil habilitada
- * vía capture="user".
+ * Sin crop. Sin drag&drop. Sin librerías externas. En móvil el selector del SO
+ * ofrece galería o cámara (no se fuerza la cámara — el médico puede subir una
+ * foto profesional existente).
  */
 export default function AvatarUploader({
   name,
@@ -140,7 +141,6 @@ export default function AvatarUploader({
           ref={inputRef}
           type="file"
           accept={acceptAttr}
-          capture="user"
           onChange={handleFileChange}
           className="hidden"
         />
