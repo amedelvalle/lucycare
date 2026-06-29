@@ -39,7 +39,9 @@ export interface DoctorCard {
 
 // Detalle completo del doctor (página /doctor/:id)
 export interface DoctorDetail extends DoctorCard {
-  licenseNumber: string | null  // doctors.license_number
+  // license_number NO se trae al payload público (privacidad): no se muestra
+  // y la verificación la gobierna LucyAdmin vía is_verified. El claim valida la
+  // licencia server-side (claim_doctor_profile), no desde este objeto.
   education: Education[]        // doctors.education (JSONB)
   // Datos de la clínica
   clinicPhone: string | null    // clinics.phone
