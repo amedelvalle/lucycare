@@ -228,25 +228,13 @@ export default function BlockForm({
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 <span className="flex items-center gap-1.5"><ClockIcon /> Hora inicio</span>
               </label>
-              <input
-                type="time"
-                value={timeStart}
-                onChange={(e) => setTimeStart(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
-                  focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition-all"
-              />
+              <TimeSelect value={timeStart} onChange={setTimeStart} label="Hora inicio" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 <span className="flex items-center gap-1.5"><ClockIcon /> Hora fin</span>
               </label>
-              <input
-                type="time"
-                value={timeEnd}
-                onChange={(e) => setTimeEnd(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
-                  focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition-all"
-              />
+              <TimeSelect value={timeEnd} onChange={setTimeEnd} label="Hora fin" />
             </div>
           </div>
         )}
@@ -306,6 +294,59 @@ export default function BlockForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// ─── Selector de hora propio (evita el picker nativo de hora) ─────────
+// Dos <select> (hora 00–23 / minuto cada 5'). El valor que entra y sale
+// sigue siendo un string 'HH:mm', así que el resto del form y el backend
+// no cambian. Reemplaza a <input type="time"> para tener control total del
+// layout en móvil (el popup-reloj nativo de Android no se podía estilar).
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTE_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
+interface TimeSelectProps {
+  value: string; // 'HH:mm'
+  onChange: (value: string) => void;
+  label: string; // para aria-label de cada select
+}
+
+function TimeSelect({ value, onChange, label }: TimeSelectProps) {
+  const [hhRaw, mmRaw] = value.split(':');
+  const hh = hhRaw || '09';
+  const mm = mmRaw || '00';
+  // Si un bloqueo viejo tiene un minuto fuera de la grilla de 5', lo
+  // conservamos como opción para no alterarlo en silencio al editar.
+  const minuteOptions = MINUTE_OPTIONS.includes(mm) ? MINUTE_OPTIONS : [mm, ...MINUTE_OPTIONS];
+
+  const selectClass =
+    'flex-1 min-w-0 px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white ' +
+    'focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition-all';
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        aria-label={`${label} — hora`}
+        value={hh}
+        onChange={(e) => onChange(`${e.target.value}:${mm}`)}
+        className={selectClass}
+      >
+        {HOUR_OPTIONS.map((h) => (
+          <option key={h} value={h}>{h}</option>
+        ))}
+      </select>
+      <span className="text-gray-400 font-medium">:</span>
+      <select
+        aria-label={`${label} — minuto`}
+        value={mm}
+        onChange={(e) => onChange(`${hh}:${e.target.value}`)}
+        className={selectClass}
+      >
+        {minuteOptions.map((m) => (
+          <option key={m} value={m}>{m}</option>
+        ))}
+      </select>
+    </div>
   );
 }
 
