@@ -898,3 +898,77 @@ pagos recibidos / intentos de cobro / invoices internos
 pasarela procesa el pago; **LucyAdmin** debe tener visibilidad operativa y
 financiera suficiente para **activar / suspender / reactivar / conciliar / reportar
 / auditar**.
+
+---
+
+## 17. Separación arquitectónica: Lucy SaaS vs LucyAdmin Billing (APROBADO 2026-06-29)
+
+> Decisión de producto/arquitectura. **NO implica implementación** (sin módulo,
+> sin rutas, sin tablas, sin pasarela, sin código). Las partes ya detalladas en
+> §14/§15/§16 **no se repiten** acá: se referencian y se reconfirman bajo esta
+> separación (ver §17.5).
+
+### 17.1 Decisión de arquitectura
+**LucyAdmin Billing es un módulo administrativo separado del SaaS operativo del
+médico.** No se mezcla con el panel médico ni con las vistas clínicas. Cuatro
+responsabilidades distintas:
+- **Lucy SaaS** — operación del médico (panel, agenda, ficha clínica, reserva).
+- **LucyAdmin Billing** — control financiero: suscripciones, pagos, reportería,
+  conciliación, auditoría, suspensión/reactivación.
+- **Pasarela externa** — cobro, tarjeta, cancelación y/o portal de cliente.
+- **Webhooks / backend** — sincronización **confiable** del estado de pago
+  (fuente de verdad firmada, idempotente).
+
+En **MVP** puede vivir **dentro del mismo proyecto/app** como **rutas protegidas
+de LucyAdmin**, pero **conceptualmente es un backoffice separado**. Lo importante
+no es separar repos/DB, sino **separar permisos, rutas, auditoría y
+responsabilidad**.
+
+### 17.2 Ubicación sugerida (MVP futuro)
+Rutas dentro de LucyAdmin, p. ej.:
+`/admin/billing` · `/admin/billing/dashboard` · `/admin/billing/suscripciones` ·
+`/admin/billing/pagos` · `/admin/billing/conciliacion` · `/admin/billing/reportes` ·
+`/admin/billing/precios` · `/admin/billing/eventos`.
+
+A futuro podría migrar a **subdominio / app administrativa separada** (p. ej.
+`admin.lucycare.app`). **En MVP NO hace falta** otro repo ni otra base de datos
+solo por separación visual.
+
+### 17.3 Qué ve el médico (Lucy SaaS) vs qué NO ve
+**El médico ve solo una vista limitada de SU suscripción:**
+- plan actual; estado de suscripción; próxima fecha de cobro/vencimiento;
+  asistentes incluidos; usuarios adicionales; botón/enlace para **pagar**, para
+  **cambiar método de pago**, y para **gestionar/cancelar** en la pasarela;
+  mensajes de pago fallido / período de gracia / suspensión.
+
+**El médico NO ve (pertenece solo a LucyAdmin Billing):**
+- ingresos globales; pagos de otros médicos; conciliación; reportería financiera;
+  overrides; eventos internos de webhook; decisiones administrativas globales.
+
+### 17.4 Separación de permisos (roles futuros posibles)
+- `super_admin` · `billing_admin` · `billing_readonly` · `support_admin`.
+- Reglas:
+  - **No todo admin clínico debe poder modificar pagos.**
+  - **Todo override de pago / suspensión / reactivación → auditado** (`audit_log`).
+  - **Reportes financieros con acceso restringido.**
+- (Hoy `profiles.role='admin'` es el único bit de autorización admin; estos roles
+  de billing son **diseño futuro**, no se implementan acá. Se alinean con la Fase 2
+  de `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — capacidades granulares.)
+
+### 17.5 Lo ya documentado (reconfirmado bajo esta arquitectura — no se repite)
+- **Autoservicio del médico** (cancelar / cambiar tarjeta / reactivar / ajustar
+  asientos), **cambio de método de pago**, **cancelación a fin de período**,
+  **usuarios adicionales/asientos** (`extra_seats = max(asistentes−2,0)`,
+  agregar/quitar sin prorrateo MVP) → **§15** (precios en **§14**).
+- **LucyAdmin Billing** (objetivos, **dashboard/KPIs**, **lista filtrable** +
+  columnas, **detalle por médico**, **control operativo**, **reportería**,
+  **conciliación**, **modelo de datos futuro**) → **§16**.
+- **Pricing configurable / no-hardcoded** y separación **pago ≠ verified ≠
+  claimed** → **§14**.
+
+### 17.6 Principio (VINCULANTE)
+**No depender solo del panel de la pasarela para administrar el negocio.** La
+pasarela procesa pagos; **LucyAdmin Billing** debe dar visibilidad operativa y
+financiera suficiente para **activar / suspender / reactivar / conciliar /
+reportar / auditar** — y debe estar **separado** del SaaS operativo del médico
+(permisos, rutas, auditoría, responsabilidad).
