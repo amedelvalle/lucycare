@@ -233,9 +233,13 @@ export default function DoctorDetail() {
                   {/* Status Badges */}
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                 {(lucyStatus === 'VERIFIED' || isVerified) && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
+                  <span
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium"
+                    title="Perfil verificado por LucyCare"
+                    aria-label="Perfil verificado por LucyCare"
+                  >
                     <i className="ri-verified-badge-fill"></i>
-                    Verificado
+                    Verificado por LucyCare
                   </span>
                 )}
                 {canBook ? (

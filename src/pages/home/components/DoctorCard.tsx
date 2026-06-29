@@ -62,7 +62,11 @@ export default function DoctorCard({
   const getStatusBadge = () => {
     if (lucyStatus === 'VERIFIED' || isVerified) {
       return (
-        <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm">
+        <div
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm"
+          title="Perfil verificado por LucyCare"
+          aria-label="Perfil verificado por LucyCare"
+        >
           <i className="ri-verified-badge-fill"></i>
           <span>Verificado</span>
         </div>
