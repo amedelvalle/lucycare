@@ -1,8 +1,10 @@
 # Análisis — Pagos SaaS autoservicio (suscripción del médico)
 
-> Documento de análisis + decisión. **Snapshot 2026-06-01.**
-> **Estado: BORRADOR para discusión. NO implementar código ni tocar la
+> Documento de análisis + decisión. **Snapshot original 2026-06-01 · refresh 2026-06-29 (post-#193, HEAD `e048ee4`).**
+> **Estado: diseño vigente / BORRADOR para discusión. NO implementar código ni tocar la
 > DB hasta cerrar las preguntas de la §10 y elegir pasarela (§4).**
+> El cuerpo (§1–§13) sigue válido tal cual. Ver **§0bis (Refresh)** para el
+> estado actual del repo y los deltas desde el snapshot original.
 >
 > Acompaña a:
 > - `docs/ANALISIS_AFILIACION_MEDICO.md` — cómo entra un médico (lead → listed_only).
@@ -12,6 +14,73 @@
 > ⚠️ **Stripe NO es decisión cerrada.** Es el candidato técnico principal,
 > pero su disponibilidad legal/operativa para una empresa que opera
 > **desde El Salvador** debe validarse antes de comprometerlo (§4).
+
+---
+
+## 0bis. Refresh — estado actual del repo (2026-06-29, HEAD `e048ee4`)
+
+> Esta sección se agregó en un refresh docs-only. **No cambia el diseño**
+> (§1–§13 siguen vigentes); solo reconcilia el documento con el estado real
+> del código a hoy y marca lo que ya existe vs. lo que sigue pendiente.
+
+### 0bis.1 Estado de implementación
+- **HEAD `e048ee4`, PRs #1–#193 mergeados, migraciones hasta `s7_51`.**
+- **Pagos: SIN implementación.** No existe ninguna pantalla de pago, checkout,
+  ni gate de suscripción. La activación operativa (`is_operational` /
+  `booking_enabled`) **sigue siendo 100% manual** por LucyAdmin.
+- **NO existen las tablas `subscriptions` ni `subscription_events`** (verificado:
+  0 referencias en `migrations/`; solo aparecen como **propuesta** en este doc).
+  El modelo del §8 sigue siendo diseño, no esquema.
+- **Edge Functions / webhooks: siguen SIN usarse** en el proyecto. El
+  `payments-webhook` del §8.2 sería la **primera** Edge Function (R10 vigente).
+
+### 0bis.2 Lo que YA existe y es punto de enganche (no rehacer)
+- **Infra de asientos parcialmente construida y LIVE (`s7_27`, PR #70):**
+  - `team_seat_limit(p_clinic_id)` → hoy retorna **`2` fijo**, con un
+    **`TODO(pagos)` explícito** en la migración para reemplazarlo por los
+    asientos contratados en la suscripción. **Toma `p_clinic_id` justamente
+    para que la fase de pagos lo lea de `subscriptions`.**
+  - `team_seats_used(...)` cuenta asistentes activos + invitaciones pendientes
+    (excluye vencidas desde `s7_36`).
+  - **Enforcement server-side ya activo:** trigger `enforce_team_seat_limit`
+    en `clinic_invitations` + revalidación en `accept_clinic_invitations`.
+  - ⇒ **La Fase 5 (§11) se acorta:** básicamente cambiar el `2` fijo por
+    `3 + seats_additional` leído de la suscripción; el enforcement ya está.
+
+### 0bis.3 Reconciliación de semántica de asientos (a tener en cuenta)
+- El **modelo comercial (§2.2)** habla de **3 usuarios totales = titular + 2
+  asistentes**.
+- `team_seat_limit` hoy representa **asistentes (= 2), NO el total de usuarios**
+  (el titular no se cuenta en ese número).
+- Al wirear pagos hay que **alinear semánticas**: `subscriptions.seats_included`
+  (pensado como "3 totales") ⟷ lo que devuelve `team_seat_limit` (asistentes).
+  No es contradicción, pero **debe quedar explícito** para no contar mal el
+  cupo. Sugerencia: documentar `seats_included` como "asistentes incluidos = 2"
+  o derivar `team_seat_limit = seats_included_total - 1 (titular)`.
+
+### 0bis.4 Principios reconfirmados por el owner (2026-06-29)
+- **Separación de ejes (vinculante):** `verified`/confianza/licencia **NO**
+  depende del pago; `claimed`/identidad **NO** depende del pago. El pago impacta
+  **solo operatividad SaaS** (`is_operational`, `booking_enabled`, asientos/
+  asistentes, capacidades operativas) — nunca el sello `is_verified` ni el claim.
+- Enfoque confirmado: **hosted checkout / pasarela externa + webhook firmado +
+  idempotencia + alta/baja automática + reactivación + audit + override manual
+  de LucyAdmin**.
+- El botón/enlace de pago es **solo la entrada**; lo crítico es el ciclo
+  recurrente y el estado de pago gobernado por el webhook (no por el redirect).
+
+### 0bis.5 Bloqueantes vigentes antes de cualquier código
+1. **Validación de pasarela (§4.5)** — owner/legal. Sin proveedor elegido no se
+   integra nada.
+2. **Q1–Q11 (§10)** sin cerrar (gating exacto, trial, prorrateo, multi-doctor,
+   self-service vs portal, etc.).
+3. **IVA / DTE / facturación (Q6)** — legal/contable; no asumir "IVA incluido".
+4. **Reglas exactas de suspensión / reactivación / período de gracia / cancelación
+   / conciliación manual** — cerrar antes de la máquina de estados real.
+
+> **Siguiente paso (sin cambios respecto al original):** el owner ejecuta §4.5 y
+> responde §10. Recién con pasarela elegida + Q's cerradas arranca la Fase 1
+> (modelo de datos `subscriptions`/`subscription_events`).
 
 ---
 
