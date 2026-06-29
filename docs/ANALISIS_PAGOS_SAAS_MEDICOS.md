@@ -107,6 +107,13 @@ feliz.
 
 ## 2. Modelo comercial
 
+> ⚠️ **PRECIOS SUPERSEDED — ver §14 (modelo comercial APROBADO 2026-06-29).**
+> Los montos de §2.1/§2.2 ($55/mes, $594/año, 10% off, $5/usuario) son la
+> **propuesta original (2026-06-01)** y quedan como histórico. **Los precios
+> vigentes y aprobados están en §14** ($59/mes, $601.80/año, 15% off,
+> $6/usuario), con desglose IVA-incluido y montos en centavos. Ante cualquier
+> contradicción, **mandan §14**.
+
 ### 2.1 Planes
 
 | Plan | Precio | Equivalente mensual | Incluye |
@@ -574,3 +581,113 @@ pasarela en ENV/dashboard, **nunca en repo**.
 **Siguiente paso:** el owner ejecuta la validación de pasarela (§4.5) y
 responde §10. Con pasarela elegida + Q cerradas, se arma el plan operativo
 del primer PR (Fase 1: modelo de datos).
+
+---
+
+## 14. Pricing configurable / modelo comercial APROBADO (2026-06-29)
+
+> Esta sección **reemplaza** los precios de §2 (que quedan como histórico de la
+> propuesta original). Aprobada por el owner el 2026-06-29. Sigue siendo
+> **diseño/decisión comercial** — **NO implica implementación** (no hay tablas,
+> no hay pasarela elegida, no hay código).
+
+### 14.1 Precios aprobados (USD, IVA 13% incluido)
+
+Unidad comercial = **médico titular**; cada plan base incluye **1 titular + 2
+asistentes** (3 accesos). Todos los montos son **IVA incluido** (el monto bruto
+es lo que se cobra). Moneda **USD** (curso legal en SV).
+
+| Concepto | Bruto (IVA incl.) | Base s/IVA | IVA 13% | Centavos (bruto / base / IVA) |
+|---|---|---|---|---|
+| **Plan mensual** | **$59.00 / mes** | $52.21 | $6.79 | **5900 / 5221 / 679** |
+| **Plan anual** (−15% vs 12 mensuales) | **$601.80 / año** | $532.57 | $69.23 | **60180 / 53257 / 6923** |
+| Plan anual — equivalente visible | $50.15 / mes | — | — | — |
+| **Usuario adicional / mes** | **$6.00 / usuario / mes** | $5.31 | $0.69 | **600 / 531 / 69** |
+| **Usuario adicional / año** (−15%) | **$61.20 / usuario / año** | $54.16 | $7.04 | **6120 / 5416 / 704** |
+
+Verificaciones: mensual×12 = $708 → −15% = **$601.80**; $601.80/12 = **$50.15/mes**;
+adicional mensual×12 = $72 → −15% = **$61.20**; en las 4 filas `base + IVA = bruto`.
+
+- **Usuario adicional anual — CONFIRMADO:** aplica el **mismo 15%** que el plan
+  anual → **$61.20/usuario/año IVA incluido** (consistencia comercial).
+- **IVA:** los precios son **IVA-incluido** (resuelve la parte de presentación de
+  Q6). La **emisión de comprobante/DTE sigue pendiente** (legal/contable, §14.5).
+
+### 14.2 Prorrateo (MVP) — CONFIRMADO
+- **No** automatizar prorrateo intra-ciclo en la primera versión.
+- Los usuarios adicionales **self-service** se **cobran y habilitan desde el
+  siguiente ciclo** (no a mitad de período).
+- Si se necesita **habilitación inmediata**, queda como **caso manual de
+  LucyAdmin/soporte** con **nota + auditoría**.
+- **No** construir motor de proration en MVP.
+
+### 14.3 Principio obligatorio — precios configurables, NO hardcoded
+- **Fuente de verdad futura = servidor/DB.** El **frontend solo muestra** precios
+  entregados por el backend; **nunca** calcula dinero crítico ni asume el IVA.
+- **Dinero en centavos enteros** (`*_cents`), **nunca floats**.
+- **IVA y descuentos en basis points** (IVA `1300`, descuento anual `1500`).
+- **Filas de precio versionadas e inmutables:** cambiar un precio público =
+  **insertar una fila nueva** (`effective_from` nuevo) + **desactivar** la
+  anterior (`active=false`, `effective_to`). **Nunca editar el monto de una fila
+  viva (sin edición silenciosa).**
+- **Grandfathering:** cada suscripción guarda el **`plan_price_id`** con el que se
+  contrató; cambiar el precio público **no** modifica suscripciones existentes.
+  **No re-preciar médicos antiguos sin decisión explícita** (nunca retroactivo
+  silencioso).
+- **IDs de la pasarela** (`provider_product_id` / `provider_price_id`) viven
+  **asociados a la fila de precio/configuración**, **no quemados en componentes**.
+
+**Riesgos de hardcodear** (por qué la regla anterior): cambio de precio/IVA
+exigiría deploy; inconsistencia entre componentes; imposible grandfathering ni
+promos; drift con los IDs de la pasarela; errores de redondeo si el front calcula
+dinero con floats.
+
+### 14.4 Diseño futuro `subscription_plan_prices` (PROPUESTA — NO implementar)
+Tabla única para el MVP (2 planes + 1 add-on = pocas filas); más simple que el
+split en 3 tablas (`subscription_plans`/`subscription_prices`/`subscription_addons`),
+que queda para si el catálogo crece. **Filas append-only / inmutables.**
+
+```
+subscription_plan_prices
+  id
+  code                       -- 'base_monthly' | 'base_annual' | 'extra_seat_monthly' | 'extra_seat_annual'
+  name                       -- label visible ("Plan Mensual")
+  kind                       -- 'base' | 'addon_seat'
+  billing_interval           -- 'monthly' | 'annual'
+  currency                   -- 'USD'
+  gross_amount_cents         -- CANÓNICO (5900 / 60180 / 600 / 6120)
+  tax_included               -- true
+  tax_rate_bps               -- 1300
+  net_amount_cents           -- derivado (CHECK: net + tax = gross)
+  tax_amount_cents           -- derivado
+  included_assistant_seats   -- 2 en base; 0/null en addon
+  annual_discount_bps        -- 1500 (auditoría del cálculo)
+  provider                   -- 'wompi'|'pagadito'|'n1co'|'stripe'|null (pre-integración)
+  provider_product_id        -- nullable hasta integrar pasarela
+  provider_price_id          -- nullable hasta integrar pasarela
+  active                     -- bool
+  effective_from / effective_to
+  created_at / updated_at
+```
+- Canónico = `gross_amount_cents` + `tax_rate_bps` + `tax_included`; `net`/`tax`
+  se derivan (`net = round(gross/(1+rate))`, `tax = gross − net`) — si se
+  almacenan, **CHECK `net_amount_cents + tax_amount_cents = gross_amount_cents`**.
+- Relación futura: `subscriptions.plan_price_id` → FK a esta tabla
+  (grandfathering). `subscriptions` y `subscription_events` (§8) **NO existen aún**.
+- **NO se implementa en este PR** (docs-only).
+
+### 14.5 Pendientes vigentes (no cerrados por esta aprobación)
+- **Pasarela: NO decidida.** Matriz de validación (Wompi SV / Pagadito / N1CO /
+  Stripe-referencia) pendiente de ejecutar (§4.5 + reporte de validación). Criterio
+  bloqueante: **recurring nativo + webhooks firmados + settlement USD a cuenta SV**.
+- **DTE / IVA / facturación:** emisión de comprobante sigue **pendiente legal/
+  contable** (los precios ya son IVA-incluido, pero falta cómo se factura/emite).
+- Resto de Q1–Q11 (§10): gracia, suspensión exacta, reactivación, cancelación,
+  trial, multi-doctor, self-service vs portal.
+
+### 14.6 Separación de ejes (VINCULANTE, reconfirmado)
+- **Pago (`subscription='active'`) ≠ `verified`** — pagar no da el sello de
+  confianza (lo decide LucyAdmin).
+- **Pago ≠ `claimed`** — la identidad/reclamo no depende del pago.
+- **El pago impacta solo operatividad SaaS** (`is_operational`, `booking_enabled`,
+  asientos/asistentes), **nunca** identidad ni confianza.
