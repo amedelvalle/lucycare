@@ -8,6 +8,7 @@ import ClaimedProfileNoticeCard from './components/ClaimedProfileNoticeCard';
 import ReviewsSection from './components/ReviewsSection';
 import MobileBookingSheet from './components/MobileBookingSheet';
 import { DoctorDetailSkeleton } from '../../components/skeletons/DirectorySkeletons';
+import DoctorAvatar from '../../components/DoctorAvatar';
 
 export default function DoctorDetail() {
   const { id } = useParams();
@@ -215,12 +216,22 @@ export default function DoctorDetail() {
           <div className="lg:col-span-2">
             {/* Title Section */}
             <div className="mb-8">
-              <h1 className="text-3xl font-semibold text-gray-900 mb-3">
-                {doctor.fullName}
-              </h1>
+              <div className="flex items-start gap-4 sm:gap-5">
+                {/* Foto del médico (o placeholder de iniciales como en la tarjeta
+                    del directorio). avatarUrl ya viene en fetchDoctorDetail. */}
+                <DoctorAvatar
+                  name={doctor.fullName}
+                  photoUrl={doctor.avatarUrl}
+                  className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0"
+                  textClassName="text-2xl"
+                />
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-3xl font-semibold text-gray-900 mb-3">
+                    {doctor.fullName}
+                  </h1>
 
-              {/* Status Badges */}
-              <div className="flex flex-wrap items-center gap-2 mb-4">
+                  {/* Status Badges */}
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
                 {(lucyStatus === 'VERIFIED' || isVerified) && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
                     <i className="ri-verified-badge-fill"></i>
@@ -240,14 +251,16 @@ export default function DoctorDetail() {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 text-gray-600">
-                <span>{doctor.specialty || 'Medicina General'}</span>
-                {doctor.experienceYears && (
-                  <>
-                    <span>•</span>
-                    <span>{doctor.experienceYears} años de experiencia</span>
-                  </>
-                )}
+                  <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                    <span>{doctor.specialty || 'Medicina General'}</span>
+                    {doctor.experienceYears && (
+                      <>
+                        <span>•</span>
+                        <span>{doctor.experienceYears} años de experiencia</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
