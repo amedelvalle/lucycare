@@ -691,3 +691,114 @@ subscription_plan_prices
 - **Pago ≠ `claimed`** — la identidad/reclamo no depende del pago.
 - **El pago impacta solo operatividad SaaS** (`is_operational`, `booking_enabled`,
   asientos/asistentes), **nunca** identidad ni confianza.
+
+---
+
+## 15. Autoservicio de suscripción / customer portal (APROBADO 2026-06-29)
+
+> Diseño/decisión de producto. Extiende §14. **NO implica implementación**
+> (sin tablas, sin pasarela elegida, sin código). Alineado al principio:
+> el camino feliz es autoservicio; LucyAdmin solo para excepciones auditadas.
+
+### 15.1 Decisión de producto
+El médico debe poder gestionar su suscripción **sin intervención manual** de
+LucyCare, idealmente desde **la pasarela o un portal externo seguro**:
+1. cancelar la suscripción;
+2. cambiar método de pago / tarjeta;
+3. reactivar si corresponde;
+4. ajustar usuarios adicionales cuando tenga más de 2 asistentes.
+
+### 15.2 Cambio de método de pago
+- **LucyCare NO captura ni almacena datos de tarjeta** (PCI fuera de alcance).
+- El médico se **redirige a la pasarela / portal seguro** para actualizar tarjeta.
+- LucyCare solo guarda **identificadores seguros del proveedor** y **estado
+  derivado** (nunca el PAN).
+- La confirmación real viene por **webhook firmado** o verificación server-side;
+  **la URL de retorno NO es fuente de verdad**.
+
+### 15.3 Cancelación (regla MVP)
+- Efectiva **al final del período ya pagado** (`cancel_at_period_end`).
+- **No** suspender inmediatamente si el período actual está pagado: mantener
+  servicio activo hasta **`current_period_end`**.
+- Al vencimiento, si no hay renovación/reactivación → **suspender operatividad
+  SaaS** según reglas (§6).
+- **Default MVP: sin reembolso automático** por período parcial.
+
+### 15.4 Usuarios adicionales / asientos
+- Plan base = **1 titular + 2 asistentes incluidos**.
+- Regla conceptual: **`extra_seats = max(asistentes_activos − 2, 0)`**.
+  - 2 asistentes → 0 adicionales · 3 → 1 adicional · 4 → 2 adicionales.
+- Precios (§14): adicional **$6.00/mes** o **$61.20/año** (−15%), IVA incluido.
+
+### 15.5 Quitar asistentes
+Separar **dos cosas distintas**:
+1. **quitar/desactivar a una persona** del equipo (operación de equipo);
+2. **reducir el cobro** de usuarios adicionales (operación de facturación).
+
+Regla MVP:
+- Si al quitar un asistente baja la cantidad de adicionales necesarios, el
+  **cambio de cobro aplica en el siguiente ciclo** (sin prorrateo intra-ciclo).
+- Ajuste inmediato = **caso manual LucyAdmin/soporte** con **nota + auditoría**.
+- **Nunca borrar historial clínico ni auditoría** por quitar un asistente
+  (el usuario se desactiva/bloquea, no se hard-delete).
+- Ejemplo: 4 asistentes (paga 2 adicionales) → elimina 1 → 3 asistentes →
+  **desde el próximo ciclo paga 1 adicional**.
+
+### 15.6 Agregar asistentes
+- **Self-service automático:** el nuevo adicional se **cobra/habilita desde el
+  siguiente ciclo** (consistente con §14.2, sin prorrateo).
+- **Habilitación inmediata:** caso manual LucyAdmin/soporte, **o** fase futura si
+  la pasarela soporta *quantity update* con cobro inmediato.
+- **No** construir motor de prorrateo propio en MVP.
+
+### 15.7 Modelo conceptual futuro (campos a considerar — NO implementar)
+A considerar en `subscriptions` (o estructura equivalente) cuando se diseñe la
+Fase 1; **no se crea nada en este PR**:
+```
+included_assistant_seats        -- 2
+paid_extra_seats_quantity       -- adicionales pagados vigentes
+active_assistant_count          -- asistentes activos (derivado / cache)
+pending_extra_seats_quantity    -- cambio de cantidad que aplica el próximo ciclo
+pending_change_effective_at     -- cuándo aplica el cambio pendiente
+billing_interval                -- 'monthly' | 'annual'
+current_period_start
+current_period_end
+cancel_at_period_end            -- bool
+canceled_at
+payment_method_update_required  -- bool (tarjeta vencida/rechazada)
+provider_customer_portal_url    -- o mecanismo equivalente
+```
+- Los eventos relacionados (cambio de tarjeta, cancelación, update de cantidad,
+  `past_due`, etc.) quedan en **`subscription_events`** (log inmutable, idempotente).
+
+### 15.8 Enforcement futuro (server-side, NO solo frontend)
+- El límite de asistentes **no debe depender solo del frontend**.
+- Regla futura: **`team_seat_limit` = 2 incluidos + `paid_extra_seats_quantity`**.
+  - Hoy `team_seat_limit(p_clinic_id)` retorna `2` fijo (`s7_27`) con `TODO(pagos)`
+    — ese es el punto exacto a cablear (§0bis.2).
+- **No permitir** más asistentes activos / invitaciones aceptables que asientos
+  permitidos; **conservar enforcement server-side** (trigger + revalidación en
+  `accept_clinic_invitations`, ya existentes).
+
+### 15.9 Matriz de pasarela — criterios adicionales (extiende §4.2/§4.5)
+Sumar a la validación de pasarela (Wompi/Pagadito/N1CO/Stripe-referencia) estos
+criterios, **pendientes de validar** con cada proveedor:
+- customer portal / portal de cliente;
+- actualización de método de pago;
+- cancelación self-service;
+- cancelación **al final del período**;
+- reactivación self-service;
+- modificación de **cantidad de add-ons/asientos**;
+- webhooks de cambio de tarjeta;
+- webhooks de cancelación;
+- webhooks de actualización de suscripción;
+- manejo de **`past_due`**;
+- reintentos de cobro;
+- **dunning**;
+- estado de suscripción claro/consultable.
+
+> **Riesgo:** si la pasarela **no** soporta **portal de cliente** ni
+> **modificación de cantidad/asientos**, LucyCare tendría que construir más
+> lógica propia o manejar esos cambios **manualmente desde LucyAdmin**. Eso
+> **baja la conveniencia** de esa pasarela para el MVP y debe pesar en la
+> decisión de §4.
