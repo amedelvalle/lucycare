@@ -365,7 +365,7 @@ export default function DoctorDetail() {
                   <div className="space-y-3">
                     {educationList.map((edu, index) => (
                       <div key={index} className="flex items-start gap-3">
-                        <i className="ri-graduation-cap-line text-[#3C2285] text-xl mt-0.5"></i>
+                        <i className="ri-graduation-cap-line text-emerald-700 text-xl mt-0.5"></i>
                         <span className="text-gray-700">{edu}</span>
                       </div>
                     ))}
@@ -410,8 +410,8 @@ export default function DoctorDetail() {
                 </div>
                 {doctor.clinicPhone && (
                   <div className="flex items-center gap-3">
-                    <i className="ri-phone-line text-[#3C2285] text-xl"></i>
-                    <a href={`tel:${doctor.clinicPhone}`} className="text-gray-700 hover:text-[#3C2285] cursor-pointer">
+                    <i className="ri-phone-line text-emerald-700 text-xl"></i>
+                    <a href={`tel:${doctor.clinicPhone}`} className="text-gray-700 hover:text-emerald-700 cursor-pointer">
                       {doctor.clinicPhone}
                     </a>
                   </div>

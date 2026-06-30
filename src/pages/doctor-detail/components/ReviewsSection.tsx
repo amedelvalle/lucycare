@@ -113,7 +113,7 @@ export default function ReviewsSection({ doctorId }: ReviewsSectionProps) {
               <span className="text-sm text-gray-700 w-44">{label}</span>
               <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#3C2285]"
+                  className="h-full bg-emerald-600"
                   style={{ width: `${(v / 5) * 100}%` }}
                 />
               </div>

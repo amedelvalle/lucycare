@@ -172,7 +172,7 @@ export default function Home() {
                     {currentUser.role === 'admin' && (
                       <button
                         onClick={() => navigate('/admin')}
-                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
                       >
                         Panel Admin
                       </button>
@@ -197,7 +197,7 @@ export default function Home() {
             <button
               onClick={() => setShowAffiliationModal(true)}
               title="Soy médico y quiero aparecer en Lucy"
-              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-[#3C2285] text-white hover:bg-[#2d1a64] rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
+              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
             >
               {/* Etiqueta corta en mobile, completa en desktop.
                   El modal mantiene la copy completa "Soy médico,
@@ -210,10 +210,10 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-emerald-50 to-purple-50 py-12 sm:py-16 md:py-20">
+      <div className="relative bg-gradient-to-br from-emerald-50 to-teal-50 py-12 sm:py-16 md:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-[#3C2285] mb-3 sm:mb-4 leading-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-emerald-800 mb-3 sm:mb-4 leading-tight">
               Encuentra al médico perfecto para ti
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-8 sm:mb-12">
@@ -265,7 +265,7 @@ export default function Home() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-[#3C2285] focus:outline-none"
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-emerald-600 focus:outline-none"
             >
               <option value="default">{searchTerm ? 'Mejor coincidencia' : 'Disponibilidad'}</option>
               <option value="mejor_valorados">Mejor valorados</option>
