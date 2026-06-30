@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import PatientAccountMenu from './PatientAccountMenu';
 import { getCurrentAuthUser, type AuthUser } from '@/services/auth.service';
 
@@ -26,7 +27,7 @@ export default function PatientHeader() {
       <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 flex-shrink-0">
           <img
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            src={LUCYCARE_LOGO_SRC}
             alt="Lucy Care"
             className="h-10"
           />

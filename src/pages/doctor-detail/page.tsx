@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDoctorDetail } from '../../hooks/useDirectory';
 import ImageGallery from './components/ImageGallery';
@@ -68,7 +69,7 @@ export default function DoctorDetail() {
               <i className="ri-arrow-left-line text-xl text-gray-700"></i>
             </button>
             <img
-              src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+              src={LUCYCARE_LOGO_SRC}
               alt="Lucy Care"
               className="h-16 cursor-pointer"
               onClick={() => navigate('/')}
@@ -173,7 +174,7 @@ export default function DoctorDetail() {
               <i className="ri-arrow-left-line text-xl text-gray-700"></i>
             </button>
             <img
-              src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+              src={LUCYCARE_LOGO_SRC}
               alt="Lucy Care"
               className="h-16 cursor-pointer"
               onClick={() => navigate('/')}
@@ -526,7 +527,7 @@ export default function DoctorDetail() {
             <div>
               <div className="flex items-center mb-4">
                 <img
-                  src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+                  src={LUCYCARE_LOGO_SRC}
                   alt="Lucy Care"
                   className="h-16"
                 />
