@@ -414,7 +414,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !isPhoneValid
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-[#3C2285] text-white hover:bg-[#2d1a64] cursor-pointer'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
                   }`}
                 >
                   {loading ? 'Enviando código…' : 'Continuar'}
@@ -445,7 +445,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   maxLength={6}
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full px-4 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-[#3C2285] transition-colors text-center text-2xl font-bold tracking-[0.5em] text-gray-900"
+                  className="w-full px-4 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 transition-colors text-center text-2xl font-bold tracking-[0.5em] text-gray-900"
                   placeholder="000000"
                   autoFocus
                 />
@@ -456,7 +456,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || otpCode.length !== 6
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-[#3C2285] text-white hover:bg-[#2d1a64] cursor-pointer'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
                   }`}
                 >
                   {loading ? 'Verificando…' : 'Verificar código'}
@@ -472,7 +472,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                       type="button"
                       onClick={handleResendOtp}
                       disabled={loading}
-                      className="text-sm text-[#3C2285] font-semibold hover:underline cursor-pointer disabled:text-gray-400"
+                      className="text-sm text-emerald-700 font-semibold hover:underline cursor-pointer disabled:text-gray-400"
                     >
                       Reenviar código
                     </button>
@@ -521,7 +521,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !isEmailValid || !isPasswordValid
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-[#3C2285] text-white hover:bg-[#2d1a64] cursor-pointer'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
                   }`}
                 >
                   {loading ? 'Ingresando…' : 'Ingresar'}
@@ -568,7 +568,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !emailForReset.includes('@')
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-[#3C2285] text-white hover:bg-[#2d1a64] cursor-pointer'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
                   }`}
                 >
                   {loading ? 'Enviando…' : 'Enviar link de recuperación'}
