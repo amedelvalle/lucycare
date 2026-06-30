@@ -9,9 +9,10 @@
 
 ## 1. Estado de `main` al cierre
 
-- **HEAD de `main`:** `ceb7116` (*fix(perfil): card "Reclamar perfil" visible por viewer en perfiles listed_only (#187)*).
-- **PRs mergeados:** **#1–#187**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#184 y #187 NO agregaron migración nueva** (frontend-only; ver §2bis, §2ter, §2quater y §2quinquies).
+- **HEAD de `main`:** `b5780dd` (*chore(cleanup): eliminar el scaffold anidado lucycare-code/ (dead code) (#204)*).
+- **PRs mergeados:** **#1–#204**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_51`** (aplicada y validada; ver §3). **#167–#204 NO agregaron migración nueva** (todos frontend-only o docs-only; ver §2bis–§2quinquies y §2sexies).
+- **Frentes recientes #188–#204 (post-#187), todos frontend-only/docs-only, sin migración** — ver **§2sexies**: #190 fix overflow botón "Congreso/Capacitación"; #191 selector de hora propio (selects) en "Nuevo bloqueo"; #192 mapa condicional del perfil; #193 placeholders Depto/Muni del modal "Soy médico"; #196 subir foto desde galería + avatar en perfil público; #197 `license_number` fuera del payload público; #199 copy "Verificado por LucyCare"; #200 branding público emerald (`#3C2285`→emerald/teal); #201 logo local (`public/lucycare-logo.png`); **#202/#203/#204 cleanup de dead code** (`svLocations.ts` · clúster legacy de registro `DoctorRegistrationModal`/`DoctorInterestModal`/`doctorRegistration.service` · scaffold anidado **`lucycare-code/` ELIMINADO**). Docs-only: #188/#189 (cierres) y #194/#195/#198 (diseño de pagos SaaS §14–§17 + análisis credenciales JVPM/NUE → modelo futuro `doctor_credentials`). **Pago ≠ verified ≠ claimed; no mostrar JVPM/NUE; números nunca al payload público.**
 - **`main == origin/main`** · **árbol limpio** · sin trabajo en curso EN MAIN.
 - **`tsc --noEmit` OK · `npm run build` OK** en `main`.
 
@@ -70,7 +71,27 @@ git pull --ff-only origin main
 git log --oneline -5
 git status --short
 ```
-Confirmar: HEAD `ceb7116` o posterior · `main == origin/main` · árbol limpio.
+Confirmar: HEAD `b5780dd` o posterior · `main == origin/main` · árbol limpio.
+
+---
+
+### 2sexies. Frentes #188–#204 (post-#187) — CERRADOS, frontend-only/docs-only, sin migración
+
+> Detalle completo en `CLAUDE.md` (snapshot post-#204). Resumen:
+- **#188/#189** docs-only (cierre #187 + reconciliación de referencia de handoff).
+- **#190** fix overflow del botón "Congreso/Capacitación" en "Tipo de bloqueo" (`BlockForm.tsx`).
+- **#191** selector de hora propio (dos `<select>` hora/minuto cada 5') en "Nuevo bloqueo", reemplaza `<input type="time">`; valor interno sigue `HH:mm`.
+- **#192** mapa condicional del perfil público: iframe solo con dirección útil; si no, link "Ver zona aproximada"; sin nada → "Sin ubicación". Sin lat/lng.
+- **#193** placeholders Depto/Municipio del modal "Soy médico" (`AffiliationRequestModal`).
+- **#196** subir foto **desde galería** (quita `capture="user"`) + avatar/iniciales en el header del perfil público.
+- **#197** privacidad: `license_number` (JVPM) **fuera del payload público** (`fetchDoctorDetail`). Admin/claim/afiliación intactos.
+- **#199** copy **"Verificado por LucyCare"** en el badge (detalle texto completo; tarjeta compacta + `title`). Solo verificados; sin afirmar JVPM/NUE.
+- **#200** branding público emerald (`#3C2285` + `to-purple-50` → emerald/teal) en Home/perfil/LoginModal/ReviewsSection. Color-only.
+- **#201** logo local: `public/lucycare-logo.png` + `src/lib/brand.ts` `LUCYCARE_LOGO_SRC` (11 refs en 6 archivos); favicon NO migrado (logo apaisado) → pendiente ícono cuadrado.
+- **#202/#203/#204** cleanup de dead code (delete-only): `src/data/svLocations.ts`; clúster legacy de registro (`DoctorRegistrationModal`/`DoctorInterestModal`/`doctorRegistration.service`); **scaffold anidado `lucycare-code/` ELIMINADO** (38 archivos). `AffiliationRequestModal` + fuente DB-backed de ubicación intactos.
+- **Docs de diseño (sin código):** **#194/#195** Pagos SaaS (`ANALISIS_PAGOS_SAAS_MEDICOS.md` §14 pricing aprobado $59/$601.80/$6/$61.20 + no-hardcodear + `subscription_plan_prices`; §15 autoservicio; §16 LucyAdmin Billing; §17 separación SaaS vs Billing; bloqueado por validación de pasarela §4.5 + Q1–Q11). **#198** credenciales (`ANALISIS_CREDENCIALES_MEDICAS.md`: solo `license_number`=JVPM, NO existe NUE, `is_verified` global; modelo futuro `doctor_credentials`). **Vinculante: pago ≠ verified ≠ claimed; no mostrar JVPM/NUE; números nunca al payload público.**
+
+**Backlog vivo (post-#204):** favicon/ícono cuadrado · branding interno menor (índigo stat card panel + púrpura `AdminAffiliationDetailModal`) · semánticos "Fusionada"/"Congreso" (decidir) · token de marca · credenciales `doctor_credentials` F1–F5 · próximo-slot-real en la tarjeta · limpieza de ramas locales `claude/*` viejas (solo con OK). **Pagos: solo diseño, bloqueado por pasarela.**
 
 ---
 
@@ -168,7 +189,7 @@ Sincronizá y confirmá estado:
   git log --oneline -5 && git status --short
 
 Estado esperado de main:
-- HEAD ceb7116 · PRs #1–#187 · migraciones aplicadas hasta s7_51.
+- HEAD b5780dd · PRs #1–#204 · migraciones aplicadas hasta s7_51.
 - main == origin/main · árbol limpio.
 - tsc --noEmit OK · npm run build OK.
 
