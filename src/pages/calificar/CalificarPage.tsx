@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { submitReview, type ReviewCriteria } from '@/services/reviews.service';
 
 // Texto que ve el paciente por cada criterio (orden de presentación)
@@ -169,7 +170,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center px-4 py-8">
       <img
-        src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+        src={LUCYCARE_LOGO_SRC}
         alt="Lucy Care"
         className="h-14 mb-6"
       />

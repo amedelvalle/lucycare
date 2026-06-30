@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { getCurrentAuthUser, signOut } from '../../services/auth.service';
 import type { AuthUser } from '../../services/auth.service';
 import {
@@ -278,7 +279,7 @@ export default function PanelLayout() {
         {/* Logo */}
         <div className="p-3 lg:p-6 border-b border-gray-200 flex flex-col items-center lg:items-start">
           <img
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            src={LUCYCARE_LOGO_SRC}
             alt="Lucy Care"
             className="h-10 lg:h-12 cursor-pointer"
             onClick={() => navigate('/')}
@@ -343,7 +344,7 @@ export default function PanelLayout() {
             <i className="ri-menu-line text-xl"></i>
           </button>
           <img
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            src={LUCYCARE_LOGO_SRC}
             alt="Lucy Care"
             className="h-10"
           />
@@ -358,7 +359,7 @@ export default function PanelLayout() {
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <img
-                src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+                src={LUCYCARE_LOGO_SRC}
                 alt="Lucy Care"
                 className="h-10"
               />

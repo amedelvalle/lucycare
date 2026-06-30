@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
 import { destinationForRole, setPasswordFromRecovery } from '@/services/auth.service';
 
@@ -117,7 +118,7 @@ export default function ResetPasswordPage() {
       <div className="bg-white rounded-2xl shadow-sm max-w-md w-full p-6 sm:p-8">
         <div className="flex items-center gap-3 mb-6">
           <img
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            src={LUCYCARE_LOGO_SRC}
             alt="Lucy Care"
             className="h-12"
           />

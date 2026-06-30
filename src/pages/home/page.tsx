@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getAllDoctorRatingStats } from '../../services/reviews.service';
@@ -142,7 +143,7 @@ export default function Home() {
       <header className="border-b border-gray-200 bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <img
-            src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+            src={LUCYCARE_LOGO_SRC}
             alt="Lucy Care"
             className="h-10 sm:h-16 cursor-pointer shrink-0"
           />
@@ -361,7 +362,7 @@ export default function Home() {
             <div>
               <div className="flex items-center mb-4">
                 <img
-                  src="https://static.readdy.ai/image/42f081ea4b3016097f36a509bda99759/03426c4ee595a238dadf371611f96cee.png"
+                  src={LUCYCARE_LOGO_SRC}
                   alt="Lucy Care"
                   className="h-14 sm:h-16"
                 />
