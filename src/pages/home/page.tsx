@@ -190,7 +190,7 @@ export default function Home() {
             ) : (
               <button
                 onClick={() => setShowLoginModal(true)}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
               >
                 Iniciar sesión
               </button>
@@ -198,7 +198,7 @@ export default function Home() {
             <button
               onClick={() => setShowAffiliationModal(true)}
               title="Soy médico y quiero aparecer en Lucy"
-              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
+              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-brand-purple text-white border border-transparent hover:bg-brand-purple-dark rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
             >
               {/* Etiqueta corta en mobile, completa en desktop.
                   El modal mantiene la copy completa "Soy médico,
