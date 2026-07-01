@@ -56,6 +56,22 @@ export default function DoctorDetail() {
   // ─── DATOS REALES desde Supabase ───
   const { data: doctor, isLoading, error, refetch, isRefetching } = useDoctorDetail(id);
 
+  // Canonicalización de URL: si se entró por UUID (u otro alias) y el médico
+  // tiene slug, reescribir la barra a la URL amigable SIN remontar. replaceState
+  // no notifica a React Router → no hay refetch ni flicker, y useParams sigue
+  // igual. "Compartir" usa window.location.href, que tras esto queda con slug.
+  // Si el médico no tiene slug, se conserva el UUID (fallback).
+  useEffect(() => {
+    if (doctor?.slug && id !== doctor.slug) {
+      const newPath = window.location.pathname.replace(/[^/]+$/, doctor.slug);
+      window.history.replaceState(
+        null,
+        '',
+        newPath + window.location.search + window.location.hash,
+      );
+    }
+  }, [doctor, id]);
+
   // Loading state
   if (isLoading) {
     return (

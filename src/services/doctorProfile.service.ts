@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 export interface MyDoctorProfile {
   // doctors
   doctor_id: string;
+  slug: string | null;
   clinic_id: string;
   bio: string | null;
   consultation_fee: number | null;
@@ -53,6 +54,7 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
     .from('doctors')
     .select(`
       id,
+      slug,
       clinic_id,
       bio,
       consultation_fee,
@@ -80,6 +82,7 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
   const d = data as any;
   return {
     doctor_id: d.id,
+    slug: d.slug ?? null,
     clinic_id: d.clinic_id,
     bio: d.bio,
     consultation_fee: d.consultation_fee != null ? Number(d.consultation_fee) : null,

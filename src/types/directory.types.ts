@@ -13,6 +13,7 @@
 // Tarjeta de doctor en el grid del directorio
 export interface DoctorCard {
   id: string                    // doctors.id
+  slug: string | null           // doctors.slug (URL amigable; null = fallback a id)
   profileId: string             // doctors.profile_id
   fullName: string              // profiles.full_name
   avatarUrl: string | null      // profiles.avatar_url
