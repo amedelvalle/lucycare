@@ -53,11 +53,16 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
   // En el runtime Edge de Vercel, `process.env.X` es un binding directo;
   // `globalThis.process` puede ser undefined. Leer `process.env` con guard
   // `typeof` (sin ReferenceError si no existiera).
-  const env: Record<string, string | undefined> =
-    typeof process !== 'undefined' && process.env ? (process.env as any) : {};
+  const hasProc = typeof process !== 'undefined' && !!process.env;
+  const env: Record<string, string | undefined> = hasProc ? (process.env as any) : {};
   const base = env.SUPABASE_URL;
   const key = env.SUPABASE_ANON_KEY;
-  if (!base || !key) return { status: 'error', dbg: `env:url=${base ? 1 : 0},key=${key ? 1 : 0}` };
+  // Diagnóstico: cuántas env vars ve el runtime (para distinguir "process
+  // ausente" de "vars no seteadas en Vercel").
+  const nkeys = hasProc ? Object.keys(env).length : -1;
+  if (!base || !key) {
+    return { status: 'error', dbg: `env:p=${hasProc ? 1 : 0},n=${nkeys},url=${base ? 1 : 0},key=${key ? 1 : 0}` };
+  }
 
   const column = isUuid(idOrSlug) ? 'id' : 'slug';
   const select =
