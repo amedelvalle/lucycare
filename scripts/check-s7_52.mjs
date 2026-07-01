@@ -9,8 +9,10 @@
  *  5. Funciones internas NO ejecutables por anon (`slugify_name` / `_doctor_next_slug`).
  *
  * Los casos 2–4 requieren fixtures aisladas (doctor necesita profile+clinic+
- * auth user). Se crean con marcador `[F52_FIXTURE]` y se limpian en `finally`
- * (0 residuales). NO se usa Camilo ni Katherine ni datos reales.
+ * auth user). El profile lo crea el trigger handle_new_user desde user_metadata
+ * (INSERT) → NO se hace UPDATE de identidad (evita el audit trigger
+ * audit_profiles_identity, que usa auth.uid() y rechaza updates de service-role).
+ * Cleanup en `finally` (0 residuales). NO usa Camilo ni Katherine.
  *
  * Verificación funcional real (generación/colisión/congelado/trigger):
  *   node scripts/_smoke-s7_52.mjs
@@ -28,9 +30,10 @@ const pass = (m) => console.log('  ✅', m);
 const fail = (m) => { console.log('  ❌', m); allOk = false; };
 
 const RUN = Math.random().toString(36).slice(2, 8);
+const RUNNUM = parseInt(RUN, 36) % 9000000;
 let seq = 0;
-const uniqPhone = () => `50379${String(200000 + (seq++)).slice(-6)}`;
-const FIX_CLINIC = '[F52_FIXTURE] check clinic';
+const phoneFor = () => '503' + String(60000000 + RUNNUM + (seq++)); // local 8 díg. inicia en 6
+const FIX_CLINIC = `[F52_FIXTURE] check clinic ${RUN}`;
 
 const created = { users: [], clinics: [] };
 
@@ -40,23 +43,26 @@ async function pickSpecialty() {
   return data[0].id;
 }
 
-// Crea un auth user + profile (rol doctor). Devuelve userId.
+// Crea auth user y reemplaza el profile auto-creado por uno propio con full_name.
+// GoTrue setea la metadata tras el INSERT, así que handle_new_user deja full_name='';
+// y un UPDATE de identidad chocaría con audit_profiles_identity (auth.uid() NULL).
+// Un DELETE + INSERT del profile evita ambos (el audit de identidad es AFTER UPDATE).
 async function makeUser(tag) {
   const email = `f52chk-${RUN}-${tag}@lucycare.test`;
-  const phone = uniqPhone();
+  const phone = phoneFor();
   const { data: au, error: auErr } = await admin.auth.admin.createUser({
     email, phone: `+${phone}`, email_confirm: true, phone_confirm: true,
     user_metadata: { f52_fixture: true },
   });
   if (auErr) throw new Error('createUser: ' + auErr.message);
-  const userId = au.user.id;
-  created.users.push(userId);
-  const { error: pErr } = await admin.from('profiles').upsert(
-    { id: userId, full_name: `[F52] Check Doctor ${tag}`, email, phone, role: 'doctor' },
-    { onConflict: 'id' },
-  );
+  const uid = au.user.id;
+  created.users.push(uid);
+  await admin.from('profiles').delete().eq('id', uid);
+  const { error: pErr } = await admin.from('profiles').insert({
+    id: uid, full_name: `[F52] Check ${tag}`, email, phone, role: 'patient',
+  });
   if (pErr) throw new Error('profiles: ' + pErr.message);
-  return userId;
+  return uid;
 }
 
 // Crea un doctor NO publicado (slug=NULL, el trigger no dispara). Devuelve {id, slug}.
@@ -139,7 +145,7 @@ try {
 
 console.log('\n  ⏭️  Verificación funcional: node scripts/_smoke-s7_52.mjs');
 console.log('     (tildes/ñ · colisión -2 · no publicado=NULL · publicar dispara ·');
-console.log('      congelado ante cambio de nombre · fallback medico · formato).\n');
+console.log('      congelado · fallback medico · formato).\n');
 
 console.log(`${allOk ? '✅ s7_52 sanity OK (correr smoke para la verificación funcional)' : '❌ s7_52 con fallas'}`);
 process.exit(allOk ? 0 : 1);
