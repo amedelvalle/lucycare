@@ -10,7 +10,7 @@
  */
 import {
   escapeHtml, isUuid, extractSlug, normalizeDoctor, isComplete,
-  buildMeta, buildGenericNoindex, injectMeta,
+  buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml,
 } from '../og-meta.mjs';
 
 let pass = 0, fail = 0;
@@ -140,6 +140,60 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
 {
   escapeHtml(`<a href="x">&'`) === '&lt;a href=&quot;x&quot;&gt;&amp;&#39;'
     ? ok('T12 escapeHtml correcto') : no('T12 escapeHtml: ' + escapeHtml(`<a href="x">&'`));
+}
+
+// ── Sitemap (PR C) ──
+
+// T13 — buildSitemapXml: incluye publicados+completos con slug, ordenado
+{
+  const rows = [
+    { ...rawCamilo, updated_at: '2026-06-30T12:00:00Z' },
+    { slug: 'ana-ruiz', booking_enabled: false, updated_at: '2026-05-01T00:00:00Z',
+      profiles: { full_name: 'Ana Ruiz' }, specialties: { name: 'Pediatría' },
+      clinics: { name: 'Clínica X', municipalities: { name: 'Santa Ana' }, departments: { name: 'Santa Ana' } } },
+  ];
+  const xml = buildSitemapXml(rows, ORIGIN);
+  const okAll =
+    xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') &&
+    has(xml, '<loc>https://lucycare.app/doctor/ana-ruiz</loc>') &&
+    has(xml, '<loc>https://lucycare.app/doctor/dr-camilo-carrillo</loc>') &&
+    has(xml, '<lastmod>2026-06-30</lastmod>') &&
+    xml.indexOf('ana-ruiz') < xml.indexOf('dr-camilo-carrillo'); // orden por slug
+  okAll ? ok('T13 sitemap: publicados+completos con slug, lastmod fecha, ordenado')
+        : no('T13 sitemap:\n' + xml);
+}
+
+// T14 — excluye sin slug e incompletos (sin especialidad)
+{
+  const rows = [
+    { ...rawCamilo }, // completo con slug → incluido
+    { slug: null, profiles: { full_name: 'Sin Slug' }, specialties: { name: 'X' }, clinics: { name: 'C', municipalities: { name: 'M' } } }, // sin slug → excluido
+    { slug: 'sin-especialidad', profiles: { full_name: 'No Spec' }, specialties: null, clinics: { name: 'C', municipalities: { name: 'M' } } }, // incompleto → excluido
+  ];
+  const xml = buildSitemapXml(rows, ORIGIN);
+  (has(xml, 'dr-camilo-carrillo') && !has(xml, 'sin-especialidad') && (xml.match(/<url>/g) || []).length === 1)
+    ? ok('T14 sitemap excluye sin-slug e incompletos') : no('T14 sitemap:\n' + xml);
+}
+
+// T15 — nunca UUIDs; loc siempre por slug
+{
+  const xml = buildSitemapXml([{ ...rawCamilo }], ORIGIN);
+  const uuidInLoc = /<loc>[^<]*[0-9a-f]{8}-[0-9a-f]{4}-/i.test(xml);
+  (!uuidInLoc && has(xml, '/doctor/dr-camilo-carrillo'))
+    ? ok('T15 sitemap sin UUIDs (loc por slug)') : no('T15 sitemap:\n' + xml);
+}
+
+// T16 — sin datos → urlset vacío válido
+{
+  const xml = buildSitemapXml([], ORIGIN);
+  (xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') && !has(xml, '<url>'))
+    ? ok('T16 sitemap vacío válido sin filas') : no('T16 sitemap vacío:\n' + xml);
+}
+
+// T17 — escapeXml
+{
+  escapeXml(`a&b<c>"d'`) === 'a&amp;b&lt;c&gt;&quot;d&apos;'
+    ? ok('T17 escapeXml correcto') : no('T17 escapeXml: ' + escapeXml(`a&b<c>"d'`));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);

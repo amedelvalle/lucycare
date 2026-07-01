@@ -25,11 +25,23 @@ import {
   buildMeta,
   buildGenericNoindex,
   injectMeta,
+  buildSitemapXml,
 } from './og-meta.mjs';
 
 export const config = {
-  matcher: '/doctor/:path*',
+  matcher: ['/doctor/:path*', '/sitemap.xml'],
 };
+
+// Env pública (URL + anon key), aceptando el nombre dedicado o el de la app.
+// NUNCA service role. RLS: solo lectura de médicos publicados.
+function supabaseEnv(): { base?: string; key?: string } {
+  const env: Record<string, string | undefined> =
+    typeof process !== 'undefined' && process.env ? (process.env as any) : {};
+  return {
+    base: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+    key: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY,
+  };
+}
 
 const CACHE_OK = 'public, s-maxage=3600, stale-while-revalidate=86400';
 const CACHE_SHORT = 'public, s-maxage=300, stale-while-revalidate=3600';
@@ -52,13 +64,7 @@ type DoctorResult =
   | { status: 'error' };
 
 async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
-  // En el runtime Edge de Vercel `process.env.X` es un binding directo;
-  // `globalThis.process` puede ser undefined. Leer `process.env` con guard
-  // `typeof` (sin ReferenceError). Acepta el nombre dedicado o el de la app.
-  const env: Record<string, string | undefined> =
-    typeof process !== 'undefined' && process.env ? (process.env as any) : {};
-  const base = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const key = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const { base, key } = supabaseEnv();
   if (!base || !key) return { status: 'error' };
 
   const column = isUuid(idOrSlug) ? 'id' : 'slug';
@@ -86,9 +92,56 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
   }
 }
 
+const SITEMAP_CACHE = 'public, s-maxage=3600, stale-while-revalidate=86400';
+
+// sitemap.xml dinámico: SOLO médicos publicados con slug (la completitud la
+// filtra buildSitemapXml). Nunca UUIDs, nunca datos sensibles. Si Supabase
+// falla o faltan env → urlset vacío válido (nunca 500).
+async function sitemapResponse(origin: string): Promise<Response> {
+  const { base, key } = supabaseEnv();
+  let rows: unknown[] = [];
+  if (base && key) {
+    const select =
+      'slug,updated_at,booking_enabled,' +
+      'profiles!inner(full_name),specialties!inner(name),' +
+      'clinics!inner(name,municipalities(name),departments(name))';
+    const url =
+      `${base}/rest/v1/doctors` +
+      `?is_published=eq.true&slug=not.is.null` +
+      `&select=${encodeURIComponent(select)}&limit=1000`;
+    try {
+      const res = await fetch(url, {
+        headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) rows = data;
+      }
+    } catch {
+      rows = [];
+    }
+  }
+  return new Response(buildSitemapXml(rows, origin), {
+    status: 200,
+    headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': SITEMAP_CACHE },
+  });
+}
+
 export default async function middleware(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const shellUrl = new URL('/index.html', url.origin);
+
+  if (url.pathname === '/sitemap.xml') {
+    try {
+      return await sitemapResponse(url.origin);
+    } catch {
+      // Nunca 500: urlset vacío válido.
+      return new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n</urlset>\n`,
+        { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': SITEMAP_CACHE } },
+      );
+    }
+  }
 
   try {
     const idOrSlug = extractSlug(url.pathname);
