@@ -33,22 +33,21 @@ export const config = {
 const CACHE_OK = 'public, s-maxage=3600, stale-while-revalidate=86400';
 const CACHE_SHORT = 'public, s-maxage=300, stale-while-revalidate=3600';
 
-function htmlResponse(html: string, cache: string): Response {
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'cache-control': cache,
-    },
-  });
+function htmlResponse(html: string, cache: string, dbg?: string): Response {
+  const headers: Record<string, string> = {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': cache,
+  };
+  if (dbg) headers['x-og-debug'] = dbg; // TEMPORAL: diagnóstico, se remueve antes de merge
+  return new Response(html, { status: 200, headers });
 }
 
 // Resultado del fetch del médico: distingue "no encontrado" (query OK, vacío)
 // de "error/outage" (para no noindexar un perfil real durante una caída).
 type DoctorResult =
-  | { status: 'found'; doctor: ReturnType<typeof normalizeDoctor> }
-  | { status: 'notfound' }
-  | { status: 'error' };
+  | { status: 'found'; doctor: ReturnType<typeof normalizeDoctor>; dbg: string }
+  | { status: 'notfound'; dbg: string }
+  | { status: 'error'; dbg: string };
 
 async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
   // En el runtime Edge de Vercel, `process.env.X` es un binding directo;
@@ -58,7 +57,7 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
     typeof process !== 'undefined' && process.env ? (process.env as any) : {};
   const base = env.SUPABASE_URL;
   const key = env.SUPABASE_ANON_KEY;
-  if (!base || !key) return { status: 'error' };
+  if (!base || !key) return { status: 'error', dbg: `env:url=${base ? 1 : 0},key=${key ? 1 : 0}` };
 
   const column = isUuid(idOrSlug) ? 'id' : 'slug';
   const select =
@@ -75,13 +74,15 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
     const res = await fetch(url, {
       headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' },
     });
-    if (!res.ok) return { status: 'error' };
+    if (!res.ok) return { status: 'error', dbg: `http=${res.status}` };
     const rows = await res.json();
     const doctor = normalizeDoctor(Array.isArray(rows) ? rows[0] : rows);
-    if (!doctor || !doctor.slug) return { status: 'notfound' };
-    return { status: 'found', doctor };
-  } catch {
-    return { status: 'error' };
+    if (!doctor || !doctor.slug) {
+      return { status: 'notfound', dbg: `http=200,rows=${Array.isArray(rows) ? rows.length : 'nonarr'}` };
+    }
+    return { status: 'found', doctor, dbg: `http=200,ok` };
+  } catch (e) {
+    return { status: 'error', dbg: `throw:${(e as Error)?.message?.slice(0, 60) || 'x'}` };
   }
 }
 
@@ -96,14 +97,14 @@ export default async function middleware(req: Request): Promise<Response> {
 
     if (result.status === 'found' && result.doctor) {
       const meta = buildMeta(result.doctor, url.origin);
-      return htmlResponse(injectMeta(shell, meta), meta.indexable ? CACHE_OK : CACHE_SHORT);
+      return htmlResponse(injectMeta(shell, meta), meta.indexable ? CACHE_OK : CACHE_SHORT, `found;${result.dbg}`);
     }
     if (result.status === 'notfound') {
       // Slug inexistente / no publicado → genérico + noindex, sin datos.
-      return htmlResponse(injectMeta(shell, buildGenericNoindex(url.origin)), CACHE_SHORT);
+      return htmlResponse(injectMeta(shell, buildGenericNoindex(url.origin)), CACHE_SHORT, `notfound;${result.dbg}`);
     }
     // Outage / env faltante → shell tal cual (no noindexar un perfil real).
-    return htmlResponse(shell, CACHE_SHORT);
+    return htmlResponse(shell, CACHE_SHORT, `error;${result.dbg}`);
   } catch {
     // Fallback duro: servir el shell crudo. Nunca 500 si se puede evitar.
     try {
