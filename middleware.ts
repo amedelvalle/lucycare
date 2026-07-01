@@ -55,13 +55,13 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
   // `typeof` (sin ReferenceError si no existiera).
   const hasProc = typeof process !== 'undefined' && !!process.env;
   const env: Record<string, string | undefined> = hasProc ? (process.env as any) : {};
-  const base = env.SUPABASE_URL;
-  const key = env.SUPABASE_ANON_KEY;
-  // Diagnóstico: cuántas env vars ve el runtime (para distinguir "process
-  // ausente" de "vars no seteadas en Vercel").
-  const nkeys = hasProc ? Object.keys(env).length : -1;
+  // Acepta el nombre dedicado (SUPABASE_URL) o el que ya usa la app
+  // (VITE_SUPABASE_URL). Ambos son públicos (URL + anon key), RLS-gated.
+  const base = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const key = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const src = env.SUPABASE_URL ? 'own' : env.VITE_SUPABASE_URL ? 'vite' : 'none';
   if (!base || !key) {
-    return { status: 'error', dbg: `env:p=${hasProc ? 1 : 0},n=${nkeys},url=${base ? 1 : 0},key=${key ? 1 : 0}` };
+    return { status: 'error', dbg: `env:src=${src},url=${base ? 1 : 0},key=${key ? 1 : 0}` };
   }
 
   const column = isUuid(idOrSlug) ? 'id' : 'slug';
