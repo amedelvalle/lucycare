@@ -954,6 +954,7 @@ export type Database = {
           license_number: string | null
           lucy_status: Database["public"]["Enums"]["lucy_status"]
           profile_id: string
+          slug: string | null
           specialty_id: string | null
           tos_accepted_at: string | null
           tos_version: string | null
@@ -974,6 +975,7 @@ export type Database = {
           license_number?: string | null
           lucy_status?: Database["public"]["Enums"]["lucy_status"]
           profile_id: string
+          slug?: string | null
           specialty_id?: string | null
           tos_accepted_at?: string | null
           tos_version?: string | null
@@ -994,6 +996,7 @@ export type Database = {
           license_number?: string | null
           lucy_status?: Database["public"]["Enums"]["lucy_status"]
           profile_id?: string
+          slug?: string | null
           specialty_id?: string | null
           tos_accepted_at?: string | null
           tos_version?: string | null
