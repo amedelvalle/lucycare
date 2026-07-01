@@ -117,7 +117,8 @@ export default function PerfilPage() {
     setBooking.mutate(!profile.booking_enabled);
   };
 
-  const publicUrl = `/doctor/${profile.doctor_id}`;
+  // URL pública amigable con slug cuando existe; fallback a UUID.
+  const publicUrl = `/doctor/${profile.slug || profile.doctor_id}`;
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">

@@ -53,7 +53,8 @@ export default function DoctorCard({
     }
 
     try {
-      navigate(`/doctor/${id}`);
+      // URL amigable con slug cuando existe; fallback a UUID si es null.
+      navigate(`/doctor/${doctor.slug || id}`);
     } catch (error) {
       console.error('Error al navegar:', error);
     }

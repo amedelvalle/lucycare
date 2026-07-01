@@ -43,6 +43,7 @@ export async function fetchDoctors(
     .from('doctors')
     .select(`
       id,
+      slug,
       profile_id,
       specialty_id,
       bio,
@@ -127,6 +128,7 @@ export async function fetchDoctors(
 
     return {
       id: doc.id,
+      slug: doc.slug || null,
       profileId: doc.profile_id,
       fullName: doc.profiles?.full_name || 'Sin nombre',
       avatarUrl: doc.profiles?.avatar_url || null,
@@ -178,17 +180,25 @@ export async function fetchDoctors(
 // DETALLE DEL DOCTOR
 // ─────────────────────────────────────────────
 
+// Detecta si el parámetro de la URL es un UUID (doctors.id) o un slug.
+// Los slugs son [a-z0-9-] y nunca matchean este patrón, así que la
+// distinción es inequívoca.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
- * Obtiene el detalle completo de un doctor por su ID.
- * Incluye servicios, imágenes y datos de la clínica.
+ * Obtiene el detalle completo de un doctor por su UUID (doctors.id) o su slug.
+ * Resolver dual: si el parámetro parece UUID busca por `id`, si no por `slug`.
+ * Siempre gate `is_published = true`. Incluye servicios, imágenes y clínica.
  */
 export async function fetchDoctorDetail(
-  doctorId: string
+  idOrSlug: string
 ): Promise<DoctorDetail | null> {
+  const byColumn = UUID_RE.test(idOrSlug) ? 'id' : 'slug'
   const { data, error } = await supabase
     .from('doctors')
     .select(`
       id,
+      slug,
       profile_id,
       specialty_id,
       bio,
@@ -238,7 +248,7 @@ export async function fetchDoctorDetail(
         sort_order
       )
     `)
-    .eq('id', doctorId)
+    .eq(byColumn, idOrSlug)
     // El detalle se abre con solo is_published=true. is_operational
     // controla únicamente el panel del médico (operar agenda interna),
     // no la visibilidad pública. Esto permite que médicos informativos
@@ -300,6 +310,7 @@ export async function fetchDoctorDetail(
 
   return {
     id: doc.id,
+    slug: doc.slug || null,
     profileId: doc.profile_id,
     fullName: doc.profiles?.full_name || 'Sin nombre',
     avatarUrl: doc.profiles?.avatar_url || null,
