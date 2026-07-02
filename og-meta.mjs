@@ -88,7 +88,7 @@ export function buildSitemapXml(rows, origin) {
   const seen = new Set();
   const entries = (Array.isArray(rows) ? rows : [])
     .map(normalizeDoctor)
-    .filter((d) => d && d.slug && isComplete(d))
+    .filter((d) => d && d.slug && isSitemapEligible(d))
     .filter((d) => (seen.has(d.slug) ? false : (seen.add(d.slug), true)))
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
@@ -115,11 +115,21 @@ export function buildSitemapXml(rows, origin) {
 }
 
 /**
- * Completitud mínima para indexar (Q3): nombre + especialidad + clínica +
- * ubicación (municipio o departamento). Sin esto → noindex.
+ * Completitud mínima para indexar el PERFIL (Q3): nombre + especialidad +
+ * clínica + ubicación (municipio o departamento). Controla robots index/noindex
+ * en la meta del perfil (buildMeta). Sin esto → noindex.
  */
 export function isComplete(d) {
   return !!(d && d.name && d.specialty && d.clinicName && (d.municipality || d.department));
+}
+
+/**
+ * Elegibilidad para el SITEMAP (opción B): nombre + especialidad + clínica.
+ * La ubicación estructurada es deseable pero NO bloqueante — el objetivo de
+ * PR C es el descubrimiento SEO de todos los perfiles públicos con slug.
+ */
+export function isSitemapEligible(d) {
+  return !!(d && d.name && d.specialty && d.clinicName);
 }
 
 function locationText(d) {

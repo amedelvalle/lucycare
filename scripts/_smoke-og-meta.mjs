@@ -10,7 +10,7 @@
  */
 import {
   escapeHtml, isUuid, extractSlug, normalizeDoctor, isComplete,
-  buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml,
+  buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
 } from '../og-meta.mjs';
 
 let pass = 0, fail = 0;
@@ -163,16 +163,36 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
         : no('T13 sitemap:\n' + xml);
 }
 
-// T14 — excluye sin slug e incompletos (sin especialidad)
+// T14 — opción B: INCLUYE con especialidad+clínica aunque NO tenga ubicación;
+// excluye sin slug y sin especialidad.
 {
   const rows = [
     { ...rawCamilo }, // completo con slug → incluido
-    { slug: null, profiles: { full_name: 'Sin Slug' }, specialties: { name: 'X' }, clinics: { name: 'C', municipalities: { name: 'M' } } }, // sin slug → excluido
-    { slug: 'sin-especialidad', profiles: { full_name: 'No Spec' }, specialties: null, clinics: { name: 'C', municipalities: { name: 'M' } } }, // incompleto → excluido
+    { slug: 'sin-ubicacion', booking_enabled: false, profiles: { full_name: 'Dr Sin Ubi' },
+      specialties: { name: 'Dermatología' }, clinics: { name: 'Clínica Y' } }, // sin muni/dept → INCLUIDO (opción B)
+    { slug: null, profiles: { full_name: 'Sin Slug' }, specialties: { name: 'X' }, clinics: { name: 'C' } }, // sin slug → excluido
+    { slug: 'sin-especialidad', profiles: { full_name: 'No Spec' }, specialties: null, clinics: { name: 'C' } }, // sin especialidad → excluido
+    { slug: 'sin-clinica', profiles: { full_name: 'No Clinic' }, specialties: { name: 'X' }, clinics: null }, // sin clínica → excluido
   ];
   const xml = buildSitemapXml(rows, ORIGIN);
-  (has(xml, 'dr-camilo-carrillo') && !has(xml, 'sin-especialidad') && (xml.match(/<url>/g) || []).length === 1)
-    ? ok('T14 sitemap excluye sin-slug e incompletos') : no('T14 sitemap:\n' + xml);
+  const okAll =
+    has(xml, 'dr-camilo-carrillo') && has(xml, '/doctor/sin-ubicacion') &&
+    !has(xml, 'sin-especialidad') && !has(xml, 'sin-clinica') && !has(xml, 'Sin Slug') &&
+    (xml.match(/<url>/g) || []).length === 2;
+  okAll ? ok('T14 sitemap (opción B): incluye sin-ubicación; excluye sin-slug/especialidad/clínica')
+        : no('T14 sitemap:\n' + xml);
+}
+
+// T14b — isSitemapEligible: no exige ubicación; sí nombre+especialidad+clínica
+{
+  const base = { name: 'X', specialty: 'Y', clinicName: 'Z', municipality: null, department: null };
+  const okAll =
+    isSitemapEligible(base) === true &&
+    isSitemapEligible({ ...base, specialty: null }) === false &&
+    isSitemapEligible({ ...base, clinicName: null }) === false &&
+    isSitemapEligible({ ...base, name: '' }) === false;
+  okAll ? ok('T14b isSitemapEligible: ubicación opcional, requiere nombre+especialidad+clínica')
+        : no('T14b isSitemapEligible mal');
 }
 
 // T15 — nunca UUIDs; loc siempre por slug

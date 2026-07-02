@@ -92,15 +92,24 @@ async function fetchDoctor(idOrSlug: string): Promise<DoctorResult> {
   }
 }
 
-const SITEMAP_CACHE = 'public, s-maxage=3600, stale-while-revalidate=86400';
+function sitemapXmlResponse(xml: string, cache: string): Response {
+  return new Response(xml, {
+    status: 200,
+    headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': cache },
+  });
+}
 
-// sitemap.xml dinámico: SOLO médicos publicados con slug (la completitud la
+// sitemap.xml dinámico: SOLO médicos publicados con slug (la elegibilidad la
 // filtra buildSitemapXml). Nunca UUIDs, nunca datos sensibles. Si Supabase
-// falla o faltan env → urlset vacío válido (nunca 500).
+// falla o faltan env → urlset vacío válido (nunca 500) con cache CORTO
+// (no cachear un fallback degradado tanto como un sitemap exitoso).
 async function sitemapResponse(origin: string): Promise<Response> {
   const { base, key } = supabaseEnv();
   let rows: unknown[] = [];
-  if (base && key) {
+  let degraded = false;
+  if (!base || !key) {
+    degraded = true;
+  } else {
     const select =
       'slug,updated_at,booking_enabled,' +
       'profiles!inner(full_name),specialties!inner(name),' +
@@ -116,15 +125,16 @@ async function sitemapResponse(origin: string): Promise<Response> {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) rows = data;
+        else degraded = true;
+      } else {
+        degraded = true;
       }
     } catch {
-      rows = [];
+      degraded = true;
     }
   }
-  return new Response(buildSitemapXml(rows, origin), {
-    status: 200,
-    headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': SITEMAP_CACHE },
-  });
+  // Éxito → cache largo; degradado (env faltante/outage) → cache corto.
+  return sitemapXmlResponse(buildSitemapXml(rows, origin), degraded ? CACHE_SHORT : CACHE_OK);
 }
 
 export default async function middleware(req: Request): Promise<Response> {
@@ -135,10 +145,10 @@ export default async function middleware(req: Request): Promise<Response> {
     try {
       return await sitemapResponse(url.origin);
     } catch {
-      // Nunca 500: urlset vacío válido.
-      return new Response(
+      // Nunca 500: urlset vacío válido, con cache corto (fallback degradado).
+      return sitemapXmlResponse(
         `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n</urlset>\n`,
-        { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': SITEMAP_CACHE } },
+        CACHE_SHORT,
       );
     }
   }
