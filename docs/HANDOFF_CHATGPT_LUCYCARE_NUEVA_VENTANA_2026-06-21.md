@@ -18,6 +18,8 @@
 
 > ⚠️ **Actualización (cierre #163):** este handoff se redactó con #163 abierto; **#163 quedó MERGEADO** y **`s7_51` aplicada/validada**. La rama `claude/panel-waitlist` fue borrada (local + remoto). §3–§5 quedan como **registro histórico** del frente, ya cerrado.
 
+> ⚠️ **Actualización (post-#212, 2026-07-01):** el estado de §1 (HEAD `b5780dd` / PRs #1–#204 / `s7_51`) quedó desactualizado. **Estado real:** HEAD **`8598bec`** · **PRs #1–#212** · **migraciones hasta `s7_52`** · `main == origin/main`. Frente **"Slugs públicos + SEO del directorio" COMPLETO hasta Fase 3 PR C** (#206 header CTA · #207 docs Fase 0 · **#208/`s7_52`** backend `doctors.slug` · #209 routing UUID/slug · #210 diseño Fase 3 · **#211** middleware metadata/OG · **#212** `robots.txt`+`sitemap.xml`) — **validado en producción `lucycare.app`**. Fuente de verdad del frente: `docs/ANALISIS_SLUGS_SEO.md`. **Decisión vinculante:** la ubicación estructurada NO es requisito para indexar; criterio único `isSitemapEligible` (publicado+slug+nombre+especialidad+clínica) gobierna sitemap y `robots` del perfil, alineados. **Pendiente NO iniciado:** PR D (JSON-LD/canonical hardening/OG 1200×630) · Fase 4 (landings) · Analytics. Lo demás de este handoff sigue vigente como registro.
+
 ### 2bis. Serie correcciones clínicas / receta / PDF (#167–#172) — CERRADA, frontend-only, sin migración
 Cierra los 5 puntos de las observaciones del owner sobre consulta/receta/PDF. **Ninguno agregó migración** (`s7_51` sin cambios).
 - **#167 (PR-A)** — PDF de receta limpio: helper `doctorTitleName` (evita "Dr. Dr."/"Dra. Dra."), fechas emisión/corrección una sola vez en el encabezado, dosis **rotulada** (Dosis/Frecuencia/Duración/Indicaciones) sin inventar datos. Solo `RecetaPrint.tsx`.
