@@ -239,3 +239,32 @@ migraciones · `database.types.ts` · rutas privadas · dashboards.
 - Habilitar **Web Analytics + Speed Insights** en el dashboard del proyecto
   Vercel para que fluyan los datos.
 - **Fase 1B:** conectar Google Search Console + enviar el sitemap.
+
+---
+
+# Cierre — Fase 1B (Search Console) operativa ✅ (2026-07-02)
+
+> HEAD `82d8feb` · PRs #1–#218 · migraciones `s7_52`. Tarea operativa del
+> owner (sin código, salvo los 2 archivos de verificación).
+
+- **Google Search Console verificado** por método de **archivo HTML**.
+- **Archivos de verificación permanentes** en `public/` (no borrar — Google
+  requiere mantenerlos):
+  - `public/google3f2e02a3c176b538.html` (PR #217)
+  - `public/googlef334c08cb9e5d942.html` (PR #218, verificación por "Prefijo
+    de URL")
+  - Ambos live en producción (200, `text/html`, contenido exacto, servidos
+    como estáticos sin caer en el `index.html` del SPA).
+- **Sitemap enviado y procesado** en Search Console:
+  - Sitemap: `https://lucycare.app/sitemap.xml`
+  - **Estado: Correcto** · Última lectura: **2 jul 2026** · **Páginas
+    descubiertas: 35** · Videos: 0.
+- **Nota de seguimiento (owner, sin código):** "descubiertas" ≠
+  "indexadas"; la indexación real tarda días/semanas. Revisar más adelante
+  en Search Console → *Páginas* (indexadas vs no) y *Rendimiento*
+  (impresiones/clics).
+
+**Con esto, Analytics/Search Console Fase 1B queda CERRADA (operativa).**
+Pendientes NO iniciados: Fase 2 (eventos custom, sujeto al plan Vercel) ·
+Fase 3 (dashboard conversión DB) · Fase 4 (dashboards por médico/
+especialidad/canal); y en Slugs+SEO: PR D · Fase 4 (landings).

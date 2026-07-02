@@ -565,3 +565,14 @@ contradicción entre el sitemap y `<meta name="robots">`.
 con fallback a `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` (todas públicas,
 RLS). En producción no aparece `X-Robots-Tag: noindex` (eso era solo de los
 preview deploys de Vercel).
+
+---
+
+## Search Console conectado (operativo, 2026-07-02)
+
+Google Search Console **verificado** (archivo HTML; `public/google3f2e02a3c176b538.html`
++ `public/googlef334c08cb9e5d942.html`, permanentes). **Sitemap
+`https://lucycare.app/sitemap.xml` enviado y procesado** → Estado **Correcto**,
+última lectura 2 jul 2026, **35 páginas descubiertas**. La **indexación** real
+(distinta de "descubiertas") se monitorea en Search Console con el tiempo.
+Detalle vivo en `docs/ANALISIS_ANALYTICS_LUCYCARE.md` (Fase 1B).
