@@ -64,15 +64,67 @@ export function normalizeDoctor(raw) {
     department: (dept?.name || '').trim() || null,
     avatarUrl: profile?.avatar_url || null,
     bookingEnabled: raw.booking_enabled === true,
+    updatedAt: raw.updated_at || null,
   };
 }
 
+/** Escapa para contenido/atributos XML. */
+export function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 /**
- * Completitud mínima para indexar (Q3): nombre + especialidad + clínica +
- * ubicación (municipio o departamento). Sin esto → noindex.
+ * Construye el sitemap.xml a partir de filas crudas de doctors publicados.
+ * Incluye SOLO perfiles con slug + elegibles (isSitemapEligible). Nunca
+ * UUIDs, nunca datos clínicos/sensibles: solo la URL canónica por slug +
+ * lastmod (fecha de updated_at si existe). Determinista (orden por slug).
  */
-export function isComplete(d) {
-  return !!(d && d.name && d.specialty && d.clinicName && (d.municipality || d.department));
+export function buildSitemapXml(rows, origin) {
+  const seen = new Set();
+  const entries = (Array.isArray(rows) ? rows : [])
+    .map(normalizeDoctor)
+    .filter((d) => d && d.slug && isSitemapEligible(d))
+    .filter((d) => (seen.has(d.slug) ? false : (seen.add(d.slug), true)))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+
+  const urls = entries
+    .map((d) => {
+      const loc = escapeXml(`${origin}/doctor/${d.slug}`);
+      // lastmod: fecha (YYYY-MM-DD) del updated_at si es parseable.
+      let lastmod = '';
+      if (d.updatedAt) {
+        const iso = String(d.updatedAt);
+        const m = iso.match(/^\d{4}-\d{2}-\d{2}/);
+        if (m) lastmod = `\n    <lastmod>${m[0]}</lastmod>`;
+      }
+      return `  <url>\n    <loc>${loc}</loc>${lastmod}\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`;
+    })
+    .join('\n');
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    (urls ? urls + '\n' : '') +
+    `</urlset>\n`
+  );
+}
+
+/**
+ * Criterio ÚNICO de indexabilidad (opción B, decisión post-#212): nombre +
+ * especialidad + clínica. La ubicación estructurada es una señal de calidad
+ * DESEABLE pero NO bloqueante. Gobierna dos cosas alineadas:
+ *   - inclusión en el sitemap (buildSitemapXml);
+ *   - robots index/follow vs noindex en la meta del perfil (buildMeta).
+ * Así el sitemap y el <head> del perfil nunca se contradicen.
+ * (Perfiles no publicados / sin slug se excluyen aguas arriba.)
+ */
+export function isSitemapEligible(d) {
+  return !!(d && d.name && d.specialty && d.clinicName);
 }
 
 function locationText(d) {
@@ -86,7 +138,7 @@ function locationText(d) {
 export function buildMeta(d, origin) {
   const specialty = d.specialty || 'Médico';
   const loc = locationText(d);
-  const indexable = isComplete(d);
+  const indexable = isSitemapEligible(d);
   const canonical = `${origin}/doctor/${d.slug}`;
   const ogImage = d.avatarUrl || `${origin}${DEFAULT_OG_IMAGE_PATH}`;
 

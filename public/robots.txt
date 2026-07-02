@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /panel
+Disallow: /admin
+Disallow: /paciente
+Disallow: /reset-password
+
+Sitemap: https://lucycare.app/sitemap.xml

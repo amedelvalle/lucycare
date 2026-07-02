@@ -9,8 +9,8 @@
  * Uso: node scripts/_smoke-og-meta.mjs
  */
 import {
-  escapeHtml, isUuid, extractSlug, normalizeDoctor, isComplete,
-  buildMeta, buildGenericNoindex, injectMeta,
+  escapeHtml, isUuid, extractSlug, normalizeDoctor,
+  buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
 } from '../og-meta.mjs';
 
 let pass = 0, fail = 0;
@@ -80,13 +80,27 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
         : no('T5 buildMeta: ' + m.title + ' | ' + m.metaHtml);
 }
 
-// T6 — incompleto (sin especialidad) → noindex
+// T6 — sin especialidad → noindex (no elegible)
 {
   const raw = { ...rawCamilo, specialties: null };
   const d = normalizeDoctor(raw);
   const m = buildMeta(d, ORIGIN);
-  (!m.indexable && has(m.metaHtml, 'noindex,follow') && !isComplete(d))
+  (!m.indexable && has(m.metaHtml, 'noindex,follow') && !isSitemapEligible(d))
     ? ok('T6 sin especialidad → noindex') : no('T6 debería noindex: ' + m.metaHtml);
+}
+
+// T6b — publicado SIN ubicación pero con especialidad+clínica → index,follow
+// (alineado con el sitemap: la ubicación es opcional para indexar).
+{
+  const raw = {
+    slug: 'dr-sin-ubi', booking_enabled: false,
+    profiles: { full_name: 'Dr Sin Ubi', avatar_url: null },
+    specialties: { name: 'Urología' }, clinics: { name: 'Clínica Z' },
+  };
+  const d = normalizeDoctor(raw);
+  const m = buildMeta(d, ORIGIN);
+  (m.indexable && has(m.metaHtml, 'index,follow') && !has(m.metaHtml, 'noindex'))
+    ? ok('T6b sin ubicación pero completo → index,follow') : no('T6b debería index: ' + m.metaHtml);
 }
 
 // T7 — avatar null → fallback branded
@@ -140,6 +154,80 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
 {
   escapeHtml(`<a href="x">&'`) === '&lt;a href=&quot;x&quot;&gt;&amp;&#39;'
     ? ok('T12 escapeHtml correcto') : no('T12 escapeHtml: ' + escapeHtml(`<a href="x">&'`));
+}
+
+// ── Sitemap (PR C) ──
+
+// T13 — buildSitemapXml: incluye publicados+completos con slug, ordenado
+{
+  const rows = [
+    { ...rawCamilo, updated_at: '2026-06-30T12:00:00Z' },
+    { slug: 'ana-ruiz', booking_enabled: false, updated_at: '2026-05-01T00:00:00Z',
+      profiles: { full_name: 'Ana Ruiz' }, specialties: { name: 'Pediatría' },
+      clinics: { name: 'Clínica X', municipalities: { name: 'Santa Ana' }, departments: { name: 'Santa Ana' } } },
+  ];
+  const xml = buildSitemapXml(rows, ORIGIN);
+  const okAll =
+    xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') &&
+    has(xml, '<loc>https://lucycare.app/doctor/ana-ruiz</loc>') &&
+    has(xml, '<loc>https://lucycare.app/doctor/dr-camilo-carrillo</loc>') &&
+    has(xml, '<lastmod>2026-06-30</lastmod>') &&
+    xml.indexOf('ana-ruiz') < xml.indexOf('dr-camilo-carrillo'); // orden por slug
+  okAll ? ok('T13 sitemap: publicados+completos con slug, lastmod fecha, ordenado')
+        : no('T13 sitemap:\n' + xml);
+}
+
+// T14 — opción B: INCLUYE con especialidad+clínica aunque NO tenga ubicación;
+// excluye sin slug y sin especialidad.
+{
+  const rows = [
+    { ...rawCamilo }, // completo con slug → incluido
+    { slug: 'sin-ubicacion', booking_enabled: false, profiles: { full_name: 'Dr Sin Ubi' },
+      specialties: { name: 'Dermatología' }, clinics: { name: 'Clínica Y' } }, // sin muni/dept → INCLUIDO (opción B)
+    { slug: null, profiles: { full_name: 'Sin Slug' }, specialties: { name: 'X' }, clinics: { name: 'C' } }, // sin slug → excluido
+    { slug: 'sin-especialidad', profiles: { full_name: 'No Spec' }, specialties: null, clinics: { name: 'C' } }, // sin especialidad → excluido
+    { slug: 'sin-clinica', profiles: { full_name: 'No Clinic' }, specialties: { name: 'X' }, clinics: null }, // sin clínica → excluido
+  ];
+  const xml = buildSitemapXml(rows, ORIGIN);
+  const okAll =
+    has(xml, 'dr-camilo-carrillo') && has(xml, '/doctor/sin-ubicacion') &&
+    !has(xml, 'sin-especialidad') && !has(xml, 'sin-clinica') && !has(xml, 'Sin Slug') &&
+    (xml.match(/<url>/g) || []).length === 2;
+  okAll ? ok('T14 sitemap (opción B): incluye sin-ubicación; excluye sin-slug/especialidad/clínica')
+        : no('T14 sitemap:\n' + xml);
+}
+
+// T14b — isSitemapEligible: no exige ubicación; sí nombre+especialidad+clínica
+{
+  const base = { name: 'X', specialty: 'Y', clinicName: 'Z', municipality: null, department: null };
+  const okAll =
+    isSitemapEligible(base) === true &&
+    isSitemapEligible({ ...base, specialty: null }) === false &&
+    isSitemapEligible({ ...base, clinicName: null }) === false &&
+    isSitemapEligible({ ...base, name: '' }) === false;
+  okAll ? ok('T14b isSitemapEligible: ubicación opcional, requiere nombre+especialidad+clínica')
+        : no('T14b isSitemapEligible mal');
+}
+
+// T15 — nunca UUIDs; loc siempre por slug
+{
+  const xml = buildSitemapXml([{ ...rawCamilo }], ORIGIN);
+  const uuidInLoc = /<loc>[^<]*[0-9a-f]{8}-[0-9a-f]{4}-/i.test(xml);
+  (!uuidInLoc && has(xml, '/doctor/dr-camilo-carrillo'))
+    ? ok('T15 sitemap sin UUIDs (loc por slug)') : no('T15 sitemap:\n' + xml);
+}
+
+// T16 — sin datos → urlset vacío válido
+{
+  const xml = buildSitemapXml([], ORIGIN);
+  (xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') && !has(xml, '<url>'))
+    ? ok('T16 sitemap vacío válido sin filas') : no('T16 sitemap vacío:\n' + xml);
+}
+
+// T17 — escapeXml
+{
+  escapeXml(`a&b<c>"d'`) === 'a&amp;b&lt;c&gt;&quot;d&apos;'
+    ? ok('T17 escapeXml correcto') : no('T17 escapeXml: ' + escapeXml(`a&b<c>"d'`));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);
