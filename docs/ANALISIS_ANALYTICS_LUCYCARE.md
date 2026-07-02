@@ -263,6 +263,14 @@ migraciones · `database.types.ts` · rutas privadas · dashboards.
   "indexadas"; la indexación real tarda días/semanas. Revisar más adelante
   en Search Console → *Páginas* (indexadas vs no) y *Rendimiento*
   (impresiones/clics).
+- **Solicitud de indexación manual (owner, 2026-07-02):** se pidió la
+  indexación de al menos un perfil principal desde Search Console
+  (Inspección de URL → "Solicitar indexación"); Google respondió *"Se ha
+  solicitado la indexación"*. **Esto NO garantiza indexación inmediata**: la
+  URL queda en **cola de revisión** de Google. **Recomendación:** **no
+  repetir** la solicitud varias veces (no acelera y puede ser
+  contraproducente); **monitorear** el estado en Search Console durante los
+  próximos días.
 
 **Con esto, Analytics/Search Console Fase 1B queda CERRADA (operativa).**
 Pendientes NO iniciados: Fase 2 (eventos custom, sujeto al plan Vercel) ·
