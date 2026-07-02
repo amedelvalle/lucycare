@@ -170,3 +170,72 @@ clínico ni PII.
 Docs-only. **No** se toca: código funcional · `package.json` · lockfile ·
 Vercel config · scripts de analytics · React · middleware · DB · SQL ·
 migraciones · `database.types.ts` · rutas privadas · dashboards.
+
+---
+
+# Cierre — Fase 1A LIVE (post-#215)
+
+> HEAD `d41a6dc` · PRs #1–#215 · migraciones `s7_52` · `main == origin/main`.
+> **PR #215 fue frontend/deps: sin DB/SQL/migraciones.** Producción validada
+> en `https://lucycare.app`.
+
+## Estado de las fases
+
+| Fase / PR | Estado |
+|---|---|
+| PR-0 — diseño docs-only | ✅ **PR #214** |
+| Fase 1A — Vercel Web Analytics + Speed Insights (rutas públicas) | ✅ **PR #215** + producción + validación del owner |
+
+**Pendientes NO iniciados** (requieren autorización explícita):
+- **Fase 1B** — Search Console (tarea operativa del owner, sin código).
+- **Fase 2** — eventos custom del directorio/perfiles (sujeto a confirmar que
+  el plan de Vercel soporta `track()`; si no, decidir Plausible / PostHog EU).
+- **Fase 3** — dashboard LucyAdmin read-only sobre conversiones reales en DB
+  (`appointments`, `waitlist_entries`, `doctor_affiliation_requests`).
+- **Fase 4** — dashboards por médico/especialidad/canal.
+
+## Qué quedó implementado (PR #215)
+
+- Dependencias: `@vercel/analytics` + `@vercel/speed-insights`.
+- Componente **`src/components/PublicAnalytics.tsx`**, montado **una sola
+  vez** dentro de `App.tsx` (dentro de `BrowserRouter`).
+- **Allowlist de rutas públicas** (único, compartido por render y
+  `beforeSend`): `/`, `/doctor/*`, `/privacidad`.
+- **Exclusión de rutas privadas/sensibles:** `/panel`, `/admin`,
+  `/paciente`, `/reset-password`, y rutas con token como `/calificar/:token`.
+- **Defensa doble de privacidad:**
+  1. **render allowlist** — el componente solo se monta (inyecta scripts) en
+     rutas públicas; en el resto devuelve `null`;
+  2. **`beforeSend` allowlist (backstop)** — antes de emitir cualquier
+     evento revalida el path y **retorna `null`** si no es público (cubre la
+     carrera SPA al navegar público→privado). Aplica a Web Analytics **y** a
+     Speed Insights.
+- `beforeSend` **elimina query/hash** de la URL reportada (solo
+  `origin+pathname`); si la URL no parsea → `null`.
+- **Sin** eventos custom · **sin** cookies · **sin** PII · **sin** datos
+  clínicos · **sin** texto libre de búsqueda · **sin** dashboard DB todavía.
+
+## Validación registrada
+
+**Técnica (dev):**
+- Endpoints `/_vercel/insights/script.js` y `/_vercel/speed-insights/script.js`
+  → **200** en producción; el bundle productivo ya incluye Analytics/Speed
+  Insights (`va.vercel-scripts.com`).
+- **SEO/OG de `/doctor/*` intacto**, `/robots.txt` intacto, `/sitemap.xml`
+  intacto (35 URLs) — sin regresión.
+- En preview: `beforeSend` bloquea el pageview de `/panel` (log *"Page view
+  would be ignored by `beforeSend` because null was returned"*); query/hash
+  eliminados (un `?secret=…&q=nombrepaciente#frag` de prueba NO se envía);
+  0 cookies; `tsc`+`build` verdes.
+
+**Manual del owner (navegador productivo):**
+- En página pública, con filtro `vercel` en Network: se observaron
+  `script.js`, `view`, `vitals`, respuestas **200**.
+- En `/panel` (filtro `vercel`): **sin requests**.
+- En `/paciente/mis-atenciones` (filtro `vercel`): **sin requests**.
+- Conclusión: Analytics **carga en público y no carga en rutas privadas**.
+
+## Tareas operativas del owner (sin código)
+- Habilitar **Web Analytics + Speed Insights** en el dashboard del proyecto
+  Vercel para que fluyan los datos.
+- **Fase 1B:** conectar Google Search Console + enviar el sitemap.
