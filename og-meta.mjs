@@ -80,7 +80,7 @@ export function escapeXml(value) {
 
 /**
  * Construye el sitemap.xml a partir de filas crudas de doctors publicados.
- * Incluye SOLO perfiles con slug + completitud mínima (isComplete). Nunca
+ * Incluye SOLO perfiles con slug + elegibles (isSitemapEligible). Nunca
  * UUIDs, nunca datos clínicos/sensibles: solo la URL canónica por slug +
  * lastmod (fecha de updated_at si existe). Determinista (orden por slug).
  */
@@ -115,18 +115,13 @@ export function buildSitemapXml(rows, origin) {
 }
 
 /**
- * Completitud mínima para indexar el PERFIL (Q3): nombre + especialidad +
- * clínica + ubicación (municipio o departamento). Controla robots index/noindex
- * en la meta del perfil (buildMeta). Sin esto → noindex.
- */
-export function isComplete(d) {
-  return !!(d && d.name && d.specialty && d.clinicName && (d.municipality || d.department));
-}
-
-/**
- * Elegibilidad para el SITEMAP (opción B): nombre + especialidad + clínica.
- * La ubicación estructurada es deseable pero NO bloqueante — el objetivo de
- * PR C es el descubrimiento SEO de todos los perfiles públicos con slug.
+ * Criterio ÚNICO de indexabilidad (opción B, decisión post-#212): nombre +
+ * especialidad + clínica. La ubicación estructurada es una señal de calidad
+ * DESEABLE pero NO bloqueante. Gobierna dos cosas alineadas:
+ *   - inclusión en el sitemap (buildSitemapXml);
+ *   - robots index/follow vs noindex en la meta del perfil (buildMeta).
+ * Así el sitemap y el <head> del perfil nunca se contradicen.
+ * (Perfiles no publicados / sin slug se excluyen aguas arriba.)
  */
 export function isSitemapEligible(d) {
   return !!(d && d.name && d.specialty && d.clinicName);
@@ -143,7 +138,7 @@ function locationText(d) {
 export function buildMeta(d, origin) {
   const specialty = d.specialty || 'Médico';
   const loc = locationText(d);
-  const indexable = isComplete(d);
+  const indexable = isSitemapEligible(d);
   const canonical = `${origin}/doctor/${d.slug}`;
   const ogImage = d.avatarUrl || `${origin}${DEFAULT_OG_IMAGE_PATH}`;
 

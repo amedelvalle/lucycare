@@ -9,7 +9,7 @@
  * Uso: node scripts/_smoke-og-meta.mjs
  */
 import {
-  escapeHtml, isUuid, extractSlug, normalizeDoctor, isComplete,
+  escapeHtml, isUuid, extractSlug, normalizeDoctor,
   buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
 } from '../og-meta.mjs';
 
@@ -80,13 +80,27 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
         : no('T5 buildMeta: ' + m.title + ' | ' + m.metaHtml);
 }
 
-// T6 — incompleto (sin especialidad) → noindex
+// T6 — sin especialidad → noindex (no elegible)
 {
   const raw = { ...rawCamilo, specialties: null };
   const d = normalizeDoctor(raw);
   const m = buildMeta(d, ORIGIN);
-  (!m.indexable && has(m.metaHtml, 'noindex,follow') && !isComplete(d))
+  (!m.indexable && has(m.metaHtml, 'noindex,follow') && !isSitemapEligible(d))
     ? ok('T6 sin especialidad → noindex') : no('T6 debería noindex: ' + m.metaHtml);
+}
+
+// T6b — publicado SIN ubicación pero con especialidad+clínica → index,follow
+// (alineado con el sitemap: la ubicación es opcional para indexar).
+{
+  const raw = {
+    slug: 'dr-sin-ubi', booking_enabled: false,
+    profiles: { full_name: 'Dr Sin Ubi', avatar_url: null },
+    specialties: { name: 'Urología' }, clinics: { name: 'Clínica Z' },
+  };
+  const d = normalizeDoctor(raw);
+  const m = buildMeta(d, ORIGIN);
+  (m.indexable && has(m.metaHtml, 'index,follow') && !has(m.metaHtml, 'noindex'))
+    ? ok('T6b sin ubicación pero completo → index,follow') : no('T6b debería index: ' + m.metaHtml);
 }
 
 // T7 — avatar null → fallback branded
