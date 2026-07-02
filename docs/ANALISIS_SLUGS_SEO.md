@@ -492,3 +492,76 @@ futuros con autorización propia:
 - **No** OG dinámica por médico (follow-up posterior).
 - **No** Fase 4 (landings especialidad/ubicación).
 - **No** tocar DB/SQL/migraciones/Supabase writes/auth/pagos/credenciales.
+
+---
+
+# Cierre del frente Slugs+SEO — estado post-#212
+
+> Registro de cierre. HEAD `8598bec` · PRs #1–#212 mergeados · migraciones
+> vigentes hasta `s7_52` · `main == origin/main`.
+
+## Estado de las fases (todas cerradas hasta PR C)
+
+| Fase / PR | Estado |
+|---|---|
+| Fase 0 — docs del frente | ✅ **PR #207** |
+| Fase 1 — backend de slugs (`doctors.slug`, `s7_52`) | ✅ **PR #208** |
+| Fase 2 — routing UUID/slug | ✅ **PR #209** + validado en producción |
+| Fase 3 — diseño metadata/OG | ✅ **PR #210** |
+| Fase 3 PR B — middleware metadata/OG | ✅ **PR #211** + validado en producción |
+| Fase 3 PR C — `robots.txt` + `sitemap.xml` | ✅ **PR #212** + validado en producción |
+
+**Pendientes NO iniciados** (requieren autorización explícita):
+- **PR D** — JSON-LD `Physician` + canonical hardening + asset OG branded 1200×630.
+- **Fase 4** — landings por especialidad/ubicación.
+- **Analytics** — medición integral de tráfico/conversión de `lucycare.app`.
+
+## PR #212 (Fase 3 PR C) — cerrado y validado en producción
+
+Infra/frontend SEO. **Sin DB/SQL/migraciones** (`s7_52` sin cambios). Archivos:
+`public/robots.txt`, `middleware.ts`, `og-meta.mjs`, `scripts/_smoke-og-meta.mjs`.
+
+Validado en `https://lucycare.app`:
+- **`/robots.txt`** → 200 `text/plain`; `Allow: /`; `Disallow: /panel /admin
+  /paciente /reset-password`; **no** bloquea `/doctor/*`; `Sitemap:
+  https://lucycare.app/sitemap.xml`.
+- **`/sitemap.xml`** → 200 `application/xml`, XML válido; **35 perfiles
+  públicos elegibles**; `<loc>` **canónica por slug**
+  (`https://lucycare.app/doctor/:slug`); **0 UUIDs**; **0 no publicados**;
+  **0 rutas privadas**; dominio propio `lucycare.app`.
+- **Cache del sitemap:** éxito `public, s-maxage=3600, stale-while-revalidate=86400`;
+  fallback degradado/outage `public, s-maxage=300, stale-while-revalidate=3600`
+  (urlset vacío válido, nunca 500).
+
+## Decisión de producto/SEO tomada en PR #212 (vinculante)
+
+**La ubicación estructurada (municipio/departamento) ya NO es requisito
+bloqueante** para el sitemap ni para la indexación del perfil.
+
+**Criterio ÚNICO de perfil público indexable** (gobierna sitemap **y**
+`robots` del `<head>`, alineados para no contradecirse — helper
+`isSitemapEligible` en `og-meta.mjs`):
+- `is_published = true`;
+- slug existente;
+- nombre público;
+- especialidad;
+- clínica (información pública básica suficiente);
+- **ubicación estructurada opcional** (señal de calidad deseable, no bloqueante).
+
+**Motivo:** no dejar fuera del descubrimiento SEO a perfiles públicos útiles
+que aún no tienen municipio/departamento estructurado, y evitar la
+contradicción entre el sitemap y `<meta name="robots">`.
+
+**Reglas de robots/honestidad vigentes:**
+- Publicado + elegible (incl. sin ubicación) → `index,follow` con description
+  honesta (sin ubicación en el texto si no la hay).
+- No publicado / inexistente / no elegible → `noindex,follow`, **sin fuga**
+  de nombre/datos (`og:title=LucyCare`).
+- **No insinuar verificación** si el médico no está verificado.
+- `listed_only` **puede** indexarse con metadata honesta si cumple el criterio.
+- (Reemplaza el bar de Fase 0 §F3.10/Q3 que exigía ubicación para indexar.)
+
+**Nota operativa:** el middleware lee env `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+con fallback a `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` (todas públicas,
+RLS). En producción no aparece `X-Robots-Tag: noindex` (eso era solo de los
+preview deploys de Vercel).
