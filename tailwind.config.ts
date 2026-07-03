@@ -15,6 +15,17 @@ export default {
               DEFAULT: '#3C2285',
               dark: '#2d1a64',
             },
+            // Menta/turquesa de marca (Manual de Marca). Uso como ACENTO
+            // (fondos suaves, badges, bordes, hovers), nunca como CTA sólido:
+            // es un tono claro, así que sobre él el texto debe ir oscuro
+            // (`text-brand-purple`) para mantener contraste AA.
+            mint: {
+              DEFAULT: '#8AE4CB',
+            },
+            // Gris claro de marca para superficies neutras (footer, fondos).
+            gray: {
+              DEFAULT: '#EDEDED',
+            },
           },
         },
       },
