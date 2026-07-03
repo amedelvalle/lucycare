@@ -24,12 +24,13 @@ import {
   normalizeDoctor,
   buildMeta,
   buildGenericNoindex,
+  buildHomeMeta,
   injectMeta,
   buildSitemapXml,
 } from './og-meta.mjs';
 
 export const config = {
-  matcher: ['/doctor/:path*', '/sitemap.xml'],
+  matcher: ['/', '/doctor/:path*', '/sitemap.xml'],
 };
 
 // Env pública (URL + anon key), aceptando el nombre dedicado o el de la app.
@@ -150,6 +151,19 @@ export default async function middleware(req: Request): Promise<Response> {
         `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n</urlset>\n`,
         CACHE_SHORT,
       );
+    }
+  }
+
+  // Home `/`: copy fijo de marca (sin red/DB). Inyecta OG/Twitter/canonical
+  // indexables para un preview social profesional. NO toca /doctor/* (rama
+  // aparte); el shell solo trae <title>, así que no hay OG duplicado.
+  if (url.pathname === '/') {
+    try {
+      const shell = await (await fetch(shellUrl)).text();
+      return htmlResponse(injectMeta(shell, buildHomeMeta(url.origin)), CACHE_OK);
+    } catch {
+      // Fallback: servir el shell crudo. Nunca 500.
+      return await fetch(shellUrl);
     }
   }
 

@@ -10,7 +10,7 @@
  */
 import {
   escapeHtml, isUuid, extractSlug, normalizeDoctor,
-  buildMeta, buildGenericNoindex, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
+  buildMeta, buildGenericNoindex, buildHomeMeta, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
 } from '../og-meta.mjs';
 
 let pass = 0, fail = 0;
@@ -228,6 +228,37 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
 {
   escapeXml(`a&b<c>"d'`) === 'a&amp;b&lt;c&gt;&quot;d&apos;'
     ? ok('T17 escapeXml correcto') : no('T17 escapeXml: ' + escapeXml(`a&b<c>"d'`));
+}
+
+// ── Home (SEO Home OG) ──
+
+// T18 — buildHomeMeta: indexable + OG/Twitter completos + canonical raíz + logo
+{
+  const m = buildHomeMeta(ORIGIN);
+  const okAll = m.indexable === true &&
+    m.title === 'LucyCare — Encontrá y reservá con médicos en El Salvador' &&
+    has(m.metaHtml, 'index,follow') && !has(m.metaHtml, 'noindex') &&
+    has(m.metaHtml, '<meta property="og:type" content="website">') &&
+    has(m.metaHtml, `<link rel="canonical" href="https://lucycare.app/">`) &&
+    has(m.metaHtml, `<meta property="og:url" content="https://lucycare.app/">`) &&
+    has(m.metaHtml, 'https://lucycare.app/lucycare-logo.png') &&
+    has(m.metaHtml, 'twitter:card') && has(m.metaHtml, 'summary_large_image') &&
+    has(m.metaHtml, 'especialidad');
+  okAll ? ok('T18 buildHomeMeta: index,follow + og website + canonical raíz + logo + twitter')
+        : no('T18 buildHomeMeta: ' + m.title + ' | ' + m.metaHtml);
+}
+
+// T18b — injectMeta con home meta: 1 title (home), 1 canonical, meta antes de </head>
+{
+  const m = buildHomeMeta(ORIGIN);
+  const out = injectMeta(SHELL, m);
+  const titleCount = (out.match(/<title>/gi) || []).length;
+  const canonicalCount = (out.match(/rel="canonical"/gi) || []).length;
+  const beforeHead = out.indexOf('og:title') < out.indexOf('</head>');
+  (titleCount === 1 && has(out, '<title>LucyCare — Encontrá y reservá con médicos en El Salvador</title>') &&
+   canonicalCount === 1 && beforeHead && has(out, '<div id="root">'))
+    ? ok('T18b injectMeta home: 1 title home + 1 canonical + meta antes de </head> + shell intacto')
+    : no(`T18b injectMeta home (titles=${titleCount}, canonical=${canonicalCount}, beforeHead=${beforeHead})`);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);

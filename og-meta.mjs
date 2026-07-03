@@ -191,6 +191,46 @@ export function buildGenericNoindex(origin) {
 }
 
 /**
+ * Metadata del Home público `/`. Indexable, con OG/Twitter completos para que
+ * el preview social (WhatsApp/Facebook/…) sea comparable al de los perfiles.
+ * Copy fijo de marca (no depende de datos/red). og:image = logo branded
+ * (misma deuda que buildMeta: OG 1200x630). NO se usa para /doctor/* (ese lo
+ * arma buildMeta); el shell solo trae <title>, así que no hay OG duplicado.
+ */
+export function buildHomeMeta(origin) {
+  const canonical = `${origin}/`;
+  const ogImage = `${origin}${DEFAULT_OG_IMAGE_PATH}`;
+
+  const title = `${SITE} — Encontrá y reservá con médicos en El Salvador`;
+  const description =
+    'Buscá médicos por especialidad, ubicación y disponibilidad. ' +
+    `Reservá en línea con ${SITE}.`;
+
+  const t = escapeHtml(title);
+  const desc = escapeHtml(description);
+  const url = escapeHtml(canonical);
+  const img = escapeHtml(ogImage);
+
+  const metaHtml = [
+    `<meta name="description" content="${desc}">`,
+    `<link rel="canonical" href="${url}">`,
+    `<meta name="robots" content="index,follow">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="${SITE}">`,
+    `<meta property="og:title" content="${t}">`,
+    `<meta property="og:description" content="${desc}">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:image" content="${img}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${t}">`,
+    `<meta name="twitter:description" content="${desc}">`,
+    `<meta name="twitter:image" content="${img}">`,
+  ].join('\n    ');
+
+  return { title, metaHtml, indexable: true };
+}
+
+/**
  * Inyecta la metadata en el shell HTML:
  *  - si viene `title`, reemplaza el <title> existente (evita 2 títulos);
  *  - inserta `metaHtml` justo antes de </head>.
