@@ -165,7 +165,7 @@ export default function Home() {
                     {(currentUser.role === 'doctor' || currentUser.role === 'assistant') && (
                       <button
                         onClick={() => navigate('/panel')}
-                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-brand-purple text-white hover:bg-brand-purple-dark rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
                       >
                         Mi panel
                       </button>
@@ -173,7 +173,7 @@ export default function Home() {
                     {currentUser.role === 'admin' && (
                       <button
                         onClick={() => navigate('/admin')}
-                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-emerald-700 text-white hover:bg-emerald-800 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
+                        className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-brand-purple text-white hover:bg-brand-purple-dark rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium"
                       >
                         Panel Admin
                       </button>
@@ -198,7 +198,7 @@ export default function Home() {
             <button
               onClick={() => setShowAffiliationModal(true)}
               title="Soy médico y quiero aparecer en Lucy"
-              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-brand-purple text-white border border-transparent hover:bg-brand-purple-dark rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
+              className={`${isAuthenticated ? 'hidden sm:inline-flex' : 'inline-flex'} items-center px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base bg-white text-brand-purple border border-brand-purple hover:bg-brand-mint/20 rounded-full transition-colors cursor-pointer whitespace-nowrap font-medium`}
             >
               {/* Etiqueta corta en mobile, completa en desktop.
                   El modal mantiene la copy completa "Soy médico,
@@ -211,10 +211,10 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-emerald-50 to-teal-50 py-12 sm:py-16 md:py-20">
+      <div className="relative bg-gradient-to-br from-brand-mint/25 to-white py-12 sm:py-16 md:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-emerald-800 mb-3 sm:mb-4 leading-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-brand-purple mb-3 sm:mb-4 leading-tight">
               Encuentra al médico perfecto para ti
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-8 sm:mb-12">
@@ -266,7 +266,7 @@ export default function Home() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-emerald-600 focus:outline-none"
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 cursor-pointer pr-8 focus:border-brand-purple focus:outline-none"
             >
               <option value="default">{searchTerm ? 'Mejor coincidencia' : 'Disponibilidad'}</option>
               <option value="mejor_valorados">Mejor valorados</option>
@@ -288,7 +288,7 @@ export default function Home() {
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer"
+              className="px-6 py-2.5 bg-brand-purple text-white font-semibold rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer"
             >
               Reintentar
             </button>
@@ -322,7 +322,7 @@ export default function Home() {
           <div className="mt-8 flex justify-center">
             <button
               onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
-              className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+              className="px-6 py-2.5 bg-brand-purple text-white font-semibold rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap"
             >
               Mostrar más médicos
             </button>
@@ -346,7 +346,7 @@ export default function Home() {
                   setSelectedDepartment('');
                   setSelectedMunicipality('');
                 }}
-                className="px-6 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+                className="px-6 py-2.5 bg-brand-purple text-white font-semibold rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap"
               >
                 Limpiar filtros
               </button>
@@ -356,7 +356,7 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <footer className="bg-[#EDEDED] border-t border-gray-200 mt-12 sm:mt-20">
+      <footer className="bg-brand-gray border-t border-gray-200 mt-12 sm:mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 mb-6 sm:mb-8">
             <div>

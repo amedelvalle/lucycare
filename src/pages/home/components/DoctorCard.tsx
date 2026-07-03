@@ -64,7 +64,7 @@ export default function DoctorCard({
     if (lucyStatus === 'VERIFIED' || isVerified) {
       return (
         <div
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm"
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-brand-mint/30 text-brand-purple rounded-full text-xs font-bold shadow-sm"
           title="Perfil verificado por LucyCare"
           aria-label="Perfil verificado por LucyCare"
         >
@@ -75,7 +75,7 @@ export default function DoctorCard({
     }
     if (lucyStatus === 'BOOKING_ENABLED' || bookingEnabled) {
       return (
-        <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold shadow-sm">
+        <div className="flex items-center gap-1 px-2.5 py-1.5 bg-brand-mint/30 text-brand-purple rounded-full text-xs font-bold shadow-sm">
           <i className="ri-calendar-check-line"></i>
           <span>Agenda en línea</span>
         </div>
@@ -92,7 +92,7 @@ export default function DoctorCard({
   return (
     <div
       className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border ${
-        bookingEnabled ? 'border-emerald-200 hover:border-emerald-400' : 'border-gray-100'
+        bookingEnabled ? 'border-brand-mint/50 hover:border-brand-mint' : 'border-gray-100'
       }`}
     >
       <div className="p-4 sm:p-5">
@@ -147,7 +147,7 @@ export default function DoctorCard({
                   ({reviews} {reviews === 1 ? 'reseña' : 'reseñas'})
                 </span>
                 {topRated && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-semibold">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-mint/30 text-brand-purple rounded-full text-[11px] font-semibold">
                     <i className="ri-award-fill"></i>
                     Mejor valorado
                   </span>
@@ -170,8 +170,8 @@ export default function DoctorCard({
             {bookingEnabled ? (
               <div className="space-y-2">
                 {hasFee && (
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-emerald-50 rounded-lg">
-                    <div className="flex items-center gap-2 text-xs text-emerald-700">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-brand-mint/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs text-brand-purple">
                       <i className="ri-calendar-check-line"></i>
                       <span>Agenda en línea</span>
                     </div>
@@ -183,7 +183,7 @@ export default function DoctorCard({
                 )}
                 <button
                   onClick={handleNavigate}
-                  className="w-full px-4 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap relative z-10"
+                  className="w-full px-4 py-2.5 bg-brand-purple text-white font-semibold rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap relative z-10"
                 >
                   <i className="ri-calendar-line mr-2"></i>
                   Reservar cita

@@ -117,11 +117,11 @@ export default function SearchSection({
   return (
     <div className="space-y-4">
       {/* Toggle de Agenda Online - MUY VISIBLE */}
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-5 border-2 border-emerald-600">
+      <div className="bg-gradient-to-r from-brand-purple to-brand-purple-dark rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-5 border-2 border-brand-purple">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-full flex-shrink-0">
-              <i className="ri-calendar-check-line text-xl sm:text-2xl text-emerald-600"></i>
+              <i className="ri-calendar-check-line text-xl sm:text-2xl text-brand-purple"></i>
             </div>
             <div className="min-w-0">
               <h3 className="text-base sm:text-lg font-bold text-white">
@@ -140,7 +140,7 @@ export default function SearchSection({
           >
             <div
               className={`absolute top-1 left-1 w-6 h-6 sm:w-7 sm:h-7 rounded-full transition-all duration-300 ${
-                onlineBookingOnly ? 'translate-x-6 sm:translate-x-7 bg-emerald-600' : 'translate-x-0 bg-gray-400'
+                onlineBookingOnly ? 'translate-x-6 sm:translate-x-7 bg-brand-purple' : 'translate-x-0 bg-gray-400'
               }`}
             >
               {onlineBookingOnly && (
@@ -157,7 +157,7 @@ export default function SearchSection({
           {/* Search by Name */}
           <div className="relative">
             <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b md:border-b-0 md:border-r border-gray-200">
-              <i className="ri-search-line text-xl sm:text-2xl text-emerald-600"></i>
+              <i className="ri-search-line text-xl sm:text-2xl text-brand-purple"></i>
               <div className="flex-1 min-w-0">
                 <label className="block text-sm sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1.5">
                   Buscar médico
@@ -194,7 +194,7 @@ export default function SearchSection({
               }}
               className="w-full flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b md:border-b-0 md:border-r border-gray-200 cursor-pointer text-left hover:bg-gray-50 transition-colors"
             >
-              <i className="ri-stethoscope-line text-xl sm:text-2xl text-emerald-600"></i>
+              <i className="ri-stethoscope-line text-xl sm:text-2xl text-brand-purple"></i>
               <div className="flex-1 min-w-0">
                 <label className="block text-sm sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1.5">
                   Especialidad
@@ -210,7 +210,7 @@ export default function SearchSection({
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
                   onClick={() => handleSpecialtySelect('')}
-                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors"
                 >
                   Todas las especialidades
                 </button>
@@ -218,7 +218,7 @@ export default function SearchSection({
                   <button
                     key={spec.id}
                     onClick={() => handleSpecialtySelect(spec.id)}
-                    className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                    className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors"
                   >
                     {spec.name}
                   </button>
@@ -237,7 +237,7 @@ export default function SearchSection({
               }}
               className="w-full flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b md:border-b-0 md:border-r border-gray-200 cursor-pointer text-left hover:bg-gray-50 transition-colors"
             >
-              <i className="ri-map-pin-line text-xl sm:text-2xl text-emerald-600"></i>
+              <i className="ri-map-pin-line text-xl sm:text-2xl text-brand-purple"></i>
               <div className="flex-1 min-w-0">
                 <label className="block text-sm sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1.5">
                   Departamento
@@ -253,7 +253,7 @@ export default function SearchSection({
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
                   onClick={() => handleDepartmentSelect('')}
-                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors"
                 >
                   Todos los departamentos
                 </button>
@@ -261,7 +261,7 @@ export default function SearchSection({
                   <button
                     key={dept.id}
                     onClick={() => handleDepartmentSelect(dept.id)}
-                    className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                    className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors"
                   >
                     {dept.name}
                   </button>
@@ -287,7 +287,7 @@ export default function SearchSection({
                   : 'opacity-50 cursor-not-allowed'
               }`}
             >
-              <i className="ri-building-line text-xl sm:text-2xl text-emerald-600"></i>
+              <i className="ri-building-line text-xl sm:text-2xl text-brand-purple"></i>
               <div className="flex-1 min-w-0">
                 <label className="block text-sm sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1.5">
                   Municipio
@@ -303,20 +303,20 @@ export default function SearchSection({
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 sm:max-h-80 overflow-y-auto z-50">
                 <button
                   onClick={() => handleMunicipalitySelect('')}
-                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors border-b border-gray-100"
+                  className="w-full px-4 sm:px-6 py-2.5 sm:py-3 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors border-b border-gray-100"
                 >
                   Todos los municipios
                 </button>
                 {municipalityGroups.map(([district, items]) => (
                   <div key={district}>
-                    <p className="px-4 sm:px-6 pt-2 pb-1 text-[10px] sm:text-xs font-bold text-emerald-700 uppercase tracking-wide bg-gray-50/60 sticky top-0">
+                    <p className="px-4 sm:px-6 pt-2 pb-1 text-[10px] sm:text-xs font-bold text-brand-purple uppercase tracking-wide bg-gray-50/60 sticky top-0">
                       {district}
                     </p>
                     {items.map((muni) => (
                       <button
                         key={muni.id}
                         onClick={() => handleMunicipalitySelect(muni.id)}
-                        className="w-full pl-6 sm:pl-8 pr-4 sm:pr-6 py-2 sm:py-2.5 text-left text-sm sm:text-base text-gray-700 hover:bg-emerald-50 cursor-pointer whitespace-nowrap transition-colors"
+                        className="w-full pl-6 sm:pl-8 pr-4 sm:pr-6 py-2 sm:py-2.5 text-left text-sm sm:text-base text-gray-700 hover:bg-brand-mint/20 cursor-pointer whitespace-nowrap transition-colors"
                       >
                         {muni.name}
                       </button>
