@@ -67,10 +67,10 @@ export default function ClaimProfilePromptCard({
   return (
     <>
       {showFull && (
-        <div className="mb-8 bg-gradient-to-br from-emerald-50 to-emerald-100/60 border-2 border-emerald-200 rounded-2xl p-5 sm:p-6">
+        <div className="mb-8 bg-gradient-to-br from-brand-mint/20 to-brand-mint/10 border-2 border-brand-mint/40 rounded-2xl p-5 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-full flex items-center justify-center flex-shrink-0 border border-emerald-200">
-              <i className="ri-user-star-line text-2xl sm:text-3xl text-emerald-700"></i>
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-full flex items-center justify-center flex-shrink-0 border border-brand-mint/40">
+              <i className="ri-user-star-line text-2xl sm:text-3xl text-brand-purple"></i>
             </div>
             <div className="flex-1">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900">¿Eres este profesional?</h3>
@@ -82,7 +82,7 @@ export default function ClaimProfilePromptCard({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="w-full sm:w-auto px-5 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+              className="w-full sm:w-auto px-5 py-2.5 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap"
             >
               Reclamar mi perfil
             </button>
@@ -98,7 +98,7 @@ export default function ClaimProfilePromptCard({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="font-medium text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
+              className="font-medium text-brand-purple hover:text-brand-purple-dark hover:underline cursor-pointer"
             >
               Reclamá tu perfil
             </button>

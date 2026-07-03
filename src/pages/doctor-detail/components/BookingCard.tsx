@@ -215,7 +215,7 @@ export default function BookingCard({
           <div className="space-y-3">
             {phone && (
               <>
-                <a href={`tel:${phone}`} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap font-medium">
+                <a href={`tel:${phone}`} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-brand-purple text-white rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap font-medium">
                   <i className="ri-phone-line text-lg"></i>
                   <span>Llamar para agendar</span>
                 </a>
@@ -225,7 +225,7 @@ export default function BookingCard({
                 </a>
               </>
             )}
-            <button onClick={() => setShowWaitlistModal(true)} className="w-full flex items-center justify-center gap-2 px-6 py-3 border-2 border-emerald-700 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer whitespace-nowrap font-medium">
+            <button onClick={() => setShowWaitlistModal(true)} className="w-full flex items-center justify-center gap-2 px-6 py-3 border-2 border-brand-purple text-brand-purple rounded-lg hover:bg-brand-mint/20 transition-colors cursor-pointer whitespace-nowrap font-medium">
               <i className="ri-notification-line text-lg"></i>
               <span>Unirme a lista de espera</span>
             </button>
@@ -244,15 +244,15 @@ export default function BookingCard({
       <div className="bg-white rounded-xl shadow-sm p-6 sticky top-6">
         {/* Éxito */}
         {bookingSuccess && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+          <div className="bg-brand-mint/20 border border-brand-mint/40 rounded-lg p-4 mb-4">
             <div className="flex gap-3">
-              <i className="ri-check-double-line text-emerald-700 text-xl flex-shrink-0"></i>
+              <i className="ri-check-double-line text-brand-purple text-xl flex-shrink-0"></i>
               <div>
-                <p className="text-sm font-semibold text-emerald-900">¡Cita agendada!</p>
-                <p className="text-xs text-emerald-700 mt-1">Recibirás un recordatorio antes de tu cita.</p>
+                <p className="text-sm font-semibold text-brand-purple">¡Cita agendada!</p>
+                <p className="text-xs text-brand-purple mt-1">Recibirás un recordatorio antes de tu cita.</p>
               </div>
             </div>
-            <button onClick={() => setBookingSuccess(false)} className="mt-3 text-xs text-emerald-700 font-medium hover:underline cursor-pointer">
+            <button onClick={() => setBookingSuccess(false)} className="mt-3 text-xs text-brand-purple font-medium hover:underline cursor-pointer">
               Agendar otra cita
             </button>
           </div>
@@ -294,7 +294,7 @@ export default function BookingCard({
                     key={service.id}
                     onClick={() => setSelectedService(service)}
                     className={`w-full p-3 rounded-lg border-2 transition-all text-left cursor-pointer ${
-                      selectedService?.id === service.id ? 'border-emerald-600 bg-emerald-50' : 'border-gray-200 hover:border-gray-300'
+                      selectedService?.id === service.id ? 'border-brand-purple bg-brand-mint/20' : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -325,11 +325,11 @@ export default function BookingCard({
                   setSelectedSlotStart('');
                   setSelectedSlotEnd('');
                 }}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent cursor-pointer"
               />
               {searchingDefaultDate && (
                 <p className="mt-2 text-xs text-gray-500 flex items-center gap-2">
-                  <span className="inline-block animate-spin h-3 w-3 border-2 border-emerald-700 border-t-transparent rounded-full"></span>
+                  <span className="inline-block animate-spin h-3 w-3 border-2 border-brand-purple border-t-transparent rounded-full"></span>
                   Buscando la próxima fecha disponible…
                 </p>
               )}
@@ -341,7 +341,7 @@ export default function BookingCard({
                   <button
                     onClick={() => setShowWaitlistModal(true)}
                     type="button"
-                    className="text-xs text-emerald-700 font-medium hover:underline cursor-pointer"
+                    className="text-xs text-brand-purple font-medium hover:underline cursor-pointer"
                   >
                     Unirme a lista de espera
                   </button>
@@ -355,7 +355,7 @@ export default function BookingCard({
                 <label className="block text-sm font-medium text-gray-700 mb-2">Hora disponible</label>
                 {loadingSlots || autoSearching ? (
                   <div className="text-center py-4">
-                    <div className="animate-spin h-6 w-6 border-2 border-emerald-700 border-t-transparent rounded-full mx-auto mb-2"></div>
+                    <div className="animate-spin h-6 w-6 border-2 border-brand-purple border-t-transparent rounded-full mx-auto mb-2"></div>
                     <p className="text-sm text-gray-500">Cargando horarios...</p>
                   </div>
                 ) : dayAvailability?.isBlocked ? (
@@ -371,8 +371,8 @@ export default function BookingCard({
                         onClick={() => handleSlotSelect(slot.startTime, slot.endTime)}
                         className={`px-3 py-2 rounded-lg border-2 transition-all text-sm font-medium cursor-pointer whitespace-nowrap ${
                           selectedSlotStart === slot.startTime
-                            ? 'border-emerald-700 bg-emerald-700 text-white'
-                            : 'border-gray-200 text-gray-700 hover:border-emerald-600'
+                            ? 'border-brand-purple bg-brand-purple text-white'
+                            : 'border-gray-200 text-gray-700 hover:border-brand-purple'
                         }`}
                       >
                         {slot.displayTime}
@@ -383,7 +383,7 @@ export default function BookingCard({
                   <div className="text-center py-6">
                     <i className="ri-calendar-close-line text-4xl text-gray-300 mb-2"></i>
                     <p className="text-sm text-gray-600 mb-3">No hay horarios disponibles para esta fecha</p>
-                    <button onClick={() => setShowWaitlistModal(true)} className="text-sm text-emerald-700 font-medium hover:underline cursor-pointer">
+                    <button onClick={() => setShowWaitlistModal(true)} className="text-sm text-brand-purple font-medium hover:underline cursor-pointer">
                       Unirme a lista de espera
                     </button>
                   </div>
@@ -398,7 +398,7 @@ export default function BookingCard({
                 disabled={!selectedService || !selectedSlotStart || booking}
                 className={`w-full px-6 py-3.5 rounded-lg font-semibold transition-colors ${
                   selectedService && selectedSlotStart && !booking
-                    ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                    ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
@@ -410,7 +410,7 @@ export default function BookingCard({
                 ) : isAuthenticated ? 'Reservar ahora' : 'Inicia sesión para reservar'}
               </button>
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
-                <i className="ri-calendar-check-line text-emerald-700"></i>
+                <i className="ri-calendar-check-line text-brand-purple"></i>
                 <span>Reserva en línea · el pago se coordina con el médico</span>
               </div>
             </div>

@@ -78,7 +78,7 @@ export default function ReviewsSection({ doctorId }: ReviewsSectionProps) {
           {score.toFixed(2)} / 5
         </h2>
         {stats.isTopRated && (
-          <span className="ml-1 inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">
+          <span className="ml-1 inline-flex items-center gap-1 px-2.5 py-1 bg-brand-mint/30 text-brand-purple rounded-full text-xs font-semibold">
             <i className="ri-award-fill" />
             Mejor valorado
           </span>
@@ -95,7 +95,7 @@ export default function ReviewsSection({ doctorId }: ReviewsSectionProps) {
           {tags.map((t) => (
             <span
               key={t}
-              className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-sm font-medium"
+              className="px-3 py-1 bg-brand-mint/20 text-brand-purple rounded-full text-sm font-medium"
             >
               {t}
             </span>
@@ -113,7 +113,7 @@ export default function ReviewsSection({ doctorId }: ReviewsSectionProps) {
               <span className="text-sm text-gray-700 w-44">{label}</span>
               <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-emerald-600"
+                  className="h-full bg-brand-purple"
                   style={{ width: `${(v / 5) * 100}%` }}
                 />
               </div>
