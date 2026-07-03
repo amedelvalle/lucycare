@@ -22,8 +22,9 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `72a7fd6` (*fix(branding): favicon de LucyCare … (#220)*).
-- **PRs mergeados:** **#1–#220**.
+- **HEAD de `main`:** `31a8cb1` (*style(branding): Home público hacia la paleta
+  oficial LucyCare (Branding PR-1) … (#222)*).
+- **PRs mergeados:** **#1–#222** (incluye #221 docs-only + #222 Branding PR-1).
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -133,7 +134,57 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 
 ---
 
-## 5. Pendientes generales NO iniciados
+## 5. Branding público — PR-1 Home (#222) · CERRADO
+
+**PR:** **#222** (`style(branding): Home público hacia la paleta oficial
+LucyCare (Branding PR-1)`). **#221** fue docs-only (cierre de ventana
+post-#220). Ambos mergeados a `main`.
+
+**Decisión de marca (vinculante):** el público migra hacia la **paleta oficial
+LucyCare** — **morado `#3C2285` + menta `#8AE4CB` + gris `#EDEDED`** —, pero
+**por fases pequeñas**. **NO** es un rebrand global de un solo PR. Esto revisa,
+de forma parcial y controlada, el criterio emerald/teal heredado de **#200**.
+
+**Estado funcional (validado en prod `lucycare.app`):**
+- **Tokens de marca** en `tailwind.config.ts`: se agregan `brand.mint`
+  (`#8AE4CB`) y `brand.gray` (`#EDEDED`); se conservan `brand.purple`
+  (`#3C2285`) y `brand.purple.dark` (`#2d1a64`).
+- **Morado `#3C2285` = CTAs primarios / jerarquía:** "Reservar cita"
+  (`DoctorCard`), "Mostrar más médicos", "Reintentar", "Limpiar filtros",
+  "Mi panel"/"Panel Admin", título del hero, tarjeta-toggle "Solo médicos con
+  agenda en línea" (gradiente morado), knob del toggle, focus del selector de
+  orden, **iconos de los filtros** (la menta es demasiado clara sobre blanco →
+  se prioriza contraste sobre la guía de "íconos menta").
+- **Menta `#8AE4CB` = acento suave:** badges "Verificado" / "Agenda en línea" /
+  "Mejor valorado" (menta 30% + texto morado, contraste ~11:1 AA), fondo del
+  hero (gradiente menta muy suave → blanco), borde de tarjeta reservable, fila
+  "Agenda en línea", hovers de opciones de los dropdowns.
+- **Gris `#EDEDED` = footer / superficies neutras** (`brand.gray`).
+- **"Soy médico, quiero aparecer" → CTA secundario** (fondo blanco, texto y
+  borde morado, hover menta suave): on-brand y visible, **sin competir** con la
+  acción principal del paciente.
+- **Alcance:** solo 4 archivos — `tailwind.config.ts` + `src/pages/home/page.tsx`
+  + `src/pages/home/components/SearchSection.tsx` + `.../DoctorCard.tsx`.
+- **Validación:** `npm run build` verde (CSS `index-ChTVc9N0.css`); preview
+  desktop + móvil **360/390/430** sin overflow horizontal; contraste AA de CTAs
+  y del badge "Verificado"; prod: Home 200, tokens en el CSS, y **`/favicon.svg`
+  (200 `image/svg+xml`) · `/robots.txt` · `/sitemap.xml` (35 URLs) · archivos
+  Google — INTACTOS**.
+
+**NO tocó (fuera de alcance de este PR):** doctor-detail · `AffiliationRequestModal`
+· modales públicos (`ClaimProfileModal` / `LoginModal` / `WaitlistModal`) · panel ·
+admin · paciente · DB/SQL/migraciones/`database.types.ts` · Analytics · SEO
+dinámico / middleware / OG / JSON-LD · sitemap · robots · archivos Google · favicon.
+
+**Pendiente NO iniciado (no abrir sin instrucción explícita):** alinear el
+**emerald/teal restante fuera del Home** — doctor-detail, `AffiliationRequestModal`,
+`ClaimProfileModal`, `LoginModal`, `WaitlistModal` y demás modales públicos;
+panel/admin **solo si se autoriza después**. Es la fase natural para cerrar la
+coherencia del flujo "Soy médico".
+
+---
+
+## 6. Pendientes generales NO iniciados
 
 1. **Revisar datos iniciales** de Search Console + Vercel Analytics + Speed
    Insights **antes** de abrir nuevos frentes SEO/Analytics.
@@ -152,16 +203,22 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
-11. **Branding interno menor** (stat card índigo del panel, botón púrpura de
+11. **Branding público — continuación de Branding PR-1 (#222)** — alinear el
+    emerald/teal restante **fuera del Home**: doctor-detail,
+    `AffiliationRequestModal`, `ClaimProfileModal`, `LoginModal`,
+    `WaitlistModal` y demás modales públicos; panel/admin solo si se autoriza
+    después. **No abrir sin instrucción explícita.** Cierra la coherencia del
+    flujo "Soy médico" iniciada en el Home.
+12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
     `AdminAffiliationDetailModal`, token de marca) — no iniciar sin alcance.
-12. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
+13. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
     alcance.
-13. **Limpieza de ramas locales `claude/*` viejas** — opcional, solo con
+14. **Limpieza de ramas locales `claude/*` viejas** — opcional, solo con
     **dry-run + autorización expresa**, sin tocar worktrees activos.
 
 ---
 
-## 6. Reglas operativas para la nueva ventana (vinculantes)
+## 7. Reglas operativas para la nueva ventana (vinculantes)
 
 - **Un solo frente abierto a la vez.** No abrir otro hasta cerrar
   formalmente el anterior.
