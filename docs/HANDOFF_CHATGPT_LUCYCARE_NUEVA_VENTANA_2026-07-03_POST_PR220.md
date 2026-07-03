@@ -22,10 +22,10 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `5334602` (*perf(home): quitar Font Awesome no usado +
-  cache immutable de /assets/* (Perf PR-1) … (#224)*).
-- **PRs mergeados:** **#1–#224** (incluye #221 docs-only + #222 Branding PR-1 +
-  #223 docs-only + #224 Perf PR-1).
+- **HEAD de `main`:** `479adeb` (*feat(seo): copy más personal del preview
+  social del Home … (#227)*).
+- **PRs mergeados:** **#1–#227** (incluye #222 Branding PR-1 + #224 Perf PR-1 +
+  **#226 SEO Home OG** + **#227 copy Home OG**; #221/#223/#225 docs-only).
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -64,9 +64,29 @@ docs cierre post-PR C. **Detalle vivo: `docs/ANALISIS_SLUGS_SEO.md`.**
   service role.** En producción no aparece `X-Robots-Tag: noindex` (era solo
   de previews).
 
+**Home `/` — preview social (#226 SEO Home OG + #227 copy):** antes el Home
+servía solo `<title>LucyCare</title>` (sin OG/Twitter/description/canonical) →
+preview pobre al compartir la URL directa. Ahora sirve metadata propia vía el
+**mismo middleware** (rama para `/`, `matcher += '/'`), con `buildHomeMeta` en
+`og-meta.mjs`. **Decisión: middleware, NO estático en `index.html`** —
+`injectMeta` inserta (no reemplaza) los `og:*`, así que meterlos en el shell
+duplicaría los tags en cada `/doctor/*`. En prod: `<title>` **"LucyCare —
+Encuentra al médico perfecto para ti"**, description **"Busca por especialidad,
+ubicación y disponibilidad. Reserva en línea con LucyCare."** (tuteo, alineado
+al `<h1>`), canonical/og:url `https://lucycare.app/`, `robots index,follow`,
+`og:type=website`, `og:site_name=LucyCare`, `og:image=https://lucycare.app/lucycare-logo.png`,
+Twitter `summary_large_image` (+ title/description/image); **sin duplicados**
+de `<title>`/canonical/`og:title`/`twitter:card` y `/doctor/*` **sin
+regresión** (`og:type=profile`). Smoke `_smoke-og-meta.mjs` T18/T18b (21/21).
+**Operativa (compartir):** usar la **URL directa** `https://lucycare.app/`,
+**NO** enlaces `share.google/…` (wrapper externo de Google/Chrome, ajeno al
+código de LucyCare); si el preview sale viejo es **caché** → refrescar con el
+**Facebook Sharing Debugger** o esperar.
+
 **Pendientes NO iniciados:** **PR D** (JSON-LD `Physician` + canonical
-hardening + asset OG branded 1200×630) · **Fase 4** (landings por
-especialidad/ubicación).
+hardening + asset OG branded **1200×630** — reemplazaría también el
+`lucycare-logo.png` 1200×505 temporal como `og:image` del Home) · **Fase 4**
+(landings por especialidad/ubicación).
 
 ---
 

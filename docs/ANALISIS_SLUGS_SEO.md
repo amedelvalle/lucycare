@@ -576,3 +576,56 @@ Google Search Console **verificado** (archivo HTML; `public/google3f2e02a3c176b5
 última lectura 2 jul 2026, **35 páginas descubiertas**. La **indexación** real
 (distinta de "descubiertas") se monitorea en Search Console con el tiempo.
 Detalle vivo en `docs/ANALISIS_ANALYTICS_LUCYCARE.md` (Fase 1B).
+
+---
+
+## Home OG — preview social/indexable del Home `/` (#226, #227) · CERRADO
+
+Antes, el Home `/` servía **solo** `<title>LucyCare</title>` (sin
+`description`/OG/Twitter/`canonical`) → vista previa pobre al compartir la URL
+directa, mientras que `/doctor/*` ya se veía bien porque el middleware les
+inyecta metadata. Estos dos PRs homologan el Home al mismo estándar.
+
+**#226 — SEO Home OG (mecánica):**
+- `og-meta.mjs`: **`buildHomeMeta(origin)`** — metadata **indexable** del Home,
+  copy fijo de marca (no depende de red/DB), misma máquina de `injectMeta`.
+- `middleware.ts`: `matcher += '/'` + **rama propia para `/`** que inyecta
+  `buildHomeMeta` con `CACHE_OK`. **`/doctor/*` y `/sitemap.xml` intactos.**
+- `scripts/_smoke-og-meta.mjs`: **T18** (`buildHomeMeta` completo) + **T18b**
+  (`injectMeta` home: 1 `<title>` + 1 canonical + meta antes de `</head>`).
+  Smoke **21/21**.
+- **Decisión de diseño (vinculante): middleware, NO metadata estática en
+  `index.html`.** `injectMeta` **inserta** (no reemplaza) los `og:*`; meter OG
+  del Home en el shell duplicaría los tags en **cada** `/doctor/*` (riesgo de
+  romper su preview, que ya funciona). Por middleware el shell sigue con solo
+  `<title>` y cada ruta recibe su meta correcta, **sin duplicados**.
+
+**Metadata del Home en producción:**
+- `canonical` = `https://lucycare.app/` · `robots index,follow`
+- `og:type=website` · `og:site_name=LucyCare` · `og:url=https://lucycare.app/`
+- `og:image=https://lucycare.app/lucycare-logo.png` (temporal; ver PR D)
+- Twitter `summary_large_image` + `twitter:title`/`description`/`image`
+- **Sin duplicados** de `<title>` / `canonical` / `og:title` / `twitter:card`.
+
+**#227 — copy final del Home OG** (solo `og-meta.mjs` + smoke; middleware
+intacto):
+- **title:** `LucyCare — Encuentra al médico perfecto para ti` (= `<h1>` del Home).
+- **description:** `Busca por especialidad, ubicación y disponibilidad. Reserva
+  en línea con LucyCare.` (tuteo, consistente con el title y el copy del Home).
+
+**No regresión (validado en prod):** `/doctor/dr-camilo-carrillo` con title y
+canonical intactos, `og:type=profile`, sin duplicados; `/lucycare-logo.png`,
+`/favicon.svg`, `/robots.txt`, `/sitemap.xml` (35 URLs) y los archivos Google
+(`google3f2e02a3c176b538.html`, `googlef334c08cb9e5d942.html`) **intactos**.
+
+**Nota operativa (compartir):** usar la **URL directa** `https://lucycare.app/`,
+**no** enlaces `share.google/…`. `share.google` es un **wrapper externo de
+Google/Chrome** que no depende del código de LucyCare (0 ocurrencias en el
+repo); WhatsApp/Facebook previsualizarían ese wrapper, no `lucycare.app`. Si el
+preview sale viejo es **caché** → refrescar con el **Facebook Sharing Debugger**
+o esperar.
+
+**Pendiente NO iniciado:** asset **OG branded 1200×630** para reemplazar el
+`lucycare-logo.png` (1200×505) temporal como `og:image` — pertenece a **PR D**
+junto con JSON-LD `Physician` + canonical hardening. No abrir PR D sin
+instrucción.
