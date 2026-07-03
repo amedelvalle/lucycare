@@ -236,7 +236,7 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
 {
   const m = buildHomeMeta(ORIGIN);
   const okAll = m.indexable === true &&
-    m.title === 'LucyCare — Encontrá y reservá con médicos en El Salvador' &&
+    m.title === 'LucyCare — Encuentra al médico perfecto para ti' &&
     has(m.metaHtml, 'index,follow') && !has(m.metaHtml, 'noindex') &&
     has(m.metaHtml, '<meta property="og:type" content="website">') &&
     has(m.metaHtml, `<link rel="canonical" href="https://lucycare.app/">`) &&
@@ -255,7 +255,7 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
   const titleCount = (out.match(/<title>/gi) || []).length;
   const canonicalCount = (out.match(/rel="canonical"/gi) || []).length;
   const beforeHead = out.indexOf('og:title') < out.indexOf('</head>');
-  (titleCount === 1 && has(out, '<title>LucyCare — Encontrá y reservá con médicos en El Salvador</title>') &&
+  (titleCount === 1 && has(out, '<title>LucyCare — Encuentra al médico perfecto para ti</title>') &&
    canonicalCount === 1 && beforeHead && has(out, '<div id="root">'))
     ? ok('T18b injectMeta home: 1 title home + 1 canonical + meta antes de </head> + shell intacto')
     : no(`T18b injectMeta home (titles=${titleCount}, canonical=${canonicalCount}, beforeHead=${beforeHead})`);
