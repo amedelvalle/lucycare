@@ -22,9 +22,10 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `31a8cb1` (*style(branding): Home público hacia la paleta
-  oficial LucyCare (Branding PR-1) … (#222)*).
-- **PRs mergeados:** **#1–#222** (incluye #221 docs-only + #222 Branding PR-1).
+- **HEAD de `main`:** `5334602` (*perf(home): quitar Font Awesome no usado +
+  cache immutable de /assets/* (Perf PR-1) … (#224)*).
+- **PRs mergeados:** **#1–#224** (incluye #221 docs-only + #222 Branding PR-1 +
+  #223 docs-only + #224 Perf PR-1).
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -184,7 +185,49 @@ coherencia del flujo "Soy médico".
 
 ---
 
-## 6. Pendientes generales NO iniciados
+## 6. Performance del Home — Perf PR-1 (#224) · CERRADO
+
+**PR:** **#224** (`perf(home): quitar Font Awesome no usado + cache immutable de
+/assets/* (Perf PR-1)`). Precedido de un **Paso 0 read-only** (diagnóstico) que
+**exoneró a #222 / Branding PR-1** como causa de lentitud: el delta de bundle
+post-#222 fue **~0.19 KB gzip combinado**; la percepción venía de factores
+**pre-existentes** (re-descarga tras cada deploy + `max-age=0` en assets
+hasheados + JS monolítico + CSS de terceros render-blocking + Font Awesome sin
+uso).
+
+**Dos cambios de bajo riesgo (sin tocar código de la app):**
+- **`index.html`** — se elimina el `<link>` render-blocking a **Font Awesome
+  6.4.0** (`all.min.css`, ~18.75 KB + webfonts). Confirmado **0 usos** en todo
+  el repo (`fa-`, `FontAwesome`, `all.min.css`, sin dependencia npm). Los
+  iconos son **RemixIcon** (`ri-*`, 196 usos), **intacto**. **Google
+  Fonts/Pacifico y los `preconnect` intactos.**
+- **`vercel.json`** — bloque `headers` que sirve **solo `/assets/(.*)`**
+  (bundles hasheados de Vite) con
+  `Cache-Control: public, max-age=31536000, immutable`. Antes heredaban el
+  default `max-age=0, must-revalidate` (el navegador revalidaba ~305 KB de JS
+  en cada visita). **El `index.html` NO recibe long-cache** (sigue
+  `max-age=0, must-revalidate` para tomar nuevos deploys al instante). El
+  **rewrite SPA queda igual**.
+
+**Validado en producción `lucycare.app`:** `/` 200 · HTML **sin Font Awesome**
+· **RemixIcon** presente · `/assets/*.js` y `/assets/*.css` con
+`Cache-Control: public, max-age=31536000, immutable` · `index.html` **sin**
+immutable (`max-age=0, must-revalidate`) · `/favicon.svg` · `/robots.txt` ·
+`/sitemap.xml` (35 URLs) · archivos Google — **INTACTOS**.
+
+**NO tocó:** React · Home (código) · Tailwind · DB/SQL/migraciones/`database.types.ts`
+· Analytics · SEO dinámico / middleware / OG / JSON-LD · sitemap · robots ·
+favicon · archivos Google.
+
+**Pendiente NO iniciado (no abrir sin instrucción explícita):**
+- **Perf P2** — code-splitting del JS monolítico (~305 KB gzip en un solo
+  chunk; Vite advierte "chunk > 500 KB"). Mejora LCP/TBT; esfuerzo mayor.
+- **Perf menor** — `loading="lazy"` + dimensiones en avatares; evaluar quitar
+  **Pacifico** si no se usa/no aporta.
+
+---
+
+## 7. Pendientes generales NO iniciados
 
 1. **Revisar datos iniciales** de Search Console + Vercel Analytics + Speed
    Insights **antes** de abrir nuevos frentes SEO/Analytics.
@@ -210,15 +253,21 @@ coherencia del flujo "Soy médico".
     después. **No abrir sin instrucción explícita.** Cierra la coherencia del
     flujo "Soy médico" iniciada en el Home.
 12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
-    `AdminAffiliationDetailModal`, token de marca) — no iniciar sin alcance.
+    `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
+    —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
 13. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
     alcance.
 14. **Limpieza de ramas locales `claude/*` viejas** — opcional, solo con
     **dry-run + autorización expresa**, sin tocar worktrees activos.
+15. **Perf P2 — code-splitting del JS monolítico** (~305 KB gzip en un solo
+    chunk; Vite advierte "chunk > 500 KB") — mejora LCP/TBT; esfuerzo mayor;
+    **no abrir sin instrucción** (ver §6).
+16. **Perf menor** — `loading="lazy"` + dimensiones en avatares; evaluar quitar
+    **Pacifico** si no se usa/no aporta — no iniciar sin alcance.
 
 ---
 
-## 7. Reglas operativas para la nueva ventana (vinculantes)
+## 8. Reglas operativas para la nueva ventana (vinculantes)
 
 - **Un solo frente abierto a la vez.** No abrir otro hasta cerrar
   formalmente el anterior.
