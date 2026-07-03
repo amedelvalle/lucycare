@@ -111,7 +111,7 @@ export default function DoctorDetail() {
             <button
               onClick={() => refetch()}
               disabled={isRefetching}
-              className="px-6 py-3 bg-emerald-700 text-white rounded-lg font-semibold hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="px-6 py-3 bg-brand-purple text-white rounded-lg font-semibold hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               {isRefetching ? 'Cargando…' : 'Reintentar'}
             </button>
@@ -137,7 +137,7 @@ export default function DoctorDetail() {
           <p className="text-gray-600 mb-6">El médico que buscas no existe o no está disponible</p>
           <button
             onClick={() => navigate('/')}
-            className="px-6 py-3 bg-emerald-700 text-white rounded-lg font-semibold hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap"
+            className="px-6 py-3 bg-brand-purple text-white rounded-lg font-semibold hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap"
           >
             Volver al inicio
           </button>
@@ -251,7 +251,7 @@ export default function DoctorDetail() {
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                 {(lucyStatus === 'VERIFIED' || isVerified) && (
                   <span
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium"
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-brand-mint/30 text-brand-purple rounded-full text-sm font-medium"
                     title="Perfil verificado por LucyCare"
                     aria-label="Perfil verificado por LucyCare"
                   >
@@ -260,7 +260,7 @@ export default function DoctorDetail() {
                   </span>
                 )}
                 {canBook ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-brand-mint/30 text-brand-purple rounded-full text-sm font-medium">
                     <i className="ri-calendar-check-line"></i>
                     Agenda en línea
                   </span>
@@ -353,7 +353,7 @@ export default function DoctorDetail() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {doctor.services.map((service) => (
                       <div key={service.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                        <i className="ri-check-line text-emerald-600 text-xl mt-0.5"></i>
+                        <i className="ri-check-line text-brand-purple text-xl mt-0.5"></i>
                         <div className="flex-1">
                           <span className="text-gray-900 font-medium">{service.name}</span>
                           <div className="flex items-center gap-2 mt-1">
@@ -382,7 +382,7 @@ export default function DoctorDetail() {
                   <div className="space-y-3">
                     {educationList.map((edu, index) => (
                       <div key={index} className="flex items-start gap-3">
-                        <i className="ri-graduation-cap-line text-emerald-700 text-xl mt-0.5"></i>
+                        <i className="ri-graduation-cap-line text-brand-purple text-xl mt-0.5"></i>
                         <span className="text-gray-700">{edu}</span>
                       </div>
                     ))}
@@ -417,7 +417,7 @@ export default function DoctorDetail() {
               <h2 className="text-2xl font-semibold text-gray-900 mb-4">Ubicación</h2>
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
-                  <i className="ri-map-pin-line text-2xl text-emerald-700 mt-1"></i>
+                  <i className="ri-map-pin-line text-2xl text-brand-purple mt-1"></i>
                   <div>
                     {addressUseful && (
                       <p className="text-gray-900 font-medium">{doctor.addressLine}</p>
@@ -427,8 +427,8 @@ export default function DoctorDetail() {
                 </div>
                 {doctor.clinicPhone && (
                   <div className="flex items-center gap-3">
-                    <i className="ri-phone-line text-emerald-700 text-xl"></i>
-                    <a href={`tel:${doctor.clinicPhone}`} className="text-gray-700 hover:text-emerald-700 cursor-pointer">
+                    <i className="ri-phone-line text-brand-purple text-xl"></i>
+                    <a href={`tel:${doctor.clinicPhone}`} className="text-gray-700 hover:text-brand-purple cursor-pointer">
                       {doctor.clinicPhone}
                     </a>
                   </div>
@@ -457,7 +457,7 @@ export default function DoctorDetail() {
                     href={areaMapsLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-purple hover:text-brand-purple-dark hover:underline"
                   >
                     <i className="ri-map-pin-line"></i>
                     Ver zona aproximada en Google Maps
@@ -514,7 +514,7 @@ export default function DoctorDetail() {
             </div>
             <button
               onClick={() => setShowMobileBooking(true)}
-              className="flex-1 px-6 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors cursor-pointer whitespace-nowrap font-semibold"
+              className="flex-1 px-6 py-3 bg-brand-purple text-white rounded-lg hover:bg-brand-purple-dark transition-colors cursor-pointer whitespace-nowrap font-semibold"
             >
               Reservar cita
             </button>
@@ -537,7 +537,7 @@ export default function DoctorDetail() {
       />
 
       {/* Footer */}
-      <footer className="bg-[#EDEDED] border-t border-gray-200 mt-20">
+      <footer className="bg-brand-gray border-t border-gray-200 mt-20">
         <div className="max-w-7xl mx-auto px-6 py-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
             <div>
