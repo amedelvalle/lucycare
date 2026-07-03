@@ -201,10 +201,10 @@ export function buildHomeMeta(origin) {
   const canonical = `${origin}/`;
   const ogImage = `${origin}${DEFAULT_OG_IMAGE_PATH}`;
 
-  const title = `${SITE} — Encontrá y reservá con médicos en El Salvador`;
+  const title = `${SITE} — Encuentra al médico perfecto para ti`;
   const description =
-    'Buscá médicos por especialidad, ubicación y disponibilidad. ' +
-    `Reservá en línea con ${SITE}.`;
+    'Busca por especialidad, ubicación y disponibilidad. ' +
+    `Reserva en línea con ${SITE}.`;
 
   const t = escapeHtml(title);
   const desc = escapeHtml(description);
