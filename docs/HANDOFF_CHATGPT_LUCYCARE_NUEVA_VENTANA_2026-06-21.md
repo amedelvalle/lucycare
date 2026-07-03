@@ -1,6 +1,12 @@
 # HANDOFF — Nueva ventana de contexto (2026-06-21)
 
-> **PUNTO DE ENTRADA VIGENTE.** Leer ESTE documento primero; después `CLAUDE.md`
+> 🗄️ **HISTÓRICO / SUPERADO (2026-07-03).** El punto de entrada VIGENTE es
+> **`docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-07-03_POST_PR220.md`**
+> (estado post-#220: HEAD `72a7fd6`, PRs #1–#220, migraciones `s7_52`,
+> Slugs+SEO hasta PR C, Analytics/Search Console Fase 1A/1B, favicon). Este
+> documento queda como registro histórico; leer el `2026-07-03` primero.
+
+> **(Contexto original)** Leer ESTE documento primero; después `CLAUDE.md`
 > y los `docs/ANALISIS_*.md` del objetivo del día. Reemplaza como punto de
 > entrada a `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-06-18.md` (queda histórico).
 > No asumir nada sin confirmar el estado real del repo.
