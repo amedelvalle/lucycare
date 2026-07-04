@@ -22,10 +22,11 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `fcb2f46` (*style(branding): modales simples públicos
-  hacia la paleta oficial (Branding PR-2b-1) … (#231)*).
-- **PRs mergeados:** **#1–#231** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
-  SEO Home OG + #229 PR-2a + **#231 PR-2b-1**; #221/#223/#225/#228/#230 docs-only).
+- **HEAD de `main`:** `f843b92` (*style(branding): modales auth/claim hacia la
+  paleta oficial (Branding PR-2b-2) … (#233)*).
+- **PRs mergeados:** **#1–#233** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
+  SEO Home OG + #229 PR-2a + #231 PR-2b-1 + **#233 PR-2b-2**;
+  #221/#223/#225/#228/#230/#232 docs-only). **Rebrand público principal COMPLETO.**
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -155,7 +156,7 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 
 ---
 
-## 5. Branding público — PR-1 Home (#222) + PR-2a doctor-detail (#229) + PR-2b-1 modales simples (#231) · CERRADO
+## 5. Branding público — REBRAND PRINCIPAL COMPLETO: PR-1 Home (#222) + PR-2a doctor-detail (#229) + PR-2b-1 modales simples (#231) + PR-2b-2 modales auth/claim (#233) · CERRADO
 
 **PR:** **#222** (`style(branding): Home público hacia la paleta oficial
 LucyCare (Branding PR-1)`). **#221** fue docs-only (cierre de ventana
@@ -253,15 +254,61 @@ menta, `*` requeridos en rojo, móvil 360 sin overflow, 0 errores de consola;
 doctor **intactas**, `/robots.txt`·`/sitemap.xml` 35 URLs·`/favicon.svg`·
 archivos Google **intactos**).
 
+### Branding PR-2b-2 — modales auth/claim (#233) · CERRADO
+
+**PR:** **#233** (`style(branding): modales auth/claim hacia la paleta oficial
+(Branding PR-2b-2)`). Segunda mitad de PR-2b, acotada a los modales de
+**auth/claim**: `LoginModal` + `ClaimProfileModal`. **SOLO color/className.**
+**NO toca** auth/OTP/login/claim/password/validaciones/estados/timers/Supabase/
+RPCs/navegación/roles; **sin cambiar copy/labels.** Reusa los tokens `brand.*`.
+
+- **Morado** = CTAs (Continuar/Verificar/Ingresar/Enviar/Reclamar/Guardar/
+  "Contactar a Lucy"), **tabs activas** (Teléfono/Email), **step-indicator del
+  claim** (barra + número), focus de inputs, links ("Reenviar código"/"¿Olvidaste
+  tu contraseña?"/Términos), accent del checkbox, iconos, borde de la
+  tarjeta-opción "Crear contraseña ahora".
+- **Menta** = estados de éxito: círculos de check (OTP enviado / reset enviado /
+  "¡Perfil reclamado!"), caja **"Contraseña creada"** (menta suave + texto
+  morado), fondo/hover de la tarjeta-opción.
+- **Conservados:** red (errores/validación), amber (avisos: "Mínimo N
+  caracteres", "No encontramos un correo registrado"), blue (info: "Revisá tu
+  correo"), gris/neutros. *(El CTA "Contactar a Lucy" enlaza a WhatsApp pero
+  usaba `bg-emerald-700` —botón morado con ícono, no el patrón verde de canal
+  `bg-green-500`— → morado como CTA.)*
+
+**Alcance:** 2 archivos — `doctor-detail/components/{LoginModal,ClaimProfileModal}.tsx`.
+**Validado:** `npm run build` verde; preview en vivo de ambos modales (LoginModal
+desde "Iniciar sesión", ClaimProfileModal desde la entrada de reclamo de un
+perfil `listed_only`) — tab/step-indicator/CTAs morados, focus morado, éxito
+menta, semánticos intactos; desktop + móvil 360/390/430 sin overflow; 0 errores
+de consola; **NO se enviaron formularios** (sin OTP/SMS/datos reales); **prod OK**
+(Home 200, `/doctor/dr-camilo-carrillo` 200, tokens en el CSS, metadata/OG del
+Home y doctor **intactas**, `/robots.txt`·`/sitemap.xml` 35 URLs·`/favicon.svg`·
+archivos Google **intactos**).
+
+---
+
+### ✅ Rebrand público principal — COMPLETO por fases
+
+El acercamiento del público a la paleta oficial LucyCare (morado `#3C2285` +
+menta `#8AE4CB` + gris `#EDEDED`) queda **completo** en sus superficies
+principales, por fases pequeñas:
+1. **#222 — Home público:** tokens de marca + Home alineado a morado/menta/gris
+   + "Soy médico" secundario + CTAs principales morados.
+2. **#229 — Perfil visible `/doctor/*`:** badges/acento/éxito en menta, CTAs
+   morados, **WhatsApp verde** y **blue/info** conservados.
+3. **#231 — Modales públicos simples:** `WaitlistModal` + `AffiliationRequestModal`.
+4. **#233 — Modales auth/claim:** `LoginModal` + `ClaimProfileModal`.
+
 **Pendientes NO iniciados (no abrir sin instrucción explícita):**
-- **Branding PR-2b-2** — modales **auth/claim** sensibles (`LoginModal`,
-  `ClaimProfileModal`): **solo color**, validación visual cuidadosa, **sin
-  tocar** auth/OTP/claim/lógica. Cierra la coherencia del flujo "Soy médico".
 - **`DoctorAvatar.tsx`** — el círculo de iniciales sigue en `emerald-100/700`;
   es **componente compartido** con el Home y el perfil → follow-up **separado**
-  (afecta varias superficies), no parte de PR-2b-2.
+  (afecta varias superficies).
 - **Branding menor** — splash verde `#047857` de `index.html` + branding interno
   panel/admin.
+- **OG branded 1200×630** — dentro de Slugs PR D (§2).
+- **Perf P2** (code-splitting del JS) · **Perf menor** (lazy avatares, evaluar
+  Pacifico) — §6.
 
 ---
 
@@ -326,12 +373,10 @@ favicon · archivos Google.
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
-11. **Branding PR-2b-2 — modales auth/claim** (`LoginModal`, `ClaimProfileModal`;
-    solo color, validación visual cuidadosa, **sin tocar** auth/OTP/claim/lógica)
-    — continuación de Branding PR-2b-1 (#231, modales simples ya migrados). **No
-    abrir sin instrucción explícita.** Cierra la coherencia del flujo "Soy
-    médico". Aparte: **`DoctorAvatar.tsx`** (iniciales aún en emerald; componente
-    **compartido** con el Home → follow-up separado, no parte de PR-2b-2). Ver §5.
+11. **`DoctorAvatar.tsx` — iniciales aún en emerald** (`emerald-100/700`);
+    **componente compartido** con el Home y el perfil médico → follow-up
+    **separado** por afectar varias superficies. Único resto del rebrand público
+    tras cerrar #222/#229/#231/#233. **No abrir sin instrucción explícita.** Ver §5.
 12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
     `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
     —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
