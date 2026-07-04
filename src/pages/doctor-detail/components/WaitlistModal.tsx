@@ -159,7 +159,7 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
                   onChange={(e) => setName(e.target.value)}
                   required
                   maxLength={200}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:border-transparent text-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent text-sm"
                   placeholder="Tu nombre"
                 />
               </div>
@@ -180,7 +180,7 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
                     className={`flex-1 px-4 py-3 border rounded-lg focus:outline-none transition-colors text-gray-900 text-sm ${
                       phoneError
                         ? 'border-red-500 focus:border-red-500'
-                        : 'border-gray-300 focus:border-emerald-600'
+                        : 'border-gray-300 focus:border-brand-purple'
                     }`}
                     placeholder="7777-7777"
                   />
@@ -201,7 +201,7 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
                   onChange={(e) => setMessage(e.target.value.slice(0, MAX_MESSAGE_LEN))}
                   rows={3}
                   maxLength={MAX_MESSAGE_LEN}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:border-transparent text-sm resize-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent text-sm resize-none"
                   placeholder="Preferencia de horario, motivo de consulta, etc."
                 />
                 <p className="text-xs text-gray-400 mt-1 text-right">
@@ -212,7 +212,7 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full px-6 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap font-medium"
+                className="w-full px-6 py-3 bg-brand-purple text-white rounded-lg hover:bg-brand-purple-dark transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap font-medium"
               >
                 {loading ? 'Enviando…' : 'Avisarme cuando tenga agenda disponible'}
               </button>
@@ -227,8 +227,8 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
           </>
         ) : (
           <div className="text-center py-8">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="ri-check-line text-3xl text-emerald-700"></i>
+            <div className="w-16 h-16 bg-brand-mint/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i className="ri-check-line text-3xl text-brand-purple"></i>
             </div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">¡Listo!</h3>
             <p className="text-sm text-gray-600 mb-6">
@@ -237,7 +237,7 @@ export default function WaitlistModal({ isOpen, onClose, doctorId, doctorName }:
             <button
               type="button"
               onClick={handleClose}
-              className="px-6 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer"
+              className="px-6 py-2.5 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer"
             >
               Entendido
             </button>
