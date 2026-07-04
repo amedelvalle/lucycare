@@ -22,11 +22,11 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `f843b92` (*style(branding): modales auth/claim hacia la
-  paleta oficial (Branding PR-2b-2) … (#233)*).
-- **PRs mergeados:** **#1–#233** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
-  SEO Home OG + #229 PR-2a + #231 PR-2b-1 + **#233 PR-2b-2**;
-  #221/#223/#225/#228/#230/#232 docs-only). **Rebrand público principal COMPLETO.**
+- **HEAD de `main`:** `ae4c820` (*style(branding): avatar fallback del médico
+  hacia la paleta oficial (DoctorAvatar) … (#235)*).
+- **PRs mergeados:** **#1–#235** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
+  SEO Home OG + #229 PR-2a + #231 PR-2b-1 + #233 PR-2b-2 + **#235 DoctorAvatar**;
+  #221/#223/#225/#228/#230/#232/#234 docs-only). **Rebrand público 100% COMPLETO.**
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -156,7 +156,7 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 
 ---
 
-## 5. Branding público — REBRAND PRINCIPAL COMPLETO: PR-1 Home (#222) + PR-2a doctor-detail (#229) + PR-2b-1 modales simples (#231) + PR-2b-2 modales auth/claim (#233) · CERRADO
+## 5. Branding público — REBRAND 100% COMPLETO: PR-1 Home (#222) + PR-2a doctor-detail (#229) + PR-2b-1 modales simples (#231) + PR-2b-2 modales auth/claim (#233) + DoctorAvatar (#235) · CERRADO
 
 **PR:** **#222** (`style(branding): Home público hacia la paleta oficial
 LucyCare (Branding PR-1)`). **#221** fue docs-only (cierre de ventana
@@ -299,11 +299,14 @@ principales, por fases pequeñas:
    morados, **WhatsApp verde** y **blue/info** conservados.
 3. **#231 — Modales públicos simples:** `WaitlistModal` + `AffiliationRequestModal`.
 4. **#233 — Modales auth/claim:** `LoginModal` + `ClaimProfileModal`.
+5. **#235 — Avatar compartido:** `src/components/DoctorAvatar.tsx` — fallback de
+   iniciales (sin foto) `bg-emerald-100 text-emerald-700` → **`bg-brand-mint/30
+   text-brand-purple`** (menta suave + iniciales moradas). Visual-only, 1 línea;
+   branch `<img>` byte-idéntico (avatares con foto intactos). Componente
+   compartido → aplica a Home + doctor-detail. Validado en prod. **Con esto el
+   rebrand público queda 100% en sus superficies principales.**
 
 **Pendientes NO iniciados (no abrir sin instrucción explícita):**
-- **`DoctorAvatar.tsx`** — el círculo de iniciales sigue en `emerald-100/700`;
-  es **componente compartido** con el Home y el perfil → follow-up **separado**
-  (afecta varias superficies).
 - **Branding menor** — splash verde `#047857` de `index.html` + branding interno
   panel/admin.
 - **OG branded 1200×630** — dentro de Slugs PR D (§2).
@@ -373,21 +376,19 @@ favicon · archivos Google.
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
-11. **`DoctorAvatar.tsx` — iniciales aún en emerald** (`emerald-100/700`);
-    **componente compartido** con el Home y el perfil médico → follow-up
-    **separado** por afectar varias superficies. Único resto del rebrand público
-    tras cerrar #222/#229/#231/#233. **No abrir sin instrucción explícita.** Ver §5.
-12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
+11. **Branding interno menor** (stat card índigo del panel, botón púrpura de
     `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
     —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
-13. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
+    *(El rebrand público principal quedó 100% COMPLETO con #235 — ver §5; solo
+    resta este branding interno + splash.)*
+12. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
     alcance.
-14. **Limpieza de ramas locales `claude/*` viejas** — opcional, solo con
+13. **Limpieza de ramas locales `claude/*` viejas** — opcional, solo con
     **dry-run + autorización expresa**, sin tocar worktrees activos.
-15. **Perf P2 — code-splitting del JS monolítico** (~305 KB gzip en un solo
+14. **Perf P2 — code-splitting del JS monolítico** (~305 KB gzip en un solo
     chunk; Vite advierte "chunk > 500 KB") — mejora LCP/TBT; esfuerzo mayor;
     **no abrir sin instrucción** (ver §6).
-16. **Perf menor** — `loading="lazy"` + dimensiones en avatares; evaluar quitar
+15. **Perf menor** — `loading="lazy"` + dimensiones en avatares; evaluar quitar
     **Pacifico** si no se usa/no aporta — no iniciar sin alcance.
 
 ---
