@@ -22,10 +22,11 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `479adeb` (*feat(seo): copy más personal del preview
-  social del Home … (#227)*).
-- **PRs mergeados:** **#1–#227** (incluye #222 Branding PR-1 + #224 Perf PR-1 +
-  **#226 SEO Home OG** + **#227 copy Home OG**; #221/#223/#225 docs-only).
+- **HEAD de `main`:** `77c31bd` (*style(branding): perfil público del médico
+  hacia la paleta oficial (Branding PR-2a) … (#229)*).
+- **PRs mergeados:** **#1–#229** (incluye #222 Branding PR-1 + #224 Perf PR-1 +
+  #226 SEO Home OG + #227 copy Home OG + **#229 Branding PR-2a**; #221/#223/#225
+  docs-only; #228 docs-only cierre SEO Home OG).
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -155,7 +156,7 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 
 ---
 
-## 5. Branding público — PR-1 Home (#222) · CERRADO
+## 5. Branding público — PR-1 Home (#222) + PR-2a doctor-detail (#229) · CERRADO
 
 **PR:** **#222** (`style(branding): Home público hacia la paleta oficial
 LucyCare (Branding PR-1)`). **#221** fue docs-only (cierre de ventana
@@ -197,11 +198,47 @@ de forma parcial y controlada, el criterio emerald/teal heredado de **#200**.
 admin · paciente · DB/SQL/migraciones/`database.types.ts` · Analytics · SEO
 dinámico / middleware / OG / JSON-LD · sitemap · robots · archivos Google · favicon.
 
-**Pendiente NO iniciado (no abrir sin instrucción explícita):** alinear el
-**emerald/teal restante fuera del Home** — doctor-detail, `AffiliationRequestModal`,
-`ClaimProfileModal`, `LoginModal`, `WaitlistModal` y demás modales públicos;
-panel/admin **solo si se autoriza después**. Es la fase natural para cerrar la
-coherencia del flujo "Soy médico".
+### Branding PR-2a — perfil público visible `/doctor/*` (#229) · CERRADO
+
+**PR:** **#229** (`style(branding): perfil público del médico hacia la paleta
+oficial (Branding PR-2a)`). Continuación de PR-1, acotada al **perfil visible
+del médico** (NO modales). **Solo color; sin lógica; SIN migración.** Reusa los
+tokens `brand.*` de PR-1 (sin tocar `tailwind.config.ts`).
+
+**Edición por intención (NO replace global de emerald):**
+- **Morado** = CTAs/interacción/acento: "Reservar cita"/"Reservar ahora",
+  "Llamar para agendar", "Reclamar mi perfil", "Reintentar"/"Volver al inicio",
+  servicio/slot **seleccionados**, focus de inputs, spinners, iconos de sección
+  (check/graduación/mapa/teléfono), links, barra de rating.
+- **Menta** = acento suave / confianza / **éxito**: badges "Verificado por
+  LucyCare" / "Agenda en línea" / "Mejor valorado" (menta 30% + texto morado,
+  AA ~11:1), chips de reseñas, superficie/borde de `ClaimProfilePromptCard`, y
+  el estado de éxito **"¡Cita agendada!"** (menta suave + texto morado).
+- **Gris** = footer (`bg-brand-gray`).
+- **Conservados por decisión del owner:** verde de **WhatsApp** (`bg-green-500`,
+  color de canal), **blue/info** (user-info del BookingCard), red (errores),
+  amber (avisos), yellow (estrellas), gris neutro.
+
+**Alcance:** 4 archivos — `doctor-detail/page.tsx` +
+`components/{BookingCard,ClaimProfilePromptCard,ReviewsSection}.tsx`.
+**Validado en prod:** `/doctor/dr-camilo-carrillo` 200 con badges menta+morado,
+CTAs morados, WhatsApp verde, **metadata/OG del doctor intacta** (`og:type=profile`,
+sin duplicados); Home `/` · `/robots.txt` · `/sitemap.xml` (35 URLs) ·
+`/favicon.svg` · archivos Google **INTACTOS**.
+
+**NO tocó:** modales (`ClaimProfileModal`/`LoginModal`/`WaitlistModal`),
+`DoctorAvatar.tsx`, Home, panel, admin, paciente, DB/SQL/migraciones, Analytics,
+SEO runtime/middleware/OG/JSON-LD, sitemap, robots, favicon, archivos Google.
+
+**Pendientes NO iniciados (no abrir sin instrucción explícita):**
+- **Branding PR-2b** — modales públicos (`ClaimProfileModal`, `LoginModal`,
+  `WaitlistModal`, `AffiliationRequestModal`); panel/admin solo si se autoriza.
+  Cierra la coherencia del flujo "Soy médico".
+- **`DoctorAvatar.tsx`** — el círculo de iniciales sigue en `emerald-100/700`;
+  es **componente compartido** con el Home y el perfil → follow-up **separado**
+  (afecta varias superficies), no parte de PR-2b.
+- **Branding menor** — splash verde `#047857` de `index.html` + branding interno
+  panel/admin.
 
 ---
 
@@ -266,12 +303,12 @@ favicon · archivos Google.
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
-11. **Branding público — continuación de Branding PR-1 (#222)** — alinear el
-    emerald/teal restante **fuera del Home**: doctor-detail,
-    `AffiliationRequestModal`, `ClaimProfileModal`, `LoginModal`,
-    `WaitlistModal` y demás modales públicos; panel/admin solo si se autoriza
-    después. **No abrir sin instrucción explícita.** Cierra la coherencia del
-    flujo "Soy médico" iniciada en el Home.
+11. **Branding PR-2b — modales públicos** (`ClaimProfileModal`, `LoginModal`,
+    `WaitlistModal`, `AffiliationRequestModal`; panel/admin solo si se autoriza)
+    — continuación de Branding PR-2a (#229, perfil visible ya migrado). **No
+    abrir sin instrucción explícita.** Cierra la coherencia del flujo "Soy
+    médico". Aparte: **`DoctorAvatar.tsx`** (iniciales aún en emerald; componente
+    **compartido** con el Home → follow-up separado, no parte de PR-2b). Ver §5.
 12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
     `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
     —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
