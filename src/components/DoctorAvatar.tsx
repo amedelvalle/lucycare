@@ -58,7 +58,7 @@ export default function DoctorAvatar({
 
   return (
     <div
-      className={`${className} rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold flex-shrink-0`}
+      className={`${className} rounded-full bg-brand-mint/30 text-brand-purple flex items-center justify-center font-semibold flex-shrink-0`}
       aria-label={name || 'Médico sin foto'}
       title={name}
     >
