@@ -161,8 +161,8 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
           {submitted ? (
             // ───── Estado post-submit (genérico, Q6: sin tracking portal) ─────
             <div className="text-center py-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-emerald-100 flex items-center justify-center mb-4">
-                <i className="ri-check-line text-3xl text-emerald-700" />
+              <div className="w-16 h-16 mx-auto rounded-full bg-brand-mint/30 flex items-center justify-center mb-4">
+                <i className="ri-check-line text-3xl text-brand-purple" />
               </div>
               <p className="text-base font-medium text-gray-900 mb-2">
                 Gracias. El equipo de Lucy te contactará en los próximos días.
@@ -172,7 +172,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
               </p>
               <button
                 onClick={onClose}
-                className="px-6 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer"
+                className="px-6 py-2.5 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer"
               >
                 Volver al inicio
               </button>
@@ -209,7 +209,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Dr. María González"
                   autoFocus
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                 />
               </div>
 
@@ -228,7 +228,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                     value={phoneDisplay}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     placeholder="7777-7777"
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                   />
                 </div>
               </div>
@@ -243,7 +243,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="tu@correo.com"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                 />
               </div>
 
@@ -255,7 +255,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                 <select
                   value={specialtyId}
                   onChange={(e) => setSpecialtyId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple bg-white"
                 >
                   <option value="">Elegí una opción…</option>
                   {(specialties as Array<{ id: string; name: string }>).map((s) => (
@@ -271,7 +271,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                     value={specialtyOther}
                     onChange={(e) => setSpecialtyOther(e.target.value)}
                     placeholder="Ej: Medicina del deporte"
-                    className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                    className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                   />
                 )}
               </div>
@@ -287,7 +287,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   value={licenseNumber}
                   onChange={(e) => setLicenseNumber(e.target.value)}
                   placeholder="Ej: JVPM-1234"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 uppercase"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple uppercase"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Si no la tenés a mano ahora, podés enviarla después cuando te contactemos.
@@ -304,7 +304,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                       setDepartmentId(e.target.value)
                       setMunicipalityId('')
                     }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple bg-white"
                   >
                     <option value="">Elegí departamento</option>
                     {(departments as Array<{ id: string; name: string }>).map((d) => (
@@ -318,7 +318,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                     value={municipalityId}
                     onChange={(e) => setMunicipalityId(e.target.value)}
                     disabled={!departmentId}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
                   >
                     <option value="">{departmentId ? 'Elegí municipio' : 'Elegí departamento primero'}</option>
                     {(municipalities as Array<{ id: string; name: string }>).map((m) => (
@@ -336,7 +336,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   value={clinicName}
                   onChange={(e) => setClinicName(e.target.value)}
                   placeholder="Ej: Consultorio Dr. González"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                 />
               </div>
               <div>
@@ -346,7 +346,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   value={addressLine}
                   onChange={(e) => setAddressLine(e.target.value)}
                   placeholder="Calle, número, referencia"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple"
                 />
               </div>
 
@@ -360,7 +360,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   onChange={(e) => setMessage(e.target.value.slice(0, 500))}
                   placeholder="Contanos algo de tu práctica o lo que te interesa de Lucy."
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-600 resize-none"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1 text-right">{message.length}/500</p>
               </div>
@@ -372,7 +372,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                     type="checkbox"
                     checked={consent}
                     onChange={(e) => setConsent(e.target.checked)}
-                    className="mt-1 w-4 h-4 text-emerald-700 rounded cursor-pointer flex-shrink-0"
+                    className="mt-1 w-4 h-4 text-brand-purple rounded cursor-pointer flex-shrink-0"
                   />
                   <span className="text-sm text-gray-700">
                     Acepto que LucyCare use mis datos para contactarme y validar mi solicitud, según la{' '}
@@ -380,7 +380,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                       href="/privacidad"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-emerald-700 underline"
+                      className="text-brand-purple underline"
                     >
                       política de privacidad
                     </a>
@@ -395,7 +395,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                 disabled={!canSubmit}
                 className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                   canSubmit
-                    ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                    ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
