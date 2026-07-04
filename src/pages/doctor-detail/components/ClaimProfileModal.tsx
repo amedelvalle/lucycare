@@ -377,13 +377,13 @@ export default function ClaimProfileModal({
                   {s > 1 && (
                     <div
                       className={`flex-1 h-1 mx-2 ${
-                        stepIndex >= s ? 'bg-emerald-700' : 'bg-gray-200'
+                        stepIndex >= s ? 'bg-brand-purple' : 'bg-gray-200'
                       }`}
                     />
                   )}
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center font-medium shrink-0 ${
-                      stepIndex >= s ? 'bg-emerald-700 text-white' : 'bg-gray-200 text-gray-500'
+                      stepIndex >= s ? 'bg-brand-purple text-white' : 'bg-gray-200 text-gray-500'
                     }`}
                   >
                     {s}
@@ -446,7 +446,7 @@ export default function ClaimProfileModal({
                       value={phoneDisplay}
                       onChange={(e) => handlePhoneChange(e.target.value)}
                       placeholder="7777-7777"
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900"
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                     />
                   </div>
                   <button
@@ -454,7 +454,7 @@ export default function ClaimProfileModal({
                     disabled={!isPhoneValid || loading}
                     className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                       isPhoneValid && !loading
-                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
@@ -476,7 +476,7 @@ export default function ClaimProfileModal({
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="000000"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-600 text-gray-900"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-brand-purple text-gray-900"
                     autoFocus
                   />
                   <button
@@ -484,7 +484,7 @@ export default function ClaimProfileModal({
                     disabled={otpCode.length !== 6 || loading}
                     className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                       otpCode.length === 6 && !loading
-                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
@@ -523,7 +523,7 @@ export default function ClaimProfileModal({
                   value={license}
                   onChange={(e) => setLicense(e.target.value)}
                   placeholder="Ej: JVPM-1234"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900 uppercase"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900 uppercase"
                 />
               </div>
 
@@ -534,7 +534,7 @@ export default function ClaimProfileModal({
                     href="/terminos"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-emerald-700 underline"
+                    className="text-brand-purple underline"
                   >
                     Términos de Uso
                   </a>{' '}
@@ -549,7 +549,7 @@ export default function ClaimProfileModal({
                     type="checkbox"
                     checked={tosAccepted}
                     onChange={(e) => setTosAccepted(e.target.checked)}
-                    className="mt-1 w-4 h-4 text-emerald-700 rounded cursor-pointer"
+                    className="mt-1 w-4 h-4 text-brand-purple rounded cursor-pointer"
                   />
                   <span className="text-sm text-gray-700">Sí, soy el profesional y acepto los términos.</span>
                 </label>
@@ -560,7 +560,7 @@ export default function ClaimProfileModal({
                 disabled={!canClaim}
                 className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                   canClaim
-                    ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                    ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
@@ -587,10 +587,10 @@ export default function ClaimProfileModal({
                   <button
                     type="button"
                     onClick={() => setPasswordMode('create')}
-                    className="w-full text-left bg-emerald-50 border-2 border-emerald-700 rounded-2xl p-5 hover:bg-emerald-100 transition-colors cursor-pointer"
+                    className="w-full text-left bg-brand-mint/20 border-2 border-brand-purple rounded-2xl p-5 hover:bg-brand-mint/30 transition-colors cursor-pointer"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-emerald-700 text-white rounded-full flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 bg-brand-purple text-white rounded-full flex items-center justify-center shrink-0">
                         <i className="ri-lock-password-line text-xl"></i>
                       </div>
                       <div className="flex-1">
@@ -599,7 +599,7 @@ export default function ClaimProfileModal({
                           Recomendado. La definís en este momento y ya quedás listo para entrar con tu email.
                         </p>
                       </div>
-                      <i className="ri-arrow-right-line text-xl text-emerald-700 shrink-0 mt-2"></i>
+                      <i className="ri-arrow-right-line text-xl text-brand-purple shrink-0 mt-2"></i>
                     </div>
                   </button>
 
@@ -636,7 +636,7 @@ export default function ClaimProfileModal({
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Mínimo 8 caracteres"
                       autoComplete="new-password"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                       autoFocus
                     />
                   </div>
@@ -648,7 +648,7 @@ export default function ClaimProfileModal({
                       onChange={(e) => setPasswordConfirm(e.target.value)}
                       placeholder="Repetí la contraseña"
                       autoComplete="new-password"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 text-gray-900"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                     />
                     {passwordMismatch && (
                       <p className="text-xs text-red-600 mt-1">Las contraseñas no coinciden.</p>
@@ -662,7 +662,7 @@ export default function ClaimProfileModal({
                     disabled={!canCreatePassword}
                     className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                       canCreatePassword
-                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
@@ -714,7 +714,7 @@ export default function ClaimProfileModal({
                     disabled={!profileEmail || loading}
                     className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
                       profileEmail && !loading
-                        ? 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                        ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
@@ -739,17 +739,17 @@ export default function ClaimProfileModal({
           {/* ═══ STEP 4: Éxito ═══ */}
           {step === 'success' && (
             <div className="text-center py-6">
-              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <i className="ri-check-line text-4xl text-emerald-700"></i>
+              <div className="w-20 h-20 bg-brand-mint/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i className="ri-check-line text-4xl text-brand-purple"></i>
               </div>
               <h3 className="text-2xl font-semibold text-gray-900 mb-3">¡Perfil reclamado!</h3>
               <p className="text-gray-600 mb-2">
                 Tu perfil quedó vinculado a tu cuenta. Aparece igual que antes en el directorio.
               </p>
               {outcome === 'password_set' && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 text-left">
-                  <p className="text-sm font-medium text-emerald-900">Contraseña creada</p>
-                  <p className="text-sm text-emerald-800 mt-1">
+                <div className="bg-brand-mint/20 border border-brand-mint/40 rounded-lg p-4 mb-4 text-left">
+                  <p className="text-sm font-medium text-brand-purple">Contraseña creada</p>
+                  <p className="text-sm text-brand-purple mt-1">
                     Ya podés iniciar sesión con tu email y contraseña la próxima vez.
                   </p>
                 </div>
@@ -771,7 +771,7 @@ export default function ClaimProfileModal({
                 href="https://wa.me/50378056365"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer mb-3"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer mb-3"
               >
                 <i className="ri-whatsapp-line text-lg"></i>
                 Contactar a Lucy

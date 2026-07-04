@@ -310,7 +310,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
               }}
               className={`flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
                 tab === 'phone'
-                  ? 'border-emerald-700 text-emerald-700'
+                  ? 'border-brand-purple text-brand-purple'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -324,7 +324,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
               }}
               className={`flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
                 tab === 'email'
-                  ? 'border-emerald-700 text-emerald-700'
+                  ? 'border-brand-purple text-brand-purple'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -414,7 +414,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !isPhoneValid
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                      : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                   }`}
                 >
                   {loading ? 'Enviando código…' : 'Continuar'}
@@ -426,8 +426,8 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
           {tab === 'phone' && phoneStep === 'otp' && (
             <>
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <i className="ri-message-2-line text-3xl text-emerald-700"></i>
+                <div className="w-16 h-16 bg-brand-mint/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i className="ri-message-2-line text-3xl text-brand-purple"></i>
                 </div>
                 <h3 className="text-2xl font-semibold text-gray-900 mb-2">Ingresa el código</h3>
                 <p className="text-sm text-gray-600">
@@ -445,7 +445,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   maxLength={6}
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full px-4 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600 transition-colors text-center text-2xl font-bold tracking-[0.5em] text-gray-900"
+                  className="w-full px-4 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple transition-colors text-center text-2xl font-bold tracking-[0.5em] text-gray-900"
                   placeholder="000000"
                   autoFocus
                 />
@@ -456,7 +456,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || otpCode.length !== 6
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                      : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                   }`}
                 >
                   {loading ? 'Verificando…' : 'Verificar código'}
@@ -472,7 +472,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                       type="button"
                       onClick={handleResendOtp}
                       disabled={loading}
-                      className="text-sm text-emerald-700 font-semibold hover:underline cursor-pointer disabled:text-gray-400"
+                      className="text-sm text-brand-purple font-semibold hover:underline cursor-pointer disabled:text-gray-400"
                     >
                       Reenviar código
                     </button>
@@ -521,7 +521,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !isEmailValid || !isPasswordValid
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                      : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                   }`}
                 >
                   {loading ? 'Ingresando…' : 'Ingresar'}
@@ -534,7 +534,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                     setEmailStep('forgot');
                     setError('');
                   }}
-                  className="block w-full text-center text-sm text-emerald-700 hover:underline cursor-pointer mt-2"
+                  className="block w-full text-center text-sm text-brand-purple hover:underline cursor-pointer mt-2"
                 >
                   ¿Olvidaste tu contraseña?
                 </button>
@@ -568,7 +568,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
                     loading || !emailForReset.includes('@')
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
+                      : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                   }`}
                 >
                   {loading ? 'Enviando…' : 'Enviar link de recuperación'}
@@ -579,8 +579,8 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
 
           {tab === 'email' && emailStep === 'forgot_sent' && (
             <div className="text-center py-6">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i className="ri-mail-check-line text-3xl text-emerald-700"></i>
+              <div className="w-16 h-16 bg-brand-mint/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="ri-mail-check-line text-3xl text-brand-purple"></i>
               </div>
               <h3 className="text-2xl font-semibold text-gray-900 mb-3">Revisá tu correo</h3>
               <p className="text-sm text-gray-600 mb-6">
@@ -591,7 +591,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-6 py-2.5 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer"
+                className="px-6 py-2.5 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer"
               >
                 Entendido
               </button>
