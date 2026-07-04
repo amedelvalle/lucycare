@@ -22,11 +22,10 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `77c31bd` (*style(branding): perfil público del médico
-  hacia la paleta oficial (Branding PR-2a) … (#229)*).
-- **PRs mergeados:** **#1–#229** (incluye #222 Branding PR-1 + #224 Perf PR-1 +
-  #226 SEO Home OG + #227 copy Home OG + **#229 Branding PR-2a**; #221/#223/#225
-  docs-only; #228 docs-only cierre SEO Home OG).
+- **HEAD de `main`:** `fcb2f46` (*style(branding): modales simples públicos
+  hacia la paleta oficial (Branding PR-2b-1) … (#231)*).
+- **PRs mergeados:** **#1–#231** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
+  SEO Home OG + #229 PR-2a + **#231 PR-2b-1**; #221/#223/#225/#228/#230 docs-only).
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -156,7 +155,7 @@ un **export raster confiable** del isotipo oficial → `apple-touch-icon.png`
 
 ---
 
-## 5. Branding público — PR-1 Home (#222) + PR-2a doctor-detail (#229) · CERRADO
+## 5. Branding público — PR-1 Home (#222) + PR-2a doctor-detail (#229) + PR-2b-1 modales simples (#231) · CERRADO
 
 **PR:** **#222** (`style(branding): Home público hacia la paleta oficial
 LucyCare (Branding PR-1)`). **#221** fue docs-only (cierre de ventana
@@ -230,13 +229,37 @@ sin duplicados); Home `/` · `/robots.txt` · `/sitemap.xml` (35 URLs) ·
 `DoctorAvatar.tsx`, Home, panel, admin, paciente, DB/SQL/migraciones, Analytics,
 SEO runtime/middleware/OG/JSON-LD, sitemap, robots, favicon, archivos Google.
 
+### Branding PR-2b-1 — modales públicos simples (#231) · CERRADO
+
+**PR:** **#231** (`style(branding): modales simples públicos hacia la paleta
+oficial (Branding PR-2b-1)`). Primera mitad de PR-2b (decisión: partir en 2 por
+la sensibilidad de los modales auth/claim), acotada a los modales **sin
+auth/claim**: `WaitlistModal` (doctor-detail) + `AffiliationRequestModal` (home).
+**Solo color; sin lógica; SIN migración.** Reusa los tokens `brand.*`.
+
+- **Morado** = CTAs (enviar/confirmar), focus de inputs (`border`/`ring`), links
+  de acento (política de privacidad), accent del checkbox, icono de éxito.
+- **Menta** = estado de éxito (círculo de check `bg-brand-mint/30` + icono morado).
+- **Conservados:** red (errores/validación), gris/neutros. *(No hay
+  amber/blue/green en estos dos modales.)*
+
+**Alcance:** 2 archivos — `doctor-detail/components/WaitlistModal.tsx` +
+`home/components/AffiliationRequestModal.tsx`. **Validado:** `npm run build`
+verde; preview en vivo de ambos modales (AffiliationRequestModal desde "Soy
+médico", WaitlistModal desde un médico no reservable) — acentos morados, éxito
+menta, `*` requeridos en rojo, móvil 360 sin overflow, 0 errores de consola;
+**NO se enviaron formularios** (evitar datos reales); **prod OK** (Home 200,
+`/doctor/dr-camilo-carrillo` 200, tokens en el CSS, metadata/OG del Home y
+doctor **intactas**, `/robots.txt`·`/sitemap.xml` 35 URLs·`/favicon.svg`·
+archivos Google **intactos**).
+
 **Pendientes NO iniciados (no abrir sin instrucción explícita):**
-- **Branding PR-2b** — modales públicos (`ClaimProfileModal`, `LoginModal`,
-  `WaitlistModal`, `AffiliationRequestModal`); panel/admin solo si se autoriza.
-  Cierra la coherencia del flujo "Soy médico".
+- **Branding PR-2b-2** — modales **auth/claim** sensibles (`LoginModal`,
+  `ClaimProfileModal`): **solo color**, validación visual cuidadosa, **sin
+  tocar** auth/OTP/claim/lógica. Cierra la coherencia del flujo "Soy médico".
 - **`DoctorAvatar.tsx`** — el círculo de iniciales sigue en `emerald-100/700`;
   es **componente compartido** con el Home y el perfil → follow-up **separado**
-  (afecta varias superficies), no parte de PR-2b.
+  (afecta varias superficies), no parte de PR-2b-2.
 - **Branding menor** — splash verde `#047857` de `index.html` + branding interno
   panel/admin.
 
@@ -303,12 +326,12 @@ favicon · archivos Google.
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
-11. **Branding PR-2b — modales públicos** (`ClaimProfileModal`, `LoginModal`,
-    `WaitlistModal`, `AffiliationRequestModal`; panel/admin solo si se autoriza)
-    — continuación de Branding PR-2a (#229, perfil visible ya migrado). **No
+11. **Branding PR-2b-2 — modales auth/claim** (`LoginModal`, `ClaimProfileModal`;
+    solo color, validación visual cuidadosa, **sin tocar** auth/OTP/claim/lógica)
+    — continuación de Branding PR-2b-1 (#231, modales simples ya migrados). **No
     abrir sin instrucción explícita.** Cierra la coherencia del flujo "Soy
     médico". Aparte: **`DoctorAvatar.tsx`** (iniciales aún en emerald; componente
-    **compartido** con el Home → follow-up separado, no parte de PR-2b). Ver §5.
+    **compartido** con el Home → follow-up separado, no parte de PR-2b-2). Ver §5.
 12. **Branding interno menor** (stat card índigo del panel, botón púrpura de
     `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
     —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
