@@ -22,11 +22,12 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `ae4c820` (*style(branding): avatar fallback del médico
-  hacia la paleta oficial (DoctorAvatar) … (#235)*).
-- **PRs mergeados:** **#1–#235** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
-  SEO Home OG + #229 PR-2a + #231 PR-2b-1 + #233 PR-2b-2 + **#235 DoctorAvatar**;
-  #221/#223/#225/#228/#230/#232/#234 docs-only). **Rebrand público 100% COMPLETO.**
+- **HEAD de `main`:** `4ca855b` (*style(branding): splash inicial de index.html
+  hacia la paleta oficial LucyCare … (#237)*).
+- **PRs mergeados:** **#1–#237** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
+  SEO Home OG + #229 PR-2a + #231 PR-2b-1 + #233 PR-2b-2 + #235 DoctorAvatar +
+  **#237 splash** ; #221/#223/#225/#228/#230/#232/#234/#236 docs-only).
+  **Rebrand público 100% COMPLETO** + splash de bootstrap on-brand.
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -306,10 +307,21 @@ principales, por fases pequeñas:
    compartido → aplica a Home + doctor-detail. Validado en prod. **Con esto el
    rebrand público queda 100% en sus superficies principales.**
 
+**Extra — #237 splash inicial (branding menor, CERRADO):** el splash estático de
+`index.html` (visible durante el bootstrap, antes de que React monte) usaba verde
+emerald → alineado a la paleta oficial. Diagnóstico (Paso 0): `#047857` **solo**
+en el splash (2 ocurrencias: texto "LucyCare" + acento del spinner), único otro
+verde `#d1fae5` (anillo del spinner). Cambios: `#047857` → **`#3C2285`** (morado);
+`#d1fae5` → **`#8AE4CB`** (menta). Visual-only, 1 archivo/2 líneas; sin tocar
+textos/estructura/comportamiento; `theme-color`/favicon/scripts intactos. Validado
+en prod (`out/index.html` `#3C2285`×3 + `#8AE4CB`×1, 0 verdes; Home/doctor 200,
+metadata/OG intactas, robots/sitemap 35 URLs/favicon/Google intactos).
+
 **Pendientes NO iniciados (no abrir sin instrucción explícita):**
-- **Branding menor** — splash verde `#047857` de `index.html` + branding interno
-  panel/admin.
-- **OG branded 1200×630** — dentro de Slugs PR D (§2).
+- **Branding interno** restante — stat card índigo del panel + botón púrpura de
+  `AdminAffiliationDetailModal` + token de marca.
+- **OG branded 1200×630** — dentro de Slugs PR D (§2). *(Recomendado como
+  siguiente frente estratégico.)*
 - **Perf P2** (code-splitting del JS) · **Perf menor** (lazy avatares, evaluar
   Pacifico) — §6.
 
@@ -377,8 +389,9 @@ favicon · archivos Google.
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
     nunca al payload público).
 11. **Branding interno menor** (stat card índigo del panel, botón púrpura de
-    `AdminAffiliationDetailModal`, **splash verde `#047857` de `index.html`**
-    —quedó fuera de Perf PR-1 #224—, token de marca) — no iniciar sin alcance.
+    `AdminAffiliationDetailModal`, token de marca) — no iniciar sin alcance.
+    *(El splash verde `#047857` de `index.html` ya se migró a morado/menta en
+    #237 — ver §5.)*
     *(El rebrand público principal quedó 100% COMPLETO con #235 — ver §5; solo
     resta este branding interno + splash.)*
 12. **Próximo-slot-real en la tarjeta** — pendiente histórico; no iniciar sin
