@@ -46,9 +46,7 @@ if (PROTECTED.has(FAKE_PHONE)) throw new Error('FAKE_PHONE colisiona con un tel�
 // Ventana futura para conteos deterministas.
 const FROM = '2099-01-01';
 const TO = '2099-12-31';
-const C = '2099-06-15T12:00:00.000Z';           // created_at de las fixtures
-const START = '2099-06-15T15:00:00.000Z';
-const END = '2099-06-15T15:30:00.000Z';
+const C = '2099-06-15T12:00:00.000Z';           // created_at de las fixtures (dentro de la ventana)
 
 // Marcadores de PII improbables (para el test de 0 PII).
 const PATIENT_NAME = 'S753 Paciente Fixture ZZQ';
@@ -72,7 +70,7 @@ const eq = (label, got, exp) => { if (got === exp) ok(`${label} = ${got}`); else
 const adminCli = mk();
 const patientCli = mk();
 
-const created = { appointments: [], waitlist: [], affiliations: [], reviews: [], auditIds: [], patient: null, doctor: null, clinic: null, authUser: null };
+const created = { appointments: [], waitlist: [], affiliations: [], reviews: [], auditIds: [], availability: [], patient: null, doctor: null, clinic: null, authUser: null };
 let PROFILE = null, CLINIC = null, DOCTOR = null, PATIENT = null, SPEC = null, OTHER_SPEC = null;
 let DEPT = null, MUNI = null, OTHER_DEPT = null, OTHER_MUNI = null;
 
@@ -126,6 +124,17 @@ try {
     }).select('id').single();
     if (pe) throw new Error('patient: ' + pe.message);
     PATIENT = pat.id; created.patient = PATIENT;
+
+    // Disponibilidad completa (7 días, 00:00–23:59) → las citas fixture pasan
+    // el trigger de validación de disponibilidad al insertarse.
+    for (let dow = 0; dow < 7; dow++) {
+      const { data: ar, error: arErr } = await admin.from('availability_rules').insert({
+        doctor_id: DOCTOR, clinic_id: CLINIC, day_of_week: dow,
+        start_time: '00:00:00', end_time: '23:59:59', is_active: true,
+      }).select('id').single();
+      if (arErr) throw new Error('availability dow ' + dow + ': ' + arErr.message);
+      created.availability.push(ar.id);
+    }
   }
 
   // status_id por nombre.
@@ -147,11 +156,15 @@ try {
     ['manual', 'no_asistio'],
     ['manual', 'programada'],
   ];
-  for (const [source, status] of apptSpec) {
+  for (let i = 0; i < apptSpec.length; i++) {
+    const [source, status] = apptSpec[i];
+    const hh = String(8 + i).padStart(2, '0');   // horarios escalonados 08:00..13:00 → sin solape
+    const start = `2099-06-15T${hh}:00:00.000Z`;
+    const end = `2099-06-15T${hh}:30:00.000Z`;
     const { data, error } = await admin.from('appointments').insert({
       clinic_id: CLINIC, doctor_id: DOCTOR, patient_id: PATIENT,
       status_id: statusIds[status], source,
-      start_time: START, end_time: END, created_at: C,
+      start_time: start, end_time: end, created_at: C,
     }).select('id').single();
     if (error) throw new Error(`appointment ${source}/${status}: ${error.message}`);
     created.appointments.push(data.id);
@@ -315,6 +328,7 @@ try {
     for (const id of created.waitlist) await admin.from('waitlist_entries').delete().eq('id', id);
     for (const id of created.affiliations) await admin.from('doctor_affiliation_requests').delete().eq('id', id);
     for (const id of created.appointments) await admin.from('appointments').delete().eq('id', id);
+    for (const id of created.availability) await admin.from('availability_rules').delete().eq('id', id);
     if (created.patient) await admin.from('patients').delete().eq('id', created.patient);
     if (created.doctor) await admin.from('doctors').delete().eq('id', created.doctor);
     if (created.clinic) await admin.from('clinics').delete().eq('id', created.clinic);
