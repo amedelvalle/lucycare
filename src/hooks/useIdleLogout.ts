@@ -23,6 +23,47 @@ import { getSessionPolicy } from '@/lib/sessionPolicy';
 
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'mousemove', 'wheel', 'scroll', 'touchstart'];
 
+// ─── Persistencia del reloj de inactividad ─────────────────────────
+// Clave que guarda SOLO el timestamp (epoch ms) de la última actividad —
+// sin PII (ni nombre/email/teléfono/datos clínicos). Sirve para que el
+// timeout por inactividad SOBREVIVA a reload / cierre-reapertura / kill de
+// pestaña en móvil (antes el reloj vivía solo en memoria y se reiniciaba en
+// cada montaje → el idle no atrapaba una sesión reabierta al día siguiente).
+const ACTIVITY_KEY = 'lc_last_activity';
+// El write a localStorage se throttlea (la actividad en memoria es exacta;
+// solo se persiste como mucho cada N ms para no spamear en mousemove/scroll).
+const PERSIST_THROTTLE_MS = 15_000;
+
+function readPersistedActivity(): number | null {
+  try {
+    const raw = localStorage.getItem(ACTIVITY_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Nunca en el futuro (clock skew / manipulación) → tratar como "ahora"
+    // para no extender la sesión más allá de lo real.
+    return Math.min(n, Date.now());
+  } catch {
+    return null;
+  }
+}
+
+function persistActivity(ts: number): void {
+  try {
+    localStorage.setItem(ACTIVITY_KEY, String(ts));
+  } catch {
+    /* best-effort: modo privado / storage lleno */
+  }
+}
+
+function clearPersistedActivity(): void {
+  try {
+    localStorage.removeItem(ACTIVITY_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 export interface IdleLogoutState {
   warning: boolean;
   secondsLeft: number;
@@ -36,6 +77,7 @@ export function useIdleLogout(): IdleLogoutState {
   const [secondsLeft, setSecondsLeft] = useState(0);
 
   const lastActivityRef = useRef<number>(Date.now());
+  const lastPersistRef = useRef<number>(0);
   const loginAtRef = useRef<number | null>(null);
   const warningRef = useRef(false);
   const loggingOutRef = useRef(false);
@@ -61,10 +103,29 @@ export function useIdleLogout(): IdleLogoutState {
       const { data } = await supabase.auth.getSession();
       const lsi = data.session?.user?.last_sign_in_at;
       loginAtRef.current = lsi ? new Date(lsi).getTime() : Date.now();
+
+      // La actividad nunca puede ser ANTERIOR al login actual: un login nuevo
+      // (loginAt = ahora) reinicia el idle; una restauración de sesión en frío
+      // conserva la actividad persistida (> loginAt). Robusto e independiente
+      // del nombre del evento de auth (no depende de SIGNED_IN vs
+      // INITIAL_SESSION), porque se ancla a `last_sign_in_at` —que NO cambia al
+      // restaurar ni al refrescar el token—.
+      const anchor = loginAtRef.current;
+      if (lastActivityRef.current < anchor) {
+        lastActivityRef.current = anchor;
+        persistActivity(anchor);
+        lastPersistRef.current = anchor;
+      }
     };
 
-    // Arranque: marcar actividad y resolver identidad.
-    lastActivityRef.current = Date.now();
+    // Arranque: el reloj de inactividad se HIDRATA del valor persistido (si
+    // existe) → así el idle sobrevive a reload / reapertura / kill de pestaña.
+    // Sin valor previo (primer uso) → ahora. El clamp `>= loginAt` vive en
+    // refresh() (abajo) y reinicia el idle solo ante un login nuevo.
+    const persisted = readPersistedActivity();
+    lastActivityRef.current = persisted ?? Date.now();
+    persistActivity(lastActivityRef.current);
+    lastPersistRef.current = lastActivityRef.current;
     refresh();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -72,10 +133,22 @@ export function useIdleLogout(): IdleLogoutState {
         setRole(null);
         loginAtRef.current = null;
         setWarning(false);
+        clearPersistedActivity();
         return;
       }
-      // Un login nuevo reinicia la actividad; un TOKEN_REFRESHED NO (no es actividad del usuario).
-      if (event === 'SIGNED_IN') lastActivityRef.current = Date.now();
+      // Login NUEVO = actividad ahora, de forma SÍNCRONA. Es imprescindible:
+      // refresh() es async (await getSession) y el tick (1 s) podría evaluar
+      // ANTES con un `lastActivity` viejo (p.ej. el que escribió el mount) y
+      // disparar un falso logout. En auth-js 2.71 `SIGNED_IN` es un login real
+      // (la restauración en frío emite `INITIAL_SESSION`, no `SIGNED_IN`), así
+      // que resetear acá NO afecta el caso "sobrevivir a la reapertura" — ese
+      // lo preserva el clamp `actividad >= loginAt` de refresh().
+      if (event === 'SIGNED_IN') {
+        const now = Date.now();
+        lastActivityRef.current = now;
+        persistActivity(now);
+        lastPersistRef.current = now;
+      }
       refresh();
     });
 
@@ -97,6 +170,7 @@ export function useIdleLogout(): IdleLogoutState {
     // El reload re-bootstrapea sin sesión → estado limpio, sin restos en
     // memoria ni en guards.
     try {
+      clearPersistedActivity();
       Object.keys(localStorage).forEach((k) => {
         if (k.startsWith('sb-')) localStorage.removeItem(k);
       });
@@ -107,7 +181,10 @@ export function useIdleLogout(): IdleLogoutState {
   }, []);
 
   const keepAlive = useCallback(() => {
-    lastActivityRef.current = Date.now();
+    const now = Date.now();
+    lastActivityRef.current = now;
+    persistActivity(now); // "Mantener sesión" es raro → persistir sin throttle.
+    lastPersistRef.current = now;
     setWarning(false);
     // Refresca el token para no quedar con uno por expirar; no bloquea.
     supabase.auth.refreshSession().catch(() => {});
@@ -153,7 +230,15 @@ export function useIdleLogout(): IdleLogoutState {
     const onActivity = () => {
       if (warningRef.current) return;       // aviso visible → no extender
       if (remainingMs(role) <= 0) return;   // ya venció → NO renovar (el tick cierra)
-      lastActivityRef.current = Date.now();
+      const now = Date.now();
+      lastActivityRef.current = now;
+      // Persistir throttled: la actividad en memoria es exacta; a localStorage
+      // solo se escribe como mucho cada PERSIST_THROTTLE_MS (la leve latencia
+      // erra hacia un cierre un poco ANTES → conservador/seguro).
+      if (now - lastPersistRef.current >= PERSIST_THROTTLE_MS) {
+        lastPersistRef.current = now;
+        persistActivity(now);
+      }
     };
     ACTIVITY_EVENTS.forEach((e) =>
       window.addEventListener(e, onActivity, { passive: true })
@@ -172,15 +257,27 @@ export function useIdleLogout(): IdleLogoutState {
       return;
     }
     const id = setInterval(() => evaluate(role), 1000);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') evaluate(role);
+    // Re-evaluar el vencimiento al volver al primer plano.
+    const onFocus = () => evaluate(role);
+    // Flush del último activity a localStorage al ir a background / descargar
+    // la página → el idle-on-reopen es preciso aunque el SO móvil mate la
+    // pestaña sin previo aviso (reduce la latencia del throttle a ~0 al cerrar).
+    const flush = () => {
+      persistActivity(lastActivityRef.current);
+      lastPersistRef.current = lastActivityRef.current;
     };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
+    const onVisChange = () => {
+      if (document.visibilityState === 'visible') evaluate(role);
+      else flush();
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pagehide', flush);
     return () => {
       clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisChange);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pagehide', flush);
     };
   }, [role, evaluate]);
 
