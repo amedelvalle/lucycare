@@ -864,3 +864,61 @@ claves permitidas).
   estas 2 RPCs (KPI cards + ranking + rango de fechas). **No abrir sin
   autorización.** V2: series temporales/gráficos, filtros geo/especialidad en la
   UI, export.
+
+---
+
+# Fase 3 — PR-B UI LIVE (post-#247)
+
+> **HEAD `7d6de47` · PRs #1–#247 · migración `s7_53` · `main == origin/main`.**
+> **Analytics Fase 3 COMPLETO: backend (PR-A `s7_53`) + UI (PR-B).** UI-only,
+> sin backend/SQL/RPC nuevos.
+
+## F3B.1 — Qué quedó implementado (PR #247, UI-only)
+
+Pantalla interna **read-only** **`/admin/analytics`** en LucyAdmin que consume
+las RPCs existentes de `s7_53` (`admin_conversion_summary` +
+`admin_doctor_conversion_ranking`). **No** toca SQL/migraciones/RPC/backend/RLS/
+auth/`database.types.ts` (las firmas ya estaban de #245).
+
+- **Servicio** `src/services/adminConversion.service.ts` — consumo tipado de las
+  2 RPCs (`getConversionSummary` + `getDoctorConversionRanking`).
+- **Página** `src/pages/admin/AdminAnalyticsPage.tsx` — filtro de **rango de
+  fechas** (default **últimos 30 días**, botón Aplicar, tolerante a fechas
+  invertidas) + KPI cards + tabla de ranking; estados **loading/error/empty**.
+- **Ruta** `analytics` bajo `/admin` (**`AdminOnlyRoute`** + `AdminLayout`) +
+  **NavLink "Analítica"** (`ri-bar-chart-2-line`).
+
+**KPIs (3 grupos):**
+- **Reservas:** total · desde directorio · manuales · seguimiento · completadas
+  · canceladas · no-show · pendientes.
+- **Conversión / actividad:** lista de espera (+ estados) · afiliaciones (+
+  estados) · reclamos · reseñas (+ visibles + rating promedio).
+- **Oferta médica:** médicos · publicados · con agenda · verificados ·
+  listed_only · reclamados.
+- **Ranking (tabla):** médico · slug · especialidad · reservas · directorio ·
+  lista de espera · reseñas · rating.
+
+## F3B.2 — Privacidad (verificada)
+
+La UI **solo pinta lo que devuelven las RPCs agregadas**: conteos/promedios +
+datos **públicos** del médico (nombre/slug/especialidad). **Nunca** pacientes,
+teléfonos, emails, documentos, `appointment_id`/`consultation_id`, mensajes de
+waitlist/afiliación, comentarios de reseñas, diagnósticos/recetas/medicamentos/
+notas, ni `license_number`/JVPM/NUE. Defensa doble: server-side (las RPCs no
+devuelven PII) + la UI no pide otros campos. **Sin Analytics de cliente / sin
+`track()`.**
+
+## F3B.3 — Validación
+
+- `npx tsc --noEmit` ✅ exit 0 · `npm run build` ✅ exit 0.
+- **Preview con sesión admin real** (`50378056365`/`123456`): `/admin/analytics`
+  renderiza datos reales (últimos 30 días), NavLink presente, filtro re-consulta
+  (rango 2099 → total 0 + empty state), **tabla de ranking sin PII**, **0
+  errores de consola**, desktop + **móvil 360 sin overflow** (tabla con scroll
+  interno).
+
+## F3B.4 — Pendiente NO iniciado (V2, no abrir sin autorización)
+
+Series temporales/gráficos · filtros geo/especialidad en la UI (las RPCs ya los
+aceptan) · export · Analytics Farma (medicamentos) — **frente aparte, no
+mezclar**.
