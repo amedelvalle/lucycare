@@ -21,6 +21,7 @@
  *  6. summary: reviews total + visibles + avg_rating.
  *  7. summary: supply snapshot presente/consistente.
  *  8. summary: filtro por especialidad (misma → 6; otra → 0).
+ *  8b. summary: filtro por departamento y municipio (IDs TEXT; coincide → 6; otro → 0).
  *  9. summary: 0 PII en el payload.
  * 10. ranking: fila del médico fixture con conteos correctos.
  * 11. ranking: 0 PII (solo claves permitidas).
@@ -73,6 +74,7 @@ const patientCli = mk();
 
 const created = { appointments: [], waitlist: [], affiliations: [], reviews: [], auditIds: [], patient: null, doctor: null, clinic: null, authUser: null };
 let PROFILE = null, CLINIC = null, DOCTOR = null, PATIENT = null, SPEC = null, OTHER_SPEC = null;
+let DEPT = null, MUNI = null, OTHER_DEPT = null, OTHER_MUNI = null;
 
 console.log('═══ SMOKE s7_53 (dashboard de conversiones) ═══\n');
 
@@ -84,11 +86,22 @@ try {
     if (prof?.role !== 'admin') throw new Error(`La cuenta ${ADMIN_PHONE} no es admin (role=${prof?.role})`);
   }
 
-  // Dos especialidades distintas (para el test de filtro).
+  // Dos especialidades distintas (uuid) para el test de filtro.
   {
     const { data: specs, error } = await admin.from('specialties').select('id').limit(2);
     if (error || !specs || specs.length < 2) throw new Error('no hay 2 especialidades para el fixture');
     SPEC = specs[0].id; OTHER_SPEC = specs[1].id;
+  }
+
+  // Geo: departamento/municipio (IDs TEXT) coincidentes + otros no coincidentes.
+  {
+    const { data: depts, error: dErr } = await admin.from('departments').select('id').limit(2);
+    if (dErr || !depts || depts.length < 2) throw new Error('no hay 2 departamentos para el fixture geo');
+    DEPT = depts[0].id; OTHER_DEPT = depts[1].id;
+    const { data: m1 } = await admin.from('municipalities').select('id').eq('department_id', DEPT).limit(1).single();
+    const { data: m2 } = await admin.from('municipalities').select('id').eq('department_id', OTHER_DEPT).limit(1).single();
+    if (!m1?.id || !m2?.id) throw new Error('no hay municipios para el fixture geo');
+    MUNI = m1.id; OTHER_MUNI = m2.id;
   }
 
   // Médico fixture aislado (auth user throwaway → clínica → doctor).
@@ -98,7 +111,7 @@ try {
     PROFILE = cu.user.id; created.authUser = PROFILE;
     await admin.from('profiles').update({ full_name: 'S753 Doctor Fixture', role: 'patient' }).eq('id', PROFILE);
 
-    const { data: clinic, error: ce } = await admin.from('clinics').insert({ name: 'S753 Clínica Fixture', owner_id: PROFILE }).select('id').single();
+    const { data: clinic, error: ce } = await admin.from('clinics').insert({ name: 'S753 Clínica Fixture', owner_id: PROFILE, department_id: DEPT, municipality_id: MUNI }).select('id').single();
     if (ce) throw new Error('clinic: ' + ce.message);
     CLINIC = clinic.id; created.clinic = CLINIC;
 
@@ -231,6 +244,23 @@ try {
     const { data: sOther } = await adminCli.rpc('admin_conversion_summary', { p_date_from: FROM, p_date_to: TO, p_specialty_id: OTHER_SPEC });
     if (sSame?.bookings?.total === 6 && sOther?.bookings?.total === 0) ok('8 filtro especialidad (misma→6, otra→0)');
     else ko(`8 filtro especialidad falló: misma=${sSame?.bookings?.total}, otra=${sOther?.bookings?.total}`);
+  }
+
+  // 8b. filtro por departamento y municipio (IDs TEXT)
+  {
+    const totalFor = async (args) => {
+      const { data, error } = await adminCli.rpc('admin_conversion_summary', { p_date_from: FROM, p_date_to: TO, ...args });
+      if (error) throw new Error('geo summary error: ' + error.message);
+      return data?.bookings?.total;
+    };
+    const deptMatch = await totalFor({ p_department_id: DEPT });
+    const deptMiss = await totalFor({ p_department_id: OTHER_DEPT });
+    const muniMatch = await totalFor({ p_municipality_id: MUNI });
+    const muniMiss = await totalFor({ p_municipality_id: OTHER_MUNI });
+    if (deptMatch === 6 && deptMiss === 0) ok('8b filtro departamento (coincide→6, otro→0)');
+    else ko(`8b filtro departamento falló: match=${deptMatch}, miss=${deptMiss}`);
+    if (muniMatch === 6 && muniMiss === 0) ok('8b filtro municipio (coincide→6, otro→0)');
+    else ko(`8b filtro municipio falló: match=${muniMatch}, miss=${muniMiss}`);
   }
 
   // 9. 0 PII en el payload del summary

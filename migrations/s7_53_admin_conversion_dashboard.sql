@@ -44,8 +44,8 @@ CREATE OR REPLACE FUNCTION admin_conversion_summary(
   p_date_from       date DEFAULT NULL,
   p_date_to         date DEFAULT NULL,
   p_specialty_id    uuid DEFAULT NULL,
-  p_department_id   uuid DEFAULT NULL,
-  p_municipality_id uuid DEFAULT NULL
+  p_department_id   text DEFAULT NULL,   -- clinics/departments.id son TEXT (IDs cortos, ej. 'SS')
+  p_municipality_id text DEFAULT NULL    -- clinics/municipalities.id son TEXT (ej. 'SS-12')
 )
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -225,9 +225,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION admin_conversion_summary(date, date, uuid, uuid, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION admin_conversion_summary(date, date, uuid, uuid, uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION admin_conversion_summary(date, date, uuid, uuid, uuid) TO authenticated;
+REVOKE ALL ON FUNCTION admin_conversion_summary(date, date, uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION admin_conversion_summary(date, date, uuid, text, text) FROM anon;
+GRANT EXECUTE ON FUNCTION admin_conversion_summary(date, date, uuid, text, text) TO authenticated;
 
 -- ───────────────────────────────────────────────────────────
 -- 2. admin_doctor_conversion_ranking — ranking por médico
