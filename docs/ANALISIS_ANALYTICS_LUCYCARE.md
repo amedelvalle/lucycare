@@ -538,3 +538,156 @@ Docs-only. **No** se toca: código · runtime · `track()` · paquetes/
 migraciones · `database.types.ts` · rutas privadas · SEO/sitemap/robots/OG/
 middleware · branding · performance. **Ninguna medición nueva implementada;
 ningún dashboard DB abierto.**
+
+---
+
+# Fase 3 — PR-0 · Dashboard interno de conversiones en LucyAdmin (diseño read-only)
+
+> **Estado:** diseño docs-only. **No autoriza RPC/UI.** Base: HEAD `82f6350` ·
+> PRs #1–#242 · `s7_52`. Es el camino elegido en PR-0B (§F2B.5): medir la
+> **conversión dura** desde DB, agregada, sin eventos de cliente ni terceros.
+> Mapeo verificado contra `src/types/database.types.ts` + servicios.
+
+## F3.1 — Inventario de tablas/columnas útiles (verificado)
+
+| Tabla | Columnas útiles | PII / prohibido exponer |
+|---|---|---|
+| `appointments` | `created_at`, `doctor_id`, `clinic_id`, `service_id`, **`source`** (enum), `status_id`→`appointment_statuses`, `price`, `payment_status`, `start_time` | `patient_id`, `notes`, `internal_notes` |
+| `appointment_statuses` | `name`, `display_name`, **`funnel_order`**, **`is_final`**, **`affects_revenue`** | — (catálogo) |
+| `waitlist_entries` | `status` (`pending`/`contacted`/`cancelled`), `created_at`, `doctor_id`, `contacted_at` | `patient_name`, `patient_phone`, `patient_message` |
+| `doctor_affiliation_requests` | `status` (`pending`/`in_review`/`approved`/`rejected`/`expired`), `created_at`, `specialty_id`, `department_id`, `municipality_id` | `full_name`, `phone`, `email`, `license_number`, `message` |
+| `doctors` | `lucy_status`, `is_published`, `booking_enabled`, `is_verified`, `slug`, `specialty_id`, `clinic_id`, `tos_accepted_at`, `created_at` | `license_number` |
+| `clinics` | `department_id`, `municipality_id` (geo vía join) | `phone`, `address_line` |
+| `reviews` | `rating`, `created_at`, `is_visible`, `doctor_id` | `patient_profile_id`, `comment` (texto libre) |
+| `specialties`/`departments`/`municipalities` | `id`→`name` (etiquetas) | — |
+
+**Hallazgos que condicionan el diseño:**
+1. **`appointment_source = manual | lucy_directorio | lucy_seguimiento`** →
+   `lucy_directorio` = reserva **desde el directorio** (KPI comercial central).
+2. **`waitlist_entries` y `doctor_affiliation_requests` NO están como tablas en
+   `database.types.ts`** (solo como firmas de RPC) → el dashboard va **por RPC
+   `SECURITY DEFINER`**, no por `select` directo; la regen de tipos solo agrega
+   las **firmas** de las RPC nuevas.
+3. **`appointment_statuses` es tabla de datos, no enum:** los nombres de estado
+   (scheduled/completed/cancelled/no_show…) viven en las **filas** → clasificar
+   el embudo **genéricamente** con `is_final`/`affects_revenue`/`funnel_order`;
+   el **Paso 0 del PR funcional** debe `SELECT` esas filas para confirmar el set
+   real.
+
+## F3.2 — Métricas posibles
+
+Reservas (creadas · por `source` · por clase de estado · por médico/especialidad/
+geo) · lista de espera (enviadas · por estado) · afiliaciones (enviadas · por
+estado) · reclamos (`tos_accepted_at`/`lucy_status`) · oferta/supply (listed_only/
+claimed/publicados/con agenda/verificados) · reseñas (recibidas · rating avg) ·
+ranking de médicos · evolución temporal.
+
+## F3.3 — Métricas V1 (aceptadas)
+
+1. reservas creadas en el rango;
+2. reservas por `source` (esp. `lucy_directorio`);
+3. reservas por clase de estado (completadas/canceladas/no-show/otras) vía flags
+   de `appointment_statuses`;
+4. lista de espera enviada + por estado;
+5. afiliaciones enviadas + por estado;
+6. perfiles reclamados (`tos_accepted_at` / `lucy_status != listed_only`);
+7. snapshot de oferta: listed_only · claimed · publicados · con agenda ·
+   verificados (actual, sin rango);
+8. reseñas recibidas + rating promedio;
+9. ranking Top-N de médicos por reservas y reservas de directorio.
+
+**FUERA de V1 (aceptado):** ingresos/`price` (LucyCare **no cobra en línea** →
+no es revenue real) · series temporales · gráficos · export · embudo por
+paciente · filtros avanzados · texto de reseñas/mensajes de waitlist/afiliación ·
+cualquier dato clínico/PII.
+
+## F3.4 — Filtros / dimensiones
+
+- **V1:** **rango de fechas** (`created_at`), único filtro.
+- **V1.5 (barato, join directo — opcional en el mismo PR):** especialidad +
+  departamento/municipio (IDs estructurados ya presentes).
+- **V2:** por médico, por estado, `reservable vs listed_only`, granularidad
+  temporal.
+- Diseñar las RPCs con parámetros **opcionales** desde V1 (`p_specialty_id?`,
+  `p_department_id?`…) aunque la UI V1 solo exponga el rango → evita re-migrar.
+
+## F3.5 — Privacidad (vinculante)
+
+- **Solo agregados/conteos.** Ninguna fila individual de paciente sale de la RPC.
+- **Nunca exponer:** `patient_id` · nombre/teléfono/email/documento de paciente ·
+  `patient_message`/`comment`/`message` (texto libre) · datos clínicos
+  (diagnósticos/recetas/notas/vitales) · `license_number`/JVPM/NUE · PII del lead.
+- **Permitido:** conteos, tasas, promedios, `doctor_slug`/nombre del médico (ya
+  públicos), etiquetas de especialidad/depto/municipio, nombres de estado.
+- **Re-identificación por celda chica:** los desgloses no bajan de agregados por
+  médico/estado; no se muestra ninguna fila de paciente → sin necesidad de
+  k-anonymity en V1. El texto libre nunca entra en un agregado.
+
+## F3.6 — Propuesta de RPCs (`SECURITY DEFINER`, gate `is_admin()`)
+
+Patrón espejo de `admin_list_waitlist` (`s7_41`): definer, `is_admin()`→`P0001`,
+anon sin EXECUTE, **solo lectura/agregación**, sin escritura, sin audit.
+
+- **`admin_conversion_summary(p_date_from, p_date_to, p_specialty_id?,
+  p_department_id?, p_municipality_id?)`** → **JSON** con secciones: reservas
+  (total + por source + por clase de estado), waitlist (total + por estado),
+  afiliaciones (total + por estado), reclamos (total), oferta (snapshot),
+  reseñas (total + avg). Una llamada = todos los KPIs.
+- **`admin_doctor_conversion_ranking(p_date_from, p_date_to, p_limit,
+  p_specialty_id?)`** → por médico: `doctor_slug`, nombre, especialidad,
+  reservas totales, reservas de directorio, waitlist, reseñas/avg. Ordenado por
+  reservas.
+
+**Granularidad:** **2 RPCs** en V1 (summary + ranking); **series temporales = 3ª
+RPC en V2** (`admin_conversion_timeseries`). 2 RPCs pequeñas > una gigante
+(checks más simples; el ranking pagina aparte). **Requiere:** migración `s7_53`
++ actualizar `database.types.ts` (firmas de las 2 RPCs). **No** crea tablas,
+**no** toca RLS existente, **no** toca datos.
+
+## F3.7 — UI
+
+- Ruta **`/admin/analytics`** bajo `AdminOnlyRoute` + `AdminLayout` + NavLink
+  "Analítica" (sistema de diseño; cards `bg-white rounded-2xl border p-5`,
+  colores semánticos; drawer móvil #130).
+- **V1:** selector de **rango de fechas** + grilla de **KPI cards** (reservas +
+  source, waitlist, afiliaciones, reclamos, oferta, reseñas) + **tabla de
+  ranking Top-N**. Estados carga/vacío/error (sin detalle técnico). Mobile-first.
+- **V2:** gráficos de evolución, filtros especialidad/geo/estado, export.
+
+## F3.8 — Validaciones (para el PR funcional)
+
+- **Backend:** `check-s7_53.mjs` (RPCs existen, gate `is_admin`, anon/doctor/
+  paciente/asistente **bloqueados** `P0001`, salida solo agregada) +
+  `_smoke-s7_53.mjs` con **fixtures aisladas** (conteos cuadran; **0 PII en el
+  output**; cleanup **0 residuales**; **jamás Katherine ni datos reales**).
+- **Regla del smoke:** afirmar que **ningún campo del payload** contiene nombre/
+  teléfono/email/documento/texto libre/clínico.
+- **Frontend:** `tsc`+`build` verdes; preview admin real; **médico/asistente/
+  paciente/anónimo NO acceden** a `/admin/analytics`; móvil 360/390/430 sin
+  overflow; 0 errores de consola.
+
+## F3.9 — Recomendación del primer PR funcional (A/B)
+
+Partir en A/B (patrón F4-3 UI PR A/B, Onboarding PR-1/PR-2):
+
+- **PR-A (backend, primero):** migración `s7_53` con las **2 RPCs** +
+  `database.types.ts` + `check`/`smoke`. **Sin UI.** El owner aplica el SQL, el
+  dev corre los checks. **Precedido de un Paso 0 read-only** que confirme contra
+  la DB: (a) nombres reales de `appointment_statuses` y su clasificación
+  (completadas/canceladas/no-show vía `is_final`/`affects_revenue`/
+  `funnel_order`); (b) existencia/uso real de `source='lucy_directorio'`; (c)
+  disponibilidad real de datos para ranking y agregados.
+- **PR-B (UI, después):** `/admin/analytics` read-only consumiendo las RPCs.
+  Frontend-only, sin migración.
+
+**Alcance mínimo V1** = las 9 métricas de F3.3 + filtro de fechas. **NO**
+ingresos, series temporales, filtros avanzados ni export (todo V2). Cerrar y
+validar el backend agregado (donde vive el riesgo de privacidad) **antes** de la
+UI.
+
+## F3.10 — Qué NO se implementa en este PR-0
+
+Docs-only. **No** se toca: código · runtime · DB · SQL · migraciones ·
+`database.types.ts` · UI · rutas · RPC · Analytics de cliente · `track()` ·
+herramientas externas · Vercel config · SEO/sitemap/robots/OG/middleware ·
+branding · performance. **Ningún dashboard/RPC/UI abierto.**
