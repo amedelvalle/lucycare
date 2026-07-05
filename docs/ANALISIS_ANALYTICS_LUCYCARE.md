@@ -778,3 +778,89 @@ Top-N). **`s7_53` debe:** 2 RPCs `SECURITY DEFINER`/`is_admin()` con **solo
 agregados y 0 PII**; claims desde `audit_log`; clasificación de estados por
 flags+name (F3P0.2); manejar sources/estados ausentes como 0; check/smoke con
 fixtures aisladas afirmando **0 PII en el payload**.
+
+---
+
+# Fase 3 — PR-A backend LIVE (post-#245 / `s7_53`)
+
+> **HEAD `63cf393` · PRs #1–#245 · migración `s7_53` APLICADA en Supabase ·
+> `main == origin/main`.** Backend del dashboard de conversiones **live y
+> validado end-to-end** (check + smoke verdes contra la DB aplicada). **UI
+> (PR-B) NO iniciada.**
+
+## F3A.1 — Qué quedó implementado (PR #245, backend-only)
+
+Migración **`migrations/s7_53_admin_conversion_dashboard.sql`** con **dos RPCs
+`SECURITY DEFINER STABLE`**, gate `is_admin()` (→ **P0001** para anon/médico/
+asistente/paciente), `SET search_path = public`, `REVOKE` PUBLIC/anon + `GRANT
+EXECUTE` a `authenticated`. **Solo lectura/agregación:** no escriben, no crean
+tablas, no tocan RLS ni datos. Firmas en `database.types.ts`.
+
+**`admin_conversion_summary(p_date_from date, p_date_to date, p_specialty_id
+uuid, p_department_id text, p_municipality_id text) → jsonb`**
+- **Reservas:** total + `by_source` (`manual`/`lucy_directorio`/
+  `lucy_seguimiento`, **fuentes ausentes = 0**, claves fijas) + `by_status`
+  (completadas/canceladas/no_show/pendientes).
+- **Waitlist** por estado · **afiliaciones** por estado · **reclamos** (ver
+  F3A.3) · **oferta/supply** snapshot (total + `by_lucy_status` + published +
+  with_agenda + verified, **sin filtro de fecha**) · **reseñas** (total /
+  visibles / `avg_rating`).
+
+**`admin_doctor_conversion_ranking(p_date_from date, p_date_to date, p_limit
+int, p_specialty_id uuid)`** → por médico: `doctor_id`, `doctor_slug`,
+`doctor_name` (público), `specialty_name`, `bookings_total`,
+`bookings_directorio`, `waitlist_total`, `reviews_total`, `avg_rating`;
+orden por reservas; `LIMIT` acotado (1..200).
+
+## F3A.2 — Clasificación de estados (por flags + `name`)
+
+- completadas = `affects_revenue = true`
+- canceladas = `is_final AND NOT affects_revenue AND name = 'cancelada'`
+- no-show = `is_final AND NOT affects_revenue AND name = 'no_asistio'`
+- pendientes/en curso = `NOT is_final`
+
+## F3A.3 — Reclamos desde `audit_log`
+
+`claims` cuenta `audit_log WHERE new_data->>'edited_via' = 'claim_self_service'`
+por `created_at` en el rango — **NO** `doctors.tos_accepted_at` (que está en 0).
+
+## F3A.4 — Corrección de tipos de los filtros geo (hallazgo de la revisión)
+
+En la revisión pre-SQL se detectó que **`clinics.department_id`/
+`municipality_id` y `departments`/`municipalities.id` son `TEXT`** (IDs cortos,
+ej. `'SS'`/`'SS-12'`), **no `uuid`**. La firma se corrigió a
+`p_department_id text` / `p_municipality_id text` (una llamada con filtro geo y
+params `uuid` habría fallado por `text = uuid`). `p_specialty_id` sigue **`uuid`**
+(`specialties.id`/`doctors.specialty_id` sí son uuid). `database.types.ts` no
+cambió (los `Args` ya eran `string`, que cubre `text`).
+
+## F3A.5 — Privacidad (verificada)
+
+Ambas RPCs devuelven **solo agregados/conteos/promedios**. La salida NO contiene
+`patient_id`, nombres/teléfonos/emails/documentos de paciente, mensajes de
+waitlist/afiliación, comentarios de reseñas, notas, datos clínicos ni
+`license_number`/JVPM/NUE. Lo único identificable son datos **ya públicos** del
+médico (`doctor_slug`, nombre, especialidad). El smoke lo afirma explícitamente
+(serializa el payload y falla si aparece PII de las fixtures; ranking solo con
+claves permitidas).
+
+## F3A.6 — Verificación (contra la DB aplicada)
+
+- **`node scripts/check-s7_53.mjs`** ✅ — ambas RPCs existen y rechazan a
+  no-admin (P0001).
+- **`node scripts/_smoke-s7_53.mjs`** ✅ **32/32** — conteos por source,
+  clasificación de estados, waitlist, afiliaciones, **claims desde audit_log**,
+  reviews, supply, **filtro por especialidad**, **filtro por departamento y
+  municipio (8b, IDs TEXT)**, **0 PII** (summary y ranking), ranking del médico
+  fixture, **no-admin bloqueado**, **cleanup 0 residuales**. Fixtures aisladas
+  (médico fixture propio + ventana año 2099); jamás Camilo/Katherine/datos
+  reales. *(Nota: el primer run destapó un trigger `BEFORE INSERT` de
+  disponibilidad en `appointments`; se corrigió el harness dando
+  `availability_rules` al médico fixture — no afectó la migración ni las RPCs.)*
+
+## F3A.7 — Pendiente NO iniciado
+
+- **PR-B UI** — `/admin/analytics` (bajo `AdminOnlyRoute`) read-only que consume
+  estas 2 RPCs (KPI cards + ranking + rango de fechas). **No abrir sin
+  autorización.** V2: series temporales/gráficos, filtros geo/especialidad en la
+  UI, export.
