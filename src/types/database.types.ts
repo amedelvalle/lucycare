@@ -1711,6 +1711,35 @@ export type Database = {
         Args: { user_phone: string }
         Returns: number
       }
+      admin_conversion_summary: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_specialty_id?: string
+          p_department_id?: string
+          p_municipality_id?: string
+        }
+        Returns: Json
+      }
+      admin_doctor_conversion_ranking: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_limit?: number
+          p_specialty_id?: string
+        }
+        Returns: {
+          doctor_id: string
+          doctor_slug: string | null
+          doctor_name: string | null
+          specialty_name: string | null
+          bookings_total: number
+          bookings_directorio: number
+          waitlist_total: number
+          reviews_total: number
+          avg_rating: number | null
+        }[]
+      }
       clinic_list_waitlist: {
         Args: { p_doctor_id: string; p_status?: string; p_limit?: number; p_offset?: number }
         Returns: {
