@@ -22,12 +22,13 @@ Supabase; DNS en Cloudflare). `gh` CLI autenticado.
 
 ## 1. Estado técnico actual (2026-07-03)
 
-- **HEAD de `main`:** `4ca855b` (*style(branding): splash inicial de index.html
-  hacia la paleta oficial LucyCare … (#237)*).
-- **PRs mergeados:** **#1–#237** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
+- **HEAD de `main`:** `9eba653` (*fix(seguridad): el idle-logout sobrevive a
+  reapertura/kill de pestaña (persistencia) (#239)*).
+- **PRs mergeados:** **#1–#239** (incluye #222 PR-1 + #224 Perf PR-1 + #226/#227
   SEO Home OG + #229 PR-2a + #231 PR-2b-1 + #233 PR-2b-2 + #235 DoctorAvatar +
-  **#237 splash** ; #221/#223/#225/#228/#230/#232/#234/#236 docs-only).
-  **Rebrand público 100% COMPLETO** + splash de bootstrap on-brand.
+  **#237 splash** + **#239 seguridad de sesión móvil** ; #221/#223/#225/#228/#230/
+  #232/#234/#236/#238 docs-only). **Rebrand público 100% COMPLETO** + splash de
+  bootstrap on-brand + **idle-logout persistente (§7)**.
 - **Migraciones aplicadas en Supabase:** hasta **`s7_52`** (última = slugs
   Fase 1, `doctors.slug`; ver `docs/ANALISIS_SLUGS_SEO.md`).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
@@ -369,7 +370,57 @@ favicon · archivos Google.
 
 ---
 
-## 7. Pendientes generales NO iniciados
+## 7. Seguridad de sesión móvil — idle-logout persistente (#239) · CERRADO
+
+**PR:** **#239** (`fix(seguridad): el idle-logout sobrevive a reapertura/kill de
+pestaña (persistencia)`). Un solo archivo: `src/hooks/useIdleLogout.ts`
+(+108/−11). **Frontend-only · SIN DB/SQL/migraciones (`s7_52` sin cambios).**
+Continúa la seguridad de sesión de **#160** (SessionGuard + `useIdleLogout` +
+`sessionPolicy` + `SessionTimeoutModal`).
+
+**Gap que cierra:** en #160 el reloj de inactividad vivía **solo en memoria**
+(`useRef`) y se reiniciaba en **cada montaje**. En móvil, si el SO mata/reabre
+la pestaña en frío, el idle **no atrapaba** la sesión reabierta — solo la cerraba
+el **tope absoluto** (8/12/24 h). Ahora el idle **sobrevive** a reload /
+reapertura / kill de pestaña.
+
+**Cómo (sin cambiar tiempos de política):**
+- Persiste **SOLO el timestamp** de última actividad en `localStorage` (clave
+  **`lc_last_activity`**, epoch ms). **Sin PII, sin datos clínicos.**
+- El idle se **hidrata** del valor persistido al montar (`persisted ?? now`).
+- `refresh()` ancla **`actividad >= last_sign_in_at`**: un login nuevo reinicia
+  el idle; una restauración en frío lo **conserva** (independiente de
+  `SIGNED_IN` vs `INITIAL_SESSION`).
+- Reset **SÍNCRONO** en `SIGNED_IN` → evita el falso logout por la carrera con
+  el tick async (bug detectado y corregido en la validación).
+- Persist **throttled** (15 s) en actividad; **flush** en `visibilitychange→
+  hidden` / `pagehide`; persist en `keepAlive`; **clear en logout y
+  `SIGNED_OUT`**; guarda contra timestamps futuros (clock skew).
+- La persistencia **solo puede acortar** la sesión, nunca extenderla (el valor
+  leído se clampa a `now`; el tope absoluto sigue anclado a `last_sign_in_at`).
+
+**Tiempos de política (NO cambiaron):** admin 15m/8h · médico/asistente 30m/12h
+· paciente 60m/24h · desconocido → **estricto**. Aviso 90s. `sessionPolicy.ts`
+intacto.
+
+**Validación runtime en producción `lucycare.app` (navegador real, cuenta demo
+Camilo `50378627694`/OTP `123456`):** login OK → **`/panel` con sesión** →
+`lc_last_activity` presente y **solo epoch ms** (sin PII) → **reload NO borra ni
+reinicia** la clave (valor idéntico) → **logout limpia `lc_last_activity` y los
+tokens `sb-*`** → **`/panel` sin sesión redirige a `/`** → **0 errores de
+consola**; el **bundle productivo contiene el fix**. *No se reprodujo el idle
+vencido de 30 min (fuera del alcance de la validación runtime mínima); el
+comportamiento clave —persistencia que sobrevive al reload + limpieza en logout—
+quedó verificado en vivo por el dev.*
+
+**NO tocó:** `sessionPolicy.ts` · tiempos de política · tope absoluto · modal
+90s · guards/rutas/layouts · Supabase config · DB/SQL/migraciones/
+`database.types.ts` · Analytics · SEO · sitemap · robots · favicon · archivos
+Google · branding · performance.
+
+---
+
+## 8. Pendientes generales NO iniciados
 
 1. **Revisar datos iniciales** de Search Console + Vercel Analytics + Speed
    Insights **antes** de abrir nuevos frentes SEO/Analytics.
@@ -382,8 +433,10 @@ favicon · archivos Google.
    branded 1200×630.
 6. **Slugs+SEO Fase 4** — landings por especialidad/ubicación.
 7. **Favicon follow-up** — PNG (apple-touch/192/512) + `site.webmanifest`.
-8. **Seguridad de sesión / inactividad** — pendiente histórico; no abrir sin
-   instrucción.
+8. **Seguridad de sesión / inactividad** — base #160 + **idle persistente #239
+   ✅ live** (ver §7). Follow-ups no iniciados: notificación al canal anterior,
+   re-auth reforzada, herramienta formal de recuperación sin sesión. No abrir
+   sin instrucción.
 9. **Recuperación de acceso sin sesión** — diferido.
 10. **Credenciales / señales de confianza / claim profile** (`doctor_credentials`
     F1–F5) — backlog, cuidando privacidad (nunca mostrar JVPM/NUE; número
@@ -406,7 +459,7 @@ favicon · archivos Google.
 
 ---
 
-## 8. Reglas operativas para la nueva ventana (vinculantes)
+## 9. Reglas operativas para la nueva ventana (vinculantes)
 
 - **Un solo frente abierto a la vez.** No abrir otro hasta cerrar
   formalmente el anterior.
