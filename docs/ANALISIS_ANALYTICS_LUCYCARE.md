@@ -428,3 +428,113 @@ Docs-only. **No** se toca: código funcional · runtime · `track()` · paquetes
 `package.json`/lockfile · Vercel config · React · middleware · DB · SQL ·
 migraciones · `database.types.ts` · rutas privadas · SEO/sitemap/robots/
 favicon/OG · branding · performance. **Ningún evento implementado todavía.**
+
+---
+
+# Fase 2 — PR-0B · Alternativas sin Vercel Pro (análisis, decisión de camino)
+
+> **Estado:** análisis docs-only. **Gate operativo RESUELTO (2026-07-04):**
+> Vercel básico (Hobby) funciona y muestra tráfico/pageviews/países/
+> dispositivos/páginas/rendimiento, pero **los Custom Events (`track()`)
+> requieren plan Pro y NO están disponibles**. Base: HEAD `a36d5e9` ·
+> PRs #1–#241 · `s7_52`. No reabre Q1–Q5. Decide el camino de medición **sin
+> asumir Vercel Pro**. Nada implementado.
+
+## F2B.1 — Qué YA tenemos con Vercel básico (live, gratis, cookieless)
+
+Queda como **fuente de tráfico general** (confirmado en el dashboard + código):
+visitantes · páginas vistas · **bounce rate** · **países** · **sistemas
+operativos/dispositivos** · **páginas principales** (ranking de tráfico por
+`/doctor/:slug`) · **fuente/referrer** a nivel de pageview · **Speed Insights**
+(Core Web Vitals). Responde *"¿el directorio atrae tráfico y qué perfiles se
+ven más?"* sin costo.
+
+## F2B.2 — Qué NO cubre sin Custom Events
+
+Interacciones dentro de la página (no cambian la URL): búsquedas · filtros ·
+clics en tarjetas · clic en "Reservar" (intención) · apertura del modal de
+lista de espera · compartir · afiliación iniciada · claim iniciado/completado.
+*(El `doctor_profile_view` se ve parcial vía pageview de `/doctor/*`, pero sin
+las dimensiones `is_bookable`/`specialty` ni el origen directorio/búsqueda.)*
+
+## F2B.3 — Qué SÍ resolvemos desde DB (conversión dura, US$0, sin PII externa)
+
+Ya en la base, medible por consulta read-only:
+
+| Métrica | Fuente en DB |
+|---|---|
+| Reservas creadas | `appointments` (`created_at`, `source`) |
+| Reservas completadas / no-show / canceladas | `appointments` + `appointment_statuses` |
+| Lista de espera enviada | `waitlist_entries` (`created_at`, `status`) |
+| Afiliaciones enviadas | `doctor_affiliation_requests` (`status`) |
+| Perfiles reclamados | `doctors.lucy_status` (listed_only→claimed) + `tos_accepted_at` + `audit_log` (`edited_via='claim_self_service'`) |
+| Reseñas | `reviews` (`score`, `created_at`) |
+| Médicos con más conversión | JOIN por `doctor_id` |
+
+**Lo comercialmente crítico** (reservas/leads/reclamos y ranking por médico)
+**no necesita eventos de cliente**. Lo único que la DB NO ve es el **abandono**
+(quién buscó/clickeó sin convertir) — eso es lo que justificaría (o no) una
+herramienta de eventos.
+
+## F2B.4 — Comparación de opciones
+
+| Criterio | Vercel Pro | Plausible | PostHog EU (sin replay/cookies) | Dashboard interno DB |
+|---|---|---|---|---|
+| Costo operativo | ~US$20/usuario/mes (verificar) | Cloud ~US$9/mes (o self-host gratis) | Free tier (verificar límites/EU) | **US$0** |
+| Complejidad | Baja | Baja | Media-alta | Media |
+| Privacidad | Alta (cookieless) | Alta (cookieless, EU) | Media (más superficie) | **Máxima** (no sale de LucyAdmin) |
+| Cookies/banner | No | No | Config a "no" (disciplina) | No aplica |
+| Riesgo PII | Bajo | Bajo | Medio (autocapture) | **Nulo** |
+| Dashboard | Muy alto (integrado) | Alto (simple) | Muy alto (embudos) | Medio (propio) |
+| Utilidad comercial | Media (comportamiento) | Media | Alta (embudos) | **Alta** (conversión dura + ranking) |
+| Gate/bloqueo | pagar Pro | herramienta nueva | herramienta nueva + DPA salud | ninguno |
+
+**Lectura:** Vercel **Pro** pagaría por resolver **solo** el comportamiento,
+que **Plausible da más barato** (o gratis self-host) sin atarnos más a Vercel.
+**PostHog EU** es el más potente (embudos) pero el de mayor superficie de
+privacidad en salud (apagar cookies/replay/autocapture + DPA). El **dashboard
+interno DB** tiene la mejor relación valor/costo/riesgo.
+
+## F2B.5 — Decisión de camino (recomendación)
+
+1. **NO pagar Vercel Pro ahora** — el básico ya cubre lo que Pro-sin-eventos
+   daría; Custom Events no valen el costo todavía.
+2. **Primer paso funcional = dashboard interno de conversiones en LucyAdmin
+   (Fase 3), read-only sobre DB** — mayor utilidad comercial, US$0, sin gate,
+   sin PII externa; cruza gratis con el ranking de páginas de Vercel.
+3. **Plausible = plan B FUTURO** para eventos de comportamiento/abandono, **si**
+   tras el dashboard interno todavía faltara entender la interacción previa a
+   conversión (cookieless, barato/self-host, EU — más limpio que Vercel Pro).
+4. **PostHog EU = diferido** (mayor complejidad + superficie de privacidad;
+   solo si se necesitan embudos multi-paso reales).
+5. **Vercel Pro = diferido** salvo que más adelante tenga sentido por analytics
+   unificado y el costo deje de ser objeción.
+
+**En una línea:** medir primero la **conversión dura** donde ya la tenemos
+(**DB**, gratis, sin riesgo); los eventos de comportamiento se agregan después
+con **Plausible** solo si el dashboard interno deja preguntas de abandono.
+
+## F2B.6 — Primer PR funcional sugerido (para su propia autorización)
+
+**Fase 3 — Dashboard de conversión en LucyAdmin, read-only sobre DB.** Ruta
+admin bajo `AdminOnlyRoute`, métricas agregadas (reservas creadas/completadas/
+no-show/canceladas · lista de espera · afiliaciones · reclamos · reseñas ·
+ranking de médicos por conversión) + filtro por fechas. Backend = RPC(s)
+`SECURITY DEFINER` con gate `is_admin()`, **solo agregación/conteo** (patrón
+`admin_list_waitlist` `s7_41`); **sin exponer PII** (números + `doctor_slug`/
+nombre público, nunca datos de paciente); datos **no salen a terceros**.
+
+**Este frente toca DB (lectura vía RPC)** → aplica la regla "PR que toca DB =
+migración + check/smoke; el owner aplica el SQL, el dev corre los checks", y
+**debe arrancar con su propio PR-0 read-only** (mapear columnas/estados reales
+de `appointments`/`appointment_statuses`/`waitlist_entries`/
+`doctor_affiliation_requests`/`reviews`/claim **antes** de escribir cualquier
+RPC/UI). **No abrir DB/RPC/UI sin esa autorización.**
+
+## F2B.7 — Qué NO se implementa en este PR-0B
+
+Docs-only. **No** se toca: código · runtime · `track()` · paquetes/
+`package.json`/lockfile · `PublicAnalytics.tsx` · Vercel config · DB · SQL ·
+migraciones · `database.types.ts` · rutas privadas · SEO/sitemap/robots/OG/
+middleware · branding · performance. **Ninguna medición nueva implementada;
+ningún dashboard DB abierto.**
