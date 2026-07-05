@@ -691,3 +691,90 @@ Docs-only. **No** se toca: código · runtime · DB · SQL · migraciones ·
 `database.types.ts` · UI · rutas · RPC · Analytics de cliente · `track()` ·
 herramientas externas · Vercel config · SEO/sitemap/robots/OG/middleware ·
 branding · performance. **Ningún dashboard/RPC/UI abierto.**
+
+---
+
+# Fase 3 — Paso 0 read-only · Resultados contra DB (2026-07-04)
+
+> Diagnóstico ejecutado con un script de **solo lectura** (service_role, patrón
+> admin) que seleccionó **únicamente columnas no-PII** y reportó agregados; el
+> script se eliminó tras correr (árbol limpio, cero escrituras/fixtures). Base:
+> HEAD `bc0c725` · PRs #1–#243 · `s7_52`. **Confirma que el PR-A backend puede
+> avanzar** con dos ajustes de fuente. Los conteos son del snapshot del día
+> (piloto, volumen bajo) y solo orientan el diseño.
+
+## F3P0.1 — `appointment_statuses` (catálogo real, 6 estados)
+
+| funnel_order | name | display_name | is_final | affects_revenue |
+|---|---|---|---|---|
+| 1 | `programada` | Programada | false | false |
+| 2 | `confirmada` | Confirmada | false | false |
+| 3 | `en_sala` | En Sala | false | false |
+| 4 | `atendida` | Atendida | **true** | **true** |
+| 5 | `cancelada` | Cancelada | true | false |
+| 6 | `no_asistio` | No Asistió | true | false |
+
+## F3P0.2 — Clasificación final de estados (para `s7_53`)
+
+| Clase del dashboard | Regla (por flags + name) |
+|---|---|
+| **Completadas** | `affects_revenue = true` → `atendida` |
+| **Canceladas** | `is_final = true AND affects_revenue = false AND name = 'cancelada'` |
+| **No-show** | `is_final = true AND affects_revenue = false AND name = 'no_asistio'` |
+| **En curso / pendientes** | `is_final = false` → `programada`/`confirmada`/`en_sala` |
+
+Robusto ante estados nuevos: `is_final=false` → "pendientes"; finales se separan
+por `affects_revenue` y, para cancelada vs no-show, por `name`.
+
+## F3P0.3 — `appointments.source` (conteos reales)
+
+- **Total: 73.** `manual` **56** · `lucy_directorio` **17** · `lucy_seguimiento`
+  **0** (sin filas hoy → tratar como 0, no romper).
+- **73/73 con `service_id`** · **5 médicos distintos** · rango `created_at`
+  **2026-04-10 → 2026-06-30**.
+- Reservas del directorio por estado: `programada` 12 · `atendida` 4 ·
+  `confirmada` 1. → **`lucy_directorio` ya tiene datos; el embudo de directorio
+  es medible.**
+
+## F3P0.4 — Otros agregados (snapshot del día)
+
+- **`waitlist_entries`:** total **1** (`contacted` 1). *(Volumen bajo, medible.)*
+- **`doctor_affiliation_requests`:** total **1** (`approved` 1). *(Volumen bajo.)*
+- **`doctors`:** total **114** · `lucy_status` = `listed_only` **113** /
+  `verified` **1** · publicados **35** · con agenda **1** · verificados **1** ·
+  `slug` 35 · `specialty_id` 114/114 · `clinic_id` 114/114.
+- **`reviews`:** total **2** · visibles 2 · **rating promedio 4.65** (sin tocar
+  `comment` ni `patient_profile_id`).
+
+## F3P0.5 — Reclamos: `tos_accepted_at` NO sirve → usar `audit_log` (ajuste vinculante)
+
+- **`tos_accepted_at` está en 0 en los 114 médicos** → **NO** es fuente válida
+  del métrico de reclamos.
+- **`audit_log` SÍ registra reclamos:** `edited_via='claim_self_service'` = **7
+  eventos** (audit_log total ~13.241 filas). → **El métrico de reclamos se mide
+  desde `audit_log`** filtrando `new_data->>'edited_via' = 'claim_self_service'`
+  por `created_at`. *(Caveat: los 7 son mayormente actividad de prueba; el
+  mecanismo es correcto y crecerá con médicos reales.)*
+
+## F3P0.6 — Riesgos / notas para `s7_53`
+
+1. **Reclamos = `audit_log`** (`edited_via='claim_self_service'`), no
+   `tos_accepted_at`. — ajuste de fuente, no bloqueo.
+2. **Volumen bajo** hoy (waitlist/afiliaciones/reviews/claims); reservas (73, 17
+   de directorio) ya son dataset real. — no bloquea.
+3. **`audit_log` grande (~13k filas)**: filtrar por `created_at` + `edited_via`;
+   verificar índice o aceptar el scan (hoy trivial). — nota de performance.
+4. **`lucy_seguimiento` = 0**: el desglose por source debe manejar 0 sin romper.
+5. **Privacidad sin bloqueo:** todos los agregados salieron seleccionando **solo
+   columnas no-PII** → la RPC puede devolver únicamente conteos/promedios, sin
+   `patient_id`/nombre/teléfono/email/documento/`comment`/`message`/clínico.
+
+## F3P0.7 — Conclusión
+
+✅ **PR-A backend (`s7_53`) puede avanzar** con: (A) reclamos desde `audit_log`;
+(B) resto de V1 sin cambios (reservas + source + clases de estado, waitlist por
+estado, afiliaciones por estado, oferta/supply snapshot, reseñas + avg, ranking
+Top-N). **`s7_53` debe:** 2 RPCs `SECURITY DEFINER`/`is_admin()` con **solo
+agregados y 0 PII**; claims desde `audit_log`; clasificación de estados por
+flags+name (F3P0.2); manejar sources/estados ausentes como 0; check/smoke con
+fixtures aisladas afirmando **0 PII en el payload**.
