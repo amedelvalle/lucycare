@@ -6,7 +6,7 @@ import {
   isDoctorOperational,
   SUSPENDED_DOCTOR_MESSAGE,
 } from '@/services/appointments.service';
-import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from '@/services/availability.service';
+import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE, SLOT_TAKEN_MESSAGE, isSlotOverlapError } from '@/services/availability.service';
 import { createBasicPatient } from '@/services/patients.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
@@ -242,7 +242,11 @@ export async function createWalkInAppointment(
     .select('id')
     .single();
 
-  if (error) throw error;
+  if (error) {
+    // Doble reserva bloqueada por la DB (trigger s7_55 / P0090) → mensaje amable.
+    if (isSlotOverlapError(error)) throw new Error(SLOT_TAKEN_MESSAGE);
+    throw error;
+  }
 
   // 4. Audit log (no bloquea si falla)
   await logAuditEntry({

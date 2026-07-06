@@ -18,7 +18,7 @@ import {
   isDoctorOperational,
   SUSPENDED_DOCTOR_MESSAGE,
 } from './appointments.service'
-import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE } from './availability.service'
+import { isWithinDoctorAvailability, OUTSIDE_AVAILABILITY_MESSAGE, SLOT_TAKEN_MESSAGE, isSlotOverlapError } from './availability.service'
 
 interface BookingData {
   doctorId: string
@@ -132,6 +132,10 @@ export async function createBooking(data: BookingData): Promise<BookingResult> {
 
     if (apptError || !appointment) {
       console.error('Error creando cita:', apptError)
+      // Doble reserva bloqueada por la DB (trigger s7_55 / P0090) → mensaje amable.
+      if (isSlotOverlapError(apptError)) {
+        return { success: false, error: SLOT_TAKEN_MESSAGE }
+      }
       return { success: false, error: 'Error al crear la cita. Intenta de nuevo.' }
     }
 

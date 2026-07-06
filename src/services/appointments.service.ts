@@ -8,6 +8,8 @@ import { logAuditEntry } from '@/services/auditLog.service';
 import {
   isWithinDoctorAvailability,
   OUTSIDE_AVAILABILITY_MESSAGE,
+  SLOT_TAKEN_MESSAGE,
+  isSlotOverlapError,
 } from '@/services/availability.service';
 
 // ─── Integridad de agenda: no crear/reprogramar en el pasado ─────────
@@ -476,7 +478,11 @@ export async function updateAppointment(
     .from('appointments')
     .update(payload)
     .eq('id', appointmentId);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Doble reserva bloqueada por la DB (trigger s7_55 / P0090) → mensaje amable.
+    if (isSlotOverlapError(error)) throw new Error(SLOT_TAKEN_MESSAGE);
+    throw new Error(error.message);
+  }
 
   await logAuditEntry({
     action: 'update',
