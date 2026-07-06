@@ -22,6 +22,24 @@ export const OUTSIDE_AVAILABILITY_MESSAGE =
   'El médico no tiene disponibilidad en ese horario.'
 
 /**
+ * Doble reserva bloqueada por la DB (trigger prevent_appointment_overlap,
+ * s7_55, ERRCODE P0090). Mensaje amable único para los 3 flujos de reserva.
+ */
+export const SLOT_TAKEN_MESSAGE =
+  'Ese horario acaba de ocuparse. Por favor elegí otro horario disponible.'
+
+/**
+ * ¿El error de una operación sobre `appointments` es un solapamiento bloqueado
+ * por el trigger de la DB? Detecta el ERRCODE propio `P0090` (fuente de verdad)
+ * con fallback al texto del mensaje, por robustez.
+ */
+export function isSlotOverlapError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null
+  if (!e) return false
+  return e.code === 'P0090' || /ya está ocupado por otra cita activa/i.test(e.message ?? '')
+}
+
+/**
  * Partes en hora local America/El_Salvador de un instante ISO:
  * { date 'YYYY-MM-DD', dow 0-6 (0=domingo), time 'HH:MM:SS' }.
  * Robusto sin importar la TZ del navegador/servidor.
