@@ -1740,6 +1740,55 @@ export type Database = {
           avg_rating: number | null
         }[]
       }
+      admin_pharma_summary: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_doctor_id?: string
+          p_specialty_id?: string
+        }
+        Returns: Json
+      }
+      admin_pharma_medication_ranking: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_doctor_id?: string
+          p_specialty_id?: string
+          p_limit?: number
+          p_min_count?: number
+        }
+        Returns: {
+          medication_id: string
+          medication_name: string | null
+          active_ingredient: string | null
+          concentration: string | null
+          presentation: string | null
+          is_global: boolean
+          times_prescribed: number
+          consultations_count: number
+          distinct_doctors: number
+        }[]
+      }
+      admin_pharma_doctor_ranking: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_specialty_id?: string
+          p_limit?: number
+          p_min_count?: number
+        }
+        Returns: {
+          doctor_id: string
+          doctor_name: string | null
+          specialty_name: string | null
+          total_prescriptions: number
+          unique_medications: number
+          global_count: number
+          personal_count: number
+          permanent_count: number
+        }[]
+      }
       clinic_list_waitlist: {
         Args: { p_doctor_id: string; p_status?: string; p_limit?: number; p_offset?: number }
         Returns: {
