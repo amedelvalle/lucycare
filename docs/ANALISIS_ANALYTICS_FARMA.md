@@ -242,3 +242,80 @@ especialidad) y snapshots de catálogo (no PII de paciente).
   gate más granular (owner/superadmin) a futuro por sensibilidad.
 - Normalización de principio activo / equivalencias / categoría terapéutica
   (V2+, requiere mejorar catálogo — no existe categoría terapéutica).
+
+---
+
+# PR-B UI LIVE (post-#255)
+
+> **HEAD `6a1171e` · PRs #1–#255 · migración `s7_55` · `main == origin/main`.**
+> **Analytics Farma COMPLETO: diseño (PR-0) + backend (PR-A `s7_54`) + UI
+> (PR-B).** UI-only; sin backend/SQL/RPC nuevos.
+
+## FB.1 — Qué quedó implementado (PR #255, UI-only)
+
+Pantalla interna **read-only** **`/admin/analytics/farma`** en LucyAdmin que
+consume las RPCs existentes de `s7_54` (`admin_pharma_summary` +
+`admin_pharma_medication_ranking` + `admin_pharma_doctor_ranking`). **No** toca
+SQL/migraciones/RPC/backend/RLS/`database.types.ts` (las firmas ya estaban de
+#250).
+
+- **Servicio** `src/services/adminPharma.service.ts` — consumo tipado de las 3
+  RPCs (`getPharmaSummary` + `getPharmaMedicationRanking` +
+  `getPharmaDoctorRanking`).
+- **Página** `src/pages/admin/AdminAnalyticsFarmaPage.tsx` — filtros (médico +
+  rango de fechas + umbral `min_count`) + KPIs + 2 rankings; loading/error/empty.
+- **Ruta** `analytics/farma` bajo `/admin` (**`AdminOnlyRoute`** + `AdminLayout`)
+  + **NavLink "Analítica Farma"** (`ri-medicine-bottle-line`; `end:true` en
+  "Analítica" para no doble-resaltar). Link cruzado ↔ "Analítica de conversión".
+
+**Contenido:**
+- **KPIs (`admin_pharma_summary`):** medicamentos prescritos · únicos · médicos
+  prescriptores · consultas con receta · desde Base Lucy (global) · desde
+  catálogo personal · permanentes/crónicos.
+- **Ranking de medicamentos:** medicamento (+ PA + concentración) · presentación
+  · fuente (Base Lucy / Personal) · veces · consultas · médicos.
+- **Ranking por médico:** médico · especialidad · **Medicamentos** (ítems, no
+  documentos) · únicos · global · personal · permanentes.
+
+## FB.2 — Filtro por médico (objetivo de negocio)
+
+Las RPCs `admin_pharma_summary` y `admin_pharma_medication_ranking` **ya
+soportaban `p_doctor_id`** → se cableó en la UI (sin tocar backend). Al elegir un
+médico, el **resumen** y el **ranking de medicamentos** se filtran a ese médico y
+el título pasa a **"Medicamentos de \<médico\>"**. Cumple el objetivo: *ver qué
+medicamentos deja cada médico, sin identificar pacientes.* El **ranking por
+médico** mantiene el panorama de todos.
+
+## FB.3 — Filtros y umbral
+
+Rango de fechas (default últimos 12 meses) + selector de médico ("Todos" o uno) +
+**`min_count` default = 1** (para ver el detalle completo de esta capa
+estratégica; editable). Sin export ni gráficos (V2).
+
+## FB.4 — Privacidad (verificada)
+
+La UI **solo pinta agregados**: medicamento/PA/concentración/presentación/fuente
++ datos **públicos** del médico (nombre/especialidad) + conteos. **Nunca**
+pacientes, `patient_id`, `consultation_id`, receta individual, diagnóstico,
+notas/vitales/antecedentes, `instructions`/`alternatives`/`dosage`/`frequency`,
+ni la relación paciente↔medicamento. Garantía doble: server-side (las RPCs no
+devuelven PII) + la UI no pide otros campos. Admin-only; no visible para
+médicos/asistentes/pacientes/público.
+
+## FB.5 — Validación
+
+- `npx tsc --noEmit` ✅ exit 0 · `npm run build` ✅ exit 0.
+- **Preview con sesión admin real** (`50378056365`/`123456`): `/admin/analytics/
+  farma` renderiza datos reales; filtro por **Dr. Camilo Carrillo** →
+  "Medicamentos de Dr. Camilo Carrillo" con **17 medicamentos** y resumen **19**;
+  médico sin prescripciones → **0** + empty state; `min_count=1` muestra el
+  detalle; NavLink presente; **0 errores de consola**; **móvil 360 sin overflow**
+  (tablas con scroll interno).
+
+## FB.6 — Pendiente NO iniciado (V2)
+
+Filtros geo/especialidad en la UI (las RPCs los aceptan) · export · gráficos ·
+top-medicamento por médico como columna (necesita min-cell threshold en la
+combinación) · normalización de PA/equivalencias/categoría terapéutica (requiere
+mejorar catálogo). Acceso: hoy `is_admin()`; evaluar gate granular
+(owner/superadmin) a futuro por sensibilidad.
