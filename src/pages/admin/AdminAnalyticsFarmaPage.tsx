@@ -9,6 +9,7 @@ import {
   type PharmaMedicationRow,
   type PharmaDoctorRow,
 } from '../../services/adminPharma.service';
+import { getAdminDoctors } from '../../services/admin.service';
 
 /**
  * Analytics Farma — inteligencia de prescripción por médico (LucyAdmin, PR-B).
@@ -124,7 +125,7 @@ function DoctorTable({ rows }: { rows: PharmaDoctorRow[] }) {
           <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
             <th className="py-2 pr-3 font-medium">Médico</th>
             <th className="py-2 px-3 font-medium">Especialidad</th>
-            <th className="py-2 px-3 font-medium text-right">Recetas</th>
+            <th className="py-2 px-3 font-medium text-right">Medicamentos</th>
             <th className="py-2 px-3 font-medium text-right">Únicos</th>
             <th className="py-2 px-3 font-medium text-right">Global</th>
             <th className="py-2 px-3 font-medium text-right">Personal</th>
@@ -153,22 +154,35 @@ export default function AdminAnalyticsFarmaPage() {
   const initial = defaultRange();
   const [draftFrom, setDraftFrom] = useState(initial.from);
   const [draftTo, setDraftTo] = useState(initial.to);
-  const [draftMinCount, setDraftMinCount] = useState(3);
-  const [applied, setApplied] = useState<{ from: string; to: string; minCount: number }>({ ...initial, minCount: 3 });
+  const [draftMinCount, setDraftMinCount] = useState(1);
+  const [draftDoctorId, setDraftDoctorId] = useState('');
+  const [applied, setApplied] = useState<{ from: string; to: string; minCount: number; doctorId: string }>({
+    ...initial, minCount: 1, doctorId: '',
+  });
 
-  const filters = { dateFrom: applied.from, dateTo: applied.to, minCount: applied.minCount };
+  const scoped = { dateFrom: applied.from, dateTo: applied.to, minCount: applied.minCount, doctorId: applied.doctorId || undefined };
 
+  // Lista de médicos para el filtro (id + nombre público). Solo lectura.
+  const doctorsQ = useQuery({
+    queryKey: ['admin-pharma-doctors'],
+    queryFn: () => getAdminDoctors({ limit: 1000 }),
+  });
+  const doctors = doctorsQ.data?.rows ?? [];
+  const selectedDoctorName = applied.doctorId ? (doctors.find((d) => d.id === applied.doctorId)?.fullName ?? null) : null;
+
+  // Summary + ranking de medicamentos: se filtran por médico si hay uno seleccionado.
   const summaryQ = useQuery({
-    queryKey: ['admin-pharma-summary', applied.from, applied.to],
-    queryFn: () => getPharmaSummary({ dateFrom: applied.from, dateTo: applied.to }),
+    queryKey: ['admin-pharma-summary', applied.from, applied.to, applied.doctorId],
+    queryFn: () => getPharmaSummary(scoped),
   });
   const medRankQ = useQuery({
-    queryKey: ['admin-pharma-med-ranking', applied.from, applied.to, applied.minCount],
-    queryFn: () => getPharmaMedicationRanking({ ...filters, limit: RANKING_LIMIT }),
+    queryKey: ['admin-pharma-med-ranking', applied.from, applied.to, applied.minCount, applied.doctorId],
+    queryFn: () => getPharmaMedicationRanking({ ...scoped, limit: RANKING_LIMIT }),
   });
+  // Ranking por médico: panorama de TODOS los médicos (no se filtra por doctorId).
   const docRankQ = useQuery({
     queryKey: ['admin-pharma-doc-ranking', applied.from, applied.to, applied.minCount],
-    queryFn: () => getPharmaDoctorRanking({ ...filters, limit: RANKING_LIMIT }),
+    queryFn: () => getPharmaDoctorRanking({ dateFrom: applied.from, dateTo: applied.to, minCount: applied.minCount, limit: RANKING_LIMIT }),
   });
 
   const apply = () => {
@@ -177,6 +191,7 @@ export default function AdminAnalyticsFarmaPage() {
       from: swap ? draftTo : draftFrom,
       to: swap ? draftFrom : draftTo,
       minCount: Math.max(1, Number(draftMinCount) || 1),
+      doctorId: draftDoctorId,
     });
   };
 
@@ -196,6 +211,19 @@ export default function AdminAnalyticsFarmaPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5">
+        <label className="block text-xs text-gray-600 mb-3">
+          <span className="block mb-1">Médico</span>
+          <select
+            value={draftDoctorId}
+            onChange={(e) => setDraftDoctorId(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white cursor-pointer focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
+          >
+            <option value="">Todos los médicos</option>
+            {doctors.map((d) => (
+              <option key={d.id} value={d.id}>{d.fullName ?? '—'}{d.specialty ? ` · ${d.specialty}` : ''}</option>
+            ))}
+          </select>
+        </label>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
           <label className="text-xs text-gray-600">
             <span className="block mb-1">Desde</span>
@@ -236,8 +264,8 @@ export default function AdminAnalyticsFarmaPage() {
           </button>
         </div>
         <p className="text-[11px] text-gray-400 mt-2">
-          Rango: {applied.from} → {applied.to} (inclusivo) · umbral ≥ {applied.minCount} en rankings.
-          Por defecto, últimos 12 meses.
+          Rango: {applied.from} → {applied.to} (inclusivo) · umbral ≥ {applied.minCount} en rankings ·
+          {selectedDoctorName ? ` médico: ${selectedDoctorName}` : ' todos los médicos'}. Por defecto, últimos 12 meses.
         </p>
       </div>
 
@@ -252,7 +280,10 @@ export default function AdminAnalyticsFarmaPage() {
       ) : null}
 
       <div className="mt-5">
-        <SectionCard title="Ranking de medicamentos" subtitle={`Top ${RANKING_LIMIT} por veces prescrito (solo con volumen ≥ ${applied.minCount}).`}>
+        <SectionCard
+          title={selectedDoctorName ? `Medicamentos de ${selectedDoctorName}` : 'Ranking de medicamentos'}
+          subtitle={`${selectedDoctorName ? 'Medicamentos que prescribe este médico' : `Top ${RANKING_LIMIT} por veces prescrito`} · solo con volumen ≥ ${applied.minCount}.`}
+        >
           {medRankQ.isLoading ? (
             <p className="text-sm text-gray-500 py-6 text-center">Cargando ranking…</p>
           ) : medRankQ.error ? (

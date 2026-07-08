@@ -14,7 +14,8 @@ import { supabase } from '../lib/supabase';
 export interface PharmaFilters {
   dateFrom?: string; // 'YYYY-MM-DD' inclusivo
   dateTo?: string;   // 'YYYY-MM-DD' inclusivo (el RPC aplica < date_to + 1 día)
-  minCount?: number; // umbral de celda mínima para rankings (default 3)
+  minCount?: number; // umbral de celda mínima para rankings
+  doctorId?: string; // filtra summary + ranking de medicamentos por médico
 }
 
 export interface PharmaSummary {
@@ -55,6 +56,7 @@ export async function getPharmaSummary(filters: PharmaFilters = {}): Promise<Pha
   const { data, error } = await supabase.rpc('admin_pharma_summary', {
     p_date_from: filters.dateFrom ?? undefined,
     p_date_to: filters.dateTo ?? undefined,
+    p_doctor_id: filters.doctorId ?? undefined,
   });
   if (error) throw new Error(error.message);
   return data as unknown as PharmaSummary;
@@ -67,6 +69,7 @@ export async function getPharmaMedicationRanking(
   const { data, error } = await supabase.rpc('admin_pharma_medication_ranking', {
     p_date_from: filters.dateFrom ?? undefined,
     p_date_to: filters.dateTo ?? undefined,
+    p_doctor_id: filters.doctorId ?? undefined,
     p_limit: filters.limit ?? 20,
     p_min_count: filters.minCount ?? 3,
   });
