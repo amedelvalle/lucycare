@@ -36,6 +36,7 @@ import AdminWaitlistPage from "../pages/admin/AdminWaitlistPage";
 import AdminPacientesPage from "../pages/admin/AdminPacientesPage";
 import AdminAdministradoresPage from "../pages/admin/AdminAdministradoresPage";
 import AdminAnalyticsPage from "../pages/admin/AdminAnalyticsPage";
+import AdminAnalyticsFarmaPage from "../pages/admin/AdminAnalyticsFarmaPage";
 import PrivacidadPage from "../pages/privacidad/page";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
@@ -120,6 +121,10 @@ const routes: RouteObject[] = [
       {
         path: "analytics",
         element: <AdminAnalyticsPage />,
+      },
+      {
+        path: "analytics/farma",
+        element: <AdminAnalyticsFarmaPage />,
       },
     ],
   },
