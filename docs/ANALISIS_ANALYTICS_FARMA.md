@@ -170,3 +170,75 @@ se mezcla en el `/admin/analytics` actual sin diseño aprobado, **no** se hace
 dashboard Farma. Este documento es **solo diseño**. El siguiente frente (con
 autorización explícita) sería **PR-A backend** (`s7_54`, RPCs `admin_pharma_*`
 agregadas) precedido de su propio Paso 0 read-only si hiciera falta.
+
+---
+
+# PR-A backend LIVE (post-#250 / `s7_54`)
+
+> **HEAD `b07acc3` · PRs #1–#253 · migración `s7_54` APLICADA en Supabase ·
+> `main == origin/main`.** Backend de inteligencia de prescripción **live y
+> validado** (check verde + smoke 27/27). **UI Farma NO iniciada.**
+
+## FA.1 — Qué quedó implementado (PR #250, backend-only)
+
+Migración **`migrations/s7_54_admin_pharma_analytics.sql`** con **tres RPCs
+`SECURITY DEFINER STABLE`** de SOLO LECTURA, gate `is_admin()` (→ **P0001** para
+anon/médico/asistente/paciente), `SET search_path = public`, `REVOKE`
+PUBLIC/anon + `GRANT EXECUTE` a `authenticated`. **Solo agregados;** no escriben,
+no crean tablas, no tocan RLS ni datos. Firmas en `database.types.ts`.
+
+- **`admin_pharma_summary(p_date_from, p_date_to, p_doctor_id?, p_specialty_id?)
+  → jsonb`**: total recetas · medicamentos únicos · médicos prescriptores ·
+  consultas firmadas con meds · `by_source` global/personal · permanentes
+  (`duration_unit='permanente'`).
+- **`admin_pharma_medication_ranking(p_date_from, p_date_to, p_doctor_id?,
+  p_specialty_id?, p_limit, p_min_count)`**: por medicamento — snapshots
+  nombre/PA/concentración/presentación + `is_global` + `times_prescribed` +
+  `consultations_count` + `distinct_doctors`.
+- **`admin_pharma_doctor_ranking(p_date_from, p_date_to, p_specialty_id?,
+  p_limit, p_min_count)`**: por médico — nombre público/especialidad + total /
+  únicos / global / personal / permanentes.
+
+## FA.2 — Lógica base (vinculante, tal como se implementó)
+
+`prescriptions.is_current = true` + `consultations.status = 'signed'`; fecha =
+`consultations.signed_at`; médico = `consultations.doctor_id`; medicamento =
+**snapshots** históricos de `prescriptions` (`s7_37`, **no depende del catálogo
+actual**); fuente global/personal = `medications.doctor_id` (NULL = Base Lucy).
+Sin borradores, sin versiones corregidas (`is_current=false`).
+
+## FA.3 — Umbral de privacidad
+
+Los **dos rankings** aplican `HAVING count(*) >= p_min_count` (**default 3**) →
+no listan combinaciones (medicamento / médico) con volumen < 3 (celda mínima).
+El **summary NO se umbraliza** (totales generales, no una combinación
+específica).
+
+## FA.4 — Privacidad (verificada)
+
+Salida **solo agregados/conteos**: nunca `patient_id`, nombre/teléfono/email/
+documento/DOB de paciente, `appointment_id`, `consultation_id`, la **receta
+individual**, diagnóstico, notas clínicas, `instructions`, `alternatives`,
+`dosage`/`frequency` crudos, ni la **relación paciente↔medicamento**. Solo IDs
+técnicos (`medication_id`/`doctor_id`), datos públicos del médico (nombre/
+especialidad) y snapshots de catálogo (no PII de paciente).
+
+## FA.5 — Verificación (contra la DB aplicada)
+
+- **`node scripts/check-s7_54.mjs`** ✅ — las 3 RPCs existen y rechazan a
+  no-admin (P0001).
+- **`node scripts/_smoke-s7_54.mjs`** ✅ **27/27** — conteos generales · ranking
+  de medicamentos + umbral (min_count) · ranking por médico · global vs personal
+  · `permanente` · exclusión de borradores · exclusión de `is_current=false` ·
+  fecha vía `signed_at` · filtros doctor/especialidad · **0 PII** · no-admin
+  bloqueado · **cleanup 0 residuales**. Fixtures aisladas (médico fixture propio
+  + ventana 2099); jamás Camilo/Katherine/datos reales.
+
+## FA.6 — Pendiente NO iniciado
+
+- **UI Farma** — subpantalla/módulo `/admin/analytics/farma` (bajo
+  `AdminOnlyRoute`) read-only que consuma estas 3 RPCs. **No iniciada; no abrir
+  sin autorización.** Recordar la salvedad de acceso: hoy `is_admin()`; evaluar
+  gate más granular (owner/superadmin) a futuro por sensibilidad.
+- Normalización de principio activo / equivalencias / categoría terapéutica
+  (V2+, requiere mejorar catálogo — no existe categoría terapéutica).
