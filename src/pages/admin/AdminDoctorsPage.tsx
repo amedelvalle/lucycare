@@ -10,6 +10,8 @@ import {
   type LucyStatus,
 } from '../../services/admin.service';
 import { adminWaitlistPendingCountByDoctor } from '../../services/waitlist.service';
+import { useLucyAdminAccess } from '../../hooks/useLucyAdminAccess';
+import DirectoryDoctorsList from './components/DirectoryDoctorsList';
 
 const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
   { value: 'listed_only', label: 'Solo listado' },
@@ -39,7 +41,19 @@ function Badge({ on, labelOn, labelOff }: { on: boolean; labelOn: string; labelO
   );
 }
 
+/**
+ * Dispatcher por nivel de acceso: el Owner Admin ve la gestión completa;
+ * un nivel acotado (directory_editor) ve el listado de directorio limitado.
+ */
 export default function AdminDoctorsPage() {
+  const { isLoading, isOwner } = useLucyAdminAccess();
+  if (isLoading) {
+    return <div className="h-40 bg-gray-100 rounded-2xl animate-pulse" />;
+  }
+  return isOwner ? <OwnerDoctorsView /> : <DirectoryDoctorsList />;
+}
+
+function OwnerDoctorsView() {
   const qc = useQueryClient();
 
   // ─── Filtros + paginación ────────────────────────────────

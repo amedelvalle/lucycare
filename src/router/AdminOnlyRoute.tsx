@@ -1,34 +1,25 @@
-import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { getCurrentAuthUser } from '../services/auth.service';
+import { useLucyAdminAccess } from '../hooks/useLucyAdminAccess';
 
 /**
- * Guard de rol admin PLATAFORMA (dueño de LucyCare). No es admin
- * clínica. Si el usuario no es admin → fuera de /admin.
+ * Gate de entrada a LucyAdmin (`/admin`). Permite el acceso a:
+ *   - Owner Admin (`profiles.role='admin'` / `is_admin()`), y
+ *   - cualquier nivel con capacidad (`lucyadmin_access` activo, ej. directory_editor).
+ *
+ * La autoridad real es server-side (`my_lucyadmin_access()` + el gate de cada
+ * RPC). Este guard es solo la puerta de la SPA; la restricción POR SECCIÓN
+ * (owner-only) la aplica `RequireOwnerAdmin` en las rutas internas.
  */
 export default function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<'loading' | 'ok' | 'deny'>('loading');
+  const { isLoading, isError, canAccessLucyadmin } = useLucyAdminAccess();
 
-  useEffect(() => {
-    let alive = true;
-    getCurrentAuthUser()
-      .then((u) => {
-        if (!alive) return;
-        setState(u?.role === 'admin' ? 'ok' : 'deny');
-      })
-      .catch(() => alive && setState('deny'));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  if (state === 'loading') {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin h-6 w-6 border-2 border-emerald-700 border-t-transparent rounded-full" />
       </div>
     );
   }
-  if (state === 'deny') return <Navigate to="/" replace />;
+  if (isError || !canAccessLucyadmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }

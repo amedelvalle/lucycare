@@ -11,6 +11,11 @@ import { friendlyErrorMessage } from '@/lib/errors';
 
 interface Props {
   doctorId: string;
+  /**
+   * Muestra la acción "Eliminar" (hard-delete, owner-only). Un nivel acotado
+   * (directory_editor) recibe `false` → sin borrar; puede desactivar servicios.
+   */
+  canDelete?: boolean;
 }
 
 const PlusIcon = () => (
@@ -33,7 +38,7 @@ function formatPrice(price: number | null): string {
  * Reusa los patrones visuales de /panel/servicios (lista + modal +
  * diálogo de borrado con fallback a desactivar cuando hay citas).
  */
-export default function AdminDoctorServicesSection({ doctorId }: Props) {
+export default function AdminDoctorServicesSection({ doctorId, canDelete = true }: Props) {
   const { data: services = [], isLoading } = useAdminDoctorServices(doctorId);
   const createMut = useAdminCreateService(doctorId);
   const updateMut = useAdminUpdateService(doctorId);
@@ -94,6 +99,7 @@ export default function AdminDoctorServicesSection({ doctorId }: Props) {
             <ServiceRow
               key={s.id}
               item={s}
+              canDelete={canDelete}
               onEdit={() => setModal(s)}
               onToggleActive={() =>
                 toggleMut.mutate({ serviceId: s.id, isActive: !s.isActive })
@@ -131,11 +137,13 @@ export default function AdminDoctorServicesSection({ doctorId }: Props) {
 
 function ServiceRow({
   item,
+  canDelete,
   onEdit,
   onToggleActive,
   onDelete,
 }: {
   item: AdminServiceItem;
+  canDelete: boolean;
   onEdit: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
@@ -173,13 +181,15 @@ function ServiceRow({
         >
           Editar
         </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
-        >
-          Eliminar
-        </button>
+        {canDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
+          >
+            Eliminar
+          </button>
+        )}
         <Toggle enabled={item.isActive} onToggle={onToggleActive} />
       </div>
     </li>

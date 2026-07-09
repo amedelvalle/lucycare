@@ -13,6 +13,8 @@ import AdminDoctorWaitlistSection from './components/AdminDoctorWaitlistSection'
 import AvatarUploader from '@/components/AvatarUploader';
 import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
 import { useDepartments, useMunicipalities } from '@/hooks/useDirectory';
+import { useLucyAdminAccess } from '@/hooks/useLucyAdminAccess';
+import DirectoryDoctorEdit from './components/DirectoryDoctorEdit';
 
 const inputCls =
   'w-full text-sm border border-gray-200 rounded-lg px-3 py-2 ' +
@@ -50,8 +52,22 @@ function SaveStatus({ savedAt, error, pending }: { savedAt: number | null; error
   return null;
 }
 
+/**
+ * Dispatcher por nivel: el Owner Admin ve la ficha completa; un nivel acotado
+ * (directory_editor) ve la ficha de directorio limitada (sin login/avatar/
+ * verificación/operatividad/lista de espera/borrado).
+ */
 export default function AdminDoctorEditPage() {
   const { id } = useParams<{ id: string }>();
+  const { isLoading, isOwner } = useLucyAdminAccess();
+  if (isLoading) {
+    return <div className="h-40 bg-gray-100 rounded-2xl animate-pulse" />;
+  }
+  if (!id) return null;
+  return isOwner ? <OwnerDoctorEditView id={id} /> : <DirectoryDoctorEdit doctorId={id} />;
+}
+
+function OwnerDoctorEditView({ id }: { id: string }) {
   const qc = useQueryClient();
 
   const detailQ = useQuery({
