@@ -163,8 +163,10 @@ try {
 
   // ═══ 4. directory_editor NO puede tocar nada sensible ═══
   await denyCall('4 editor: admin_update_doctor_profile (auth.users)', editorCli.rpc('admin_update_doctor_profile', { p_doctor_id: D, p_full_name: 'x', p_email: null, p_phone: '50370000799' }));
-  await denyCall('4 editor: admin_set_doctor_verified', editorCli.rpc('admin_set_doctor_verified', { p_doctor_id: D, p_value: true }));
-  await denyCall('4 editor: admin_set_lucy_status', editorCli.rpc('admin_set_lucy_status', { p_doctor_id: D, p_value: 'verified' }));
+  // Verificación: is_verified es columna GENERATED de lucy_status (s7_03 dropeó
+  // admin_set_doctor_verified). El único camino a 'verified' es admin_set_lucy_status,
+  // que el editor NO puede → cubre la garantía "el editor no verifica médicos".
+  await denyCall('4 editor: admin_set_lucy_status (única vía a verified)', editorCli.rpc('admin_set_lucy_status', { p_doctor_id: D, p_value: 'verified' }));
   await denyCall('4 editor: admin_set_doctor_operational', editorCli.rpc('admin_set_doctor_operational', { p_doctor_id: D, p_value: false }));
   await denyCall('4 editor: admin_delete_service (hard-delete)', editorCli.rpc('admin_delete_service', { p_service_id: created.service }));
   await denyCall('4 editor: admin_update_doctor_avatar', editorCli.rpc('admin_update_doctor_avatar', { p_doctor_id: D, p_avatar_url: null }));
