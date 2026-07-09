@@ -40,6 +40,7 @@ import AdminAnalyticsFarmaPage from "../pages/admin/AdminAnalyticsFarmaPage";
 import PrivacidadPage from "../pages/privacidad/page";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
+import RequireOwnerAdmin from "./RequireOwnerAdmin";
 
 const routes: RouteObject[] = [
   {
@@ -86,9 +87,16 @@ const routes: RouteObject[] = [
       </AdminOnlyRoute>
     ),
     children: [
+      // Médicos: accesible por Owner Admin y por directory_editor (nivel acotado).
+      // El resto de las secciones son owner-only (RequireOwnerAdmin redirige a
+      // /admin/medicos a un nivel acotado).
       {
         index: true,
-        element: <AdminDashboardPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminDashboardPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "medicos",
@@ -100,31 +108,59 @@ const routes: RouteObject[] = [
       },
       {
         path: "afiliaciones",
-        element: <AdminAffiliationsPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminAffiliationsPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "catalogos",
-        element: <AdminCatalogosPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminCatalogosPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "lista-espera",
-        element: <AdminWaitlistPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminWaitlistPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "pacientes",
-        element: <AdminPacientesPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminPacientesPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "administradores",
-        element: <AdminAdministradoresPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminAdministradoresPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "analytics",
-        element: <AdminAnalyticsPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminAnalyticsPage />
+          </RequireOwnerAdmin>
+        ),
       },
       {
         path: "analytics/farma",
-        element: <AdminAnalyticsFarmaPage />,
+        element: (
+          <RequireOwnerAdmin>
+            <AdminAnalyticsFarmaPage />
+          </RequireOwnerAdmin>
+        ),
       },
     ],
   },

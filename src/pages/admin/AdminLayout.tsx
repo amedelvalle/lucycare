@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { signOut } from '../../services/auth.service';
 import { getSessionWithTimeout } from '../../lib/session';
 import { adminCountAffiliationPending } from '../../services/affiliation.service';
+import { useLucyAdminAccess } from '../../hooks/useLucyAdminAccess';
 
 interface NavItem {
   to: string;
@@ -49,6 +50,12 @@ export default function AdminLayout() {
   // oculta y la navegación vive en un header fijo + drawer.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Nivel de acceso: el Owner Admin ve todo el menú; un nivel acotado
+  // (directory_editor) ve SOLO "Médicos". Mientras resuelve, no mostramos
+  // ítems owner-only (evita un flash de secciones que luego redirigen).
+  const { isOwner, isLoading: accessLoading } = useLucyAdminAccess();
+  const nav = isOwner ? NAV : NAV.filter((n) => n.to === '/admin/medicos');
+
   const handleLogout = async () => {
     setDrawerOpen(false);
     await signOut();
@@ -74,7 +81,7 @@ export default function AdminLayout() {
   const affiliationPendingQ = useQuery({
     queryKey: ['admin-affiliation-pending-count'],
     queryFn: adminCountAffiliationPending,
-    enabled: authReady,
+    enabled: authReady && isOwner,   // Afiliaciones es owner-only; no consultar para niveles acotados
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
@@ -88,7 +95,7 @@ export default function AdminLayout() {
           <p className="text-[11px] text-gray-500 mt-0.5">Admin de plataforma</p>
         </div>
         <nav className="flex-1 p-3 space-y-1">
-          {NAV.map((n) => (
+          {!accessLoading && nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -156,7 +163,7 @@ export default function AdminLayout() {
               </button>
             </div>
             <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-              {NAV.map((n) => (
+              {!accessLoading && nav.map((n) => (
                 <NavLink
                   key={n.to}
                   to={n.to}
