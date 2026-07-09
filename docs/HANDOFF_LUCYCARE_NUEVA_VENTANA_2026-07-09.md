@@ -24,11 +24,11 @@ disponible.
 
 ## 1. Estado final del repo (2026-07-09)
 
-- **HEAD de `main`:** `33f7ab0` (*fix(brand): favicon.ico + apple-touch +
-  manifest + iconos PNG desde el isotipo oficial (#257)*).
-- **PRs mergeados:** **#1–#257**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_55`** (última = trigger
-  anti-solapamiento de citas; ver §4).
+- **HEAD de `main`:** `6e196c8` (*perf(analytics): índices de soporte para
+  Analytics/Farma (s7_56) (#259)*).
+- **PRs mergeados:** **#1–#259**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_56`** (última = índices de
+  soporte para Analytics/Farma; ver §4-bis).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
   preview local / fixtures / scripts temporales / ZIPs temporales / servers ·
   **sin frente funcional abierto**.
@@ -115,6 +115,48 @@ Bug de producción: dos citas para el mismo médico/fecha/hora.
   disponible." en los 3 flujos. Cierre docs #253.
 - **Duplicado real de prod:** resuelto **manualmente por el owner** (canceló una
   de las dos). No tocar ese dato.
+
+---
+
+## 4-bis. Índices de soporte para Analytics/Farma (`s7_56`) — CERRADO (#259)
+
+Cierre del frente **P0 read-only de escalabilidad analítica**. Objetivo:
+**soporte preventivo de performance** para los dashboards admin de solo-lectura,
+bajo el criterio rector *"la analítica debe **observar** la operación, no
+**competir** con ella"*.
+
+- **Diagnóstico (P0 read-only):** verificación contra `pg_indexes` de la **DB
+  real** confirmó que las columnas calientes que consumen `s7_53` (conversión) y
+  `s7_54` (farma) no tenían índice: `prescriptions` y `audit_log` solo tenían PK;
+  `consultations`/`appointments`/`reviews` sin índice sobre las columnas de
+  fecha/join analíticas. `waitlist_entries` y `doctor_affiliation_requests` ya
+  estaban bien indexadas → **intactas**.
+- **Migración `s7_56` (#259) — additive-only** (`migrations/s7_56_analytics_indexes.sql`,
+  solo `CREATE INDEX IF NOT EXISTS`, sin lógica/RPC/UI/RLS/`database.types.ts`).
+  **7 índices** agregados:
+  - `idx_prescriptions_consultation` — JOIN prescriptions→consultations (las 3 RPCs farma).
+  - `idx_consultations_signed` — parcial `WHERE status='signed'` (filtro de fecha farma).
+  - `idx_audit_claim_self_service` — parcial `WHERE new_data->>'edited_via'='claim_self_service'`
+    (la peor query: claims del summary de conversión sobre `audit_log`, la tabla
+    de mayor crecimiento).
+  - `idx_prescriptions_medication` · `idx_prescriptions_current` (parcial `WHERE is_current`).
+  - `idx_appointments_created` · `idx_reviews_created`.
+- **`CREATE INDEX` normal** (no `CONCURRENTLY`) por volumen actual bajo.
+- **Validación:** **aplicado en Supabase por el owner** + **verificado en DB real**
+  con `pg_indexes` (los 7, con predicados parciales correctos) + **smokes verdes
+  sin regresión** (`_smoke-s7_53.mjs` **32/32**, `_smoke-s7_54.mjs` **27/27** —
+  agregados **idénticos**: los índices no cambian resultados, solo el plan).
+- **NO** se creó `check-s7_56.mjs`: una migración solo-índices no tiene
+  superficie observable vía supabase-js (`pg_indexes` inaccesible); la
+  verificación es la consulta `pg_indexes` + los smokes existentes.
+- **Alcance respetado:** `min_count=1` de Farma **intacto**; **sin** refactor de
+  claims fuera de `audit_log` (opción B = follow-up separado); **sin** tocar
+  código/frontend/RPC/RLS/auth/UI/`database.types.ts`/Analytics V2/materialized
+  views/Search Console/SEO/Slugs/Brand-Favicon.
+- **Follow-ups (backlog, NO iniciados):** opción B (sacar claims de `audit_log`) ·
+  guardias defensivas (rango máximo server-side + `statement_timeout`) ·
+  Analytics/Farma V2 (preagregación/materialized views) solo cuando el volumen o
+  la latencia medida lo justifiquen. Ver el reporte P0 en el histórico de esta ventana.
 
 ---
 
