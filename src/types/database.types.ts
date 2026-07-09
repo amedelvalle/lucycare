@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      lucyadmin_access: {
+        Row: {
+          access_level: string
+          granted_at: string
+          granted_by: string | null
+          is_active: boolean
+          notes: string | null
+          profile_id: string
+          revoked_at: string | null
+        }
+        Insert: {
+          access_level: string
+          granted_at?: string
+          granted_by?: string | null
+          is_active?: boolean
+          notes?: string | null
+          profile_id: string
+          revoked_at?: string | null
+        }
+        Update: {
+          access_level?: string
+          granted_at?: string
+          granted_by?: string | null
+          is_active?: boolean
+          notes?: string | null
+          profile_id?: string
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lucyadmin_access_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lucyadmin_access_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_reasons: {
         Row: {
           doctor_id: string
@@ -1710,6 +1755,70 @@ export type Database = {
       accept_clinic_invitations: {
         Args: { user_phone: string }
         Returns: number
+      }
+      can_access_lucyadmin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      can_manage_directory: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      can_manage_doctor_operations: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      can_manage_lucyadmin_users: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      my_lucyadmin_access: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      directory_list_doctors: {
+        Args: {
+          p_search?: string
+          p_published?: boolean
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: {
+          id: string
+          full_name: string | null
+          specialty: string | null
+          clinic_name: string | null
+          is_verified: boolean
+          is_published: boolean
+          lucy_status: Database["public"]["Enums"]["lucy_status"]
+          created_at: string
+          total_count: number
+        }[]
+      }
+      directory_get_doctor_detail: {
+        Args: { p_doctor_id: string }
+        Returns: {
+          doctor_id: string
+          profile_id: string
+          clinic_id: string
+          full_name: string | null
+          avatar_url: string | null
+          specialty_id: string | null
+          specialty_name: string | null
+          bio: string | null
+          clinic_name: string | null
+          clinic_address: string | null
+          clinic_phone: string | null
+          clinic_department_id: string | null
+          clinic_municipality_id: string | null
+          is_published: boolean
+          is_verified: boolean
+          lucy_status: Database["public"]["Enums"]["lucy_status"]
+        }[]
+      }
+      directory_update_doctor_name: {
+        Args: { p_doctor_id: string; p_full_name: string }
+        Returns: undefined
       }
       admin_conversion_summary: {
         Args: {
