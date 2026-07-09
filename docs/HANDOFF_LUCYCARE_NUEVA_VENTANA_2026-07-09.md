@@ -24,11 +24,12 @@ disponible.
 
 ## 1. Estado final del repo (2026-07-09)
 
-- **HEAD de `main`:** `d1d95c2` (*feat(admin): niveles de acceso LucyAdmin —
-  directory_editor (PR-A / s7_57) (#261)*).
-- **PRs mergeados:** **#1–#261**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_57`** (última = niveles de
-  acceso administrativo LucyAdmin / `directory_editor`; ver §4-ter).
+- **HEAD de `main`:** `da84efa` (*feat(admin): LucyAdmin limitado para
+  directory_editor (PR-B frontend) (#263)*).
+- **PRs mergeados:** **#1–#263**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_57`** (backend de niveles de
+  acceso LucyAdmin; el frontend acotado del `directory_editor` es #263, sin
+  migración; ver §4-ter).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
   preview local / fixtures / scripts temporales / ZIPs temporales / servers ·
   **sin frente funcional abierto**.
@@ -205,12 +206,49 @@ frontend (guard/nav/ficha) queda para **PR-B**.
   (matriz admin/editor/operations/inactivo/normal + sin fuga de login creds +
   audit por actor + fixtures aisladas, cleanup 0 residuales, jamás Katherine).
   `database.types.ts` actualizado (tabla + 8 firmas).
-- **Pendiente NO iniciado:** **PR-B (frontend)** — guard por nivel (`my_lucyadmin_access`),
-  nav filtrado (solo "Médicos" para el editor), acceso limitado a `/admin/medicos`
-  + `/:id`, ficha sin secciones sensibles (login/verify/lucy_status/operational/
-  avatar/borrar servicio), preview con sesión de editor. Otorgar el acceso al
-  teléfono ya guardado = Test Phone OTP fijo + `INSERT` manual del owner en
-  `lucyadmin_access`.
+
+### Frontend — LucyAdmin limitado (`#263`, PR-B) — CERRADO
+
+Capa UX sobre `s7_57` (**frontend-only**, sin DB/SQL/migraciones/`database.types.ts`/
+backend/`auth.users`): un usuario con `lucyadmin_access` nivel `directory_editor`
+usa LucyAdmin de forma acotada.
+
+- **Hook `useLucyAdminAccess`** (consume `my_lucyadmin_access()`) + service
+  `directoryEditor.service` (`directory_list_doctors`/`directory_get_doctor_detail`/
+  `directory_update_doctor_name`).
+- **`AdminOnlyRoute`** ahora permite entrar a **owner O nivel con capacidad**;
+  **`RequireOwnerAdmin`** envuelve las secciones owner-only (dashboard, afiliaciones,
+  catálogos, lista-espera, pacientes, administradores, analytics, analytics/farma)
+  → un nivel acotado se **redirige a `/admin/medicos`**.
+- **`AdminLayout`** filtra el nav (editor ve **solo "Médicos"**; badge de afiliaciones
+  gateado a owner).
+- **`AdminDoctorsPage`/`AdminDoctorEditPage`** = dispatcher por nivel → vistas
+  acotadas `DirectoryDoctorsList` / `DirectoryDoctorEdit`. `AdminDoctorServicesSection`
+  con prop `canDelete` (editor=false).
+- **Comportamiento final:**
+  - **Owner/Admin total** (`profiles.role='admin'`): ve **todo** LucyAdmin, sin cambios.
+  - **`directory_editor`**: `/admin`→`/admin/medicos`; nav **solo "Médicos"**; rutas
+    sensibles **redirigen**; **listado acotado** (sin teléfono/email de login,
+    sin lucy_status editable, sin operatividad/lista de espera); **ficha acotada**
+    (Nombre visible / Clínica / Información profesional / Servicios) **sin**
+    login email/phone, avatar, verificación, `lucy_status`, `is_operational`,
+    `booking_enabled`, lista de espera, borrar servicio ni destructivas.
+  - **El borde real de seguridad sigue siendo el gate server-side de cada RPC**
+    (`s7_57`); esta capa es UX.
+- **Validado:** `tsc`+`build` verdes + preview owner y `directory_editor`
+  (redirecciones, nav filtrado, ficha acotada, móvil 375 sin overflow, consola 0
+  errores). Sesión de editor vía grant temporal a un test phone (**revocado, 0
+  residuales**); ficha de Camilo (demo) read-only; **jamás Katherine, sin datos
+  reales modificados**. 11 archivos, todos `src/`.
+
+### Pendiente NO iniciado (operativo)
+
+- **`operations_admin`** sigue **diseñado pero INERTE** (sin RPCs ni pantallas
+  operativas abiertas) → **PR-C futuro** decidirá su superficie.
+- **Otorgar acceso a la persona real** (el teléfono ya guardado en Supabase):
+  **Test Phone OTP fijo + `INSERT` manual del owner en `lucyadmin_access`**
+  (`access_level='directory_editor'`, `is_active=true`). **NO iniciado — solo
+  cuando el owner lo autorice.** No toca `auth.users`.
 
 ---
 
