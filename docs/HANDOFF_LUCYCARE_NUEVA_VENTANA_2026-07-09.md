@@ -146,6 +146,16 @@ rewrite SPA de Vercel devolvía el HTML del shell (no imagen). Solo existía
   robots · SQL/DB/backend/auth.
 - **Nota operativa:** Google recrawlea el favicon en su propio ciclo (días/
   semanas); el globo puede tardar en actualizarse aunque prod ya esté correcto.
+- **Nota (búsquedas de marca, 2026-07-09):** el owner buscó "Lucy" en Google y
+  vio dominios **parecidos** (`lucy-app.com`, `lucy-care.com`) que **NO son
+  `lucycare.app`**; el globo de esos resultados **NO prueba que #257 haya
+  fallado** (es de otros dominios). `lucycare.app` ya sirve favicon/manifest
+  reales en prod (validado); falta que Google **recrawlee** (días/semanas).
+  **Pendiente futuro SEPARADO (no código, no iniciar sin instrucción):** Google
+  Search Console — indexación de `lucycare.app`, descubrimiento de la marca
+  "LucyCare", `site:lucycare.app`, posible reindexación (sin spamear), y
+  visibilidad frente a los dominios parecidos. Search Console + tiempo +
+  autoridad, no un bug de favicon.
 
 ---
 
@@ -192,7 +202,10 @@ dashboards futuros**, criterio vinculante:
    dedicado; el manifest usa icons 192/512 estándar (suficiente).
 7. **Indexación de marca (operativo, Search Console, no código):** monitorear
    Coverage (indexadas vs descubiertas) y Performance; el dominio es nuevo y la
-   aparición en Google depende de tiempo/autoridad.
+   aparición en Google depende de tiempo/autoridad. Incluye: recrawl del favicon
+   de #257, búsqueda exacta `site:lucycare.app`, descubrimiento de "LucyCare",
+   posible reindexación (sin spamear), y visibilidad frente a dominios parecidos
+   (`lucy-app.com`/`lucy-care.com`) — ver §5.
 8. Otros pendientes históricos listados en `CLAUDE.md` (F4-D identidades
    diferido; credenciales `doctor_credentials`; recuperación sin sesión; etc.).
 
