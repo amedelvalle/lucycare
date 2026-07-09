@@ -24,11 +24,11 @@ disponible.
 
 ## 1. Estado final del repo (2026-07-09)
 
-- **HEAD de `main`:** `6e196c8` (*perf(analytics): índices de soporte para
-  Analytics/Farma (s7_56) (#259)*).
-- **PRs mergeados:** **#1–#259**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_56`** (última = índices de
-  soporte para Analytics/Farma; ver §4-bis).
+- **HEAD de `main`:** `d1d95c2` (*feat(admin): niveles de acceso LucyAdmin —
+  directory_editor (PR-A / s7_57) (#261)*).
+- **PRs mergeados:** **#1–#261**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_57`** (última = niveles de
+  acceso administrativo LucyAdmin / `directory_editor`; ver §4-ter).
 - **`main == origin/main`** · **árbol limpio** · **0 PRs abiertos** · sin
   preview local / fixtures / scripts temporales / ZIPs temporales / servers ·
   **sin frente funcional abierto**.
@@ -157,6 +157,60 @@ bajo el criterio rector *"la analítica debe **observar** la operación, no
   guardias defensivas (rango máximo server-side + `statement_timeout`) ·
   Analytics/Farma V2 (preagregación/materialized views) solo cuando el volumen o
   la latencia medida lo justifiquen. Ver el reporte P0 en el histórico de esta ventana.
+
+---
+
+## 4-ter. Niveles de acceso administrativo LucyAdmin (`s7_57`) — CERRADO (#261, PR-A backend)
+
+Acceso administrativo **por niveles**, aditivo y de mínimo privilegio, **sin
+tocar `is_admin()` ni el enum `user_role`**. Primer uso real: **`directory_editor`**
+(ayuda administrativa / editor del directorio médico). Solo backend/DB — el
+frontend (guard/nav/ficha) queda para **PR-B**.
+
+- **Modelo (3 niveles conceptuales):**
+  - `owner_admin` = `profiles.role='admin'` + `is_admin()`. **NO vive en la
+    tabla** (superset absoluto; las ~95 superficies admin históricas intactas).
+  - `directory_editor` y `operations_admin` = filas en **`lucyadmin_access`**
+    (`profile_id` PK · `access_level ∈ {directory_editor, operations_admin}` ·
+    `is_active` · `granted_by/at` · `revoked_at` · `notes` · **RLS admin-only**).
+  - Niveles anidados por rank (`directory_editor(1) ⊂ operations_admin(2) ⊂
+    owner_admin(∞)`); capacidad = `is_admin() OR (fila activa con rank ≥ umbral)`.
+- **Funciones (`s7_57`):** `can_access_lucyadmin()`, `can_manage_directory()`,
+  `can_manage_doctor_operations()`, `can_manage_lucyadmin_users()` (owner-only),
+  `my_lucyadmin_access()` (snapshot para el guard/nav de PR-B) + helpers
+  `_lucyadmin_rank` / `_lucyadmin_actor`.
+- **Re-gate quirúrgico** `is_admin()`→`can_manage_directory()` de las RPCs de
+  datos **públicos** del médico: `admin_update_doctor_clinic`,
+  `admin_update_doctor_info`, `admin_set_doctor_published` (verificado: toca solo
+  `is_published`), `admin_list_doctor_services`, `admin_create_service`,
+  `admin_update_service`, `admin_set_service_active`.
+- **RPCs nuevas acotadas:** `directory_list_doctors` + `directory_get_doctor_detail`
+  (**sin email/phone de login**) + `directory_update_doctor_name` (**solo
+  `profiles.full_name`, jamás `auth.users`**). Audit `edited_via` = actor efectivo.
+- **`directory_editor` PUEDE:** ver listado/ficha, corregir nombre visible,
+  especialidad, bio, clínica/dirección/depto-muni/teléfono público, servicios
+  públicos (crear/editar/activar, **no** hard-delete), publicar/despublicar
+  (solo `is_published`).
+- **`directory_editor` NO puede** (owner-only, verificado por smoke): `auth.users`,
+  email/phone de login, `admin_update_doctor_profile`, roles, `lucy_status`,
+  `is_verified` (GENERATED; `admin_set_doctor_verified` fue dropeada en `s7_03`),
+  `is_operational`, `booking_enabled`, avatar (RPC + Storage RLS), hard-delete,
+  pacientes/merge, consultas, recetas, diagnósticos, lista de espera,
+  afiliaciones, administradores, **Analytics**, **Analytics Farma**, pagos,
+  ownership clínico.
+- **`operations_admin` = DISEÑADO pero INERTE:** hereda directorio (herencia
+  limpia) pero **ninguna RPC operativa se le abre** en este PR → **PR-C futuro**
+  decidirá su superficie. Analytics/Farma siguen owner-only.
+- **Verificado:** `check-s7_57.mjs` **15/15** + `_smoke-s7_57.mjs` **43/43**
+  (matriz admin/editor/operations/inactivo/normal + sin fuga de login creds +
+  audit por actor + fixtures aisladas, cleanup 0 residuales, jamás Katherine).
+  `database.types.ts` actualizado (tabla + 8 firmas).
+- **Pendiente NO iniciado:** **PR-B (frontend)** — guard por nivel (`my_lucyadmin_access`),
+  nav filtrado (solo "Médicos" para el editor), acceso limitado a `/admin/medicos`
+  + `/:id`, ficha sin secciones sensibles (login/verify/lucy_status/operational/
+  avatar/borrar servicio), preview con sesión de editor. Otorgar el acceso al
+  teléfono ya guardado = Test Phone OTP fijo + `INSERT` manual del owner en
+  `lucyadmin_access`.
 
 ---
 
