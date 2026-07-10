@@ -208,7 +208,7 @@ export function buildHomeMeta(origin) {
   const canonical = `${origin}/`;
   const ogImage = `${origin}${DEFAULT_OG_IMAGE_PATH}`;
 
-  const title = `${SITE} El Salvador — Directorio médico y agenda en línea`;
+  const title = `${SITE} El Salvador — Encuentra al médico perfecto para ti`;
   const description =
     `Encuentra médicos en El Salvador por especialidad y ubicación. ` +
     `Revisa perfiles y reserva en línea o contacta, desde ${SITE}.`;
