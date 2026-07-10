@@ -192,8 +192,8 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
   const okAll =
     has(xml, 'dr-camilo-carrillo') && has(xml, '/doctor/sin-ubicacion') &&
     !has(xml, 'sin-especialidad') && !has(xml, 'sin-clinica') && !has(xml, 'Sin Slug') &&
-    (xml.match(/<url>/g) || []).length === 2;
-  okAll ? ok('T14 sitemap (opción B): incluye sin-ubicación; excluye sin-slug/especialidad/clínica')
+    (xml.match(/<url>/g) || []).length === 3; // Home + 2 perfiles incluidos
+  okAll ? ok('T14 sitemap (opción B): Home + incluye sin-ubicación; excluye sin-slug/especialidad/clínica')
         : no('T14 sitemap:\n' + xml);
 }
 
@@ -217,11 +217,13 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
     ? ok('T15 sitemap sin UUIDs (loc por slug)') : no('T15 sitemap:\n' + xml);
 }
 
-// T16 — sin datos → urlset vacío válido
+// T16 — sin filas de médicos → urlset válido con SOLO el Home (1 url)
 {
   const xml = buildSitemapXml([], ORIGIN);
-  (xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') && !has(xml, '<url>'))
-    ? ok('T16 sitemap vacío válido sin filas') : no('T16 sitemap vacío:\n' + xml);
+  (xml.startsWith('<?xml') && has(xml, '<urlset') && has(xml, '</urlset>') &&
+   has(xml, '<loc>https://lucycare.app/</loc>') &&
+   (xml.match(/<url>/g) || []).length === 1 && !has(xml, '/doctor/'))
+    ? ok('T16 sitemap sin médicos: válido con solo el Home /') : no('T16 sitemap vacío:\n' + xml);
 }
 
 // T17 — escapeXml
@@ -232,33 +234,92 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
 
 // ── Home (SEO Home OG) ──
 
-// T18 — buildHomeMeta: indexable + OG/Twitter completos + canonical raíz + logo
+// T18 — buildHomeMeta: indexable + OG/Twitter + canonical raíz + logo + copy con "El Salvador"
 {
   const m = buildHomeMeta(ORIGIN);
   const okAll = m.indexable === true &&
-    m.title === 'LucyCare — Encuentra al médico perfecto para ti' &&
+    m.title === 'LucyCare El Salvador — Directorio médico y agenda en línea' &&
     has(m.metaHtml, 'index,follow') && !has(m.metaHtml, 'noindex') &&
     has(m.metaHtml, '<meta property="og:type" content="website">') &&
     has(m.metaHtml, `<link rel="canonical" href="https://lucycare.app/">`) &&
     has(m.metaHtml, `<meta property="og:url" content="https://lucycare.app/">`) &&
     has(m.metaHtml, 'https://lucycare.app/lucycare-logo.png') &&
     has(m.metaHtml, 'twitter:card') && has(m.metaHtml, 'summary_large_image') &&
-    has(m.metaHtml, 'especialidad');
-  okAll ? ok('T18 buildHomeMeta: index,follow + og website + canonical raíz + logo + twitter')
+    has(m.metaHtml, 'El Salvador');
+  okAll ? ok('T18 buildHomeMeta: copy "El Salvador" + index,follow + og/twitter + canonical + logo')
         : no('T18 buildHomeMeta: ' + m.title + ' | ' + m.metaHtml);
 }
 
-// T18b — injectMeta con home meta: 1 title (home), 1 canonical, meta antes de </head>
+// T18b — injectMeta con home meta: 1 title (home nuevo), 1 canonical, meta antes de </head>
 {
   const m = buildHomeMeta(ORIGIN);
   const out = injectMeta(SHELL, m);
   const titleCount = (out.match(/<title>/gi) || []).length;
   const canonicalCount = (out.match(/rel="canonical"/gi) || []).length;
   const beforeHead = out.indexOf('og:title') < out.indexOf('</head>');
-  (titleCount === 1 && has(out, '<title>LucyCare — Encuentra al médico perfecto para ti</title>') &&
+  (titleCount === 1 && has(out, '<title>LucyCare El Salvador — Directorio médico y agenda en línea</title>') &&
    canonicalCount === 1 && beforeHead && has(out, '<div id="root">'))
     ? ok('T18b injectMeta home: 1 title home + 1 canonical + meta antes de </head> + shell intacto')
     : no(`T18b injectMeta home (titles=${titleCount}, canonical=${canonicalCount}, beforeHead=${beforeHead})`);
+}
+
+// ── JSON-LD de marca (SEO Brand) ──
+
+// T19 — buildHomeMeta emite JSON-LD @graph con Organization + WebSite,
+// name LucyCare, areaServed El Salvador; SIN sameAs, SIN SearchAction; escapado.
+{
+  const m = buildHomeMeta(ORIGIN);
+  const scriptMatch = m.metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  let okAll = false, why = 'sin <script ld+json>';
+  if (scriptMatch) {
+    const rawJson = scriptMatch[1];
+    // El JSON serializado escapa '<' como < (defensivo).
+    const noRawAngle = !rawJson.includes('<');
+    const data = JSON.parse(rawJson.replace(/\\u003c/g, '<'));
+    const g = data['@graph'] || [];
+    const org = g.find((x) => x['@type'] === 'Organization');
+    const site = g.find((x) => x['@type'] === 'WebSite');
+    const blob = JSON.stringify(data);
+    okAll = data['@context'] === 'https://schema.org' &&
+      !!org && org.name === 'LucyCare' && org.url === 'https://lucycare.app' &&
+      org.logo === 'https://lucycare.app/lucycare-logo.png' &&
+      org.areaServed && org.areaServed.name === 'El Salvador' &&
+      !!site && site['@type'] === 'WebSite' && site.name === 'LucyCare' &&
+      !('address' in org) &&            // sin dirección física
+      !blob.includes('sameAs') &&       // sin redes inventadas
+      !blob.includes('SearchAction') && !blob.includes('potentialAction') && // sin search action
+      noRawAngle;
+    if (!okAll) why = blob;
+  }
+  okAll ? ok('T19 JSON-LD: Organization+WebSite @graph, El Salvador, sin sameAs/SearchAction/address, escapado')
+        : no('T19 JSON-LD: ' + why);
+}
+
+// T19b — el JSON-LD SOLO va en el Home; buildMeta (/doctor/*) NO lo emite
+{
+  const d = normalizeDoctor(rawCamilo);
+  const m = buildMeta(d, ORIGIN);
+  (!has(m.metaHtml, 'application/ld+json') && !has(m.metaHtml, '@graph'))
+    ? ok('T19b /doctor/* NO emite JSON-LD (solo Home)') : no('T19b doctor no debería tener JSON-LD');
+}
+
+// ── Sitemap: Home `/` incluido (SEO Brand) ──
+
+// T20 — buildSitemapXml incluye el Home `/` (priority 1.0, sin lastmod), sin UUID/privadas
+{
+  const rows = [{ ...rawCamilo, updated_at: '2026-06-30T12:00:00Z' }];
+  const xml = buildSitemapXml(rows, ORIGIN);
+  // Bloque <url> del Home (loc exactamente la raíz).
+  const homeBlock = xml.match(/<url>\s*<loc>https:\/\/lucycare\.app\/<\/loc>[\s\S]*?<\/url>/);
+  const okAll =
+    !!homeBlock &&
+    has(homeBlock[0], '<priority>1.0</priority>') &&
+    !has(homeBlock[0], '<lastmod>') &&                       // Home sin lastmod (determinista)
+    has(xml, '<loc>https://lucycare.app/doctor/dr-camilo-carrillo</loc>') && // perfiles intactos
+    !/<loc>[^<]*\/(panel|admin|paciente|reset-password)/.test(xml) &&        // 0 rutas privadas
+    !/<loc>[^<]*[0-9a-f]{8}-[0-9a-f]{4}-/i.test(xml);        // 0 UUIDs
+  okAll ? ok('T20 sitemap: Home / (priority 1.0, sin lastmod) + perfiles por slug, 0 UUIDs/privadas')
+        : no('T20 sitemap:\n' + xml);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);
