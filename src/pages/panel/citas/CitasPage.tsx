@@ -16,6 +16,7 @@ import {
   useUpdateAppointmentStatus,
 } from '@/hooks/appointments.hooks';
 import { useClinicContext } from '@/hooks/useClinicContext';
+import { getToday, toDateStr } from '@/utils/calendar';
 import AppointmentCard from './AppointmentCard';
 import CalendarView from './CalendarView';
 import ViewToggle, { type CitasView } from './components/ViewToggle';
@@ -52,6 +53,8 @@ export default function CitasPage() {
   const [selectedDate, setSelectedDate] = useState(() => getToday());
 
   const isToday = selectedDate === getToday();
+  // Rótulo relativo (Hoy / Mañana / ninguno), en zona local real.
+  const relativeLabel = relativeDayLabel(selectedDate);
 
   // ─── Queries (vista Lista) ────────────────────────────────────
   const {
@@ -173,8 +176,8 @@ export default function CitasPage() {
                 <p className="text-sm font-semibold text-gray-900 truncate">
                   {formatDateDisplay(selectedDate)}
                 </p>
-                {isToday && (
-                  <span className="text-xs text-emerald-600 font-medium">Hoy</span>
+                {relativeLabel && (
+                  <span className="text-xs text-emerald-600 font-medium">{relativeLabel}</span>
                 )}
               </div>
               <button
@@ -219,8 +222,8 @@ export default function CitasPage() {
                 <p className="text-base font-semibold text-gray-900">
                   {formatDateDisplay(selectedDate)}
                 </p>
-                {isToday && (
-                  <span className="text-xs text-emerald-600 font-medium">Hoy</span>
+                {relativeLabel && (
+                  <span className="text-xs text-emerald-600 font-medium">{relativeLabel}</span>
                 )}
               </div>
               <input
@@ -337,13 +340,22 @@ function StatCard({ label, value, color, bg }: {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+// getToday / toDateStr se importan de @/utils/calendar (locales, no UTC).
+// Las versiones previas usaban toISOString() (UTC) → después de las 18:00
+// en El Salvador (UTC−6) devolvían el día siguiente y la agenda cargaba
+// "mañana" rotulado como "Hoy".
 
-function getToday(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
+/**
+ * Rótulo relativo del día seleccionado en zona LOCAL:
+ * hoy → 'Hoy', mañana → 'Mañana', cualquier otro → null (sin rótulo).
+ */
+function relativeDayLabel(dateStr: string): string | null {
+  const today = getToday();
+  if (dateStr === today) return 'Hoy';
+  const t = new Date(today + 'T12:00:00'); // ancla mediodía local (sin bug de TZ)
+  t.setDate(t.getDate() + 1);
+  if (dateStr === toDateStr(t)) return 'Mañana';
+  return null;
 }
 
 function formatDateDisplay(dateStr: string): string {
