@@ -92,6 +92,12 @@ export function buildSitemapXml(rows, origin) {
     .filter((d) => (seen.has(d.slug) ? false : (seen.add(d.slug), true)))
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
+  // Entrada del Home `/` (URL de marca más importante). Sin lastmod → la
+  // función se mantiene determinista (sin reloj) y no rompe los tests.
+  const homeUrl =
+    `  <url>\n    <loc>${escapeXml(`${origin}/`)}</loc>\n` +
+    `    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>`;
+
   const urls = entries
     .map((d) => {
       const loc = escapeXml(`${origin}/doctor/${d.slug}`);
@@ -109,6 +115,7 @@ export function buildSitemapXml(rows, origin) {
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    homeUrl + '\n' +
     (urls ? urls + '\n' : '') +
     `</urlset>\n`
   );
@@ -201,10 +208,10 @@ export function buildHomeMeta(origin) {
   const canonical = `${origin}/`;
   const ogImage = `${origin}${DEFAULT_OG_IMAGE_PATH}`;
 
-  const title = `${SITE} — Encuentra al médico perfecto para ti`;
+  const title = `${SITE} El Salvador — Directorio médico y agenda en línea`;
   const description =
-    'Busca por especialidad, ubicación y disponibilidad. ' +
-    `Reserva en línea con ${SITE}.`;
+    `Encuentra médicos en El Salvador por especialidad y ubicación. ` +
+    `Revisa perfiles y reserva en línea o contacta, desde ${SITE}.`;
 
   const t = escapeHtml(title);
   const desc = escapeHtml(description);
@@ -225,9 +232,43 @@ export function buildHomeMeta(origin) {
     `<meta name="twitter:title" content="${t}">`,
     `<meta name="twitter:description" content="${desc}">`,
     `<meta name="twitter:image" content="${img}">`,
+    buildHomeJsonLd(origin),
   ].join('\n    ');
 
   return { title, metaHtml, indexable: true };
+}
+
+/**
+ * JSON-LD de MARCA para el Home: Organization + WebSite en un solo bloque
+ * `@graph`. Solo datos seguros y estáticos (sin sameAs / teléfono / dirección
+ * física / SearchAction — no hay URL real de búsqueda indexable). Refuerza el
+ * reconocimiento de "LucyCare" y el contexto geográfico (El Salvador) para
+ * desambiguar de dominios homónimos. Solo se emite en `/` (no en /doctor/*).
+ */
+export function buildHomeJsonLd(origin) {
+  const graph = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        name: SITE,
+        url: origin,
+        logo: `${origin}${DEFAULT_OG_IMAGE_PATH}`,
+        description: 'Directorio médico y agenda en línea en El Salvador.',
+        areaServed: { '@type': 'Country', name: 'El Salvador' },
+      },
+      {
+        '@type': 'WebSite',
+        name: SITE,
+        url: origin,
+        description: 'Directorio médico y agenda en línea en El Salvador.',
+      },
+    ],
+  };
+  // Escape defensivo: los valores son constantes de marca (sin input de
+  // usuario), pero neutralizamos `<` para que nada pueda cerrar </script>.
+  const json = JSON.stringify(graph).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
 }
 
 /**
