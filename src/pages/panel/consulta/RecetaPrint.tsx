@@ -2,7 +2,7 @@ import type { ConsultationContext } from '@/services/consultations.service';
 import type { Prescription, DurationUnit } from '@/services/prescriptions.service';
 
 /**
- * Layout de receta para impresión (window.print()).
+ * Layout de receta para impresión (window.print()) / Guardar como PDF.
  * Por default está oculto en pantalla y solo aparece al imprimir.
  *
  * Uso:
@@ -11,6 +11,10 @@ import type { Prescription, DurationUnit } from '@/services/prescriptions.servic
  *
  * El parent debe asegurar que TODO lo demás esté con `print:hidden` para que
  * solo aparezca este componente al imprimir.
+ *
+ * Diseño: tarjeta limpia con franja superior teal, encabezado del médico +
+ * fecha, bloque gris de paciente y tabla de prescripción. SIN pie de firma
+ * (los datos del médico viven una sola vez, en el encabezado).
  */
 interface Props {
   ctx: ConsultationContext;
@@ -29,153 +33,142 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
 
   return (
     <div className="hidden print:block print-receta">
-      {/* Header — datos del médico + fechas (emisión / corrección, una sola vez) */}
-      <header className="border-b-2 border-gray-800 pb-4 mb-6">
-        <div className="flex justify-between items-start gap-6">
+      {/* Franja superior de marca (teal médico) */}
+      <div className="h-2 bg-teal-600 rounded-t-lg" />
+
+      {/* Tarjeta */}
+      <div className="border border-gray-200 border-t-0 rounded-b-lg px-8 py-6">
+        {/* Encabezado — médico (izq.) + fecha (der.), una sola vez */}
+        <header className="flex justify-between items-start gap-6 pb-4 border-b border-gray-200">
           <div className="flex-1">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Receta médica</p>
-            <h1 className="text-2xl font-bold text-gray-900">{doctorTitleName(ctx.doctor.full_name)}</h1>
+            <p className="text-[11px] uppercase tracking-wide text-teal-700 font-semibold mb-1">
+              Receta médica
+            </p>
+            <h1 className="text-xl font-bold text-gray-900">{doctorTitleName(ctx.doctor.full_name)}</h1>
             {ctx.doctor.specialty_name && (
-              <p className="text-sm text-gray-700 mt-0.5">{ctx.doctor.specialty_name}</p>
+              <p className="text-sm text-gray-600 mt-0.5">{ctx.doctor.specialty_name}</p>
             )}
             {ctx.doctor.license_number && (
-              <p className="text-xs text-gray-600 mt-1">JVPM: {ctx.doctor.license_number}</p>
+              <p className="text-xs text-gray-500 mt-1">JVPM: {ctx.doctor.license_number}</p>
             )}
           </div>
-          <div className="text-right text-xs text-gray-600">
-            <p>Fecha de emisión</p>
-            <p className="font-semibold text-gray-900 text-sm mt-0.5">
-              {formatLongDate(signedDate)}
-            </p>
+          <div className="text-right text-xs text-gray-500">
+            <p className="uppercase tracking-wide">Fecha de emisión</p>
+            <p className="font-semibold text-gray-900 text-sm mt-0.5">{formatLongDate(signedDate)}</p>
             {isCorrected && correctedDate && (
               <>
-                <p className="mt-1.5">Corregida</p>
-                <p className="font-semibold text-gray-900 text-sm mt-0.5">
-                  {formatLongDate(correctedDate)}
-                </p>
+                <p className="mt-1.5 uppercase tracking-wide">Corregida</p>
+                <p className="font-semibold text-gray-900 text-sm mt-0.5">{formatLongDate(correctedDate)}</p>
               </>
             )}
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Marca de corrección — clara pero compacta; la fecha vive en el encabezado */}
-      {isCorrected && (
-        <div className="border-2 border-gray-800 rounded-md px-4 py-2 mb-6">
-          <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-            Receta corregida
-          </p>
-          <p className="text-xs text-gray-700 mt-0.5">
-            Reemplaza versiones anteriores.
-          </p>
-        </div>
-      )}
-
-      {/* Datos del paciente */}
-      <section className="mb-6 grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Paciente</p>
-          <p className="text-base font-semibold text-gray-900 mt-0.5">{ctx.patient.full_name}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Edad / Sexo</p>
-          <p className="text-sm text-gray-900 mt-0.5">
-            {age !== null ? `${age} años` : '—'} · <span className="capitalize">{ctx.patient.gender}</span>
-          </p>
-        </div>
-      </section>
-
-      {/* Lista de medicamentos */}
-      <section className="mb-8">
-        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3 border-b border-gray-300 pb-1">
-          Prescripción
-        </h2>
-        {prescriptions.length === 0 ? (
-          <p className="text-sm text-gray-500 italic">
-            No se prescribieron medicamentos en esta consulta.
-          </p>
-        ) : (
-          // 3+ medicamentos → 2 columnas (fila-major: 1|2 / 3|4) para aprovechar
-          // el ancho A4 y no empujar la firma a una segunda página. 1–2 → 1 columna.
-          <ol
-            className={
-              prescriptions.length >= 3
-                ? 'grid grid-cols-2 gap-x-6 gap-y-4'
-                : 'space-y-4'
-            }
-          >
-            {prescriptions.map((p, i) => (
-              <PrescriptionItem key={p.id} index={i + 1} p={p} />
-            ))}
-          </ol>
-        )}
-      </section>
-
-      {/* Footer — firma */}
-      <footer className="mt-12 pt-4 border-t border-gray-300 break-inside-avoid">
-        <div className="flex justify-end">
-          <div className="text-right">
-            <div className="border-b border-gray-800 w-64 mb-1" />
-            <p className="text-sm font-semibold text-gray-900">{doctorTitleName(ctx.doctor.full_name)}</p>
-            {ctx.doctor.license_number && (
-              <p className="text-xs text-gray-600">JVPM: {ctx.doctor.license_number}</p>
-            )}
-            <p className="text-[11px] text-gray-500 mt-2">Firmado digitalmente</p>
+        {/* Marca de corrección — compacta; la fecha vive en el encabezado */}
+        {isCorrected && (
+          <div className="mt-4 border border-teal-600 bg-teal-50 rounded-md px-4 py-2">
+            <p className="text-sm font-bold text-teal-800 uppercase tracking-wide">Receta corregida</p>
+            <p className="text-xs text-teal-700 mt-0.5">Reemplaza versiones anteriores.</p>
           </div>
-        </div>
-      </footer>
+        )}
+
+        {/* Datos del paciente — bloque gris claro */}
+        <section className="mt-5 bg-gray-50 border border-gray-200 rounded-md px-4 py-3 grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wide">Paciente</p>
+            <p className="text-base font-semibold text-gray-900 mt-0.5">{ctx.patient.full_name}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] text-gray-500 uppercase tracking-wide">Edad / Sexo</p>
+            <p className="text-sm text-gray-900 mt-0.5">
+              {age !== null ? `${age} años` : '—'} · <span className="capitalize">{ctx.patient.gender}</span>
+            </p>
+          </div>
+        </section>
+
+        {/* Prescripción — tabla */}
+        <section className="mt-6">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">
+            Prescripción médica
+          </h2>
+          {prescriptions.length === 0 ? (
+            <p className="text-sm text-gray-500 italic">
+              No se prescribieron medicamentos en esta consulta.
+            </p>
+          ) : (
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-100 text-left text-[11px] uppercase tracking-wide text-gray-600">
+                  <th className="py-2 px-3 border border-gray-200 font-semibold">Medicamento</th>
+                  <th className="py-2 px-3 border border-gray-200 font-semibold whitespace-nowrap">Dosis</th>
+                  <th className="py-2 px-3 border border-gray-200 font-semibold whitespace-nowrap">Frecuencia</th>
+                  <th className="py-2 px-3 border border-gray-200 font-semibold whitespace-nowrap">Duración</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prescriptions.map((p, i) => (
+                  <PrescriptionRows key={p.id} index={i + 1} p={p} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
 // ─── Sub-componente ───────────────────────────────────────────────────
-
-function PrescriptionItem({ index, p }: { index: number; p: Prescription }) {
+// Una fila principal (Medicamento | Dosis | Frecuencia | Duración) + una fila
+// secundaria de ancho completo para Indicaciones/Alternativas (texto largo →
+// no rompe el A4 como columna rígida).
+function PrescriptionRows({ index, p }: { index: number; p: Prescription }) {
   const subParts = [p.medication.active_ingredient, p.medication.concentration, p.medication.presentation].filter(Boolean);
   const durationLine = formatDuration(p.duration_value, p.duration_unit);
-
-  // Solo se rotula lo que el médico cargó; nada se infiere ni se completa.
-  // Un valor suelto como "1" queda como "Dosis: 1" (claro, no ambiguo).
-  const detailRows: { label: string; value: string }[] = [];
-  if (p.dosage) detailRows.push({ label: 'Dosis', value: p.dosage });
-  if (p.frequency) detailRows.push({ label: 'Frecuencia', value: p.frequency });
-  if (durationLine) detailRows.push({ label: 'Duración', value: durationLine });
-  if (p.instructions) detailRows.push({ label: 'Indicaciones', value: p.instructions });
+  const hasSecondary = !!(p.instructions || p.alternatives);
 
   return (
-    <li className="text-sm text-gray-800 break-inside-avoid">
-      <div className="flex items-baseline gap-2">
-        <span className="font-bold text-gray-900 tabular-nums">{index}.</span>
-        <div className="flex-1 min-w-0">
+    <>
+      <tr className="align-top break-inside-avoid">
+        <td className={`py-2 px-3 border border-gray-200 ${hasSecondary ? 'border-b-0' : ''}`}>
           <p className="font-semibold text-gray-900">
+            <span className="tabular-nums text-gray-500 mr-1">{index}.</span>
             {p.medication.commercial_name}
             {p.version > 1 && (
-              <span className="ml-2 text-xs font-bold text-gray-700 uppercase">
-                · Corrección v{p.version}
-              </span>
+              <span className="ml-2 text-[11px] font-bold text-teal-700 uppercase">· Corrección v{p.version}</span>
             )}
           </p>
           {subParts.length > 0 && (
             <p className="text-xs text-gray-600 mt-0.5">{subParts.join(' · ')}</p>
           )}
-          {detailRows.length > 0 && (
-            <dl className="mt-1.5 space-y-0.5">
-              {detailRows.map((r) => (
-                <div key={r.label} className="flex gap-1.5">
-                  <dt className="font-medium text-gray-700 flex-shrink-0">{r.label}:</dt>
-                  <dd className="text-gray-800 min-w-0">{r.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          {p.alternatives && (
-            <p className="mt-1 text-xs text-gray-600">
-              <span className="font-medium">Alternativas:</span> {p.alternatives}
-            </p>
-          )}
-        </div>
-      </div>
-    </li>
+        </td>
+        <td className={`py-2 px-3 border border-gray-200 text-gray-800 ${hasSecondary ? 'border-b-0' : ''}`}>
+          {p.dosage || '—'}
+        </td>
+        <td className={`py-2 px-3 border border-gray-200 text-gray-800 ${hasSecondary ? 'border-b-0' : ''}`}>
+          {p.frequency || '—'}
+        </td>
+        <td className={`py-2 px-3 border border-gray-200 text-gray-800 whitespace-nowrap ${hasSecondary ? 'border-b-0' : ''}`}>
+          {durationLine || '—'}
+        </td>
+      </tr>
+      {hasSecondary && (
+        <tr className="break-inside-avoid">
+          <td colSpan={4} className="py-2 px-3 border border-gray-200 border-t-0 text-xs text-gray-700">
+            {p.instructions && (
+              <p>
+                <span className="font-semibold text-gray-800">Indicaciones:</span> {p.instructions}
+              </p>
+            )}
+            {p.alternatives && (
+              <p className={p.instructions ? 'mt-1' : ''}>
+                <span className="font-semibold text-gray-800">Alternativas:</span> {p.alternatives}
+              </p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

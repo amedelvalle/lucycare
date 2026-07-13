@@ -50,15 +50,19 @@
   body {
     background: white !important;
   }
-  /* Receta usa fuentes serif para look profesional impreso */
+  /* Receta: fuente sans/neutral para un look médico limpio (scoped a la receta) */
   .print-receta {
-    font-family: 'Georgia', 'Times New Roman', serif;
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     color: #111;
     padding: 1cm;
     max-width: 100%;
+    /* Imprimir fondos de color (franja teal, bloque gris, header de tabla).
+       Sin esto, los navegadores omiten los backgrounds por defecto. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
-  /* Evitar saltos de página dentro de cada medicamento */
-  .print-receta li {
+  /* Evitar saltos de página dentro de cada fila de medicamento */
+  .print-receta tr {
     page-break-inside: avoid;
   }
 }
