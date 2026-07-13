@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useMedicationsSearch,
   useCreateMedication,
@@ -204,10 +204,19 @@ function PrescriptionRow({
     alternatives: p.alternatives ?? '',
   });
   const [dirty, setDirty] = useState(false);
+  const boundIdRef = useRef(p.id);
 
-  // Re-sync si cambia el remoto y no editamos
+  // Seed local SOLO cuando esta fila pasa a representar OTRO medicamento
+  // (p.id distinto). NO re-sincronizamos desde `p` tras cada guardado: el
+  // refetch async (useUpdatePrescription invalida→refetch, sin optimistic)
+  // trae `p` viejo justo cuando `dirty` cae a false, y re-sembrar ahí borraría
+  // lo recién escrito (race que vaciaba dosis/frecuencia/duración/unidad).
+  // Como la fila va con key={p.id} normalmente hay remount; el ref es defensa
+  // por si React reusa la instancia. La fila es la única que edita sus campos
+  // en borrador, así que no necesita rehidratarse desde props.
   useEffect(() => {
-    if (!dirty) {
+    if (boundIdRef.current !== p.id) {
+      boundIdRef.current = p.id;
       setForm({
         dosage: p.dosage ?? '',
         frequency: p.frequency ?? '',
@@ -216,8 +225,11 @@ function PrescriptionRow({
         instructions: p.instructions ?? '',
         alternatives: p.alternatives ?? '',
       });
+      setDirty(false);
     }
-  }, [p.id, p.dosage, p.frequency, p.duration_value, p.duration_unit, p.instructions, p.alternatives, dirty]);
+    // Solo depende de p.id: los otros campos se leen (frescos) al re-ligar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.id]);
 
   const flush = () => {
     if (!dirty) return;
