@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
-import { getCurrentAuthUser, signOut } from '../../services/auth.service';
+import { loadPanelUser, hardLocalSignOut, SessionExpiredError } from '../../services/auth.service';
 import type { AuthUser } from '../../services/auth.service';
 import {
   useClinicContext,
@@ -44,6 +44,10 @@ export default function PanelLayout() {
   // F2: estado explícito de la carga del usuario. 'error' cubre tanto el
   // rechazo de getCurrentAuthUser como el timeout → evita el spinner infinito.
   const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>('loading');
+  // Tipo de fallo de carga de sesión: 'connection' = red/timeout (Reintentar
+  // puede servir); 'session' = sesión vencida/no recuperable (Reintentar NO
+  // sirve → hay que reingresar).
+  const [authErrorKind, setAuthErrorKind] = useState<'connection' | 'session'>('connection');
   const [authReloadKey, setAuthReloadKey] = useState(0);
   const {
     data: ctx,
@@ -59,7 +63,7 @@ export default function PanelLayout() {
     // Race contra un timeout duro para no depender de que el select de
     // profiles (sin timeout interno) resuelva siempre.
     const withTimeout = Promise.race([
-      getCurrentAuthUser(),
+      loadPanelUser(),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('auth-timeout')), AUTH_LOAD_TIMEOUT_MS),
       ),
@@ -78,6 +82,11 @@ export default function PanelLayout() {
       .catch((err) => {
         if (cancelled) return;
         console.warn('[PanelLayout] no se pudo cargar el usuario:', err);
+        // Clasificar: sesión no recuperable vs problema temporal de conexión.
+        // El timeout (auth-timeout) y errores de red → 'connection' (Reintentar
+        // sí puede servir; NO deslogueamos por un blip). Solo forzamos reingreso
+        // ante señal clara de sesión inválida (SessionExpiredError).
+        setAuthErrorKind(err instanceof SessionExpiredError ? 'session' : 'connection');
         setAuthState('error');
       });
 
@@ -88,10 +97,14 @@ export default function PanelLayout() {
 
   const retryAuth = useCallback(() => setAuthReloadKey((k) => k + 1), []);
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/');
-  };
+  // Salida robusta: limpieza dura de la sesión local (aunque signOut se cuelgue)
+  // + navegación DURA a la raíz (re-bootstrap sin sesión). Sirve tanto para el
+  // "Cerrar sesión" normal como para el "Ingresar nuevamente" de sesión vencida.
+  const forceReauth = useCallback(async () => {
+    await hardLocalSignOut();
+    window.location.assign('/');
+  }, []);
+  const handleLogout = forceReauth;
 
   // Guard combinado: esperar TANTO al user (auth.user) como al
   // ctx (lucy_status, is_operational, role).
@@ -104,12 +117,27 @@ export default function PanelLayout() {
   // el spinner colgado para siempre (el `!user` no distinguía cargando de
   // fallido). Ahora es recuperable: Reintentar re-dispara el efecto.
   if (authState === 'error') {
+    // Sesión vencida / no recuperable → reingreso, NO loop de Reintentar.
+    if (authErrorKind === 'session') {
+      return (
+        <PanelStateScreen
+          icon="ri-shield-keyhole-line"
+          tone="warning"
+          title="Tu sesión venció"
+          message="Por seguridad, necesitás ingresar nuevamente."
+        >
+          <PrimaryButton onClick={forceReauth}>Ingresar nuevamente</PrimaryButton>
+        </PanelStateScreen>
+      );
+    }
+    // Problema temporal de conexión / timeout → Reintentar sí puede servir,
+    // + salida robusta por si el usuario prefiere reingresar.
     return (
       <PanelStateScreen
         icon="ri-wifi-off-line"
         tone="neutral"
-        title="No pudimos cargar tu cuenta"
-        message="Hubo un problema al cargar tu sesión. Revisá tu conexión e intentá de nuevo."
+        title="No pudimos conectar con LucyCare"
+        message="Hubo un problema temporal al cargar tu sesión. Revisá tu conexión e intentá nuevamente."
       >
         <PrimaryButton onClick={retryAuth}>Reintentar</PrimaryButton>
         <SecondaryButton onClick={handleLogout}>Cerrar sesión</SecondaryButton>
