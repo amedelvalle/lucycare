@@ -10,12 +10,89 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { isAuthError } from '@supabase/supabase-js'
 
 export interface AuthUser {
   id: string
   phone: string
   name: string | null
   role: string | null
+}
+
+/**
+ * Sesión no recuperable: refresh token vencido/rechazado, o error de Auth al
+ * restaurar la sesión. Reintentar NO la recupera → el caller debe ofrecer
+ * reingreso (limpieza dura + login), no un loop de "Reintentar".
+ */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('session-expired')
+    this.name = 'SessionExpiredError'
+  }
+}
+
+/**
+ * Carga el usuario del panel distinguiendo el TIPO de fallo (para no mostrar
+ * "revisá tu conexión" cuando en realidad la sesión venció):
+ *   - devuelve AuthUser | null (null = sin sesión → el caller redirige);
+ *   - lanza `SessionExpiredError` si `getSession()` reporta un error de Auth
+ *     (refresh inválido/rechazado) → sesión no recuperable;
+ *   - re-lanza cualquier otro error (red/timeout) → el caller lo trata como
+ *     problema temporal de conexión (Reintentar sí puede servir).
+ */
+export async function loadPanelUser(): Promise<AuthUser | null> {
+  let session
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) {
+      // getSession devolvió error SIN lanzar: típico de refresh token
+      // inválido/rechazado → sesión no recuperable.
+      if (isAuthError(error)) throw new SessionExpiredError()
+      throw error
+    }
+    session = data.session
+  } catch (err) {
+    if (err instanceof SessionExpiredError) throw err
+    // getSession LANZÓ: si es error de Auth → sesión no recuperable; si no
+    // (red/otro) → se propaga como recuperable.
+    if (isAuthError(err)) throw new SessionExpiredError()
+    throw err
+  }
+
+  if (!session?.user) return null
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, role')
+    .eq('id', session.user.id)
+    .single()
+
+  return {
+    id: session.user.id,
+    phone: session.user.phone || '',
+    name: profile?.full_name || null,
+    role: profile?.role || 'patient',
+  }
+}
+
+/**
+ * Cierre de sesión LOCAL robusto (mismo patrón que `useIdleLogout`): el
+ * `signOut()` de supabase-js puede colgarse por el lock no-op, así que NO lo
+ * esperamos; hacemos limpieza dura de las claves `sb-*` de localStorage para
+ * garantizar un estado sin sesión aunque el signOut nunca resuelva. El caller
+ * decide la navegación/recarga.
+ */
+export async function hardLocalSignOut(): Promise<void> {
+  // best-effort, NO bloqueante (el noopLock puede colgar signOut).
+  void supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+  try {
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith('sb-')) localStorage.removeItem(k)
+    })
+    localStorage.removeItem('lc_last_activity')
+  } catch {
+    // localStorage inaccesible (modo privado extremo) → nada que limpiar.
+  }
 }
 
 /**
