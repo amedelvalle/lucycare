@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   useConsultationByAppointment,
@@ -125,23 +125,45 @@ export default function ConsultaPage() {
   const isSigned = ctx?.status === 'signed';
   const readOnly = isSigned;
 
-  // Hidratar formularios cuando llega el contexto
+  // ─── Texto clínico: siembra vs. edición local ────────────────
+  // `form` es la verdad de lo que el médico ve. El servidor solo puede sembrarlo
+  // cuando el médico NO tiene edición local pendiente; si no, "Guardar borrador"
+  // + seguir escribiendo hacía que el refetch (nuevo `updated_at`) rehidratara el
+  // form con la versión del servidor y BORRARA lo tipeado después del click, sin
+  // haberlo persistido nunca.
+  //   - `seededConsultationRef`: qué consulta está sembrada (cambiar de consulta
+  //     siempre resiembra, para no arrastrar texto de la anterior).
+  //   - `hasLocalEditsRef`: hay texto tipeado que el servidor todavía no confirmó.
+  //     Se apaga tras un guardado exitoso solo si el form no cambió mientras
+  //     guardábamos (ver handleSaveDraft) — así el modo lectura sí se rehidrata
+  //     tras una corrección post-firma (amend), que es para lo que existe la
+  //     dependencia de `updated_at`.
+  const seededConsultationRef = useRef<string | null>(null);
+  const hasLocalEditsRef = useRef(false);
+  const formRef = useRef(form);
+  formRef.current = form;
+
   useEffect(() => {
-    if (ctx) {
-      setForm({
-        chief_complaint: ctx.chief_complaint ?? '',
-        history_present_illness: ctx.history_present_illness ?? '',
-        physical_exam: ctx.physical_exam ?? '',
-        internal_analysis: ctx.internal_analysis ?? '',
-        family_history_notes: ctx.family_history_notes ?? '',
-        plan: ctx.plan ?? '',
-      });
-    }
-    // updated_at en la dep: tras una corrección (amend) el ctx se refetcha con
-    // texto nuevo pero el mismo id → re-hidratar para que el modo lectura
-    // muestre el texto corregido. En borrador, updated_at solo cambia al
-    // guardar (no mientras se tipea), así que no pisa ediciones en curso.
+    if (!ctx) return;
+    const isOtherConsultation = seededConsultationRef.current !== ctx.id;
+    if (!isOtherConsultation && hasLocalEditsRef.current) return; // no pisar lo tipeado
+    seededConsultationRef.current = ctx.id;
+    hasLocalEditsRef.current = false;
+    setForm({
+      chief_complaint: ctx.chief_complaint ?? '',
+      history_present_illness: ctx.history_present_illness ?? '',
+      physical_exam: ctx.physical_exam ?? '',
+      internal_analysis: ctx.internal_analysis ?? '',
+      family_history_notes: ctx.family_history_notes ?? '',
+      plan: ctx.plan ?? '',
+    });
   }, [ctx?.id, ctx?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Única vía de edición del texto clínico: marca que hay edición local. */
+  const setField = (key: keyof FormState, value: string) => {
+    hasLocalEditsRef.current = true;
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
 
   useEffect(() => {
     if (vitals) {
@@ -170,13 +192,19 @@ export default function ConsultaPage() {
   // ─── Handlers ────────────────────────────────────────────────
   const handleSaveDraft = async () => {
     if (!ctx) return;
+    // Snapshot de lo que estamos mandando: si al terminar el guardado el form
+    // sigue igual, el servidor quedó al día y puede volver a sembrarlo (eso
+    // habilita la rehidratación tras una corrección post-firma). Si el médico
+    // siguió escribiendo mientras guardábamos, el form NO coincide → conserva la
+    // edición local y el refetch no la pisa.
+    const sent = formRef.current;
     const updates: ConsultationUpdate = {
-      chief_complaint: form.chief_complaint || null,
-      history_present_illness: form.history_present_illness || null,
-      physical_exam: form.physical_exam || null,
-      internal_analysis: form.internal_analysis || null,
-      family_history_notes: form.family_history_notes || null,
-      plan: form.plan || null,
+      chief_complaint: sent.chief_complaint || null,
+      history_present_illness: sent.history_present_illness || null,
+      physical_exam: sent.physical_exam || null,
+      internal_analysis: sent.internal_analysis || null,
+      family_history_notes: sent.family_history_notes || null,
+      plan: sent.plan || null,
     };
     const vitalsInput = parseVitalsForm(vitalsForm);
 
@@ -185,6 +213,7 @@ export default function ConsultaPage() {
         saveDraft.mutateAsync(updates),
         upsertVitals.mutateAsync(vitalsInput),
       ]);
+      if (sameText(formRef.current, sent)) hasLocalEditsRef.current = false;
       setSavedAt(Date.now());
     } catch (err) {
       console.error('Error guardando consulta:', err);
@@ -317,7 +346,7 @@ export default function ConsultaPage() {
             rows={2}
             value={form.chief_complaint}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, chief_complaint: e.target.value })}
+            onChange={(e) => setField('chief_complaint', e.target.value)}
             placeholder="Ej: dolor de cabeza intermitente desde hace 3 días..."
             className={textareaCls}
           />
@@ -328,7 +357,7 @@ export default function ConsultaPage() {
             rows={4}
             value={form.history_present_illness}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, history_present_illness: e.target.value })}
+            onChange={(e) => setField('history_present_illness', e.target.value)}
             placeholder="Inicio, evolución, factores desencadenantes, síntomas asociados..."
             className={textareaCls}
           />
@@ -339,7 +368,7 @@ export default function ConsultaPage() {
             rows={3}
             value={form.physical_exam}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, physical_exam: e.target.value })}
+            onChange={(e) => setField('physical_exam', e.target.value)}
             placeholder="Hallazgos relevantes a la exploración..."
             className={textareaCls}
           />
@@ -353,7 +382,7 @@ export default function ConsultaPage() {
             rows={2}
             value={form.internal_analysis}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, internal_analysis: e.target.value })}
+            onChange={(e) => setField('internal_analysis', e.target.value)}
             className={textareaCls}
           />
         </Field>
@@ -515,7 +544,7 @@ export default function ConsultaPage() {
             rows={4}
             value={form.family_history_notes}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, family_history_notes: e.target.value })}
+            onChange={(e) => setField('family_history_notes', e.target.value)}
             placeholder="Ej: Padre con hipertensión arterial; madre con diabetes tipo 2 (dx a los 50)..."
             className={textareaCls}
           />
@@ -576,7 +605,7 @@ export default function ConsultaPage() {
             rows={5}
             value={form.plan}
             disabled={readOnly}
-            onChange={(e) => setForm({ ...form, plan: e.target.value })}
+            onChange={(e) => setField('plan', e.target.value)}
             placeholder="Indicaciones generales: ...&#10;Órdenes: hemograma, glucemia&#10;Próximo control: en 2 semanas"
             className={textareaCls}
           />
@@ -1156,6 +1185,11 @@ function ConfirmSignModal({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
+
+/** ¿El texto clínico del form es el mismo que el que se mandó a guardar? */
+function sameText(a: FormState, b: FormState): boolean {
+  return (Object.keys(a) as (keyof FormState)[]).every((k) => a[k] === b[k]);
+}
 
 function parseVitalsForm(f: VitalsFormState): VitalsInput {
   const num = (s: string): number | null => {
