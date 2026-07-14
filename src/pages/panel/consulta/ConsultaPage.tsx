@@ -165,21 +165,44 @@ export default function ConsultaPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  // ─── Vitales: snapshot del servidor vs. edición del médico ───
+  // `vitalsSnapshotRef` es el último estado conocido del servidor (o EMPTY si la
+  // cita no tiene fila). "Vitales cambiados" = el form difiere de ese snapshot.
+  // De ahí sale el gate del upsert: guardar el borrador NO debe escribir vitales
+  // que el médico no tocó (creaba una fila enteramente vacía cuando no había
+  // ninguna, y reescribía recorded_at/recorded_by cuando ya existía).
+  const vitalsSnapshotRef = useRef<VitalsFormState>(EMPTY_VITALS);
+  const vitalsFormRef = useRef(vitalsForm);
+  vitalsFormRef.current = vitalsForm;
+  const seededVitalsAptRef = useRef<string | null>(null);
+  const vitalsChanged = () =>
+    !sameVitals(vitalsFormRef.current, vitalsSnapshotRef.current);
+
   useEffect(() => {
-    if (vitals) {
-      setVitalsForm({
-        systolic_bp: vitals.systolic_bp?.toString() ?? '',
-        diastolic_bp: vitals.diastolic_bp?.toString() ?? '',
-        heart_rate: vitals.heart_rate?.toString() ?? '',
-        respiratory_rate: vitals.respiratory_rate?.toString() ?? '',
-        temperature: vitals.temperature?.toString() ?? '',
-        spo2: vitals.spo2?.toString() ?? '',
-        // weight_kg (DB, kg) → input en libras
-        weight_lb: vitals.weight_kg != null ? String(kgToLb(vitals.weight_kg)) : '',
-        height_cm: vitals.height_cm?.toString() ?? '',
-      });
-    }
-  }, [vitals?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!appointmentId) return;
+    const isOtherAppointment = seededVitalsAptRef.current !== appointmentId;
+    // Cambiar de cita SIEMPRE resiembra (si no, la consulta siguiente arrastraría
+    // los vitales de la anterior: la ruta es la misma y el componente no se
+    // desmonta). Dentro de la misma cita, no pisamos lo que el médico tipeó.
+    if (!isOtherAppointment && vitalsChanged()) return;
+    // Sin fila (o todavía cargando) → EMPTY, no lo de la cita anterior.
+    const seeded: VitalsFormState = vitals
+      ? {
+          systolic_bp: vitals.systolic_bp?.toString() ?? '',
+          diastolic_bp: vitals.diastolic_bp?.toString() ?? '',
+          heart_rate: vitals.heart_rate?.toString() ?? '',
+          respiratory_rate: vitals.respiratory_rate?.toString() ?? '',
+          temperature: vitals.temperature?.toString() ?? '',
+          spo2: vitals.spo2?.toString() ?? '',
+          // weight_kg (DB, kg) → input en libras
+          weight_lb: vitals.weight_kg != null ? String(kgToLb(vitals.weight_kg)) : '',
+          height_cm: vitals.height_cm?.toString() ?? '',
+        }
+      : EMPTY_VITALS;
+    seededVitalsAptRef.current = appointmentId;
+    vitalsSnapshotRef.current = seeded;
+    setVitalsForm(seeded);
+  }, [appointmentId, vitals?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // IMC calculado en vivo desde el formulario (no de la query). El peso se
   // digita en libras → se convierte a kg para el cálculo (kg/m²).
@@ -206,14 +229,26 @@ export default function ConsultaPage() {
       family_history_notes: sent.family_history_notes || null,
       plan: sent.plan || null,
     };
-    const vitalsInput = parseVitalsForm(vitalsForm);
+    // Vitales: SOLO si el médico los cambió respecto al snapshot del servidor.
+    // Si no los tocó, no se llama a upsertVitals → no se crea la fila vacía ni se
+    // reescriben recorded_at/recorded_by. Borrar todos los campos de una fila que
+    // existía SÍ es un cambio (form vacío ≠ snapshot con valores) → se guarda como
+    // NULL, que es lo que el médico pidió.
+    const sentVitals = vitalsFormRef.current;
+    const mustSaveVitals = vitalsChanged();
 
     try {
       await Promise.all([
         saveDraft.mutateAsync(updates),
-        upsertVitals.mutateAsync(vitalsInput),
+        ...(mustSaveVitals
+          ? [upsertVitals.mutateAsync(parseVitalsForm(sentVitals))]
+          : []),
       ]);
       if (sameText(formRef.current, sent)) hasLocalEditsRef.current = false;
+      // El servidor ya tiene `sentVitals` → pasa a ser el snapshot. Si el médico
+      // siguió editando vitales mientras guardábamos, el form difiere del nuevo
+      // snapshot y el próximo guardado los mandará.
+      if (mustSaveVitals) vitalsSnapshotRef.current = sentVitals;
       setSavedAt(Date.now());
     } catch (err) {
       console.error('Error guardando consulta:', err);
@@ -1189,6 +1224,11 @@ function ConfirmSignModal({
 /** ¿El texto clínico del form es el mismo que el que se mandó a guardar? */
 function sameText(a: FormState, b: FormState): boolean {
   return (Object.keys(a) as (keyof FormState)[]).every((k) => a[k] === b[k]);
+}
+
+/** ¿Los vitales del form son los mismos que los del snapshot del servidor? */
+function sameVitals(a: VitalsFormState, b: VitalsFormState): boolean {
+  return (Object.keys(a) as (keyof VitalsFormState)[]).every((k) => a[k] === b[k]);
 }
 
 function parseVitalsForm(f: VitalsFormState): VitalsInput {
