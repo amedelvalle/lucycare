@@ -53,6 +53,13 @@ export default function PrescriptionsSection({
   const isAlreadyPrescribed = (medicationId: string) =>
     prescriptions.some((p) => p.medication_id === medicationId);
 
+  // Los campos de la receta autoguardan en `onBlur` con `mutate()`. Si ese
+  // guardado falla (red caída, consulta ya firmada) el médico no se enteraba:
+  // el cambio se perdía en silencio. El aviso se limpia solo al reintentar,
+  // porque la mutación vuelve a `pending`.
+  const saveFailed =
+    updateRx.isError || addPrescription.isError || removeRx.isError;
+
   const handleSelect = async (item: { id: string }) => {
     if (isAlreadyPrescribed(item.id)) {
       setSearch('');
@@ -64,6 +71,19 @@ export default function PrescriptionsSection({
 
   return (
     <div className="space-y-3">
+      {saveFailed && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+          <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          <p className="text-xs text-red-700">
+            No se pudo guardar el último cambio de la receta. Revisá tu conexión y
+            volvé a editar el campo antes de firmar.
+          </p>
+        </div>
+      )}
+
       {/* Botón cargar permanentes anteriores */}
       {!readOnly && (
         <div className="flex flex-wrap gap-2">

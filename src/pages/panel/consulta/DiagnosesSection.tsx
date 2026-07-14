@@ -38,6 +38,12 @@ export default function DiagnosesSection({ consultationId, doctorId, readOnly }:
   const isAlreadyAssigned = (diagnosisId: string) =>
     assigned.some((cd) => cd.diagnosis_id === diagnosisId);
 
+  // Las notas del diagnóstico autoguardan en `onBlur` con `mutate()`. Si ese
+  // guardado falla, el cambio se perdía en silencio. El aviso se limpia solo al
+  // reintentar (la mutación vuelve a `pending`).
+  const saveFailed =
+    updateAssignment.isError || addAssignment.isError || removeAssignment.isError;
+
   const handleSelect = async (item: { id: string }) => {
     if (isAlreadyAssigned(item.id)) {
       setSearch('');
@@ -57,6 +63,19 @@ export default function DiagnosesSection({ consultationId, doctorId, readOnly }:
 
   return (
     <div className="space-y-3">
+      {saveFailed && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+          <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          <p className="text-xs text-red-700">
+            No se pudo guardar el último cambio del diagnóstico. Revisá tu conexión
+            y volvé a editarlo antes de firmar.
+          </p>
+        </div>
+      )}
+
       {!readOnly && (
         <Combobox
           items={items.filter((it) => !isAlreadyAssigned(it.id))}

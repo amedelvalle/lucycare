@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getOrCreateConsultationForAppointment,
   saveConsultationDraft,
@@ -78,6 +79,18 @@ export const consultationKeys = {
     [...consultationKeys.all, 'permanent-rx', patientId, doctorId] as const,
   amendments: (consultationId: string) =>
     [...consultationKeys.all, 'amendments', consultationId] as const,
+  /**
+   * Key COMPARTIDA por todas las mutaciones que escriben contenido clínico de
+   * la consulta (receta, diagnósticos, antecedentes). No es una query key: la
+   * usan las mutaciones para poder contarse con `useIsMutating` desde afuera.
+   *
+   * Sirve para el gate de firma: esos guardados salen por `onBlur` (autosave)
+   * y, si la firma les gana la carrera, la consulta queda firmada y el UPDATE
+   * posterior rebota contra la inmutabilidad (s7_28) → el dato se perdía en
+   * silencio. ConsultaPage bloquea "Firmar" mientras haya alguno en vuelo.
+   */
+  clinicalWrite: (consultationId: string) =>
+    [...consultationKeys.all, 'clinical-write', consultationId] as const,
 };
 
 // ─── Consulta ─────────────────────────────────────────────────────────
@@ -115,6 +128,35 @@ export function useSignConsultation(consultationId: string, appointmentId: strin
       qc.invalidateQueries({ queryKey: ['dashboard-upcoming'] });
     },
   });
+}
+
+/**
+ * Gate de los guardados de contenido clínico (receta / diagnósticos /
+ * antecedentes) de esta consulta. Esas secciones autoguardan en `onBlur` con
+ * mutaciones propias, así que el gate vive acá y no en cada sección.
+ *
+ * Devuelve DOS cosas, y la distinción importa:
+ *  - `isPending`: estado de RENDER (para deshabilitar el botón y mostrar el
+ *    aviso). Llega un frame tarde: React recién re-renderiza después del
+ *    `mutate()`.
+ *  - `isPendingNow()`: lectura IMPERATIVA y síncrona del cache de mutaciones.
+ *    Es la única confiable dentro de un handler de click: al hacer clic en
+ *    "Firmar" justo después de editar un campo, el `blur` (mousedown) dispara
+ *    el guardado y el `click` (mouseup) llega ANTES de que React haya
+ *    re-renderizado el botón como deshabilitado. Medido: el commit del estado
+ *    tardaba ~130 ms, y en esa ventana el modal de firma sí se abría.
+ */
+export function useClinicalWrites(consultationId: string | undefined) {
+  const qc = useQueryClient();
+  const mutationKey = consultationKeys.clinicalWrite(consultationId ?? '');
+
+  const isPending = useIsMutating({ mutationKey }) > 0;
+  const isPendingNow = useCallback(
+    () => qc.isMutating({ mutationKey: consultationKeys.clinicalWrite(consultationId ?? '') }) > 0,
+    [qc, consultationId]
+  );
+
+  return { isPending, isPendingNow };
 }
 
 /**
@@ -250,6 +292,7 @@ export function useConsultationDiagnoses(consultationId: string | undefined) {
 export function useAddConsultationDiagnosis(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: {
       diagnosisId: string;
       type?: DiagnosisType;
@@ -272,6 +315,7 @@ export function useAddConsultationDiagnosis(consultationId: string) {
 export function useUpdateConsultationDiagnosis(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: {
       id: string;
       diagnosis_type?: DiagnosisType;
@@ -287,6 +331,7 @@ export function useUpdateConsultationDiagnosis(consultationId: string) {
 export function useRemoveConsultationDiagnosis(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removeConsultationDiagnosis(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationDiagnoses(consultationId) });
@@ -351,6 +396,7 @@ export function usePermanentPrescriptions(
 export function useAddPrescription(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: PrescriptionInput) => addPrescription(consultationId, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
@@ -361,6 +407,7 @@ export function useAddPrescription(consultationId: string) {
 export function useUpdatePrescription(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: { id: string } & Omit<PrescriptionInput, 'medication_id'>) => {
       const { id, ...rest } = input;
       return updatePrescription(id, rest);
@@ -374,6 +421,7 @@ export function useUpdatePrescription(consultationId: string) {
 export function useRemovePrescription(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removePrescription(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
@@ -420,6 +468,7 @@ export function useConsultationFamilyHistory(consultationId: string | undefined)
 export function useAddConsultationFamilyHistory(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: { familyHistoryId: string; notes?: string }) =>
       addConsultationFamilyHistory(consultationId, input.familyHistoryId, input.notes),
     onSuccess: () => {
@@ -431,6 +480,7 @@ export function useAddConsultationFamilyHistory(consultationId: string) {
 export function useUpdateConsultationFamilyHistory(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: { id: string; notes?: string | null }) => {
       const { id, ...updates } = input;
       return updateConsultationFamilyHistory(id, updates);
@@ -444,6 +494,7 @@ export function useUpdateConsultationFamilyHistory(consultationId: string) {
 export function useRemoveConsultationFamilyHistory(consultationId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removeConsultationFamilyHistory(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });

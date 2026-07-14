@@ -11,6 +11,7 @@ import {
   useConsultationAmendments,
   useConsultationDiagnoses,
   useConsultationFamilyHistory,
+  useClinicalWrites,
 } from '@/hooks/useConsultation';
 import { computeBmi, lbToKg, kgToLb, type VitalsInput } from '@/services/vitals.service';
 import type { ConsultationUpdate } from '@/services/consultations.service';
@@ -53,6 +54,10 @@ const EMPTY_FORM: FormState = {
   plan: '',
 };
 
+/** Copy único del gate de firma (barra, tooltip del botón y modal). */
+const PENDING_CLINICAL_SAVES_MESSAGE =
+  'Guardando cambios clínicos. Esperá un momento antes de firmar.';
+
 const EMPTY_VITALS: VitalsFormState = {
   systolic_bp: '',
   diastolic_bp: '',
@@ -85,6 +90,18 @@ export default function ConsultaPage() {
   // ya pueblan DiagnosesSection / AntecedentesSection).
   const { data: diagnoses = [] } = useConsultationDiagnoses(ctx?.id);
   const { data: familyHistory = [] } = useConsultationFamilyHistory(ctx?.id);
+
+  // Receta / diagnósticos / antecedentes autoguardan en `onBlur` con mutaciones
+  // propias. Si la firma le gana la carrera a una de ellas, la consulta queda
+  // firmada y ese UPDATE rebota contra la inmutabilidad (s7_28): el último campo
+  // editado se perdía en silencio. Mientras haya alguno en vuelo, no se firma.
+  //   - `isPending` (render): deshabilita el botón y muestra el aviso.
+  //   - `isPendingNow()` (síncrono): el guard REAL del click y de la firma — el
+  //     click llega antes de que React re-renderice el botón (ver el hook).
+  const {
+    isPending: hasPendingClinicalWrites,
+    isPendingNow: hasPendingClinicalWritesNow,
+  } = useClinicalWrites(ctx?.id);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [vitalsForm, setVitalsForm] = useState<VitalsFormState>(EMPTY_VITALS);
@@ -165,6 +182,13 @@ export default function ConsultaPage() {
 
   const handleSign = async () => {
     if (!ctx) return;
+    // Último candado: la firma es irreversible, así que no arranca si quedó un
+    // guardado clínico en vuelo (el botón ya está bloqueado; esto cubre el caso
+    // de que uno arranque con el modal abierto). Síncrono, por lo mismo.
+    if (hasPendingClinicalWritesNow()) {
+      setSignError(PENDING_CLINICAL_SAVES_MESSAGE);
+      return;
+    }
     setSignError(null);
     try {
       // Guardar último estado antes de firmar
@@ -563,7 +587,12 @@ export default function ConsultaPage() {
       <div className="fixed bottom-0 left-0 right-0 md:left-16 lg:left-64 bg-white border-t border-gray-200 px-4 py-3 z-30 shadow-lg md:shadow-none">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <SaveStatus savedAt={savedAt} isSaving={isSaving} isSigned={isSigned} />
+            <SaveStatus
+              savedAt={savedAt}
+              isSaving={isSaving}
+              isSigned={isSigned}
+              isSavingClinical={hasPendingClinicalWrites}
+            />
             {/* Descartar borrador — solo visible si la consulta está vacía y en draft */}
             {!isSigned && isEmpty && (
               <button
@@ -590,8 +619,17 @@ export default function ConsultaPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setConfirmSign(true)}
-                  disabled={isSaving || isSigning}
+                  onClick={() => {
+                    // El modal de confirmación tampoco se abre con guardados en
+                    // vuelo: firmar es irreversible y esos cambios se perderían.
+                    // Lectura síncrona: cuando el médico edita un campo y va
+                    // directo a firmar, este click corre ANTES de que el botón
+                    // se haya re-renderizado como deshabilitado.
+                    if (hasPendingClinicalWritesNow()) return;
+                    setConfirmSign(true);
+                  }}
+                  disabled={isSaving || isSigning || hasPendingClinicalWrites}
+                  title={hasPendingClinicalWrites ? PENDING_CLINICAL_SAVES_MESSAGE : undefined}
                   className="px-5 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
                 >
                   Firmar consulta
@@ -916,10 +954,12 @@ function SaveStatus({
   savedAt,
   isSaving,
   isSigned,
+  isSavingClinical,
 }: {
   savedAt: number | null;
   isSaving: boolean;
   isSigned: boolean;
+  isSavingClinical: boolean;
 }) {
   if (isSigned) {
     return (
@@ -928,6 +968,19 @@ function SaveStatus({
           <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
         </svg>
         Consulta firmada — solo lectura
+      </p>
+    );
+  }
+  // Guardado clínico en vuelo (receta/diagnósticos/antecedentes): además de
+  // informar, explica por qué "Firmar consulta" está bloqueado en este momento.
+  if (isSavingClinical) {
+    return (
+      <p className="text-xs text-amber-700 flex items-center gap-1.5">
+        <svg className="w-3 h-3 animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        {PENDING_CLINICAL_SAVES_MESSAGE}
       </p>
     );
   }
