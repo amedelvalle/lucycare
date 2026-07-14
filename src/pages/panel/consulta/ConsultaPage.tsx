@@ -57,6 +57,10 @@ const EMPTY_FORM: FormState = {
 /** Copy único del gate de firma (barra, tooltip del botón y modal). */
 const PENDING_CLINICAL_SAVES_MESSAGE =
   'Guardando cambios clínicos. Esperá un momento antes de firmar.';
+/** Un guardado clínico que falló NO está en la DB: firmar dejaría la consulta
+ * firmada sin ese cambio, y ya solo sería recuperable por corrección. */
+const FAILED_CLINICAL_SAVES_MESSAGE =
+  'Hay cambios clínicos que no se pudieron guardar. Revisá el campo marcado y guardalo antes de firmar.';
 
 const EMPTY_VITALS: VitalsFormState = {
   systolic_bp: '',
@@ -92,16 +96,23 @@ export default function ConsultaPage() {
   const { data: familyHistory = [] } = useConsultationFamilyHistory(ctx?.id);
 
   // Receta / diagnósticos / antecedentes autoguardan en `onBlur` con mutaciones
-  // propias. Si la firma le gana la carrera a una de ellas, la consulta queda
-  // firmada y ese UPDATE rebota contra la inmutabilidad (s7_28): el último campo
-  // editado se perdía en silencio. Mientras haya alguno en vuelo, no se firma.
-  //   - `isPending` (render): deshabilita el botón y muestra el aviso.
-  //   - `isPendingNow()` (síncrono): el guard REAL del click y de la firma — el
-  //     click llega antes de que React re-renderice el botón (ver el hook).
+  // propias. La firma se bloquea en los dos casos que dejarían la consulta
+  // firmada SIN el último cambio clínico (irrecuperable salvo corrección):
+  //   - guardado EN VUELO  → la firma le ganaría la carrera (el UPDATE posterior
+  //     rebota contra la inmutabilidad de s7_28 y el dato se perdía en silencio);
+  //   - guardado FALLIDO   → ese cambio no llegó nunca a la DB.
+  // `isBlockedNow()` es la lectura síncrona: el click llega antes de que React
+  // re-renderice el botón (ver el hook).
   const {
     isPending: hasPendingClinicalWrites,
-    isPendingNow: hasPendingClinicalWritesNow,
+    hasFailed: hasFailedClinicalWrites,
+    isBlockedNow: isSignBlockedNow,
   } = useClinicalWrites(ctx?.id);
+  const signBlockedMessage = hasPendingClinicalWrites
+    ? PENDING_CLINICAL_SAVES_MESSAGE
+    : hasFailedClinicalWrites
+      ? FAILED_CLINICAL_SAVES_MESSAGE
+      : null;
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [vitalsForm, setVitalsForm] = useState<VitalsFormState>(EMPTY_VITALS);
@@ -183,10 +194,10 @@ export default function ConsultaPage() {
   const handleSign = async () => {
     if (!ctx) return;
     // Último candado: la firma es irreversible, así que no arranca si quedó un
-    // guardado clínico en vuelo (el botón ya está bloqueado; esto cubre el caso
-    // de que uno arranque con el modal abierto). Síncrono, por lo mismo.
-    if (hasPendingClinicalWritesNow()) {
-      setSignError(PENDING_CLINICAL_SAVES_MESSAGE);
+    // guardado clínico en vuelo o fallido (el botón ya está bloqueado; esto
+    // cubre el caso de que uno arranque con el modal abierto). Síncrono.
+    if (isSignBlockedNow()) {
+      setSignError(signBlockedMessage ?? PENDING_CLINICAL_SAVES_MESSAGE);
       return;
     }
     setSignError(null);
@@ -592,6 +603,7 @@ export default function ConsultaPage() {
               isSaving={isSaving}
               isSigned={isSigned}
               isSavingClinical={hasPendingClinicalWrites}
+              hasFailedClinical={hasFailedClinicalWrites}
             />
             {/* Descartar borrador — solo visible si la consulta está vacía y en draft */}
             {!isSigned && isEmpty && (
@@ -621,15 +633,20 @@ export default function ConsultaPage() {
                   type="button"
                   onClick={() => {
                     // El modal de confirmación tampoco se abre con guardados en
-                    // vuelo: firmar es irreversible y esos cambios se perderían.
-                    // Lectura síncrona: cuando el médico edita un campo y va
-                    // directo a firmar, este click corre ANTES de que el botón
-                    // se haya re-renderizado como deshabilitado.
-                    if (hasPendingClinicalWritesNow()) return;
+                    // vuelo o fallidos: firmar es irreversible y esos cambios no
+                    // quedarían en la consulta. Lectura síncrona: cuando el médico
+                    // edita un campo y va directo a firmar, este click corre ANTES
+                    // de que el botón se haya re-renderizado como deshabilitado.
+                    if (isSignBlockedNow()) return;
                     setConfirmSign(true);
                   }}
-                  disabled={isSaving || isSigning || hasPendingClinicalWrites}
-                  title={hasPendingClinicalWrites ? PENDING_CLINICAL_SAVES_MESSAGE : undefined}
+                  disabled={
+                    isSaving ||
+                    isSigning ||
+                    hasPendingClinicalWrites ||
+                    hasFailedClinicalWrites
+                  }
+                  title={signBlockedMessage ?? undefined}
                   className="px-5 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
                 >
                   Firmar consulta
@@ -955,11 +972,13 @@ function SaveStatus({
   isSaving,
   isSigned,
   isSavingClinical,
+  hasFailedClinical,
 }: {
   savedAt: number | null;
   isSaving: boolean;
   isSigned: boolean;
   isSavingClinical: boolean;
+  hasFailedClinical: boolean;
 }) {
   if (isSigned) {
     return (
@@ -968,6 +987,19 @@ function SaveStatus({
           <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
         </svg>
         Consulta firmada — solo lectura
+      </p>
+    );
+  }
+  // Guardado clínico FALLIDO: ese cambio no está en la DB, así que la firma
+  // queda bloqueada hasta resolverlo. La sección marca el campo concreto.
+  if (hasFailedClinical) {
+    return (
+      <p className="text-xs text-red-700 flex items-start gap-1.5">
+        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+        {FAILED_CLINICAL_SAVES_MESSAGE}
       </p>
     );
   }

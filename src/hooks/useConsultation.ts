@@ -1,5 +1,12 @@
 import { useCallback } from 'react';
-import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import {
+  useIsMutating,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   getOrCreateConsultationForAppointment,
   saveConsultationDraft,
@@ -131,32 +138,84 @@ export function useSignConsultation(consultationId: string, appointmentId: strin
 }
 
 /**
+ * Identifica la FILA que toca una mutación clínica. Sirve para limpiar el error
+ * viejo de una fila cuando ESA fila vuelve a guardarse bien, sin borrar errores
+ * de otras filas que siguen sin guardarse.
+ */
+function clinicalTargetId(variables: unknown): string {
+  if (typeof variables === 'string') return variables; // remove(id)
+  if (variables && typeof variables === 'object') {
+    const v = variables as Record<string, unknown>;
+    if (typeof v.id === 'string') return v.id; // update({ id, ... })
+    if (typeof v.medication_id === 'string') return `med:${v.medication_id}`; // add receta
+    if (typeof v.diagnosisId === 'string') return `dx:${v.diagnosisId}`; // add diagnóstico
+    if (typeof v.familyHistoryId === 'string') return `fh:${v.familyHistoryId}`; // add antecedente
+  }
+  return 'desconocido';
+}
+
+/**
+ * Al guardar bien una fila, saca del cache los errores ANTERIORES de esa misma
+ * fila. Sin esto, un fallo ya corregido seguiría bloqueando la firma: las
+ * mutaciones fallidas quedan en el cache hasta que las recoja el GC.
+ */
+function clearFailedClinicalWrite(
+  qc: QueryClient,
+  consultationId: string,
+  variables: unknown
+) {
+  const target = clinicalTargetId(variables);
+  const cache = qc.getMutationCache();
+  cache
+    .findAll({
+      mutationKey: consultationKeys.clinicalWrite(consultationId),
+      status: 'error',
+    })
+    .forEach((m) => {
+      if (clinicalTargetId(m.state.variables) === target) cache.remove(m);
+    });
+}
+
+/**
  * Gate de los guardados de contenido clínico (receta / diagnósticos /
  * antecedentes) de esta consulta. Esas secciones autoguardan en `onBlur` con
  * mutaciones propias, así que el gate vive acá y no en cada sección.
  *
- * Devuelve DOS cosas, y la distinción importa:
- *  - `isPending`: estado de RENDER (para deshabilitar el botón y mostrar el
- *    aviso). Llega un frame tarde: React recién re-renderiza después del
- *    `mutate()`.
- *  - `isPendingNow()`: lectura IMPERATIVA y síncrona del cache de mutaciones.
- *    Es la única confiable dentro de un handler de click: al hacer clic en
- *    "Firmar" justo después de editar un campo, el `blur` (mousedown) dispara
- *    el guardado y el `click` (mouseup) llega ANTES de que React haya
- *    re-renderizado el botón como deshabilitado. Medido: el commit del estado
- *    tardaba ~130 ms, y en esa ventana el modal de firma sí se abría.
+ * La firma se bloquea en DOS casos, porque los dos dejarían la consulta firmada
+ * sin el último cambio clínico:
+ *   - hay un guardado EN VUELO (la firma le ganaría la carrera);
+ *   - hay un guardado FALLIDO sin resolver (ese cambio no está en la DB).
+ *
+ * Y expone las dos formas de leerlo, porque la distinción importa:
+ *  - `isPending` / `hasFailed`: estado de RENDER (deshabilitar el botón, mostrar
+ *    el aviso). Llega un frame tarde: React recién re-renderiza tras el `mutate()`.
+ *  - `isBlockedNow()`: lectura IMPERATIVA y síncrona del cache. Es la única
+ *    confiable dentro de un handler de click: al editar un campo e ir directo a
+ *    "Firmar", el `blur` (mousedown) dispara el guardado y el `click` (mouseup)
+ *    corre ANTES de que React haya re-renderizado el botón como deshabilitado
+ *    (medido: ~130 ms; en esa ventana el modal SÍ se abría).
  */
 export function useClinicalWrites(consultationId: string | undefined) {
   const qc = useQueryClient();
   const mutationKey = consultationKeys.clinicalWrite(consultationId ?? '');
 
   const isPending = useIsMutating({ mutationKey }) > 0;
-  const isPendingNow = useCallback(
-    () => qc.isMutating({ mutationKey: consultationKeys.clinicalWrite(consultationId ?? '') }) > 0,
-    [qc, consultationId]
-  );
 
-  return { isPending, isPendingNow };
+  const failed = useMutationState({
+    filters: { mutationKey, status: 'error' },
+    select: (m) => m.mutationId,
+  });
+  const hasFailed = failed.length > 0;
+
+  const isBlockedNow = useCallback(() => {
+    const key = consultationKeys.clinicalWrite(consultationId ?? '');
+    const pending = qc.isMutating({ mutationKey: key }) > 0;
+    const withError =
+      qc.getMutationCache().findAll({ mutationKey: key, status: 'error' }).length > 0;
+    return pending || withError;
+  }, [qc, consultationId]);
+
+  return { isPending, hasFailed, isBlockedNow };
 }
 
 /**
@@ -306,8 +365,9 @@ export function useAddConsultationDiagnosis(consultationId: string) {
         input.status,
         input.notes
       ),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationDiagnoses(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -322,8 +382,9 @@ export function useUpdateConsultationDiagnosis(consultationId: string) {
       diagnosis_status?: DiagnosisStatus;
       notes?: string | null;
     }) => updateConsultationDiagnosis(input.id, input),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationDiagnoses(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -333,8 +394,9 @@ export function useRemoveConsultationDiagnosis(consultationId: string) {
   return useMutation({
     mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removeConsultationDiagnosis(id),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationDiagnoses(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -398,8 +460,9 @@ export function useAddPrescription(consultationId: string) {
   return useMutation({
     mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: PrescriptionInput) => addPrescription(consultationId, input),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -412,8 +475,9 @@ export function useUpdatePrescription(consultationId: string) {
       const { id, ...rest } = input;
       return updatePrescription(id, rest);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -423,8 +487,9 @@ export function useRemovePrescription(consultationId: string) {
   return useMutation({
     mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removePrescription(id),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.prescriptions(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -471,8 +536,9 @@ export function useAddConsultationFamilyHistory(consultationId: string) {
     mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (input: { familyHistoryId: string; notes?: string }) =>
       addConsultationFamilyHistory(consultationId, input.familyHistoryId, input.notes),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -485,8 +551,9 @@ export function useUpdateConsultationFamilyHistory(consultationId: string) {
       const { id, ...updates } = input;
       return updateConsultationFamilyHistory(id, updates);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
@@ -496,8 +563,9 @@ export function useRemoveConsultationFamilyHistory(consultationId: string) {
   return useMutation({
     mutationKey: consultationKeys.clinicalWrite(consultationId),
     mutationFn: (id: string) => removeConsultationFamilyHistory(id),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: consultationKeys.consultationFamilyHistory(consultationId) });
+      clearFailedClinicalWrite(qc, consultationId, variables);
     },
   });
 }
