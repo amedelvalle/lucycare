@@ -159,16 +159,47 @@ export default function CorrectConsultationModal({
     return out;
   }, [text, initialText]);
 
+  // El payload expresa la INTENCIÓN del médico (s7_58):
+  //   clave ausente            → no tocar el campo
+  //   clave presente con null  → limpiarlo (queda NULL en la DB)
+  //   clave presente con valor → actualizarlo
+  // Antes se OMITÍA `duration_value` al vaciarlo (o al pasar a 'permanente') y el
+  // COALESCE del backend restauraba el valor viejo: la receta se marcaba como
+  // corregida pero conservaba la duración anterior. Ahora la clave viaja siempre.
+  const durationValueOf = (unit: DurationUnit, raw: string): number | null => {
+    if (unit === 'permanente') return null; // 'permanente' no lleva duración numérica
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? null : n;             // vacío/inválido = el médico la borró
+  };
+
   const prescriptionOps = useMemo<PrescriptionOp[]>(() => {
     const ops: PrescriptionOp[] = [];
     for (const r of existing) {
       if (r.removed) { ops.push({ op: 'remove', prescription_id: r.prescriptionId }); continue; }
       const changed = r.medicationId !== r.orig.medicationId || norm(r.dosage) !== norm(r.orig.dosage) || norm(r.frequency) !== norm(r.orig.frequency) || norm(r.durationValue) !== norm(r.orig.durationValue) || r.durationUnit !== r.orig.durationUnit || norm(r.instructions) !== norm(r.orig.instructions);
       if (!changed) continue;
-      const dv = parseInt(r.durationValue, 10);
-      ops.push({ op: 'replace', prescription_id: r.prescriptionId, ...(r.medicationId !== r.orig.medicationId ? { medication_id: r.medicationId } : {}), dosage: r.dosage.trim(), frequency: r.frequency.trim(), instructions: r.instructions.trim(), duration_unit: r.durationUnit, ...(r.durationUnit !== 'permanente' && !isNaN(dv) ? { duration_value: dv } : {}) });
+      ops.push({
+        op: 'replace',
+        prescription_id: r.prescriptionId,
+        ...(r.medicationId !== r.orig.medicationId ? { medication_id: r.medicationId } : {}),
+        dosage: r.dosage.trim() || null,
+        frequency: r.frequency.trim() || null,
+        instructions: r.instructions.trim() || null,
+        duration_unit: r.durationUnit,
+        duration_value: durationValueOf(r.durationUnit, r.durationValue),
+      });
     }
-    for (const n of added) { const dv = parseInt(n.durationValue, 10); ops.push({ op: 'add', medication_id: n.medicationId, dosage: n.dosage.trim() || null, frequency: n.frequency.trim() || null, instructions: n.instructions.trim() || null, duration_unit: n.durationUnit, ...(n.durationUnit !== 'permanente' && !isNaN(dv) ? { duration_value: dv } : {}) }); }
+    for (const n of added) {
+      ops.push({
+        op: 'add',
+        medication_id: n.medicationId,
+        dosage: n.dosage.trim() || null,
+        frequency: n.frequency.trim() || null,
+        instructions: n.instructions.trim() || null,
+        duration_unit: n.durationUnit,
+        duration_value: durationValueOf(n.durationUnit, n.durationValue),
+      });
+    }
     return ops;
   }, [existing, added]);
 
