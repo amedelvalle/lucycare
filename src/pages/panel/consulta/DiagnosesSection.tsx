@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useDiagnosesSearch,
   useCreateDiagnosis,
@@ -156,11 +156,26 @@ function DiagnosisRow({
 }) {
   const [notes, setNotes] = useState(cd.notes ?? '');
   const [notesDirty, setNotesDirty] = useState(false);
+  const boundIdRef = useRef(cd.id);
 
-  // Re-sync si cambia el remoto y no estamos editando
+  // Seed local SOLO cuando esta fila pasa a representar OTRO diagnóstico
+  // (cd.id distinto). NO re-sincronizamos desde `cd` tras cada guardado: el
+  // onBlur baja `notesDirty` a false y el refetch (invalidate→refetch, sin
+  // optimistic) todavía no volvió, así que `cd.notes` sigue viejo — re-sembrar
+  // ahí vaciaba la nota en pantalla aunque el guardado hubiera salido bien
+  // (mismo race que se corrigió en receta, PR #269).
+  // Como la fila va con key={cd.id} normalmente hay remount; el ref es defensa
+  // por si React reusa la instancia. La fila es la única que edita su nota en
+  // borrador, así que no necesita rehidratarse desde props.
   useEffect(() => {
-    if (!notesDirty) setNotes(cd.notes ?? '');
-  }, [cd.notes, notesDirty]);
+    if (boundIdRef.current !== cd.id) {
+      boundIdRef.current = cd.id;
+      setNotes(cd.notes ?? '');
+      setNotesDirty(false);
+    }
+    // Solo depende de cd.id: la nota se lee (fresca) al re-ligar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cd.id]);
 
   return (
     <li className="bg-gray-50 rounded-lg p-3 space-y-2">
