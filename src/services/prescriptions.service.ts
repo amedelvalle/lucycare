@@ -47,7 +47,10 @@ export interface PrescriptionInput {
   medication_id: string;
   dosage?: string;
   frequency?: string;
-  duration_value?: number;
+  // `undefined` = no tocar la duración; `null` = borrarla (la deja NULL en DB).
+  // La distinción importa: un `undefined` se pierde al serializar el update y
+  // la columna conserva el valor anterior (ver updatePrescription).
+  duration_value?: number | null;
   duration_unit?: DurationUnit;
   instructions?: string;
   alternatives?: string;
@@ -218,6 +221,10 @@ export async function updatePrescription(
   const payload = {
     dosage: updates.dosage !== undefined ? (updates.dosage?.trim() || null) : undefined,
     frequency: updates.frequency !== undefined ? (updates.frequency?.trim() || null) : undefined,
+    // Las claves `undefined` desaparecen al serializar el update → la columna NO
+    // se toca. Por eso "borrar la duración" tiene que viajar como `null`
+    // explícito: con `undefined` la DB conservaba el valor viejo y la receta
+    // impresa lo seguía mostrando aunque el campo se viera vacío en pantalla.
     duration_value: updates.duration_value,
     duration_unit: updates.duration_unit,
     instructions: updates.instructions !== undefined ? (updates.instructions?.trim() || null) : undefined,

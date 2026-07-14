@@ -188,7 +188,7 @@ function PrescriptionRow({
   onUpdate: (updates: {
     dosage?: string;
     frequency?: string;
-    duration_value?: number;
+    duration_value?: number | null;
     duration_unit?: DurationUnit;
     instructions?: string;
     alternatives?: string;
@@ -237,7 +237,10 @@ function PrescriptionRow({
     onUpdate({
       dosage: form.dosage,
       frequency: form.frequency,
-      duration_value: isNaN(dvNum) ? undefined : dvNum,
+      // Campo vacío = el médico borró la duración → `null` explícito para que la
+      // columna quede NULL. Con `undefined` la clave se perdía en el update y la
+      // DB (y la receta impresa) conservaban la duración anterior.
+      duration_value: isNaN(dvNum) ? null : dvNum,
       duration_unit: form.duration_unit,
       instructions: form.instructions,
       alternatives: form.alternatives,
