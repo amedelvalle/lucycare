@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useFamilyHistorySearch,
   useCreateFamilyHistory,
@@ -107,10 +107,25 @@ function AntecedenteRow({
 }) {
   const [notes, setNotes] = useState(cfh.notes ?? '');
   const [dirty, setDirty] = useState(false);
+  const boundIdRef = useRef(cfh.id);
 
+  // Mismo patrón que receta (#269) y diagnósticos: sembrar el estado local SOLO
+  // cuando la fila pasa a representar OTRO antecedente (cfh.id distinto). Si se
+  // re-sincronizara desde `cfh` tras cada guardado, el onBlur baja `dirty` a
+  // false mientras el refetch aún no volvió (`cfh.notes` viejo) y la nota se
+  // vaciaba en pantalla pese a haberse guardado bien.
+  // Nota: hoy ConsultaPage monta esta sección siempre con `readOnly` (los
+  // antecedentes nuevos son texto libre desde el #171), así que este camino de
+  // edición está inerte. El fix queda aplicado para que el race no reaparezca si
+  // la edición estructurada se rehabilita.
   useEffect(() => {
-    if (!dirty) setNotes(cfh.notes ?? '');
-  }, [cfh.notes, dirty]);
+    if (boundIdRef.current !== cfh.id) {
+      boundIdRef.current = cfh.id;
+      setNotes(cfh.notes ?? '');
+      setDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfh.id]);
 
   return (
     <li className="bg-gray-50 rounded-lg p-3 space-y-2">
