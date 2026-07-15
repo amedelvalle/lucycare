@@ -10,7 +10,7 @@
  */
 import {
   escapeHtml, isUuid, extractSlug, normalizeDoctor,
-  buildMeta, buildGenericNoindex, buildHomeMeta, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
+  buildMeta, buildGenericNoindex, buildHomeMeta, buildNoindexRoute, injectMeta, buildSitemapXml, escapeXml, isSitemapEligible,
 } from '../og-meta.mjs';
 
 let pass = 0, fail = 0;
@@ -295,12 +295,14 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
         : no('T19 JSON-LD: ' + why);
 }
 
-// T19b — el JSON-LD SOLO va en el Home; buildMeta (/doctor/*) NO lo emite
+// T19b — el @graph de MARCA (Organization+WebSite) SOLO va en el Home; buildMeta
+// (/doctor/*) NO lo emite. (El perfil sí tiene su propio Physician — ver T21.)
 {
   const d = normalizeDoctor(rawCamilo);
   const m = buildMeta(d, ORIGIN);
-  (!has(m.metaHtml, 'application/ld+json') && !has(m.metaHtml, '@graph'))
-    ? ok('T19b /doctor/* NO emite JSON-LD (solo Home)') : no('T19b doctor no debería tener JSON-LD');
+  (!has(m.metaHtml, '@graph') && !has(m.metaHtml, 'WebSite'))
+    ? ok('T19b /doctor/* NO emite el @graph de marca (Organization+WebSite es solo del Home)')
+    : no('T19b doctor no debería tener el @graph de marca');
 }
 
 // ── Sitemap: Home `/` incluido (SEO Brand) ──
@@ -320,6 +322,91 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
     !/<loc>[^<]*[0-9a-f]{8}-[0-9a-f]{4}-/i.test(xml);        // 0 UUIDs
   okAll ? ok('T20 sitemap: Home / (priority 1.0, sin lastmod) + perfiles por slug, 0 UUIDs/privadas')
         : no('T20 sitemap:\n' + xml);
+}
+
+// ── PR-D1: Physician JSON-LD en perfiles indexables ──
+
+// T21 — perfil indexable emite Physician con @type/name/medicalSpecialty/url=canonical
+{
+  const d = normalizeDoctor(rawCamilo);
+  const m = buildMeta(d, ORIGIN);
+  const canonical = `${ORIGIN}/doctor/${d.slug}`;
+  let okAll = false, why = '';
+  const block = m.metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  if (!block) { why = 'no hay <script ld+json> en el perfil'; }
+  else {
+    const node = JSON.parse(block[1].replace(/\\u003c/g, '<'));
+    okAll =
+      node['@type'] === 'Physician' &&
+      node['@context'] === 'https://schema.org' &&
+      node.name === d.name &&
+      node.medicalSpecialty === d.specialty &&
+      node.url === canonical &&
+      // clínica + geo presentes (Camilo los tiene), país SV, sin street
+      node.worksFor?.name === d.clinicName &&
+      node.address?.addressCountry === 'SV' &&
+      !('streetAddress' in (node.address || {}));
+    if (!okAll) why = block[1];
+  }
+  okAll ? ok('T21 perfil indexable → Physician (@type/name/medicalSpecialty/url=canonical, worksFor, address SV sin street)')
+        : no('T21 Physician: ' + why);
+}
+
+// T22 — Physician NO contiene datos prohibidos (JVPM/NUE/DUI/teléfono/email/rating/etc.)
+{
+  const d = normalizeDoctor(rawCamilo);
+  const m = buildMeta(d, ORIGIN);
+  const block = (m.metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/) || [])[1] || '';
+  const forbidden = ['jvpm', 'license', 'nue', 'dui', 'telephone', 'phone', 'email',
+                     'aggregateRating', 'review', 'priceRange', 'openingHours', 'streetAddress'];
+  const hit = forbidden.find((k) => block.toLowerCase().includes(k.toLowerCase()));
+  hit ? no('T22 Physician contiene campo prohibido: ' + hit)
+      : ok('T22 Physician sin datos prohibidos (JVPM/NUE/DUI/teléfono/email/rating/priceRange/openingHours/street)');
+}
+
+// T23 — slug no publicado / genérico NO emite Physician (ni datos de médico)
+{
+  const g = buildGenericNoindex(ORIGIN);
+  // perfil no indexable (sin especialidad → noindex): tampoco Physician
+  const dNoIdx = normalizeDoctor({ ...rawCamilo, specialties: null });
+  const mNoIdx = buildMeta(dNoIdx, ORIGIN);
+  const okAll =
+    !has(g.metaHtml, 'Physician') && !has(g.metaHtml, 'application/ld+json') &&
+    has(g.metaHtml, 'noindex,follow') &&
+    !has(mNoIdx.metaHtml, 'Physician') && has(mNoIdx.metaHtml, 'noindex');
+  okAll ? ok('T23 genérico/no-publicado → noindex y SIN Physician')
+        : no('T23 no-indexable no debería emitir Physician:\n' + g.metaHtml + '\n---\n' + mNoIdx.metaHtml);
+}
+
+// T24 — el JSON-LD Physician escapa `<` (anti cierre de </script>)
+{
+  const evil = normalizeDoctor({ ...rawCamilo, profiles: { full_name: 'Dr </script><b>X', avatar_url: null } });
+  const m = buildMeta(evil, ORIGIN);
+  const block = (m.metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/) || [])[1] || '';
+  (block.includes('\\u003c') && !block.includes('</script>'))
+    ? ok('T24 Physician escapa `<` (no puede cerrar </script>)')
+    : no('T24 escaping Physician: ' + block);
+}
+
+// T25 — buildNoindexRoute (/calificar/*): noindex,follow, sin datos, sin JSON-LD, sin title
+{
+  const r = buildNoindexRoute();
+  const okAll =
+    r.indexable === false && r.title === null &&
+    has(r.metaHtml, 'noindex,follow') &&
+    !has(r.metaHtml, 'application/ld+json') &&
+    !has(r.metaHtml, 'og:title') && !has(r.metaHtml, 'canonical');
+  okAll ? ok('T25 /calificar/* → noindex,follow (sin datos, sin JSON-LD, sin title/canonical)')
+        : no('T25 buildNoindexRoute: ' + JSON.stringify(r));
+}
+
+// T25b — injectMeta con noindexRoute conserva el <title>LucyCare</title> del shell
+{
+  const shell = '<html><head><title>LucyCare</title></head><body></body></html>';
+  const out = injectMeta(shell, buildNoindexRoute());
+  (has(out, '<title>LucyCare</title>') && has(out, 'noindex,follow') && (out.match(/<title>/g) || []).length === 1)
+    ? ok('T25b injectMeta noindexRoute conserva el <title> del shell')
+    : no('T25b: ' + out);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);

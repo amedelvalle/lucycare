@@ -25,12 +25,13 @@ import {
   buildMeta,
   buildGenericNoindex,
   buildHomeMeta,
+  buildNoindexRoute,
   injectMeta,
   buildSitemapXml,
 } from './og-meta.mjs';
 
 export const config = {
-  matcher: ['/', '/doctor/:path*', '/sitemap.xml'],
+  matcher: ['/', '/doctor/:path*', '/calificar/:path*', '/sitemap.xml'],
 };
 
 // Env pública (URL + anon key), aceptando el nombre dedicado o el de la app.
@@ -163,6 +164,18 @@ export default async function middleware(req: Request): Promise<Response> {
       return htmlResponse(injectMeta(shell, buildHomeMeta(url.origin)), CACHE_OK);
     } catch {
       // Fallback: servir el shell crudo. Nunca 500.
+      return await fetch(shellUrl);
+    }
+  }
+
+  // `/calificar/*` (encuesta token-gated): ruta transaccional sin valor de
+  // búsqueda → noindex,follow. Sin red/DB, sin JSON-LD, no toca el flujo de la
+  // SPA (solo agrega el meta al shell). No entra al sitemap (nunca estuvo).
+  if (url.pathname.startsWith('/calificar')) {
+    try {
+      const shell = await (await fetch(shellUrl)).text();
+      return htmlResponse(injectMeta(shell, buildNoindexRoute()), CACHE_SHORT);
+    } catch {
       return await fetch(shellUrl);
     }
   }
