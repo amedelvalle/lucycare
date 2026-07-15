@@ -7,7 +7,12 @@
 // ni email. Sin copy de verificación (no se emite "Verificado por LucyCare").
 
 const SITE = 'LucyCare';
-const DEFAULT_OG_IMAGE_PATH = '/lucycare-logo.png'; // fallback branded temporal (deuda: OG 1200x630)
+// og:image (preview social): portada branded 1200×630 (PR-D2). Se usa para el
+// Home, el genérico/noindex y el fallback de perfil sin avatar.
+const OG_COVER_PATH = '/lucycare-og.png';
+// Organization.logo (JSON-LD): el LOGOTIPO, NO la portada OG. schema.org espera
+// un logo, no un banner 1200×630. Se mantiene separado a propósito.
+const ORG_LOGO_PATH = '/lucycare-logo.png';
 
 /** Escapa texto para insertarlo en HTML (contexto de atributo y de texto). */
 export function escapeHtml(value) {
@@ -147,7 +152,7 @@ export function buildMeta(d, origin) {
   const loc = locationText(d);
   const indexable = isSitemapEligible(d);
   const canonical = `${origin}/doctor/${d.slug}`;
-  const ogImage = d.avatarUrl || `${origin}${DEFAULT_OG_IMAGE_PATH}`;
+  const ogImage = d.avatarUrl || `${origin}${OG_COVER_PATH}`;
 
   const title = `${d.name} — ${specialty} | ${SITE}`;
   const description =
@@ -232,7 +237,7 @@ export function buildPhysicianJsonLd(d, canonical, ogImage) {
  * Nunca incluye datos de un médico. No cambia el <title>.
  */
 export function buildGenericNoindex(origin) {
-  const img = escapeHtml(`${origin}${DEFAULT_OG_IMAGE_PATH}`);
+  const img = escapeHtml(`${origin}${OG_COVER_PATH}`);
   const metaHtml = [
     `<meta name="robots" content="noindex,follow">`,
     `<meta property="og:type" content="website">`,
@@ -262,7 +267,7 @@ export function buildNoindexRoute() {
  */
 export function buildHomeMeta(origin) {
   const canonical = `${origin}/`;
-  const ogImage = `${origin}${DEFAULT_OG_IMAGE_PATH}`;
+  const ogImage = `${origin}${OG_COVER_PATH}`;
 
   const title = `${SITE} El Salvador — Encuentra al médico perfecto para ti`;
   const description =
@@ -309,7 +314,7 @@ export function buildHomeJsonLd(origin) {
         '@type': 'Organization',
         name: SITE,
         url: origin,
-        logo: `${origin}${DEFAULT_OG_IMAGE_PATH}`,
+        logo: `${origin}${ORG_LOGO_PATH}`,
         description: 'Directorio médico y agenda en línea en El Salvador.',
         areaServed: { '@type': 'Country', name: 'El Salvador' },
       },

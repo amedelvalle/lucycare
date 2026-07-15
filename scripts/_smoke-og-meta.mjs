@@ -103,13 +103,13 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
     ? ok('T6b sin ubicación pero completo → index,follow') : no('T6b debería index: ' + m.metaHtml);
 }
 
-// T7 — avatar null → fallback branded
+// T7 — avatar null → fallback al cover branded (/lucycare-og.png, PR-D2)
 {
   const raw = { ...rawCamilo, profiles: { full_name: 'Dra. Ana Ruiz', avatar_url: null } };
   const d = normalizeDoctor(raw);
   const m = buildMeta(d, ORIGIN);
-  has(m.metaHtml, `content="https://lucycare.app/lucycare-logo.png"`)
-    ? ok('T7 avatar null → og:image fallback branded') : no('T7 fallback: ' + m.metaHtml);
+  has(m.metaHtml, `content="https://lucycare.app/lucycare-og.png"`)
+    ? ok('T7 avatar null → og:image fallback al cover /lucycare-og.png') : no('T7 fallback: ' + m.metaHtml);
 }
 
 // T8 — escaping de caracteres peligrosos en el nombre
@@ -407,6 +407,53 @@ console.log('═══ Smoke og-meta (Fase 3 PR B) ═══\n');
   (has(out, '<title>LucyCare</title>') && has(out, 'noindex,follow') && (out.match(/<title>/g) || []).length === 1)
     ? ok('T25b injectMeta noindexRoute conserva el <title> del shell')
     : no('T25b: ' + out);
+}
+
+// ── PR-D2: OG cover 1200×630 vs Organization.logo (separados) ──
+
+// T26 — Home usa /lucycare-og.png como og:image, y Organization.logo sigue en
+// /lucycare-logo.png (cover y logo NO se mezclan)
+{
+  const m = buildHomeMeta(ORIGIN);
+  const ogImg = (m.metaHtml.match(/property="og:image" content="([^"]+)"/) || [])[1] || '';
+  const twImg = (m.metaHtml.match(/name="twitter:image" content="([^"]+)"/) || [])[1] || '';
+  const ld = (m.metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/) || [])[1] || '';
+  const graph = ld ? JSON.parse(ld.replace(/\\u003c/g, '<')) : {};
+  const org = (graph['@graph'] || []).find((n) => n['@type'] === 'Organization');
+  const okAll =
+    ogImg === `${ORIGIN}/lucycare-og.png` &&
+    twImg === `${ORIGIN}/lucycare-og.png` &&
+    org && org.logo === `${ORIGIN}/lucycare-logo.png` &&
+    // el cover NUNCA es el logo de Organization
+    org.logo !== ogImg;
+  okAll ? ok('T26 Home: og:image=/lucycare-og.png, twitter:image=cover, Organization.logo=/lucycare-logo.png (no se mezclan)')
+        : no(`T26 Home cover/logo: og=${ogImg} tw=${twImg} logo=${org?.logo}`);
+}
+
+// T27 — perfil SIN avatar usa /lucycare-og.png como fallback; CON avatar usa el avatar
+{
+  const withAvatar = normalizeDoctor(rawCamilo);
+  const mWith = buildMeta(withAvatar, ORIGIN);
+  const imgWith = (mWith.metaHtml.match(/property="og:image" content="([^"]+)"/) || [])[1] || '';
+
+  const noAvatar = normalizeDoctor({ ...rawCamilo, profiles: { full_name: 'Dr. Sin Foto', avatar_url: null } });
+  const mNo = buildMeta(noAvatar, ORIGIN);
+  const imgNo = (mNo.metaHtml.match(/property="og:image" content="([^"]+)"/) || [])[1] || '';
+
+  const okAll =
+    imgWith === withAvatar.avatarUrl &&               // con avatar → avatar del médico
+    imgNo === `${ORIGIN}/lucycare-og.png`;            // sin avatar → cover
+  okAll ? ok('T27 perfil: con avatar → avatar del médico · sin avatar → /lucycare-og.png (cover)')
+        : no(`T27 perfil og:image: conAvatar=${imgWith} sinAvatar=${imgNo}`);
+}
+
+// T28 — genérico/noindex usa /lucycare-og.png como og:image
+{
+  const g = buildGenericNoindex(ORIGIN);
+  const img = (g.metaHtml.match(/property="og:image" content="([^"]+)"/) || [])[1] || '';
+  img === `${ORIGIN}/lucycare-og.png`
+    ? ok('T28 genérico/noindex: og:image=/lucycare-og.png')
+    : no('T28 genérico og:image: ' + img);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} og-meta smoke: pass=${pass} fail=${fail}`);
