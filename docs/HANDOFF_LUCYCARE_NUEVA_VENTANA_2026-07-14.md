@@ -6,15 +6,16 @@
 
 ---
 
-## 1. Estado técnico final (2026-07-14, tras cerrar #277)
+## 1. Estado técnico final (2026-07-14, tras cerrar #279)
 
-- **HEAD de `main`:** `7233a47` (*fix(consulta): la corrección post-firma ya
-  puede borrar duración/dosis de la receta (F6 / s7_58) (#277)*).
-- **PRs mergeados:** **#1–#277**.
-- **Migraciones aplicadas en Supabase:** hasta **`s7_58`**
-  (`amend_consultation` con semántica de presencia de clave — ver §3).
-  **`s7_58` fue aplicada manualmente por el owner en el SQL Editor y verificada
-  con `node scripts/check-s7_58.mjs` (verde).**
+- **HEAD de `main`:** `e858040` (*feat(consulta): alternativas terapéuticas
+  corregibles en la receta post-firma (F7 / s7_59) (#279)*).
+- **PRs mergeados:** **#1–#279**.
+- **Migraciones aplicadas en Supabase:** hasta **`s7_59`**
+  (`amend_consultation` con semántica de presencia de clave, ahora también para
+  `alternatives` — ver §2·F7 y §3). **`s7_58` y `s7_59` fueron aplicadas
+  manualmente por el owner en el SQL Editor y verificadas con
+  `node scripts/check-s7_5N.mjs` (verde).**
 - **`main == origin/main`** ✅ · **árbol limpio** · **0 PRs abiertos** ·
   **sin preview local** · **sin servers** · **sin fixtures** ·
   **sin frente funcional abierto**.
@@ -22,7 +23,7 @@
 
 ---
 
-## 2. Eje clínico F1–F6 — CERRADO (#272–#277)
+## 2. Eje clínico F1–F7 — CERRADO (#272–#279)
 
 Serie de correcciones sobre la consulta clínica, nacidas de una **auditoría
 read-only de integridad de formularios** (post-#269). Todas validadas en preview
@@ -166,14 +167,52 @@ con la cuenta demo (Camilo) y verificadas contra la DB real.
   (`is_current`/`replaces_id`/`version`), snapshots before/after,
   `consultation_amendments`, `affects_prescriptions`, `audit_log`, y los bloques
   de diagnósticos, antecedentes y vitales. **`alternatives` se conserva intacta**
-  (es F7). **Sin backfill** de históricos.
+  (era F7, ahora cerrado). **Sin backfill** de históricos.
+
+### F7 · PR #279 / `s7_59` — Alternativas terapéuticas corregibles post-firma
+- **SQL + frontend.** `migrations/s7_59_amend_prescription_alternatives.sql`,
+  `scripts/check-s7_59.mjs`, `scripts/_smoke-s7_59.mjs`,
+  `src/pages/panel/consulta/CorrectConsultationModal.tsx`,
+  `src/services/consultations.service.ts` (tipos de las ops).
+- **El bug:** `alternatives` era el último campo de receta que la corrección no
+  podía tocar — en `replace` se arrastraba tal cual (`v_old.alternatives`, no
+  editable) y en `add` **ni figuraba en el `INSERT`** (un medicamento agregado en
+  una corrección **nunca** podía tener alternativas). Y `RecetaPrint` **sí las
+  imprime** → unas alternativas equivocadas en una receta firmada quedaban
+  impresas para siempre, sin forma de corregirlas.
+- **El fix (dos puntos exactos, todo lo demás idéntico a `s7_58`):**
+  - `replace`: `v_old.alternatives` → `CASE WHEN v_op ? 'alternatives' …` — la
+    **misma regla vinculante** de §3 (ausente = conservar · `null`/`''` = limpiar
+    · valor = actualizar);
+  - `add`: se agrega la columna `alternatives` al `INSERT` (sin valor → `NULL`).
+  - Frontend: campo "Opciones alternativas" en el editor de receta del modal
+    (existentes y nuevos); se siembra con el valor actual y la clave viaja
+    **siempre** (`null` al borrarla).
+- **`RecetaPrint` NO se tocó** — ya sabía imprimir alternativas.
+- **Verificación:** `check-s7_59` verde + **`_smoke-s7_59` 27/27** (el mismo smoke
+  daba **4 fallas** de `alternatives` contra la RPC vieja `s7_58`, e **incluye la
+  no regresión de F6**: duración/nulls/`permanente` siguen). Más validación UI en
+  preview sobre **fixture propia firmada** (modificar → borrar → agregar con
+  alternativas; v1/v2 históricas, v3 vigente con `alternatives=null`).
+- **Intacto (idéntico a `s7_58`):** gates, versionado, snapshots,
+  `consultation_amendments`, `affects_prescriptions`, `audit_log`, diagnósticos,
+  antecedentes, vitales, y **toda la semántica de nulls / `permanente` de F6**.
+  **Sin backfill.**
+
+**→ Con F7 el eje clínico F1–F7 queda CERRADO.** La corrección post-firma de
+receta ya puede corregir fielmente **todos** sus campos (dosis, frecuencia,
+duración, unidad, indicaciones, alternativas), borrarlos de verdad (`NULL`) y
+asignar alternativas a medicamentos agregados en la corrección — con versionado,
+snapshots, adendas, `audit_log` y gates intactos.
 
 ---
 
 ## 3. REGLA TÉCNICA VINCULANTE — semántica de `amend_consultation`
 
 Para **toda** corrección clínica post-firma (y para cualquier cambio futuro de la
-RPC, **empezando por F7**):
+RPC). Ya aplica a **todos** los campos de receta (`s7_58` = dosis/frecuencia/
+duración/unidad/indicaciones · `s7_59` = alternativas), además de vitales,
+diagnósticos y antecedentes:
 
 | Payload | Efecto |
 |---|---|
@@ -185,7 +224,8 @@ RPC, **empezando por F7**):
   **NO usar `COALESCE(NULLIF(...), viejo)`**, que decide por el valor y hace
   imposible borrar.
 - Este patrón ya era el de **vitales, notas de diagnóstico y antecedentes**;
-  `s7_58` alineó la receta, que era la excepción.
+  `s7_58` alineó la receta (que era la excepción) y `s7_59` cerró el último campo
+  que faltaba, `alternatives`.
 - **Regla clínica server-side:** `duration_unit = 'permanente'` ⇒
   `duration_value = NULL` **siempre**, sin depender de que el cliente la limpie
   (aplica a `replace` y a `add`).
@@ -196,20 +236,16 @@ RPC, **empezando por F7**):
 
 ## 4. Pendientes vivos (separados, SIN acción automática)
 
-1. **F7 — alternativas terapéuticas corregibles.** Hoy `alternatives`:
-   - en `replace` **se conserva** (`v_old.alternatives`) pero **no es editable**;
-   - en `add` **ni siquiera está en el `INSERT`** → un medicamento agregado en una
-     corrección **nunca puede tener alternativas**;
-   - **la receta impresa SÍ las muestra** → si el médico escribió unas
-     alternativas equivocadas y firmó, **no tiene forma de corregirlas**.
-   - **Requiere SQL/migración + UI + RPC.** Debe seguir la regla de §3.
-2. **F8 — optimistic updates / refactor estructural.** El repo tiene **cero**
+> **F7 (alternativas corregibles) CERRADO en #279 / `s7_59`** — ver §2. El único
+> pendiente clínico restante de la auditoría es F8.
+
+1. **F8 — optimistic updates / refactor estructural.** El repo tiene **cero**
    optimistic updates (`onMutate`): toda mutación es `invalidate → refetch`, que
    es la precondición estructural de la familia de bugs F1–F5. Más delicado, **no
    urgente**.
-3. **Search Console / SEO operativo** — sigue separado. **No mezclar con clínica.**
-4. **OG branded 1200×630 + JSON-LD `Physician`** (Slugs PR D) — futuro, no mezclar.
-5. **Perf P2** (code-splitting del JS ~305 KB gzip) · branding interno menor ·
+2. **Search Console / SEO operativo** — sigue separado. **No mezclar con clínica.**
+3. **OG branded 1200×630 + JSON-LD `Physician`** (Slugs PR D) — futuro, no mezclar.
+4. **Perf P2** (code-splitting del JS ~305 KB gzip) · branding interno menor ·
    credenciales `doctor_credentials` · Pagos SaaS (solo diseño, bloqueado por
    pasarela).
 
@@ -277,9 +313,9 @@ Leé en este orden:
 3. docs/HANDOFF_TOMA_DECISIONES_2.md (si necesitás contexto histórico)
 
 Estado esperado:
-- HEAD: 7233a47
-- PRs mergeados hasta #277
-- migraciones hasta s7_58 (aplicada y verificada en Supabase)
+- HEAD: e858040
+- PRs mergeados hasta #279
+- migraciones hasta s7_59 (aplicada y verificada en Supabase)
 - main == origin/main
 - árbol limpio
 - 0 PRs abiertos
