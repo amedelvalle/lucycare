@@ -390,6 +390,7 @@ export interface PrescriptionReplaceOp {
   duration_value?: number | null;
   duration_unit?: DurationUnit | null;
   instructions?: string | null;
+  alternatives?: string | null;  // s7_59 (F7): corregible
 }
 export interface PrescriptionAddOp {
   op: 'add';
@@ -399,6 +400,7 @@ export interface PrescriptionAddOp {
   duration_value?: number | null;
   duration_unit?: DurationUnit | null;
   instructions?: string | null;
+  alternatives?: string | null;  // s7_59 (F7): asignable al agregar
 }
 export interface PrescriptionRemoveOp {
   op: 'remove';
