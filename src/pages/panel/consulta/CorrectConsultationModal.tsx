@@ -57,7 +57,7 @@ const VITALS_FIELDS: { key: VitalsField; label: string; unit: string; step?: str
 type TextValues = Record<ConsultationTextField, string>;
 type VitalsValues = Record<VitalsField, string>;
 
-interface RxFields { dosage: string; frequency: string; durationValue: string; durationUnit: DurationUnit; instructions: string; }
+interface RxFields { dosage: string; frequency: string; durationValue: string; durationUnit: DurationUnit; instructions: string; alternatives: string; }
 interface ExistingRx extends RxFields { prescriptionId: string; medicationId: string; medicationLabel: string; removed: boolean; orig: RxFields & { medicationId: string }; }
 interface NewRx extends RxFields { tempId: string; medicationId: string; medicationLabel: string; }
 
@@ -94,7 +94,7 @@ export default function CorrectConsultationModal({
   // Receta
   const [existing, setExisting] = useState<ExistingRx[]>(() =>
     initialPrescriptions.map((p) => {
-      const f: RxFields = { dosage: p.dosage ?? '', frequency: p.frequency ?? '', durationValue: vStr(p.duration_value), durationUnit: (p.duration_unit ?? 'dias') as DurationUnit, instructions: p.instructions ?? '' };
+      const f: RxFields = { dosage: p.dosage ?? '', frequency: p.frequency ?? '', durationValue: vStr(p.duration_value), durationUnit: (p.duration_unit ?? 'dias') as DurationUnit, instructions: p.instructions ?? '', alternatives: p.alternatives ?? '' };
       return { prescriptionId: p.id, medicationId: p.medication_id, medicationLabel: p.medication.commercial_name, removed: false, ...f, orig: { ...f, medicationId: p.medication_id } };
     })
   );
@@ -176,7 +176,7 @@ export default function CorrectConsultationModal({
     const ops: PrescriptionOp[] = [];
     for (const r of existing) {
       if (r.removed) { ops.push({ op: 'remove', prescription_id: r.prescriptionId }); continue; }
-      const changed = r.medicationId !== r.orig.medicationId || norm(r.dosage) !== norm(r.orig.dosage) || norm(r.frequency) !== norm(r.orig.frequency) || norm(r.durationValue) !== norm(r.orig.durationValue) || r.durationUnit !== r.orig.durationUnit || norm(r.instructions) !== norm(r.orig.instructions);
+      const changed = r.medicationId !== r.orig.medicationId || norm(r.dosage) !== norm(r.orig.dosage) || norm(r.frequency) !== norm(r.orig.frequency) || norm(r.durationValue) !== norm(r.orig.durationValue) || r.durationUnit !== r.orig.durationUnit || norm(r.instructions) !== norm(r.orig.instructions) || norm(r.alternatives) !== norm(r.orig.alternatives);
       if (!changed) continue;
       ops.push({
         op: 'replace',
@@ -185,6 +185,8 @@ export default function CorrectConsultationModal({
         dosage: r.dosage.trim() || null,
         frequency: r.frequency.trim() || null,
         instructions: r.instructions.trim() || null,
+        // s7_59 (F7): la clave viaja siempre → null cuando el médico las borró.
+        alternatives: r.alternatives.trim() || null,
         duration_unit: r.durationUnit,
         duration_value: durationValueOf(r.durationUnit, r.durationValue),
       });
@@ -196,6 +198,7 @@ export default function CorrectConsultationModal({
         dosage: n.dosage.trim() || null,
         frequency: n.frequency.trim() || null,
         instructions: n.instructions.trim() || null,
+        alternatives: n.alternatives.trim() || null,
         duration_unit: n.durationUnit,
         duration_value: durationValueOf(n.durationUnit, n.durationValue),
       });
@@ -261,7 +264,7 @@ export default function CorrectConsultationModal({
   // ─── Pickers ───
   const pickMedication = (med: { id: string; label: string }) => {
     if (rxPicker?.mode === 'sub') setExisting((p) => p.map((r) => r.prescriptionId === rxPicker.id ? { ...r, medicationId: med.id, medicationLabel: med.label } : r));
-    else setAdded((p) => [...p, { tempId: `rx-${Date.now()}-${p.length}`, medicationId: med.id, medicationLabel: med.label, dosage: '', frequency: '', durationValue: '', durationUnit: 'dias', instructions: '' }]);
+    else setAdded((p) => [...p, { tempId: `rx-${Date.now()}-${p.length}`, medicationId: med.id, medicationLabel: med.label, dosage: '', frequency: '', durationValue: '', durationUnit: 'dias', instructions: '', alternatives: '' }]);
     setRxPicker(null);
   };
   const pickDiagnosis = (d: { id: string; label: string }) => {
@@ -578,6 +581,9 @@ function RxFieldsEditor({ rx, disabled, onField }: { rx: RxFields; disabled: boo
         </label>
       </div>
       <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Indicaciones y notas</span><textarea rows={2} value={rx.instructions} disabled={disabled} onChange={(e) => onField({ instructions: e.target.value })} placeholder="Cómo tomarse el medicamento, con/sin comida, etc." className={textareaCls} /></label>
+      {/* s7_59 (F7): las alternativas ya son corregibles post-firma. Mismo campo
+          que en la receta del borrador; vaciarlo las borra (viaja como null). */}
+      <label className="block"><span className="block text-[11px] text-gray-500 mb-0.5">Opciones alternativas (opcional)</span><input type="text" value={rx.alternatives} disabled={disabled} onChange={(e) => onField({ alternatives: e.target.value })} placeholder="Medicamentos sustitutos si no encuentra el principal" className={inputCls} /></label>
     </>
   );
 }
@@ -663,7 +669,7 @@ function recetaSummary(existing: ExistingRx[], added: NewRx[]): string[] {
   for (const r of existing) {
     if (r.removed) { out.push(`Quitar: ${r.medicationLabel}`); continue; }
     const swapped = r.medicationId !== r.orig.medicationId;
-    const fieldChanged = norm(r.dosage) !== norm(r.orig.dosage) || norm(r.frequency) !== norm(r.orig.frequency) || norm(r.durationValue) !== norm(r.orig.durationValue) || r.durationUnit !== r.orig.durationUnit || norm(r.instructions) !== norm(r.orig.instructions);
+    const fieldChanged = norm(r.dosage) !== norm(r.orig.dosage) || norm(r.frequency) !== norm(r.orig.frequency) || norm(r.durationValue) !== norm(r.orig.durationValue) || r.durationUnit !== r.orig.durationUnit || norm(r.instructions) !== norm(r.orig.instructions) || norm(r.alternatives) !== norm(r.orig.alternatives);
     if (swapped) out.push(`Sustituir por: ${r.medicationLabel}`);
     else if (fieldChanged) out.push(`Modificar: ${r.medicationLabel}`);
   }
