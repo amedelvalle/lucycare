@@ -176,9 +176,55 @@ export function buildMeta(d, origin) {
     `<meta name="twitter:title" content="${ogT}">`,
     `<meta name="twitter:description" content="${desc}">`,
     `<meta name="twitter:image" content="${img}">`,
+    // JSON-LD Physician: SOLO en perfiles indexables. Nunca en genérico/noindex,
+    // así el <head> no contradice a robots y no se emite schema de un no-publicado.
+    ...(indexable ? [buildPhysicianJsonLd(d, canonical, ogImage)] : []),
   ].join('\n    ');
 
   return { title, metaHtml, indexable };
+}
+
+/**
+ * JSON-LD `Physician` de un perfil PÚBLICO e indexable. Construido SOLO con el
+ * objeto ya normalizado (normalizeDoctor), que no contiene datos sensibles.
+ *
+ * Reglas de privacidad (vinculantes, mismas que el resto del módulo): NUNCA
+ * license/JVPM/NUE, DUI, teléfono ni email. Tampoco se inventan campos que no
+ * tenemos y que Google podría penalizar si son falsos: sin `aggregateRating`,
+ * `review`, `priceRange`, `openingHours`, `telephone`. La dirección se limita a
+ * localidad/departamento (nunca calle exacta, que no está en el objeto).
+ *
+ * Solo se emiten los campos presentes (name+url siempre; especialidad, imagen,
+ * clínica y área geográfica condicionales). Determinista, sin red/reloj.
+ */
+export function buildPhysicianJsonLd(d, canonical, ogImage) {
+  const node = {
+    '@context': 'https://schema.org',
+    '@type': 'Physician',
+    name: d.name,
+    url: canonical,
+  };
+  if (d.specialty) node.medicalSpecialty = d.specialty;
+  if (ogImage) node.image = ogImage;
+  if (d.clinicName) {
+    node.worksFor = { '@type': 'MedicalOrganization', name: d.clinicName };
+  }
+  const loc = locationText(d);
+  if (loc) {
+    // Solo localidad/departamento (sin street): PostalAddress parcial válido.
+    node.address = {
+      '@type': 'PostalAddress',
+      addressLocality: d.municipality || undefined,
+      addressRegion: d.department || undefined,
+      addressCountry: 'SV',
+    };
+    node.areaServed = { '@type': 'AdministrativeArea', name: loc };
+  }
+  // Escape defensivo de `<` para que nada pueda cerrar </script> (el objeto no
+  // tiene input de usuario crudo salvo los strings de doctor, ya seguros como
+  // texto JSON, pero neutralizamos igual por robustez).
+  const json = JSON.stringify(node).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
 }
 
 /**
@@ -194,6 +240,16 @@ export function buildGenericNoindex(origin) {
     `<meta property="og:title" content="${SITE}">`,
     `<meta property="og:image" content="${img}">`,
   ].join('\n    ');
+  return { title: null, metaHtml, indexable: false };
+}
+
+/**
+ * Metadata para rutas transaccionales sin valor de búsqueda (hoy `/calificar/*`,
+ * la encuesta token-gated). `noindex,follow`: que no se indexe pero que los
+ * enlaces se sigan. Sin datos, sin JSON-LD, sin tocar el <title> del shell.
+ */
+export function buildNoindexRoute() {
+  const metaHtml = [`<meta name="robots" content="noindex,follow">`].join('\n    ');
   return { title: null, metaHtml, indexable: false };
 }
 
