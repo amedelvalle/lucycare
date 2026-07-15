@@ -3,44 +3,59 @@
 // ACCIÓN: REEMPLAZAR — sustituir contenido completo
 // ═══════════════════════════════════════════════════════════
 
+import { lazy } from "react";
 import type { RouteObject } from "react-router-dom";
+
+// ─── ESTÁTICAS (en el chunk inicial) ────────────────────────────────
+// Rutas públicas/SEO principales + NotFound + guards. Los GUARDS quedan
+// estáticos a propósito: deben correr ANTES de resolver la página lazy que
+// envuelven, así la protección de auth no depende de que el import termine.
 import NotFound from "../pages/NotFound";
 import Home from "../pages/home/page";
 import DoctorDetail from "../pages/doctor-detail/page";
-import PanelLayout from "../pages/panel/PanelLayout";
-import PanelHomePage from "../pages/panel/home/page";
-import DisponibilidadPage from "../pages/panel/disponibilidad/page";
-import BloqueosPage from "../pages/panel/bloqueos/BloqueosPage";
-import CitasPage from "../pages/panel/citas/CitasPage";
-import PacientesPage from "../pages/panel/pacientes/PacientesPage";
-import PacientePerfilPage from "../pages/panel/pacientes/PacientePerfilPage";
-import PerfilPage from "../pages/panel/perfil/PerfilPage";
-import ConsultaPage from "../pages/panel/consulta/ConsultaPage";
-import CatalogosPage from "../pages/panel/catalogos/CatalogosPage";
-import ServiciosPage from "../pages/panel/servicios/ServiciosPage";
-import EquipoPage from "../pages/panel/equipo/EquipoPage";
-import ListaEsperaPage from "../pages/panel/lista-espera/ListaEsperaPage";
-import ReputacionPage from "../pages/panel/reputacion/ReputacionPage";
-import CalificarPage from "../pages/calificar/CalificarPage";
-import ResetPasswordPage from "../pages/reset-password/ResetPasswordPage";
-import MisAtencionesPage from "../pages/paciente/MisAtencionesPage";
-import MiPerfilPage from "../pages/paciente/MiPerfilPage";
-import PatientOnlyRoute from "./PatientOnlyRoute";
-import AdminLayout from "../pages/admin/AdminLayout";
-import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
-import AdminDoctorsPage from "../pages/admin/AdminDoctorsPage";
-import AdminDoctorEditPage from "../pages/admin/AdminDoctorEditPage";
-import AdminAffiliationsPage from "../pages/admin/AdminAffiliationsPage";
-import AdminCatalogosPage from "../pages/admin/AdminCatalogosPage";
-import AdminWaitlistPage from "../pages/admin/AdminWaitlistPage";
-import AdminPacientesPage from "../pages/admin/AdminPacientesPage";
-import AdminAdministradoresPage from "../pages/admin/AdminAdministradoresPage";
-import AdminAnalyticsPage from "../pages/admin/AdminAnalyticsPage";
-import AdminAnalyticsFarmaPage from "../pages/admin/AdminAnalyticsFarmaPage";
 import PrivacidadPage from "../pages/privacidad/page";
+import PatientOnlyRoute from "./PatientOnlyRoute";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
 import RequireOwnerAdmin from "./RequireOwnerAdmin";
+
+// ─── LAZY (chunks propios, cargados solo al entrar a la ruta) ────────
+// Perf P2: el visitante público (Home / /doctor/*) ya no descarga panel,
+// admin, paciente, consulta ni las transaccionales. Se resuelven bajo el
+// <Suspense> de App.tsx. Los guards estáticos de arriba las envuelven igual.
+// Panel médico
+const PanelLayout = lazy(() => import("../pages/panel/PanelLayout"));
+const PanelHomePage = lazy(() => import("../pages/panel/home/page"));
+const DisponibilidadPage = lazy(() => import("../pages/panel/disponibilidad/page"));
+const BloqueosPage = lazy(() => import("../pages/panel/bloqueos/BloqueosPage"));
+const CitasPage = lazy(() => import("../pages/panel/citas/CitasPage"));
+const PacientesPage = lazy(() => import("../pages/panel/pacientes/PacientesPage"));
+const PacientePerfilPage = lazy(() => import("../pages/panel/pacientes/PacientePerfilPage"));
+const PerfilPage = lazy(() => import("../pages/panel/perfil/PerfilPage"));
+const ConsultaPage = lazy(() => import("../pages/panel/consulta/ConsultaPage"));
+const CatalogosPage = lazy(() => import("../pages/panel/catalogos/CatalogosPage"));
+const ServiciosPage = lazy(() => import("../pages/panel/servicios/ServiciosPage"));
+const EquipoPage = lazy(() => import("../pages/panel/equipo/EquipoPage"));
+const ListaEsperaPage = lazy(() => import("../pages/panel/lista-espera/ListaEsperaPage"));
+const ReputacionPage = lazy(() => import("../pages/panel/reputacion/ReputacionPage"));
+// Área paciente
+const MisAtencionesPage = lazy(() => import("../pages/paciente/MisAtencionesPage"));
+const MiPerfilPage = lazy(() => import("../pages/paciente/MiPerfilPage"));
+// LucyAdmin
+const AdminLayout = lazy(() => import("../pages/admin/AdminLayout"));
+const AdminDashboardPage = lazy(() => import("../pages/admin/AdminDashboardPage"));
+const AdminDoctorsPage = lazy(() => import("../pages/admin/AdminDoctorsPage"));
+const AdminDoctorEditPage = lazy(() => import("../pages/admin/AdminDoctorEditPage"));
+const AdminAffiliationsPage = lazy(() => import("../pages/admin/AdminAffiliationsPage"));
+const AdminCatalogosPage = lazy(() => import("../pages/admin/AdminCatalogosPage"));
+const AdminWaitlistPage = lazy(() => import("../pages/admin/AdminWaitlistPage"));
+const AdminPacientesPage = lazy(() => import("../pages/admin/AdminPacientesPage"));
+const AdminAdministradoresPage = lazy(() => import("../pages/admin/AdminAdministradoresPage"));
+const AdminAnalyticsPage = lazy(() => import("../pages/admin/AdminAnalyticsPage"));
+const AdminAnalyticsFarmaPage = lazy(() => import("../pages/admin/AdminAnalyticsFarmaPage"));
+// Transaccionales (bajo tráfico)
+const CalificarPage = lazy(() => import("../pages/calificar/CalificarPage"));
+const ResetPasswordPage = lazy(() => import("../pages/reset-password/ResetPasswordPage"));
 
 const routes: RouteObject[] = [
   {
