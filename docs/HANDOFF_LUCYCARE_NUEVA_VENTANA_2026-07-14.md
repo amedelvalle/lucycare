@@ -203,7 +203,9 @@ con la cuenta demo (Camilo) y verificadas contra la DB real.
 receta ya puede corregir fielmente **todos** sus campos (dosis, frecuencia,
 duración, unidad, indicaciones, alternativas), borrarlos de verdad (`NULL`) y
 asignar alternativas a medicamentos agregados en la corrección — con versionado,
-snapshots, adendas, `audit_log` y gates intactos.
+snapshots, adendas, `audit_log` y gates intactos. **F8 (optimistic updates /
+refactor estructural) queda DIFERIDO conscientemente — ver §4-bis. No queda
+pendiente clínico activo.**
 
 ---
 
@@ -236,18 +238,56 @@ diagnósticos y antecedentes:
 
 ## 4. Pendientes vivos (separados, SIN acción automática)
 
-> **F7 (alternativas corregibles) CERRADO en #279 / `s7_59`** — ver §2. El único
-> pendiente clínico restante de la auditoría es F8.
+> **EJE CLÍNICO CERRADO.** F1–F7 cerrados (#272–#279). **F8 DIFERIDO
+> conscientemente** (ver §4-bis). **No queda pendiente clínico activo** — los
+> siguientes frentes deben ser **no clínicos**, salvo que aparezca un bug real.
 
-1. **F8 — optimistic updates / refactor estructural.** El repo tiene **cero**
-   optimistic updates (`onMutate`): toda mutación es `invalidate → refetch`, que
-   es la precondición estructural de la familia de bugs F1–F5. Más delicado, **no
-   urgente**.
-2. **Search Console / SEO operativo** — sigue separado. **No mezclar con clínica.**
-3. **OG branded 1200×630 + JSON-LD `Physician`** (Slugs PR D) — futuro, no mezclar.
-4. **Perf P2** (code-splitting del JS ~305 KB gzip) · branding interno menor ·
+1. **Search Console / SEO operativo** — sigue separado. **No mezclar con clínica.**
+2. **OG branded 1200×630 + JSON-LD `Physician`** (Slugs PR D) — futuro, no mezclar.
+3. **Perf P2** (code-splitting del JS ~305 KB gzip) · branding interno menor ·
    credenciales `doctor_credentials` · Pagos SaaS (solo diseño, bloqueado por
    pasarela).
+
+---
+
+## 4-bis. F8 — optimistic updates / refactor estructural: DIFERIDO conscientemente
+
+**Decisión (post-#280, análisis read-only):** NO se implementa ahora. **No es un
+pendiente abierto: es una decisión tomada.** No reabrir por inercia.
+
+**Por qué se difiere:**
+- El repo tiene **cero `onMutate` en todo `src`** — toda mutación clínica es
+  `invalidate → refetch`. Eso *era* la precondición estructural de la familia de
+  bugs F1–F5.
+- Pero **F1–F7 ya instalaron protecciones locales suficientes**, sección por
+  sección: receta (guards + `dirty` + `null`-intent), diagnósticos (`boundIdRef`),
+  antecedentes (`boundIdRef`, latente), texto clínico (`seededConsultationRef` +
+  `hasLocalEditsRef`), vitales (`vitalsSnapshotRef`), firma (gate de clinical
+  writes), correcciones post-firma (RPC atómica con trazabilidad).
+- **No queda ningún bug clínico visible ni reproducible por flujo humano normal.**
+  El único riesgo residual es una **carrera extrema/no humana** (~60 ms entre
+  blur y una segunda mutación de la misma fila), hipotética, ya mitigada por
+  `boundIdRef`.
+- Los **optimistic updates mal hechos introducen su propia clase de bugs**
+  (rollback de `onError` que no restaura idéntico → cache clínico corrupto).
+  Cambiaría bugs conocidos y cerrados por una superficie nueva y más sutil en el
+  eje más delicado. **Alto riesgo, bajo retorno** — refactor por estética técnica,
+  que el criterio de producto no autoriza.
+
+**Solo se reabre si:** aparece un **reporte real** de pérdida/reversión por
+concurrencia, **o** crece el volumen de datos por consulta y el refetch empieza a
+degradar UX/performance (hoy ~2–5 ítems por consulta, imperceptible).
+
+**Si se reabre en el futuro (estrategia vinculante):**
+- **NUNCA global.** Un `onMutate` sobre las 5 tablas clínicas a la vez es el peor
+  escenario.
+- **Un PR por sección**, empezando por **`useUpdatePrescription`**.
+- **No tocar las 5 secciones clínicas a la vez.**
+- Validar el **rollback** de `onMutate` / `onError` / `onSettled` (que el cache
+  vuelva idéntico ante un fallo forzado).
+- Probar con **fixture de borrador** (el update de receta en borrador no crea
+  adendas), **no** consulta firmada, salvo necesidad.
+- **Sin DB/SQL/migración** — es puramente cache de React Query en el cliente.
 
 ---
 
