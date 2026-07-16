@@ -4,6 +4,131 @@
 > **Estado: DISEÑO APROBADO conceptualmente. NO implementar código ni tocar la DB
 > hasta abrir las fases (§8) con su alcance.** Read-only / design.
 >
+> 📌 **Leer §0 primero: nota de vigencia 2026-07-16.** El cuerpo del documento
+> sigue vigente; §0 agrega lo que cambió después y **por qué F1 subió de
+> prioridad**.
+
+---
+
+## 0. NOTA DE VIGENCIA — 2026-07-16 (post-#289 / `s7_60`)
+
+**Verificado contra HEAD `db8cf5e`: el análisis sigue vigente en todo lo
+principal.** Sin cambios en el modelo:
+
+- **No existe `doctor_credentials`** — 0 referencias en `migrations/`, `src/`, `scripts/`.
+- **`doctors.license_number` sigue siendo la única credencial** (= JVPM). También
+  existe `doctor_affiliation_requests.license_number`, que es **otra tabla** (la
+  licencia del *lead*).
+- **No existe NUE**, ni `verified_at`, ni `verified_by`, ni `rejection_reason`,
+  ni `credential_type`, ni `is_public` — 0 ocurrencias cada uno.
+- **`is_verified` sigue siendo GLOBAL y GENERATED** de `lucy_status` (`s7_03`).
+- **No hay flujo de verificación por credencial**; `admin_set_doctor_verified` fue
+  dropeada en `s7_03` y la única palanca es `admin_set_lucy_status`, owner-only.
+- **`claim` ≠ verificación** — explícito en `s7_13:165` (*"NO tocar: is_published,
+  booking_enabled, is_operational, is_verified, license_number"*).
+- **La agenda NO depende de verificación** — 0 referencias a `is_verified` en
+  `booking.service` / `availability.service` / `BookingCard`; la reserva depende
+  solo de `booking_enabled`. Los ejes siguen bien separados.
+
+### 0.1 · Lo que cambió: F1 ahora tiene una razón de SEGURIDAD, no solo de modelo
+
+Este documento (§10) recomendaba *"no exponer credenciales hasta tener el
+modelo"*, tratando `doctor_credentials` como una **mejora de modelo** sin
+urgencia. **Eso cambió.**
+
+El diagnóstico read-only que precedió a este addendum destapó que
+**`public.doctors` conservaba el `GRANT ALL` del schema inicial** — la RLS filtra
+**filas, no columnas**, así que `anon` podía cosechar el `license_number` de
+todos los médicos publicados con la anon key. **`#197` había sacado el campo del
+payload de la app, pero eso nunca fue una barrera de seguridad: la app no lo
+pedía, cualquiera podía pedirlo.** (Junto con eso aparecieron dos vectores más:
+auto-verificación vía `lucy_status`, e inserción de médicos falsos.)
+
+**`s7_60` (#289) cerró lo urgente**, pero **dejó un riesgo residual vivo**:
+
+> **`authenticated` conserva `SELECT (license_number)`.** Los grants de columna
+> son **por rol, no por fila** → **cualquier usuario con cuenta puede leer la
+> licencia de un médico publicado.**
+
+Y hay un agravante que este documento no contemplaba: **`license_number` no es
+solo un identificador profesional — es uno de los DOS factores del claim**
+(`s7_13` exige teléfono OTP-verificado **y** licencia tipeada). Como **36 de los
+37 médicos publicados están `listed_only`** (sin reclamar), para ellos el factor
+licencia queda anulado. *(No habilita el robo por sí solo: el factor teléfono
+sigue en pie. Severidad: moderada, no crítica.)*
+
+**Se evaluó y se descartó un parche transitorio (PR-B: revocar la columna + RPC
+`my_doctor_license()`).** Razones:
+
+- **Impuesto permanente:** en Postgres no se puede revocar una columna de un
+  grant de tabla → habría que re-grantear las otras 19, y **cada columna nueva de
+  `doctors` habría que otorgarla o el panel se rompe en silencio**.
+- **La RPC simple no sirve para la receta:** devolvería la licencia del *caller*,
+  no la del *médico de la consulta*. Coinciden hoy solo por la RLS doctor-scoped
+  de `consultations` (`s7_26`) — equivalencia **accidental** que, si un asistente
+  accediera, imprimiría la licencia equivocada: **bug de corrección
+  clínica/legal, peor que el problema de privacidad**.
+- **F1 lo demolería:** el modelo de §6 ya manda que el `value` nunca salga del
+  servidor.
+
+**El fondo: `license_number` es un secreto viviendo en una tabla legible por
+fila. El arreglo correcto es sacarlo de ahí, no parchear permisos de columna.**
+Eso es exactamente lo que hace §6.
+
+**→ Decisión (owner, 2026-07-16): PR-B DIFERIDO; el cierre estructural del riesgo
+residual se pliega a F1.** F1 deja de ser opcional-estético y pasa a ser el
+vehículo de un arreglo de seguridad pendiente.
+
+### 0.2 · Lo que F1 debe resolver estructuralmente (vinculante)
+
+Además de lo ya diseñado en §6, F1 **debe** cerrar estos puntos:
+
+| # | Requisito |
+|---|---|
+| 1 | **El valor sensible sale de `doctors`** → tabla propia cuya RLS sea self + admin, no una tabla legible por fila para todo el mundo. |
+| 2 | **`license_number` deja de ser consultable por un rol amplio.** Nada de `SELECT` para `authenticated` sobre el valor. |
+| 3 | **Acceso seguro para la receta** — scopeado a la **consulta**, no al caller (ver el error del parche descartado). Evaluar snapshot al firmar, como `s7_37` hace con los nombres de medicamento: sería históricamente más fiel (la licencia *al momento de firmar*). |
+| 4 | **Acceso seguro para el médico a lo propio** (panel). |
+| 5 | **Acceso interno de LucyAdmin** — hoy **no lee** `doctors.license_number` por ninguna vía; si F1 lo necesita, que sea por RPC admin-gated. |
+| 6 | **El claim sigue sin exponer el valor** — `s7_13` ya lo compara en una variable interna y nunca lo devuelve; F1 debe conservar esa propiedad. |
+| 7 | **Auditoría de verificación** (`verified_by` / `verified_at` / `rejection_reason` + `audit_log`), como ya prevé §6. |
+| 8 | **Plan de migración de `doctors.license_number`** → fila `type='JVPM'`, incluido el destino de la columna vieja. |
+
+### 0.3 · Excepción legítima — la receta impresa SÍ muestra el JVPM
+
+**No confundir con exposición pública.** `RecetaPrint.tsx` imprime
+`JVPM: {license_number}` en el encabezado, y **debe seguir haciéndolo**: una
+receta lleva la licencia del prescriptor por diseño — **identifica a quién
+prescribe y la farmacia la necesita**. Es un documento dirigido a un paciente
+concreto, no un payload de directorio.
+
+La regla de §5 (*"el número nunca al payload público"*) **sigue intacta**: se
+refiere al directorio/perfil público/SEO, donde el número **no viaja** (`#197` +
+`s7_60`; el middleware y el JSON-LD `Physician` ni conocen la columna). La receta
+es una **excepción deliberada y acotada**, no una fisura.
+
+F1 debe **preservar** esta excepción (ver §0.2 punto 3).
+
+### 0.4 · Superficies reales de `doctors.license_number` (verificado a HEAD `db8cf5e`)
+
+Solo **dos** flujos leen la columna, y ambos son el médico leyendo lo suyo:
+
+| Flujo | Dónde |
+|---|---|
+| **Panel — perfil propio** | `doctorProfile.service.ts::getMyDoctorProfile` → `PerfilPage` lo muestra en un input **`disabled`** ("Para cambiarla, contacta soporte") |
+| **Receta** | `consultations.service.ts::getConsultationContext` → `RecetaPrint` imprime el `JVPM:` |
+
+**No la leen:** el directorio público / perfil público (`#197` + `s7_60`) · el
+middleware / JSON-LD (0 referencias) · **LucyAdmin** (solo ve la licencia del
+*lead*, vía RPC definer sobre `doctor_affiliation_requests`) · `directory_editor`
+(`directory_get_doctor_detail` nunca la expuso) · el claim (la recibe como
+argumento y la compara adentro).
+
+**Dato útil para F1:** no existe ningún `select('*')` sobre `doctors`, así que
+mover o revocar la columna **no rompe nada implícitamente**.
+
+---
+>
 > Acompaña a:
 > - `docs/ANALISIS_AFILIACION_MEDICO.md` — cómo entra un médico (lead → `listed_only`).
 > - `docs/ANALISIS_RECLAMAR_PERFIL.md` — cómo reclama (`listed_only` → `claimed`, valida licencia).
@@ -145,15 +270,24 @@ Reglas del modelo:
 ## 9. Qué puede mostrarse AHORA (con el modelo actual)
 
 - ✅ Badge **"Verificado"** (existente, = `is_verified` / LucyAdmin).
-- ✅ (PR posterior, frontend-only) copy **"Verificado por LucyCare"** junto al badge — **sin números**.
-- ❌ **NO** mostrar todavía: "JVPM verificada", "NUE verificado", número JVPM, número NUE,
-  ni "especialista acreditado" basado solo en `specialty_id`.
+- ✅ copy **"Verificado por LucyCare"** junto al badge — **sin números**.
+  *(Ya live desde #199; este documento lo anticipaba como "PR posterior".)*
+- ✅ **`JVPM:` en la receta impresa** — excepción legítima y acotada: identifica
+  al prescriptor. Ver §0.3.
+- ❌ **NO** mostrar todavía: "JVPM verificada", "NUE verificado", número JVPM,
+  número NUE, ni "especialista acreditado" basado solo en `specialty_id`.
 
 ## 10. Recomendación
 
+> **Actualizada por §0 (2026-07-16).** El punto 3 cambió de peso: F1 ya no es
+> "cuando se decida avanzar" — es el vehículo de un arreglo de seguridad
+> pendiente (§0.1). El resto sigue igual.
+
 1. **No exponer credenciales** (número ni claim por-tipo) **hasta tener el modelo** (`doctor_credentials`, §6).
 2. Mientras tanto, la única señal de confianza **veraz** es el **badge `is_verified`**
-   (con copy "Verificado por LucyCare" opcional, frontend-only, sin números).
-3. Cuando se decida avanzar, arrancar por **F1 (modelo/migración)**; la UI pública (F4) es lo último.
+   (con copy "Verificado por LucyCare", ya live en #199, sin números).
+3. **F1 (modelo/migración) es la prioridad del eje** y debe cumplir §0.2; la UI
+   pública (F4) sigue siendo lo último.
 4. Mantener vinculante: **pago ≠ verified ≠ claimed**, **verificación global ≠ credencial específica**,
-   y **el número nunca viaja al cliente público**.
+   y **el número nunca viaja al cliente público** — con la excepción explícita y
+   acotada de la **receta impresa** (§0.3).

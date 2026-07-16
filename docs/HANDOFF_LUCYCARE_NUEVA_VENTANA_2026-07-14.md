@@ -3,6 +3,170 @@
 > **PUNTO DE ENTRADA VIGENTE.** Leer este primero. Reemplaza como handoff
 > operativo al `2026-07-13` (que queda histórico). El detalle histórico
 > completo sigue en `CLAUDE.md`.
+>
+> ⚠️ **El cuerpo de este documento es un snapshot de 2026-07-14 (HEAD `2a02aaf`,
+> PRs hasta #284, migraciones hasta `s7_59`). NO refleja el estado actual.**
+> El estado vigente está en el **§0 (addendum)** justo abajo y en `CLAUDE.md`.
+> Lo de abajo sigue siendo válido como *detalle* del eje clínico F1–F7 y de
+> SEO/Perf; solo está desactualizado en el snapshot de §1 y en los pendientes
+> de §4.
+
+---
+
+## 0. ADDENDUM — estado vigente (2026-07-16, post-PR #289)
+
+- **HEAD de `main`:** **`db8cf5e`** · **PRs mergeados: #1–#289** ·
+  **migraciones aplicadas hasta `s7_60`** · `main == origin/main` · árbol
+  limpio · **0 PRs abiertos** · sin preview · sin servers · sin fixtures ·
+  **sin frente activo**.
+
+### 0.1 · 🔒 SEGURIDAD — `s7_60`, hardening de grants sobre `doctors` (#289)
+
+**El frente más importante desde este handoff.** Nació de un diagnóstico
+read-only de `doctor_credentials`: al revisar quién puede leer la credencial
+apareció que **`public.doctors` conservaba el `GRANT ALL` del schema inicial**
+(Sprint 1-2, anterior a `migrations/`, que arranca en `s4_01`). `profiles`
+recibió esta misma cirugía en `s7_16` durante el pre-piloto; **`doctors` nunca
+la recibió**, y el Security Gate (#35) no lo cazó.
+
+**Tres vectores, confirmados en la DB real por el owner y reproducidos por el
+smoke (13/25 antes de aplicar):**
+
+1. **Fuga de credenciales.** `anon` tenía `SELECT` sobre **todas** las
+   columnas, incluida `license_number`. **La RLS filtra FILAS, no COLUMNAS** —
+   `doctors_select_public` deja ver a cualquier publicado. Con la anon key
+   (pública por diseño, embebida en el bundle):
+   `GET /rest/v1/doctors?select=license_number&is_published=eq.true` → el JVPM
+   de **todos** los publicados. *(Ojo con los números: la tabla tiene **37**
+   filas con `is_published=true`; el directorio muestra **35** porque sus
+   `!inner` de `profiles`/`clinics` descartan 2. Una query cruda a `doctors` no
+   pasa por esos joins → devolvía 37.)* **El fix de #197 sacó el campo del payload de la app;
+   eso nunca fue una barrera de seguridad: la app no lo pide, pero cualquiera
+   puede pedirlo.**
+2. **Auto-verificación.** `authenticated` tenía `UPDATE` sobre todas las
+   columnas, y `doctors_update` es `USING (profile_id = auth.uid())` con
+   `WITH CHECK` **nulo** (hereda el `USING`). Como **`is_verified` es GENERATED
+   de `lucy_status`** (`s7_03`), un médico podía
+   `PATCH {"lucy_status":"verified"}` sobre su propia fila y quedar con el badge
+   **"Verificado por LucyCare" sin que LucyAdmin interviniera**. También
+   reescribir su `license_number` y auto-habilitar `is_operational`.
+3. **Médico falso.** `doctors_insert` es `WITH CHECK (profile_id = auth.uid())`
+   y un INSERT solo exige `clinic_id` + `profile_id` (el `clinic_id` sale del
+   directorio público) → cualquier autenticado **sin fila de `doctors`, o sea
+   cualquier paciente**, podía insertarse como médico verificado y publicado.
+   Existe `UNIQUE(profile_id)`: **acota** el vector a pacientes, no lo cierra.
+
+**El fix = cirugía de GRANTS, no de producto** (patrón de `s7_16`):
+
+| Rol | Después de `s7_60` |
+|---|---|
+| `anon` | `SELECT` de **16 columnas públicas**. Fuera: `license_number`, `is_operational`, `tos_accepted_at`, `tos_version`. **Sin INSERT ni UPDATE.** |
+| `authenticated` | `SELECT` completo (sin cambios) + `UPDATE` de **8 columnas**: `bio`, `specialty_id`, `experience_years`, `consultation_fee`, `languages`, `is_published`, `booking_enabled`, `updated_at`. **Sin INSERT.** |
+
+**La lista salió de leer el código, no de suponer:** `specialty_id` **se
+incluye** (PerfilPage lo manda en cada guardado; revocarlo rompía "Guardar") y
+`education` **se excluye** (nadie lo escribe en todo el repo). Las 16 de `anon`
+incluyen columnas que no van en ningún `select` pero **requieren privilegio
+igual** por aparecer en `WHERE`/`ORDER BY`/`JOIN`: `is_published` (filtro),
+`created_at` (`.order()`), `updated_at` (`<lastmod>` del sitemap), `clinic_id`
+(FK del embed `clinics!inner`).
+
+**NO tocó:** RLS/policies (filtran filas y están correctas) · `is_verified` ·
+`lucy_status` · el claim · las RPCs admin (`SECURITY DEFINER` → corren como
+owner, **ajenas a estos grants**) · datos · esquema · `src/`.
+
+**Verificación — A/B del mismo instrumento:** `check-s7_60` **2/6 → 6/6** y
+`_smoke-s7_60` **13/25 → 25/25**. **Los scripts no usan `service_role`:**
+prueban comportamiento con la anon key + sesión de médico real, y **todas las
+pruebas filtran por un UUID inexistente** — el privilegio de columna se evalúa
+al planificar, **antes** de filtrar filas, así que `42501` vs. cero-filas
+distingue los dos estados **sin leer ni modificar un dato real**. Ningún JVPM
+cruzó la red; cero fixtures que limpiar. Prod validada sin regresión.
+
+### 0.2 · ⚠️ Riesgo residual VIVO — PR-B diferido (no abrir sin instrucción)
+
+**`authenticated` conserva `SELECT (license_number)`.** Los grants de columna
+son **por rol, no por fila**, y la RLS deja ver las filas de los publicados →
+**cualquier usuario con cuenta puede leer la licencia de un médico publicado**.
+`s7_60` bajó el público de *"cualquiera en internet"* a *"cualquiera con
+cuenta"*; **no lo cerró**.
+
+**Severidad medida: moderada, no crítica.**
+- `license_number` **no es solo un número de registro: es uno de los DOS
+  factores del claim** — `s7_13` exige teléfono OTP-verificado que coincida
+  (`P0005`) **y** licencia tipeada que coincida (`P0007`).
+- **36 de los 37 médicos publicados están `listed_only`** (sin reclamar; solo
+  Camilo está `verified`) → para esos 36 el factor licencia queda anulado.
+- **Pero NO habilita el robo de perfil por sí solo:** el factor teléfono sigue
+  en pie, y controlar el teléfono real del médico es la parte difícil.
+
+**Decisión (post-#289, análisis read-only): PR-B NO se implementa como parche
+de grants/RPC. Es una decisión tomada, no un pendiente abierto.** Razones:
+
+- **(a) Impuesto permanente.** En Postgres **no se puede revocar una columna de
+  un grant de tabla** (sería un no-op silencioso), así que habría que
+  `REVOKE SELECT` de tabla y re-`GRANT` las otras 19 columnas → **cada columna
+  nueva de `doctors` hay que otorgarla o el panel se rompe en silencio**. No es
+  hipotético: `s7_52` agregó `slug`.
+- **(b) La RPC simple no alcanza para la receta.** `my_doctor_license()`
+  devolvería la licencia del **caller**, pero la receta necesita la del **médico
+  de la consulta**. Coinciden hoy **solo** porque la RLS de `consultations` es
+  doctor-scoped (`s7_26`) — equivalencia **accidental**. Si un asistente
+  accediera, la receta imprimiría la licencia equivocada: **bug de corrección
+  clínica/legal, peor que el problema de privacidad que se quiere arreglar**.
+- **(c) F1 lo demolería.** El diseño de `doctor_credentials` ya manda que el
+  `value` nunca salga del servidor.
+
+**El fondo: `license_number` es un secreto viviendo en una tabla legible por
+fila. El arreglo correcto es sacarlo de ahí, no parchear permisos de columna.**
+→ **el cierre estructural se pliega a `doctor_credentials` F1** (ver
+`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §0).
+
+**Reabrir PR-B como parche solo si** F1 no arranca en un plazo razonable **o**
+aparece un reporte real de scraping / abuso de claim. En ese caso: RPC scopeada
+a la **consulta**, no al caller.
+
+### 0.3 · Frentes menores cerrados (#286–#288)
+
+- **#286 — limpieza de dependencias muertas (delete-only).** `recharts@3.2.0` y
+  `@stripe/react-stripe-js@4.0.2` fuera: 0 imports en `src`/`scripts`/config, y
+  en el lockfile su único dependiente era la raíz. Los dashboards de analytics
+  son KPI cards + tablas, **sin librería de gráficos**. `@stripe/stripe-js` no
+  estaba en `package.json` (entraba como *peer*) y se fue sola. **46 entradas
+  del lockfile** (~11 MB). También sale `VITE_STRIPE_PUBLISHABLE_KEY` de
+  `.env.example` (ningún archivo del repo la lee). **A/B: el bundle
+  post-remoción es byte-idéntico** (mismos 46 chunks, mismos hashes, entry
+  180.29 KB gzip) → prueba que **nunca entraban al bundle**; el ahorro es de
+  instalación, **no de bundle**.
+- **#287 — receta corregida sobria, apta para impresión en grises.** El bloque
+  "RECETA CORREGIDA" (teal + 14px bold MAYÚSCULAS) leía como alerta y
+  **comunicaba con color** en un documento que se imprime en B/N: en grises el
+  `teal-50` colapsa contra el papel (**luminancia 0.957**). → borde `gray-300`
+  1px, fondo blanco, 12px semi-bold. Franja teal y label "Receta médica"
+  **conservados** (marca de la hoja, no comunicación de corrección).
+- **#288 — receta corregida MINIMAL.** La hoja acumulaba **seis señales de lo
+  mismo**, incluido `· Corrección v2` **pegado al nombre del medicamento** — el
+  peor lugar para sembrar una duda: quien lee la receta está leyendo **qué
+  tomar**. Ahora: **UNA fecha** (la de la corrección, la vigente) + una línea
+  gris de 11px "Receta corregida". El rótulo pasa a **`FECHA`** *solo* si hubo
+  corrección. **La receta normal no cambió** (HTML byte-idéntico, mismo
+  `sha256`). **La fecha de emisión original ya no se imprime en recetas
+  corregidas** — decisión explícita del owner; el historial vive en
+  `consultation_amendments` / `prescriptions.version` / `audit_log`.
+
+### 0.4 · Pendientes vivos — reemplaza a §4
+
+**`doctor_credentials` F1–F5 — PRIORIDAD REFORZADA POR SEGURIDAD.** Ya **no es
+solo mejora de modelo**: es el cierre estructural del riesgo residual de §0.2.
+Ver `docs/ANALISIS_CREDENCIALES_MEDICAS.md` (§0 = nota de vigencia). **No abrir
+sin instrucción.**
+
+Sigue vigente el resto de §4 **menos** el punto 2 (dependencias muertas — hecho
+en #286): Search Console operativo (owner, manual) · Perf segundo paso opcional
+(`manualChunks`) · branding interno menor · Pagos SaaS (solo diseño, bloqueado
+por pasarela). **F8 sigue DIFERIDO conscientemente** (§4-bis, sin cambios).
+
+---
 
 ---
 
