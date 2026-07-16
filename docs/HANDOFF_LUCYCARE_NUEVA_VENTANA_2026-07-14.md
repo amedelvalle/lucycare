@@ -6,16 +6,17 @@
 
 ---
 
-## 1. Estado técnico final (2026-07-14, tras cerrar #279)
+## 1. Estado técnico final (2026-07-14, tras cerrar #284)
 
-- **HEAD de `main`:** `e858040` (*feat(consulta): alternativas terapéuticas
-  corregibles en la receta post-firma (F7 / s7_59) (#279)*).
-- **PRs mergeados:** **#1–#279**.
+- **HEAD de `main`:** `2a02aaf` (*perf(bundle): code-splitting por rutas —
+  bundle inicial 313→180 KB gzip (Perf P2) (#284)*).
+- **PRs mergeados:** **#1–#284**.
 - **Migraciones aplicadas en Supabase:** hasta **`s7_59`**
   (`amend_consultation` con semántica de presencia de clave, ahora también para
   `alternatives` — ver §2·F7 y §3). **`s7_58` y `s7_59` fueron aplicadas
   manualmente por el owner en el SQL Editor y verificadas con
-  `node scripts/check-s7_5N.mjs` (verde).**
+  `node scripts/check-s7_5N.mjs` (verde). Los frentes recientes #282–#284 son
+  frontend/docs, sin migración.**
 - **`main == origin/main`** ✅ · **árbol limpio** · **0 PRs abiertos** ·
   **sin preview local** · **sin servers** · **sin fixtures** ·
   **sin frente funcional abierto**.
@@ -209,6 +210,55 @@ pendiente clínico activo.**
 
 ---
 
+## 2-bis. Frentes NO clínicos cerrados (SEO + Perf, #282–#284)
+
+Todos frontend-only (o asset), **sin migración**. La lógica SEO pura vive en
+`og-meta.mjs` y la ejerce `middleware.ts` (Vercel Edge); se testea con
+`scripts/_smoke-og-meta.mjs`.
+
+### PR #282 — SEO PR-D1: JSON-LD `Physician` + `noindex /calificar/*`
+- **`Physician` JSON-LD** en perfiles `/doctor/*` **publicados e indexables**
+  (`isSitemapEligible`). Solo campos seguros del objeto normalizado: `@type`,
+  `name`, `url`=canonical, `medicalSpecialty`, `image` (avatar), `worksFor`
+  (clínica), `address` (localidad/región, `addressCountry=SV`, **sin street**),
+  `areaServed`. **NUNCA** JVPM/NUE/DUI/teléfono/email ni
+  `aggregateRating`/`review`/`priceRange`/`openingHours`. Escape de `<`.
+  **No se emite** en genérico/no-publicado/noindex.
+- **`/calificar/*` → `noindex,follow`** vía middleware (matcher +=
+  `/calificar/:path*`, `buildNoindexRoute`). `robots.txt` NO se tocó; no entra al
+  sitemap; no toca el flujo de la encuesta ni los tokens.
+- El Home mantiene su `@graph` **Organization + WebSite** (solo del Home).
+  Slug inexistente sigue `noindex` sin datos. Verificado en prod.
+
+### PR #283 — SEO PR-D2: OG cover branded 1200×630
+- Asset **`public/lucycare-og.png`** (1200×630, PNG, ~15 KB). Variante A: fondo
+  morado `#3C2285`, isotipo menta (reusado de `favicon.svg`), wordmark
+  "LucyCare", tagline "Encuentra al médico perfecto para ti", "EL SALVADOR"
+  discreto. Generado con SVG + `sharp` transitorio (sin tocar `package.json`).
+- **Separación deliberada** en `og-meta.mjs`: `OG_COVER_PATH = /lucycare-og.png`
+  (og:image del Home, del genérico/noindex y **fallback** de perfil sin avatar)
+  vs `ORG_LOGO_PATH = /lucycare-logo.png` (`Organization.logo` del JSON-LD —
+  schema espera un logo, no un banner). **No se mezclan.** Perfil **con avatar**
+  sigue usando el avatar del médico. Verificado en prod.
+
+### PR #284 — Perf P2: route-level code-splitting
+- El bundle era **1 chunk de 1.243 MB / 313 KB gzip**; el visitante público
+  descargaba panel/admin/paciente/consulta sin usarlos.
+- `config.tsx`: las páginas de `/panel/*` (incl. `ConsultaPage`), `/admin/*`,
+  `/paciente/*`, `/calificar` y `/reset-password` pasan a
+  `lazy(() => import(...))`. **Estáticas:** Home, `/doctor/*`, `/privacidad`,
+  `NotFound`. **Guards estáticos** (corren ANTES de resolver el lazy → la auth no
+  depende del import). `App.tsx`: `<Suspense>` con fallback de marca.
+- **Resultado (build): 1 → 46 chunks; entry inicial 623 KB / 180 KB gzip
+  (−42%).** Home/doctor-detail siguen en el entry (SEO intacto). **Verificado en
+  prod por Network:** `/calificar` trae `CalificarPage-*.js` y `/panel` trae
+  `PanelLayout-*.js` como chunks separados del entry.
+- **NO** incluyó `manualChunks`/vendor splitting (el warning de Vite ">500 kB"
+  sobre el entry es esperado; bajarlo más = segundo paso de Perf). **NO** limpió
+  `recharts`/`@stripe` muertos (frente aparte).
+
+---
+
 ## 3. REGLA TÉCNICA VINCULANTE — semántica de `amend_consultation`
 
 Para **toda** corrección clínica post-firma (y para cualquier cambio futuro de la
@@ -242,9 +292,21 @@ diagnósticos y antecedentes:
 > conscientemente** (ver §4-bis). **No queda pendiente clínico activo** — los
 > siguientes frentes deben ser **no clínicos**, salvo que aparezca un bug real.
 
-1. **Search Console / SEO operativo** — sigue separado. **No mezclar con clínica.**
-2. **OG branded 1200×630 + JSON-LD `Physician`** (Slugs PR D) — futuro, no mezclar.
-3. **Perf P2** (code-splitting del JS ~305 KB gzip) · branding interno menor ·
+> **SEO PR-D (JSON-LD `Physician` + `noindex /calificar` + OG branded 1200×630)
+> CERRADO en #282–#283. Perf P2 (route-level code-splitting) CERRADO en #284.**
+> Ver §2-bis.
+
+1. **Search Console / SEO operativo** (owner, manual) — el dominio está
+   verificado y el sitemap enviado; Home y Camilo ya fueron a cola de indexación.
+   Al recrawlear, Google recoge el `Physician` JSON-LD nuevo. Sigue separado, **no
+   mezclar con clínica.**
+2. **Limpieza de dependencias muertas** — `recharts` (6.8 MB en disco) y
+   `@stripe/react-stripe-js` están en `dependencies` pero **no se importan en
+   `src`**. Frente delete-only aparte (toca `package.json`/lock → requiere OK).
+3. **Perf — segundo paso (opcional):** vendor splitting con `manualChunks`
+   (separar React/supabase/react-query del entry de 623 KB). Reduce el warning de
+   Vite ">500 kB"; retorno menor que el de #284.
+4. **Branding interno menor** (índigo del panel, púrpura del modal admin) ·
    credenciales `doctor_credentials` · Pagos SaaS (solo diseño, bloqueado por
    pasarela).
 
@@ -353,8 +415,8 @@ Leé en este orden:
 3. docs/HANDOFF_TOMA_DECISIONES_2.md (si necesitás contexto histórico)
 
 Estado esperado:
-- HEAD: e858040
-- PRs mergeados hasta #279
+- HEAD: 2a02aaf
+- PRs mergeados hasta #284
 - migraciones hasta s7_59 (aplicada y verificada en Supabase)
 - main == origin/main
 - árbol limpio
