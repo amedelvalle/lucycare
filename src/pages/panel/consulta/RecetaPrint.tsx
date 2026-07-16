@@ -64,11 +64,14 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
           </div>
         </header>
 
-        {/* Marca de corrección — compacta; la fecha vive en el encabezado */}
+        {/* Marca de corrección — nota sobria. El encabezado ya da el hecho y la
+            fecha, así que acá basta con dejar constancia de que esta hoja
+            reemplaza a las anteriores. Sin color: debe leerse igual impresa en
+            escala de grises. */}
         {isCorrected && (
-          <div className="mt-4 border border-teal-600 bg-teal-50 rounded-md px-4 py-2">
-            <p className="text-sm font-bold text-teal-800 uppercase tracking-wide">Receta corregida</p>
-            <p className="text-xs text-teal-700 mt-0.5">Reemplaza versiones anteriores.</p>
+          <div className="mt-4 border border-gray-300 rounded-md px-3 py-2">
+            <p className="text-xs font-semibold text-gray-900">Receta corregida</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Reemplaza versiones anteriores.</p>
           </div>
         )}
 
@@ -135,7 +138,7 @@ function PrescriptionRows({ index, p }: { index: number; p: Prescription }) {
             <span className="tabular-nums text-gray-500 mr-1">{index}.</span>
             {p.medication.commercial_name}
             {p.version > 1 && (
-              <span className="ml-2 text-[11px] font-bold text-teal-700 uppercase">· Corrección v{p.version}</span>
+              <span className="ml-2 text-[11px] font-medium text-gray-500">· Corrección v{p.version}</span>
             )}
           </p>
           {subParts.length > 0 && (
