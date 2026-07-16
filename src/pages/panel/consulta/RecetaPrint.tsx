@@ -27,9 +27,16 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
 
   // Receta corregida: SOLO si alguna adenda tocó medicamentos/recetas
   // (affects_prescriptions, s7_30). Una corrección solo de texto de la consulta
-  // NO marca la receta. La fecha es la de la corrección de receta más reciente.
+  // NO marca la receta.
   const isCorrected = ctx.receta_corrected_at !== null;
   const correctedDate = ctx.receta_corrected_at ? new Date(ctx.receta_corrected_at) : null;
+
+  // La hoja lleva UNA sola fecha: la de la corrección de receta más reciente si
+  // la hubo, si no la de la firma. El historial de versiones vive en la DB
+  // (consultation_amendments + prescriptions.version); la hoja impresa no lo
+  // narra. Por eso el rótulo cambia: una hoja corregida no puede llamar a esa
+  // fecha "de emisión".
+  const sheetDate = isCorrected && correctedDate ? correctedDate : signedDate;
 
   return (
     <div className="hidden print:block print-receta">
@@ -53,27 +60,11 @@ export default function RecetaPrint({ ctx, prescriptions }: Props) {
             )}
           </div>
           <div className="text-right text-xs text-gray-500">
-            <p className="uppercase tracking-wide">Fecha de emisión</p>
-            <p className="font-semibold text-gray-900 text-sm mt-0.5">{formatLongDate(signedDate)}</p>
-            {isCorrected && correctedDate && (
-              <>
-                <p className="mt-1.5 uppercase tracking-wide">Corregida</p>
-                <p className="font-semibold text-gray-900 text-sm mt-0.5">{formatLongDate(correctedDate)}</p>
-              </>
-            )}
+            <p className="uppercase tracking-wide">{isCorrected ? 'Fecha' : 'Fecha de emisión'}</p>
+            <p className="font-semibold text-gray-900 text-sm mt-0.5">{formatLongDate(sheetDate)}</p>
+            {isCorrected && <p className="text-[11px] mt-1">Receta corregida</p>}
           </div>
         </header>
-
-        {/* Marca de corrección — nota sobria. El encabezado ya da el hecho y la
-            fecha, así que acá basta con dejar constancia de que esta hoja
-            reemplaza a las anteriores. Sin color: debe leerse igual impresa en
-            escala de grises. */}
-        {isCorrected && (
-          <div className="mt-4 border border-gray-300 rounded-md px-3 py-2">
-            <p className="text-xs font-semibold text-gray-900">Receta corregida</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Reemplaza versiones anteriores.</p>
-          </div>
-        )}
 
         {/* Datos del paciente — bloque gris claro */}
         <section className="mt-5 bg-gray-50 border border-gray-200 rounded-md px-4 py-3 grid grid-cols-2 gap-4 text-sm">
@@ -137,9 +128,6 @@ function PrescriptionRows({ index, p }: { index: number; p: Prescription }) {
           <p className="font-semibold text-gray-900">
             <span className="tabular-nums text-gray-500 mr-1">{index}.</span>
             {p.medication.commercial_name}
-            {p.version > 1 && (
-              <span className="ml-2 text-[11px] font-medium text-gray-500">· Corrección v{p.version}</span>
-            )}
           </p>
           {subParts.length > 0 && (
             <p className="text-xs text-gray-600 mt-0.5">{subParts.join(' · ')}</p>
