@@ -951,6 +951,64 @@ export type Database = {
           },
         ]
       }
+      doctor_credentials: {
+        Row: {
+          created_at: string
+          doctor_id: string
+          id: string
+          is_public: boolean
+          rejection_reason: string | null
+          status: Database["public"]["Enums"]["credential_status"]
+          type: Database["public"]["Enums"]["credential_type"]
+          updated_at: string
+          value: string
+          value_normalized: string | null
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          doctor_id: string
+          id?: string
+          is_public?: boolean
+          rejection_reason?: string | null
+          status?: Database["public"]["Enums"]["credential_status"]
+          type: Database["public"]["Enums"]["credential_type"]
+          updated_at?: string
+          value: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          doctor_id?: string
+          id?: string
+          is_public?: boolean
+          rejection_reason?: string | null
+          status?: Database["public"]["Enums"]["credential_status"]
+          type?: Database["public"]["Enums"]["credential_type"]
+          updated_at?: string
+          value?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doctor_credentials_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doctor_credentials_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doctor_images: {
         Row: {
           created_at: string
@@ -2032,6 +2090,8 @@ export type Database = {
         | "desconocido"
       cancel_reason_category: "paciente" | "medico" | "sistema"
       clinic_member_role: "owner" | "doctor" | "assistant"
+      credential_status: "pending" | "verified" | "rejected"
+      credential_type: "JVPM" | "NUE" | "OTHER"
       consultation_status: "draft" | "signed"
       diagnosis_status:
         | "activo"
@@ -2218,6 +2278,8 @@ export const Constants = {
       ],
       cancel_reason_category: ["paciente", "medico", "sistema"],
       clinic_member_role: ["owner", "doctor", "assistant"],
+      credential_status: ["pending", "verified", "rejected"],
+      credential_type: ["JVPM", "NUE", "OTHER"],
       consultation_status: ["draft", "signed"],
       diagnosis_status: [
         "activo",
