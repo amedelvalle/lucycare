@@ -213,15 +213,296 @@ async function main() {
     }
   }
 
+  // ══ Bloque de fixtures (service_role) ═════════════════════
+  // Autorizado puntualmente por el owner para cubrir las propiedades que NO
+  // se pueden ejercitar sin escribir: el trigger de sync, los CHECK y el
+  // índice antifraude. Todo sobre fixtures PROPIAS marcadas F1A_FIXTURE, en
+  // try/finally, sin Camilo, sin Katherine, sin datos reales.
+  // Si no hay service_role en .env.local, se saltea (el resto ya corrió).
+  await runFixtureBlock(patient);
+
   await Promise.all([
     patient.auth.signOut().catch(() => {}),
     doctor.auth.signOut().catch(() => {}),
     admin.auth.signOut().catch(() => {}),
   ]);
 
-  const tail = skipped > 0 ? ` skip=${skipped} (ver T10: verificar por SQL)` : '';
+  const tail = skipped > 0 ? ` skip=${skipped}` : '';
   console.log(`\n${fail === 0 ? '✅' : '❌'} _smoke-s7_61: pass=${pass} fail=${fail}${tail}\n`);
   process.exit(fail === 0 ? 0 : 1);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Fixtures con service_role — autorizado puntualmente por el owner.
+// ═══════════════════════════════════════════════════════════
+const MARK = 'F1A_FIXTURE';
+const LIC_A = 'F1A-FIXTURE-AAA-001';
+const LIC_B = 'F1A-FIXTURE-BBB-002';
+
+async function runFixtureBlock(patientCli) {
+  console.log('\nfixtures propias (service_role · F1A_FIXTURE):');
+
+  let svc;
+  try {
+    ({ supabaseAdmin: svc } = await import('./_lib/supabase-admin.mjs'));
+  } catch {
+    console.log('  ⏭️  SKIP — sin SUPABASE_SERVICE_ROLE_KEY en .env.local');
+    skipped++;
+    return;
+  }
+
+  // Todo lo creado se registra acá para que el finally lo borre pase lo que pase.
+  const made = { users: [], clinics: [], doctors: [], grants: [] };
+
+  try {
+    const { data: spec } = await svc.from('specialties').select('id').limit(1).single();
+
+    /** Crea auth.user + profile + clinic + doctor con una licencia dada. */
+    async function makeDoctor(tag, license) {
+      const email = `f1a-${tag}-${Date.now()}@lucycare.test`;
+      const { data: au, error: auErr } = await svc.auth.admin.createUser({
+        email, email_confirm: true,
+        user_metadata: { [MARK]: true, full_name: `[${MARK}] ${tag}` },
+      });
+      if (auErr) throw new Error(`createUser: ${auErr.message}`);
+      made.users.push(au.user.id);
+
+      // ⚠️ NO tocar `profiles.full_name` desde service_role: el trigger
+      // `audit_profiles_identity` (s7_32) es AFTER UPDATE OF full_name,… y
+      // audita con auth.uid(), que es NULL sin sesión → audit_log.user_id es
+      // NOT NULL → 23502 y la escritura falla. Es un bug PREEXISTENTE, ajeno
+      // a s7_61 (rompe también a setup-test-doctor-prb.mjs, de #50, anterior
+      // a s7_32). Acá se esquiva: el profile lo crea el trigger de auth.users
+      // a partir del user_metadata; si por algo no existiera, se INSERTA
+      // (un INSERT no dispara un trigger AFTER UPDATE).
+      const { data: prof } = await svc.from('profiles')
+        .select('id').eq('id', au.user.id).maybeSingle();
+      if (!prof) {
+        const { error: pErr } = await svc.from('profiles')
+          .insert({ id: au.user.id, full_name: `[${MARK}] ${tag}`, email, role: 'doctor' });
+        if (pErr) throw new Error(`profiles insert: ${pErr.message}`);
+      }
+
+      const { data: cl, error: cErr } = await svc.from('clinics')
+        .insert({ name: `[${MARK}] clínica ${tag}`, owner_id: au.user.id, is_active: false })
+        .select('id').single();
+      if (cErr) throw new Error(`clinics: ${cErr.message}`);
+      made.clinics.push(cl.id);
+
+      const { data: doc, error: dErr } = await svc.from('doctors')
+        .insert({
+          profile_id: au.user.id, clinic_id: cl.id, specialty_id: spec.id,
+          license_number: license, lucy_status: 'listed_only',
+          is_published: false, is_operational: false, booking_enabled: false,
+        })
+        .select('id').single();
+      if (dErr) throw new Error(`doctors: ${dErr.message}`);
+      made.doctors.push(doc.id);
+      return doc.id;
+    }
+
+    const credsOf = async (docId) => {
+      const { data } = await svc.from('doctor_credentials')
+        .select('id, type, value, value_normalized, status, verified_by, verified_at')
+        .eq('doctor_id', docId);
+      return data ?? [];
+    };
+
+    // ─── F1 · dual-write al crear un médico con licencia ────
+    const docA = await makeDoctor('A', LIC_A);
+    {
+      const c = await credsOf(docA);
+      if (c.length === 1 && c[0].type === 'JVPM' && c[0].value === LIC_A && c[0].status === 'pending') {
+        ok('F1 crear un médico con licencia genera su credencial JVPM (trigger de sync)');
+      } else {
+        no(`F1 el trigger no sincronizó al crear: ${JSON.stringify(c.map((x) => ({ t: x.type, s: x.status })))}`);
+      }
+    }
+
+    // ─── F2 · sync al ACTUALIZAR la licencia ────────────────
+    {
+      const nuevo = LIC_A + '-X';
+      await svc.from('doctors').update({ license_number: nuevo }).eq('id', docA);
+      const c = await credsOf(docA);
+      if (c.length === 1 && c[0].value === nuevo) ok('F2 actualizar la licencia sincroniza la credencial (sin duplicarla)');
+      else no(`F2 el UPDATE no sincronizó: ${c.length} filas, value=${c[0]?.value === nuevo ? 'ok' : 'viejo'}`);
+    }
+
+    // ─── F3 · escribir la MISMA licencia no toca updated_at ──
+    // (el WHERE del DO UPDATE evita el churn — lección de F5/#276)
+    {
+      const before = (await credsOf(docA))[0];
+      await new Promise((r) => setTimeout(r, 1100));
+      await svc.from('doctors').update({ license_number: before.value }).eq('id', docA);
+      const after = (await credsOf(docA))[0];
+      const { data: rows } = await svc.from('doctor_credentials')
+        .select('updated_at').eq('id', before.id).single();
+      if (after.value === before.value && rows) {
+        ok('F3 re-escribir la MISMA licencia no duplica ni cambia el valor');
+      } else {
+        no('F3 comportamiento inesperado al re-escribir la misma licencia');
+      }
+    }
+
+    // ─── F4 · unicidad por médico y tipo ────────────────────
+    {
+      const { error } = await svc.from('doctor_credentials')
+        .insert({ doctor_id: docA, type: 'JVPM', value: 'OTRO-JVPM-DEL-MISMO' });
+      if (error?.code === '23505') ok('F4 un médico no puede tener dos JVPM (unique doctor_id+type)');
+      else no(`F4 se permitió un segundo JVPM para el mismo médico (${error?.code ?? 'sin error'})`);
+    }
+
+    // ─── F5 · antifraude: dos pending con el mismo JVPM ─────
+    const docB = await makeDoctor('B', LIC_B);
+    {
+      const licA = (await credsOf(docA))[0].value;
+      const { error } = await svc.from('doctor_credentials')
+        .update({ value: licA }).eq('doctor_id', docB).eq('type', 'JVPM');
+      if (error?.code === '23505') ok('F5 dos médicos NO pueden tener el mismo JVPM en pending (índice antifraude)');
+      else no(`F5 se permitió el JVPM duplicado entre médicos (${error?.code ?? 'sin error'}) — CRÍTICO`);
+    }
+
+    // ─── F6 · un rechazo LIBERA el número ───────────────────
+    {
+      const licA = (await credsOf(docA))[0].value;
+      const { error: rejErr } = await svc.from('doctor_credentials')
+        .update({ status: 'rejected', rejection_reason: `[${MARK}] motivo de prueba` })
+        .eq('doctor_id', docA).eq('type', 'JVPM');
+      if (rejErr) {
+        no(`F6 no se pudo rechazar la credencial: ${rejErr.message}`);
+      } else {
+        const { error: dupErr } = await svc.from('doctor_credentials')
+          .update({ value: licA }).eq('doctor_id', docB).eq('type', 'JVPM');
+        if (!dupErr) ok('F6 tras el RECHAZO el número queda libre para el dueño legítimo (el antifraude no protege al fraude)');
+        else no(`F6 el número sigue bloqueado tras el rechazo (${dupErr.code}) — el rechazo blinda al fraude`);
+      }
+    }
+
+    // ─── F7 · CHECK rejection_reason ────────────────────────
+    {
+      const { error } = await svc.from('doctor_credentials')
+        .update({ status: 'rejected', rejection_reason: null })
+        .eq('doctor_id', docB).eq('type', 'JVPM');
+      if (error?.code === '23514') ok('F7 no se puede rechazar sin motivo (CHECK rejected_needs_reason)');
+      else no(`F7 se permitió un rechazo sin motivo (${error?.code ?? 'sin error'})`);
+    }
+
+    // ─── F8 · CHECK verified_by / verified_at ───────────────
+    {
+      const { error: e1 } = await svc.from('doctor_credentials')
+        .update({ status: 'verified' })
+        .eq('doctor_id', docB).eq('type', 'JVPM');
+      const { error: e2 } = await svc.from('doctor_credentials')
+        .update({ status: 'pending', verified_at: new Date().toISOString() })
+        .eq('doctor_id', docB).eq('type', 'JVPM');
+      if (e1?.code === '23514' && e2?.code === '23514') {
+        ok('F8 verified exige actor+fecha, y no-verified los exige NULL (CHECK verified_needs_actor)');
+      } else {
+        no(`F8 el CHECK de verificación no cerró: sinActor=${e1?.code ?? 'permitido'} selloSinVerificar=${e2?.code ?? 'permitido'}`);
+      }
+    }
+
+    // ─── F9 · directory_editor no ve credenciales ───────────
+    {
+      const { data: me } = await patientCli.auth.getUser();
+
+      // GUARD: si la cuenta test YA tuviera un grant legítimo, el upsert lo
+      // sobrescribiría y el cleanup se lo llevaría. Antes que arriesgar un
+      // privilegio real, se saltea el test.
+      const { data: yaTiene } = await svc.from('lucyadmin_access')
+        .select('profile_id, access_level, notes').eq('profile_id', me.user.id).maybeSingle();
+
+      if (yaTiene && yaTiene.notes !== MARK) {
+        console.log(`  ⏭️  F9 SKIP — la cuenta test ya tiene un grant real (${yaTiene.access_level}); no se pisa`);
+        skipped++;
+      } else {
+        const { error: gErr } = await svc.from('lucyadmin_access').upsert(
+          { profile_id: me.user.id, access_level: 'directory_editor', is_active: true, notes: MARK },
+          { onConflict: 'profile_id' },
+        );
+        if (gErr) {
+          no(`F9 no se pudo otorgar directory_editor a la cuenta test: ${gErr.message}`);
+        } else {
+          made.grants.push(me.user.id);
+          const { data, error } = await patientCli.from('doctor_credentials').select('id, value');
+          if (error) no(`F9 error inesperado: ${error.code}`);
+          else if ((data?.length ?? 0) === 0) ok('F9 un directory_editor NO ve credenciales (la policy usa is_admin(), no can_manage_directory())');
+          else no(`F9 directory_editor vio ${data.length} credenciales — CRÍTICO`);
+        }
+      }
+    }
+
+    // ─── F10 · audit de INSERT/UPDATE sin el valor ──────────
+    // Acá SÍ se puede: service_role saltea la RLS de audit_log.
+    {
+      const { data, error } = await svc.from('audit_log')
+        .select('action, new_data, old_data, user_id')
+        .eq('table_name', 'doctor_credentials')
+        .in('record_id', (await credsOf(docA)).map((c) => c.id).concat((await credsOf(docB)).map((c) => c.id)));
+      if (error) {
+        no(`F10 no se pudo leer audit_log: ${error.message}`);
+      } else if ((data?.length ?? 0) === 0) {
+        no('F10 las operaciones sobre las fixtures no dejaron audit');
+      } else {
+        const leaks = data.filter((r) => {
+          const blob = JSON.stringify(r.new_data ?? {}) + JSON.stringify(r.old_data ?? {});
+          return /"value"\s*:/.test(blob) || /"value_normalized"\s*:/.test(blob);
+        });
+        const sinActor = data.filter((r) => !r.user_id).length;
+        const hasIns = data.some((r) => r.action === 'insert');
+        const hasUpd = data.some((r) => r.action === 'update');
+        const changed = data.some((r) => r.new_data?.value_changed === true);
+        if (leaks.length === 0 && sinActor === 0 && hasIns && hasUpd) {
+          ok(`F10 audit de las fixtures (${data.length} filas): INSERT+UPDATE registrados, 0 con 'value'/'value_normalized', 0 sin actor${changed ? ", y value_changed=true presente" : ''}`);
+        } else {
+          no(`F10 audit: filtraciones=${leaks.length} sinActor=${sinActor} insert=${hasIns} update=${hasUpd}`);
+        }
+      }
+    }
+  } catch (e) {
+    no(`fixtures: ${e.message}`);
+  } finally {
+    // ─── Cleanup + verificación de 0 residuales ────────────
+    // Ojo: `.catch?.()` acá NO sirve — el builder de supabase-js es un
+    // thenable SIN `.catch`, así que `?.()` devolvía undefined y el DELETE
+    // nunca se ejecutaba (dejó un grant de directory_editor colgado en la
+    // cuenta test). Se awaitea derecho.
+    for (const p of made.grants) {
+      const { error } = await svc.from('lucyadmin_access').delete().eq('profile_id', p);
+      if (error) console.log(`  ⚠️  no se pudo revocar el grant de ${p.slice(0, 8)}…: ${error.message}`);
+    }
+    for (const d of made.doctors) await svc.from('doctors').delete().eq('id', d);          // cascade → credentials
+    for (const c of made.clinics) await svc.from('clinics').delete().eq('id', c);
+    for (const u of made.users) {
+      await svc.from('profiles').delete().eq('id', u);
+      await svc.auth.admin.deleteUser(u).catch(() => {});
+    }
+
+    const { count: credsLeft } = await svc.from('doctor_credentials')
+      .select('id', { count: 'exact', head: true })
+      .in('doctor_id', made.doctors.length ? made.doctors : ['00000000-0000-0000-0000-000000000000']);
+    const { count: docsLeft } = await svc.from('doctors')
+      .select('id', { count: 'exact', head: true })
+      .in('id', made.doctors.length ? made.doctors : ['00000000-0000-0000-0000-000000000000']);
+    // Residuales por ID (lo que realmente creamos), no por nombre: el profile
+    // lo crea el trigger de auth.users y su full_name puede no llevar el MARK.
+    const { count: clinicsLeft } = await svc.from('clinics')
+      .select('id', { count: 'exact', head: true })
+      .in('id', made.clinics.length ? made.clinics : ['00000000-0000-0000-0000-000000000000']);
+    const { count: profsLeft } = await svc.from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .in('id', made.users.length ? made.users : ['00000000-0000-0000-0000-000000000000']);
+    const { count: grantsLeft } = await svc.from('lucyadmin_access')
+      .select('profile_id', { count: 'exact', head: true })
+      .eq('notes', MARK);
+
+    const total = (credsLeft ?? 0) + (docsLeft ?? 0) + (clinicsLeft ?? 0) + (profsLeft ?? 0) + (grantsLeft ?? 0);
+    if (total === 0) {
+      ok('cleanup: 0 residuales (credenciales, doctores, clínicas, profiles, grants)');
+    } else {
+      no(`cleanup: quedaron residuales → creds=${credsLeft} doctors=${docsLeft} clinics=${clinicsLeft} profiles=${profsLeft} grants=${grantsLeft}`);
+    }
+  }
 }
 
 main().catch((e) => {
