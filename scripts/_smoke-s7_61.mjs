@@ -172,6 +172,19 @@ async function main() {
       const inserts = data.filter((r) => r.action === 'insert').length;
       if (inserts > 0) ok(`T11 el trigger de audit registró los INSERT del backfill (${inserts})`);
       else no('T11 no hay acciones insert auditadas para doctor_credentials');
+
+      // El backfill corre sin sesión → auth.uid() es NULL → el trigger
+      // atribuye al médico y marca actor_source='system'. Que NO diga
+      // 'session' es lo que impide fingir que una persona lo hizo.
+      const sys = data.filter((r) => r.new_data?.actor_source === 'system').length;
+      const noActor = data.filter((r) => !r.new_data?.actor_source).length;
+      if (sys === data.length) {
+        ok(`T12 las ${sys} filas del backfill quedaron marcadas actor_source='system' (no fingen ser una acción humana)`);
+      } else if (noActor > 0) {
+        no(`T12 ${noActor}/${data.length} filas de audit sin actor_source`);
+      } else {
+        no(`T12 solo ${sys}/${data.length} filas con actor_source='system'`);
+      }
     }
   }
 

@@ -226,22 +226,58 @@ CREATE TRIGGER trg_touch_doctor_credentials
 -- Por eso se redactan `value` y `value_normalized`, y en su lugar se registra
 -- `value_changed` (booleano): queda la TRAZA de que el número cambió, sin el
 -- número.
+--
+-- ⚠️ SOBRE EL ACTOR (`audit_log.user_id` es NOT NULL):
+-- `auth.uid()` es NULL fuera de una sesión — y acá eso NO es un caso raro:
+--   • el BACKFILL de §9 corre en el SQL Editor, sin sesión;
+--   • `import-doctors.mjs` y `setup-test-doctor-prb.mjs` escriben
+--     `doctors.license_number` con service_role → disparan el trigger de §8 →
+--     disparan este audit, también sin sesión.
+-- Un `auth.uid()` pelado rompía los tres caminos con un 23502 (verificado: la
+-- primera versión de esta migración falló así al aplicarse).
+--
+-- Solución, con el precedente de `sync_phone_to_identity` (s7_34, que enfrentó
+-- exactamente esto en contexto GoTrue): se atribuye al SUJETO de la credencial
+-- —el médico— y se marca el origen en `actor_source` ('session' | 'system')
+-- para NO fingir que lo hizo una persona. `audit_log.user_id` no tiene FK, así
+-- que un profile legacy sin `auth.users` (caso contemplado en s7_13) tampoco
+-- rompe nada.
 CREATE OR REPLACE FUNCTION audit_doctor_credentials()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_old jsonb;
-  v_new jsonb;
+  v_old   jsonb;
+  v_new   jsonb;
+  v_actor uuid;
+  v_src   text;
 BEGIN
+  v_src := CASE WHEN auth.uid() IS NULL THEN 'system' ELSE 'session' END;
+
+  v_actor := COALESCE(
+    auth.uid(),
+    (SELECT d.profile_id FROM doctors d
+      WHERE d.id = COALESCE(NEW.doctor_id, OLD.doctor_id))
+  );
+
+  -- Sin actor no hay fila posible (p. ej. el cascade delete de un médico: su
+  -- fila ya no está cuando corre este trigger). La auditoría es best-effort y
+  -- NO debe bloquear la operación — mismo criterio que s7_34.
+  IF v_actor IS NULL THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
   IF TG_OP <> 'INSERT' THEN
     v_old := (to_jsonb(OLD) - 'value' - 'value_normalized');
   END IF;
 
   IF TG_OP <> 'DELETE' THEN
     v_new := (to_jsonb(NEW) - 'value' - 'value_normalized')
-             || jsonb_build_object('edited_via', 'doctor_credentials');
+             || jsonb_build_object(
+                  'edited_via',   'doctor_credentials',
+                  'actor_source', v_src
+                );
   END IF;
 
   -- Traza del cambio de valor SIN el valor.
@@ -253,8 +289,8 @@ BEGIN
 
   INSERT INTO audit_log (user_id, action, table_name, record_id, old_data, new_data)
   VALUES (
-    auth.uid(),
-    lower(TG_OP)::audit_action,
+    v_actor,
+    lower(TG_OP)::audit_action,   -- el enum es minúscula (s4_02)
     'doctor_credentials',
     COALESCE(NEW.id, OLD.id),
     v_old,
