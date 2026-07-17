@@ -137,34 +137,28 @@ const CRED_Y = 'F1B-CRED-Y-0002'; // valor de la CREDENCIAL (desincronizado)
 const LIC_DUP = 'F1B-DUP-0003';   // JVPM duplicado para P1
 const LIC_ABS = 'F1B-ABS-0004';   // para J4 (luego se borra la credencial)
 
-async function signInFixture(phone) {
-  const cli = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await cli.auth.signInWithOtp({ phone }).catch(() => {});
-  const { data, error } = await cli.auth.verifyOtp({ phone, token: OTP, type: 'sms' });
-  if (error || !data?.session) throw new Error(`OTP falló para ${phone}: ${error?.message}`);
-  return cli;
-}
-
 async function runFixtures(svc, testPhone) {
   const phoneE164 = testPhone.startsWith('+') ? testPhone : `+${testPhone}`;
-  const made = { users: [], clinics: [], doctors: [] };
+  const digits = phoneE164.replace(/\D/g, '');
+  const variants = [digits, phoneE164];
+  const made = { users: [], clinics: [], doctors: [], memberships: [] };
 
-  // Best-effort: limpiar un usuario del Test Phone que haya quedado de una
-  // corrida abortada (mismo phone → createUser fallaría por duplicado).
-  async function purgePhoneUser() {
-    const { data } = await svc.auth.admin.listUsers();
-    const u = (data?.users ?? []).find((x) => (x.phone ?? '').replace(/\D/g, '') === phoneE164.replace(/\D/g, ''));
-    if (u) {
-      const { data: dd } = await svc.from('doctors').select('id, clinic_id').eq('profile_id', u.id);
-      for (const d of dd ?? []) {
-        await svc.from('doctors').delete().eq('id', d.id);
-        if (d.clinic_id) await svc.from('clinics').delete().eq('id', d.clinic_id);
-      }
-      await svc.from('profiles').delete().eq('id', u.id);
-      await svc.auth.admin.deleteUser(u.id).catch(() => {});
-    }
+  // ── PREFLIGHT: abortar ante CUALQUIER rastro del Test Phone ──
+  // PROHIBIDO borrar nada preexistente. Si el número no está 100% libre, se
+  // aborta sin tocar la DB. Establece la LÍNEA BASE: profiles(phone)=0, así que
+  // cualquier profile con ese phone DESPUÉS del signInWithOtp es de esta corrida.
+  async function preflightOrAbort() {
+    const { data: profs } = await svc.from('profiles').select('id').in('phone', variants);
+    if ((profs ?? []).length) throw new Error(`PREFLIGHT: el Test Phone ya tiene profiles (${profs.length}). Aborto sin tocar nada.`);
+    const { data: pats } = await svc.from('patients').select('id').in('phone', variants);
+    if ((pats ?? []).length) throw new Error(`PREFLIGHT: el Test Phone ya tiene patients (${pats.length}). Aborto.`);
+    const { data: aff } = await svc.from('doctor_affiliation_requests').select('id').in('phone', variants);
+    if ((aff ?? []).length) throw new Error(`PREFLIGHT: el Test Phone ya tiene doctor_affiliation_requests (${aff.length}). Aborto.`);
+    const { data: wl } = await svc.from('waitlist_entries').select('id').in('patient_phone', variants);
+    if ((wl ?? []).length) throw new Error(`PREFLIGHT: el Test Phone ya tiene waitlist_entries (${wl.length}). Aborto.`);
+    // auth.users huérfano (sin profile): no se enumera con fiabilidad (bug de
+    // paginación de listUsers). Con profiles(phone)=0 como baseline, el ID que
+    // registramos tras el OTP es inequívocamente de esta corrida (ver abajo).
   }
 
   const { data: spec } = await svc.from('specialties').select('id').limit(1).single();
@@ -203,22 +197,36 @@ async function runFixtures(svc, testPhone) {
   };
 
   try {
-    await purgePhoneUser();
+    await preflightOrAbort();
 
-    // ── Médico del CLAIM (phone = Test Phone dedicado, listed_only) ──
-    const { data: au, error: ae } = await svc.auth.admin.createUser({
-      phone: phoneE164, phone_confirm: true,
-      user_metadata: { [MARK]: true, full_name: `[${MARK}] claim` },
+    // ── OTP-first, con registro del ID ANTES de verifyOtp ──
+    // signInWithOtp crea el auth.user (+ profile por trigger). Detectamos ese
+    // profile.id por teléfono y lo registramos en `made.users` ANTES de
+    // verifyOtp: así, aunque el OTP falle, el cleanup del finally lo borra por
+    // ese ID EXACTO. El preflight garantizó profiles(phone)=0, así que el único
+    // profile con ese phone ahora es de esta corrida.
+    const session = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
     });
-    if (ae) throw new Error(`createUser(claim/phone): ${ae.message}`);
-    const claimUserId = au.user.id;
-    made.users.push(claimUserId);
+    const { error: otpSendErr } = await session.auth.signInWithOtp({ phone: phoneE164 });
+    if (otpSendErr) throw new Error(`signInWithOtp: ${otpSendErr.message}`);
 
-    const { data: prof } = await svc.from('profiles').select('id, phone').eq('id', claimUserId).maybeSingle();
-    if (!prof) {
-      const { error: pe } = await svc.from('profiles').insert({ id: claimUserId, phone: phoneE164.replace('+', ''), role: 'patient', full_name: `[${MARK}] claim` });
-      if (pe) throw new Error(`profiles(claim): ${pe.message}`);
+    // Detectar el ID INEQUÍVOCO creado por esta corrida. Debe haber EXACTAMENTE 1.
+    const { data: fresh } = await svc.from('profiles').select('id').in('phone', variants);
+    if ((fresh ?? []).length !== 1) {
+      // 0 = no se creó; >1 = ambiguo. No hay ID inequívoco → ABORTAR SIN BORRAR
+      // (deja el/los rastro(s) para revisión manual; no adivinamos qué borrar).
+      throw new Error(`ABORT: tras signInWithOtp se esperaba 1 profile del Test Phone, hay ${(fresh ?? []).length}. No se borra nada (revisión manual).`);
     }
+    const claimUserId = fresh[0].id;
+    made.users.push(claimUserId); // registrado ANTES de verifyOtp
+
+    // Verificar el OTP. Si falla, se propaga y el finally limpia por ID exacto.
+    const { data: v, error: verErr } = await session.auth.verifyOtp({ phone: phoneE164, token: OTP, type: 'sms' });
+    if (verErr || !v?.session) throw new Error(`verifyOtp: ${verErr?.message ?? 'sin sesión'}`);
+
+    // El perfil ya existe (lo creó el trigger con el phone). No se toca full_name
+    // (evita el trigger audit_profiles_identity/s7_32).
     const { data: cl } = await svc.from('clinics')
       .insert({ name: `[${MARK}] clínica claim`, owner_id: claimUserId, is_active: false }).select('id').single();
     made.clinics.push(cl.id);
@@ -228,9 +236,6 @@ async function runFixtures(svc, testPhone) {
       .select('id').single();
     made.doctors.push(dClaim.id);
     const claimDoctorId = dClaim.id;
-
-    // Sesión OTP del médico del claim.
-    const session = await signInFixture(phoneE164);
 
     // ── R1 · embed devuelve el JVPM propio (RLS) ──
     {
@@ -259,11 +264,14 @@ async function runFixtures(svc, testPhone) {
       const { data } = await session.from('doctors')
         .select('license_number, doctor_credentials(value, type, status)').eq('id', claimDoctorId).single();
       const jvpm = resolveJvpm(data?.doctor_credentials, data?.license_number);
-      if (jvpm === COL_X) ok('J5 verified → credencial usable (receta/panel la muestran)');
+      if (jvpm === COL_X) ok('J5 [regla+datos] verified → resuelve usable (el panel/receta REAL se valida en preview)');
       else no(`J5 verified: jvpm=${jvpm} esperaba ${COL_X}`);
     }
 
-    // ── J2/J3 · rejected NO se presenta y NO cae a la columna ──
+    // ── J2/J3 · [regla+datos] rejected resuelve null y NO cae a la columna ──
+    // Esto valida la REGLA (resolveJvpm) sobre las filas reales, NO el
+    // componente. Que el panel NO lo muestre y la receta NO lo imprima se
+    // valida en PREVIEW (paso posterior, separado).
     {
       await svc.from('doctor_credentials')
         .update({ status: 'rejected', verified_by: null, verified_at: null, rejection_reason: `[${MARK}] rechazo` })
@@ -271,7 +279,7 @@ async function runFixtures(svc, testPhone) {
       const { data } = await session.from('doctors')
         .select('license_number, doctor_credentials(value, type, status)').eq('id', claimDoctorId).single();
       const jvpm = resolveJvpm(data?.doctor_credentials, data?.license_number);
-      if (jvpm === null) ok('J2/J3 rejected → receta/panel reciben null (no imprime ni presenta; no cae a la columna)');
+      if (jvpm === null) ok('J2/J3 [regla+datos] rejected → resuelve null y no cae a la columna (panel/receta REAL → preview)');
       else no(`J2/J3 rejected revivido: jvpm=${jvpm} (columna=${COL_X})`);
     }
 
@@ -301,6 +309,14 @@ async function runFixtures(svc, testPhone) {
       if (!error && data?.success) ok('C1b claim(typed=CREDENCIAL) → éxito (el claim LEE doctor_credentials)');
       else no(`C1b esperaba éxito, obtuvo ${error?.code ?? JSON.stringify(data)}`);
     }
+    // El claim exitoso crea una membresía owner (clinic_members) para el
+    // claimUser en la clínica del claim. Se registra por ID EXACTO para el
+    // cleanup (referencia clinic_id∈made.clinics y profile_id=claimUserId).
+    {
+      const { data: mem } = await svc.from('clinic_members')
+        .select('id').eq('profile_id', claimUserId).in('clinic_id', made.clinics);
+      for (const m of mem ?? []) made.memberships.push(m.id);
+    }
     await session.auth.signOut().catch(() => {});
 
     // ── J4 · sin fila JVPM → fallback a la columna ──
@@ -310,7 +326,7 @@ async function runFixtures(svc, testPhone) {
       const { data } = await svc.from('doctors')
         .select('license_number, doctor_credentials(value, type, status)').eq('id', dAbs).single();
       const jvpm = resolveJvpm(data?.doctor_credentials, data?.license_number);
-      if (jvpm === LIC_ABS) ok('J4 sin fila JVPM → fallback a doctors.license_number');
+      if (jvpm === LIC_ABS) ok('J4 [regla+datos] sin fila JVPM → fallback a doctors.license_number');
       else no(`J4 fallback falló: jvpm=${jvpm} esperaba ${LIC_ABS}`);
     }
 
@@ -336,20 +352,35 @@ async function runFixtures(svc, testPhone) {
   } catch (e) {
     no(`fixtures: ${e.message}`);
   } finally {
-    for (const d of made.doctors) await svc.from('doctors').delete().eq('id', d); // cascade → credentials
+    // Cleanup SOLO por IDs creados/registrados en esta corrida. Nada por
+    // teléfono ni por heurística. Orden: dependientes → base.
+    const NONE = ['00000000-0000-0000-0000-000000000000'];
+    for (const m of made.memberships) await svc.from('clinic_members').delete().eq('id', m); // membresía por ID exacto
+    for (const d of made.doctors) await svc.from('doctors').delete().eq('id', d);            // cascade → credentials
     for (const c of made.clinics) await svc.from('clinics').delete().eq('id', c);
     for (const u of made.users) {
       await svc.from('profiles').delete().eq('id', u);
       await svc.auth.admin.deleteUser(u).catch(() => {});
     }
-    // Verificación de 0 residuales (por ID de lo creado + por marca).
-    const nz = made.doctors.length ? made.doctors : ['00000000-0000-0000-0000-000000000000'];
-    const { count: credsLeft } = await svc.from('doctor_credentials').select('id', { count: 'exact', head: true }).in('doctor_id', nz);
-    const { count: docsLeft } = await svc.from('doctors').select('id', { count: 'exact', head: true }).in('id', nz);
-    const { count: clinLeft } = await svc.from('clinics').select('id', { count: 'exact', head: true }).ilike('name', `%${MARK}%`);
-    const total = (credsLeft ?? 0) + (docsLeft ?? 0) + (clinLeft ?? 0);
-    if (total === 0) ok('cleanup: 0 residuales (credenciales, doctores, clínicas)');
-    else no(`cleanup: residuales → creds=${credsLeft} doctors=${docsLeft} clinics=${clinLeft}`);
+    // Verificación de 0 residuales POR ID creado.
+    const { count: credsLeft } = await svc.from('doctor_credentials').select('id', { count: 'exact', head: true }).in('doctor_id', made.doctors.length ? made.doctors : NONE);
+    const { count: docsLeft } = await svc.from('doctors').select('id', { count: 'exact', head: true }).in('id', made.doctors.length ? made.doctors : NONE);
+    const { count: clinLeft } = await svc.from('clinics').select('id', { count: 'exact', head: true }).in('id', made.clinics.length ? made.clinics : NONE);
+    const { count: profLeft } = await svc.from('profiles').select('id', { count: 'exact', head: true }).in('id', made.users.length ? made.users : NONE);
+    const { count: memLeft } = await svc.from('clinic_members').select('id', { count: 'exact', head: true }).in('id', made.memberships.length ? made.memberships : NONE);
+    const total = (credsLeft ?? 0) + (docsLeft ?? 0) + (clinLeft ?? 0) + (profLeft ?? 0) + (memLeft ?? 0);
+    if (total === 0) ok(`cleanup: 0 residuales (creds/doctores/clínicas/profiles/memberships)`);
+    else no(`cleanup: residuales → creds=${credsLeft} doctors=${docsLeft} clinics=${clinLeft} profiles=${profLeft} members=${memLeft}`);
+
+    // El Test Phone debe quedar SIN auth.user ni profile.
+    const { data: profsPhone } = await svc.from('profiles').select('id').in('phone', variants);
+    let authGone = true;
+    for (const u of made.users) {
+      const { data } = await svc.auth.admin.getUserById(u);
+      if (data?.user) authGone = false;
+    }
+    if ((profsPhone ?? []).length === 0 && authGone) ok('el Test Phone quedó SIN auth.user ni profile');
+    else no(`el Test Phone NO quedó limpio → profiles(phone)=${(profsPhone ?? []).length} authGone=${authGone}`);
   }
 }
 
