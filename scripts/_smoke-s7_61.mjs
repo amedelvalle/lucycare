@@ -238,6 +238,8 @@ async function main() {
 const MARK = 'F1A_FIXTURE';
 const LIC_A = 'F1A-FIXTURE-AAA-001';
 const LIC_B = 'F1A-FIXTURE-BBB-002';
+const LIC_C = 'F1A-FIXTURE-CCC-003';
+const LIC_D = 'F1A-FIXTURE-DDD-004';
 
 async function runFixtureBlock(patientCli) {
   console.log('\nfixtures propias (service_role · F1A_FIXTURE):');
@@ -303,9 +305,19 @@ async function runFixtureBlock(patientCli) {
 
     const credsOf = async (docId) => {
       const { data } = await svc.from('doctor_credentials')
-        .select('id, type, value, value_normalized, status, verified_by, verified_at')
+        .select('id, type, value, value_normalized, status, verified_by, verified_at, rejection_reason, updated_at')
         .eq('doctor_id', docId);
       return data ?? [];
+    };
+
+    // Cuenta filas de audit para un record_id concreto (service_role saltea la
+    // RLS de audit_log). Sirve para F3: "no churn" = el contador no sube.
+    const auditCountFor = async (recordId) => {
+      const { count } = await svc.from('audit_log')
+        .select('id', { count: 'exact', head: true })
+        .eq('table_name', 'doctor_credentials')
+        .eq('record_id', recordId);
+      return count ?? 0;
     };
 
     // ─── F1 · dual-write al crear un médico con licencia ────
@@ -328,19 +340,25 @@ async function runFixtureBlock(patientCli) {
       else no(`F2 el UPDATE no sincronizó: ${c.length} filas, value=${c[0]?.value === nuevo ? 'ok' : 'viejo'}`);
     }
 
-    // ─── F3 · escribir la MISMA licencia no toca updated_at ──
-    // (el WHERE del DO UPDATE evita el churn — lección de F5/#276)
+    // ─── F3 · escribir la MISMA licencia no genera churn ────
+    // (el WHERE del DO UPDATE evita tocar la fila — lección de F5/#276)
     {
       const before = (await credsOf(docA))[0];
-      await new Promise((r) => setTimeout(r, 1100));
+      const auditBefore = await auditCountFor(before.id);
+      await new Promise((r) => setTimeout(r, 1100));   // deja pasar tiempo: si updated_at cambiara, se notaría
       await svc.from('doctors').update({ license_number: before.value }).eq('id', docA);
       const after = (await credsOf(docA))[0];
-      const { data: rows } = await svc.from('doctor_credentials')
-        .select('updated_at').eq('id', before.id).single();
-      if (after.value === before.value && rows) {
-        ok('F3 re-escribir la MISMA licencia no duplica ni cambia el valor');
+      const auditAfter = await auditCountFor(before.id);
+
+      const sameValue = after.value === before.value;
+      const sameStatus = after.status === before.status;
+      const sameUpdatedAt = after.updated_at === before.updated_at;
+      const noNewAudit = auditAfter === auditBefore;
+
+      if (sameValue && sameStatus && sameUpdatedAt && noNewAudit) {
+        ok(`F3 re-escribir la MISMA licencia no genera churn (value= estado=${after.status} updated_at intacto · audit ${auditBefore}→${auditAfter})`);
       } else {
-        no('F3 comportamiento inesperado al re-escribir la misma licencia');
+        no(`F3 churn detectado → value:${sameValue} status:${sameStatus} updated_at:${sameUpdatedAt} audit:${auditBefore}→${auditAfter}`);
       }
     }
 
@@ -456,6 +474,64 @@ async function runFixtureBlock(patientCli) {
           ok(`F10 audit de las fixtures (${data.length} filas): INSERT+UPDATE registrados, 0 con 'value'/'value_normalized', 0 sin actor${changed ? ", y value_changed=true presente" : ''}`);
         } else {
           no(`F10 audit: filtraciones=${leaks.length} sinActor=${sinActor} insert=${hasIns} update=${hasUpd}`);
+        }
+      }
+    }
+
+    // ─── F11 · verified + cambio de valor → reset a pending ─
+    // El DO UPDATE del trigger limpia status/verified_by/verified_at SIN
+    // condicionar por el estado previo: una credencial verificada cuyo número
+    // cambia deja de estar verificada (ya no es ese número).
+    {
+      const docC = await makeDoctor('C', LIC_C);
+      // marcar verified: el CHECK exige verified_by + verified_at. Uso el
+      // propio profile del médico fixture como actor (FK válida).
+      const { data: prof } = await svc.from('doctors').select('profile_id').eq('id', docC).single();
+      const { error: vErr } = await svc.from('doctor_credentials')
+        .update({ status: 'verified', verified_by: prof.profile_id, verified_at: new Date().toISOString() })
+        .eq('doctor_id', docC).eq('type', 'JVPM');
+      if (vErr) {
+        no(`F11 no se pudo dejar la credencial en verified: ${vErr.message}`);
+      } else {
+        const nuevo = LIC_C + '-V';
+        await svc.from('doctors').update({ license_number: nuevo }).eq('id', docC);
+        const c = (await credsOf(docC))[0];
+        const okReset =
+          c.value === nuevo &&
+          c.status === 'pending' &&
+          c.verified_by === null &&
+          c.verified_at === null &&
+          c.rejection_reason === null;
+        if (okReset) {
+          ok('F11 verified + cambio de licencia → valor sincronizado, status=pending, verified_by/verified_at/rejection_reason = NULL');
+        } else {
+          no(`F11 no reseteó: value=${c.value === nuevo ? 'ok' : 'viejo'} status=${c.status} verified_by=${c.verified_by} verified_at=${c.verified_at} rejection_reason=${c.rejection_reason}`);
+        }
+      }
+    }
+
+    // ─── F12 · rejected + cambio de valor → reset a pending ─
+    {
+      const docD = await makeDoctor('D', LIC_D);
+      const { error: rErr } = await svc.from('doctor_credentials')
+        .update({ status: 'rejected', rejection_reason: `[${MARK}] motivo de prueba F12` })
+        .eq('doctor_id', docD).eq('type', 'JVPM');
+      if (rErr) {
+        no(`F12 no se pudo dejar la credencial en rejected: ${rErr.message}`);
+      } else {
+        const nuevo = LIC_D + '-R';
+        await svc.from('doctors').update({ license_number: nuevo }).eq('id', docD);
+        const c = (await credsOf(docD))[0];
+        const okReset =
+          c.value === nuevo &&
+          c.status === 'pending' &&
+          c.rejection_reason === null &&
+          c.verified_by === null &&
+          c.verified_at === null;
+        if (okReset) {
+          ok('F12 rejected + cambio de licencia → valor sincronizado, status=pending, rejection_reason/verified_by/verified_at = NULL');
+        } else {
+          no(`F12 no reseteó: value=${c.value === nuevo ? 'ok' : 'viejo'} status=${c.status} rejection_reason=${c.rejection_reason} verified_by=${c.verified_by} verified_at=${c.verified_at}`);
         }
       }
     }
