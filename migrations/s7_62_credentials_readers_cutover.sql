@@ -72,6 +72,7 @@ DECLARE
   v_tos_version               text := nullif(btrim(coalesce(p_tos_version, '')), '');
   -- F1-b: fuente de la licencia = doctor_credentials; columna = fallback.
   v_cred_license              text;
+  v_cred_status               credential_status;
   v_effective_license         text;
 BEGIN
   -- ─── 0. Auth ───
@@ -131,19 +132,29 @@ BEGIN
       USING ERRCODE = 'P0005';
   END IF;
 
-  -- ─── 5. License match — F1-b: fuente = doctor_credentials, fallback = columna ─
-  -- La credencial JVPM MANDA; doctors.license_number es solo respaldo mientras
-  -- dura F1-b (F1-c dropea la columna y elimina el fallback). one_per_type
-  -- garantiza ≤1 fila JVPM. NO se filtra por status: la licencia identifica al
-  -- profesional; el estado de verificación es otra cosa (F2/F4). El valor se
-  -- compara en variable interna y NUNCA se devuelve.
-  v_cred_license := (
-    SELECT dc.value
-    FROM doctor_credentials dc
-    WHERE dc.doctor_id = p_doctor_id AND dc.type = 'JVPM'
-    LIMIT 1
-  );
-  v_effective_license := COALESCE(NULLIF(btrim(v_cred_license), ''), v_doctor_license);
+  -- ─── 5. License match — F1-b: fuente = doctor_credentials, con estado ─
+  -- Regla (F1-b): una credencial JVPM 'pending'/'verified' es utilizable;
+  -- 'rejected' NO lo es. El fallback a doctors.license_number es SOLO para el
+  -- caso defensivo de que NO exista fila JVPM — nunca para revivir un rechazo
+  -- desde la columna. one_per_type garantiza ≤1 fila JVPM. El valor se compara
+  -- en variable interna y NUNCA se devuelve.
+  SELECT dc.value, dc.status
+    INTO v_cred_license, v_cred_status
+  FROM doctor_credentials dc
+  WHERE dc.doctor_id = p_doctor_id AND dc.type = 'JVPM'
+  LIMIT 1;
+
+  IF FOUND THEN
+    -- La credencial existe: su ESTADO manda, sin mirar la columna.
+    IF v_cred_status = 'rejected' THEN
+      v_effective_license := NULL;                              -- rechazada ⇒ inutilizable, sin fallback
+    ELSE
+      v_effective_license := NULLIF(btrim(v_cred_license), ''); -- pending / verified
+    END IF;
+  ELSE
+    -- No hay fila JVPM: fallback defensivo a la columna (temporal, hasta F1-c).
+    v_effective_license := NULLIF(btrim(v_doctor_license), '');
+  END IF;
 
   v_doctor_license_norm := upper(regexp_replace(coalesce(v_effective_license, ''), '\s', '', 'g'));
   v_typed_license_norm  := upper(regexp_replace(coalesce(p_license_typed, ''), '\s', '', 'g'));

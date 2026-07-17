@@ -11,7 +11,7 @@
  * el Test Phone dedicado, se corre con `--fixtures`.
  *
  * ── Qué prueba el bloque de fixtures (cuando se habilite) ──
- *   R1  el embed doctor_credentials(value,type) devuelve el JVPM = la columna
+ *   R1  el embed doctor_credentials(value,type,status) devuelve el JVPM = la columna
  *   R2  una cuenta ajena ve [] en el embed (fail-closed)
  *   P1  dos médicos con el mismo JVPM → el 2º aborta con P0091 (constraint
  *       doctor_credentials_registry_uniq), NO un 23505 crudo
@@ -21,6 +21,25 @@
  *         • claim(typed='CRED-Y') → éxito  ⇒ el claim lee la CREDENCIAL
  *         • claim(typed='COL-X')  → P0007  ⇒ el claim IGNORA la columna
  *       (dos fixtures: el claim es irreversible, listed_only→claimed)
+ *
+ *   ── Regla de credencial 'rejected' (ajuste vinculante) ──
+ *   J1  claim con credencial JVPM 'rejected' → P0006 (perfil sin credencial),
+ *       AUNQUE doctors.license_number contenga el MISMO valor tipeado. Prueba
+ *       que un rechazo NO se revive desde la columna.
+ *   J2  getConsultationContext (como el médico dueño): con credencial 'rejected'
+ *       la receta recibe license_number = null (no imprime el JVPM rechazado),
+ *       y NO cae a la columna.
+ *   J3  getMyDoctorProfile (como el médico dueño): credencial 'rejected' → el
+ *       panel NO la presenta como vigente (license_number = null).
+ *   J4  credencial JVPM AUSENTE (0 filas) → fallback a doctors.license_number
+ *       (el fallback es solo para este caso, no para evadir un estado).
+ *   J5  credencial 'pending' y 'verified' → siguen usables en claim/receta/panel.
+ *
+ *   Nota: J2/J3 se validan consultando el embed CON la sesión del médico dueño
+ *   (la RLS de doctor_credentials solo le muestra su fila), reproduciendo lo
+ *   que hacen getConsultationContext/getMyDoctorProfile; la resolución de
+ *   `rejected`/fallback la aplica el helper resolveJvpm (frontend) y aquí se
+ *   verifica su misma regla sobre las filas reales.
  *
  * ── Requisitos del bloque de fixtures (a confirmar por el owner) ──
  *   • SUPABASE_SERVICE_ROLE_KEY en .env.local (autorización puntual);
