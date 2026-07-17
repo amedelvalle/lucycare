@@ -1,5 +1,19 @@
 import { supabase } from '@/lib/supabase';
 
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * F1-b: extrae el JVPM del embed `doctor_credentials`. PostgREST devuelve la
+ * relación como ARREGLO (0..N credenciales por médico); el índice
+ * `one_per_type` garantiza ≤1 JVPM. Devuelve null si no hay → el caller cae al
+ * fallback `doctors.license_number` (temporal hasta F1-c).
+ */
+export function jvpmFromCredentials(
+  rows: Array<{ value: string | null; type: string }> | null | undefined,
+): string | null {
+  return (rows ?? []).find((c) => c.type === 'JVPM')?.value ?? null;
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────
 
 export interface MyDoctorProfile {
@@ -68,7 +82,8 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
       lucy_status,
       profile_id,
       profiles!inner(full_name, email, phone, avatar_url),
-      specialties(id, name)
+      specialties(id, name),
+      doctor_credentials(value, type)
     `)
     .eq('profile_id', user.id)
     .single();
@@ -80,6 +95,10 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as any;
+  // F1-b: el JVPM se lee de doctor_credentials (fuente principal); la columna
+  // doctors.license_number queda como fallback temporal hasta F1-c. La relación
+  // llega como ARREGLO (0..N credenciales) — se filtra type='JVPM' en código.
+  const jvpm = jvpmFromCredentials(d.doctor_credentials);
   return {
     doctor_id: d.id,
     slug: d.slug ?? null,
@@ -88,7 +107,7 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
     consultation_fee: d.consultation_fee != null ? Number(d.consultation_fee) : null,
     experience_years: d.experience_years,
     languages: d.languages,
-    license_number: d.license_number,
+    license_number: jvpm ?? d.license_number,
     specialty_id: d.specialty_id,
     specialty_name: d.specialties?.name ?? null,
     is_published: d.is_published,

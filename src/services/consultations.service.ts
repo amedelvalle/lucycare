@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { jvpmFromCredentials } from './doctorProfile.service';
 import type { DurationUnit } from './prescriptions.service';
 import type { DiagnosisType, DiagnosisStatus } from './consultationDiagnoses.service';
 
@@ -138,7 +139,7 @@ export async function getOrCreateConsultationForAppointment(
         .single(),
       supabase
         .from('doctors')
-        .select('id, license_number, profiles!inner(full_name), specialties(name)')
+        .select('id, license_number, profiles!inner(full_name), specialties(name), doctor_credentials(value, type)')
         .eq('id', consultation.doctor_id)
         .single(),
       // Adendas de corrección: las más recientes primero. Vacío en borradores
@@ -181,7 +182,11 @@ export async function getOrCreateConsultationForAppointment(
     doctor: {
       id: doctorAny.id,
       full_name: doctorAny.profiles?.full_name ?? '—',
-      license_number: doctorAny.license_number ?? null,
+      // F1-b: JVPM desde doctor_credentials (fuente principal), con
+      // doctors.license_number como fallback temporal. La receta lo imprime
+      // sin filtrar estado (identifica al prescriptor, no es el badge de
+      // verificación). Ver jvpmFromCredentials.
+      license_number: jvpmFromCredentials(doctorAny.doctor_credentials) ?? doctorAny.license_number ?? null,
       specialty_name: doctorAny.specialties?.name ?? null,
     },
     amendment_count: amendments?.length ?? 0,
