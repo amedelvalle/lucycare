@@ -283,7 +283,9 @@ BEGIN
            IS DISTINCT FROM upper(regexp_replace(EXCLUDED.value, '\s', '', 'g'));
   EXCEPTION
     WHEN unique_violation THEN
-      GET STACKED DIAGNOSTICS v_constraint = PG_CONSTRAINT_NAME;
+      -- Item correcto = CONSTRAINT_NAME (sin prefijo PG_; ese solo lo llevan
+      -- PG_EXCEPTION_DETAIL / _HINT / _CONTEXT).
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
       IF v_constraint = 'doctor_credentials_registry_uniq' THEN
         -- Dos médicos no pueden compartir el mismo JVPM. P-code estable para
         -- que el frontend lo mapee a un mensaje claro (no un 23505 crudo).
