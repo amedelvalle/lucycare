@@ -13,12 +13,85 @@
 
 ---
 
-## 0. ADDENDUM — estado vigente (2026-07-16, post-PR #289)
+## 0. ADDENDUM — estado vigente (2026-07-18, post-PR #292)
 
-- **HEAD de `main`:** **`db8cf5e`** · **PRs mergeados: #1–#289** ·
-  **migraciones aplicadas hasta `s7_60`** · `main == origin/main` · árbol
+- **HEAD de `main`:** **`09bf39c`** · **PRs mergeados: #1–#292** ·
+  **migraciones aplicadas hasta `s7_62`** · `main == origin/main` · árbol
   limpio · **0 PRs abiertos** · sin preview · sin servers · sin fixtures ·
   **sin frente activo**.
+
+### 0.0 · 🔑 `doctor_credentials` — F1-a y F1-b CERRADAS (#291, #292)
+
+Es el cierre estructural (en curso) del riesgo residual de `s7_60` (§0.2). **El
+problema de fondo:** `doctors.license_number` es un **secreto viviendo en una
+tabla legible por fila** — la RLS de `doctors` filtra **filas, no columnas**, así
+que cualquier grant de columna se filtra a todo el rol. El arreglo correcto no
+es parchear permisos: es **mover el secreto** a una tabla cuyas **filas** solo ve
+su dueño y el owner admin.
+
+**F1-a · #291 / `s7_61` — MODELO (aditiva, sin lectores).**
+- Enums `credential_type` (`JVPM`/`NUE`/`OTHER`) + `credential_status`
+  (`pending`/`verified`/`rejected`); tabla **`doctor_credentials`** con
+  `value_normalized` GENERATED (espejo exacto de la normalización de `s7_13`).
+- **RLS por fila:** `is_admin() OR doctor_id = get_user_doctor_id()`.
+  `anon` **sin acceso**; `authenticated` con SELECT filtrado por RLS y **sin
+  INSERT/UPDATE/DELETE** (nadie escribe directo). `directory_editor` **no ve**
+  credenciales.
+- **Índice antifraude parcial:** `UNIQUE(type, value_normalized) WHERE type IN
+  ('JVPM','NUE') AND status <> 'rejected'`. El `status <> 'rejected'` es
+  **crítico**: sin él, un JVPM ajeno **rechazado** bloquearía para siempre al
+  dueño legítimo — el antifraude terminaría protegiendo al fraude.
+- **Audit con el `value` REDACTADO** (+ booleano `value_changed`): el patrón
+  habitual habría metido el JVPM en texto plano en `audit_log`.
+- **Backfill de 114** credenciales JVPM en **`pending`** (nunca existió
+  verificación por credencial; `is_verified` global es otra cosa y no se toca).
+- **Trigger de sync** `doctors.license_number → doctor_credentials` (dual-write).
+  Se eligió trigger y **no** dual-write dentro de la RPC de afiliación porque esa
+  RPC **no es el único escritor** (también `import-doctors.mjs` y scripts con
+  `service_role`), y re-emitir `s7_42` (430 líneas) arriesgaba regresión a cambio
+  de **menos** cobertura. Precedente: `sync_phone_to_identity` (`s7_34`).
+- **Fix durante la aplicación:** `audit_log.user_id` es NOT NULL y `auth.uid()`
+  es NULL en el SQL Editor / con `service_role` → el audit atribuye al **sujeto**
+  (`COALESCE(auth.uid(), doctors.profile_id)`) y marca el origen en
+  **`actor_source`** (`session`/`system`), para no fingir una acción humana. Sin
+  eso, `s7_61` habría roto `import-doctors.mjs`.
+- Verificación: `check-s7_61` **5/5** + `_smoke-s7_61` **22/22**.
+
+**F1-b · #292 / `s7_62` — CUTOVER DE LECTORES.**
+- Dos `CREATE OR REPLACE` (mismas firmas, retrocompatibles):
+  **`claim_doctor_profile`** — cuerpo **verbatim de `s7_13`** salvo la sección 5
+  (verificado con diff; `s7_13` es su único `CREATE OR REPLACE` en
+  `migrations/`). Valida contra la credencial **sin devolver nunca el valor**;
+  `P0001`–`P0005`, OTP, TOS, roles y audit **idénticos**.
+  **`sync_license_to_credential`** — mapea **solo** la colisión de
+  `doctor_credentials_registry_uniq` al P-code estable **`P0091`** (vía
+  `GET STACKED DIAGNOSTICS … CONSTRAINT_NAME` — el item es `CONSTRAINT_NAME`,
+  **sin** prefijo `PG_`); **cualquier otro `unique_violation` se re-lanza intacto**.
+- **Frontend (3 archivos):** `getMyDoctorProfile` (panel) y
+  `getConsultationContext` (receta) leen el embed
+  `doctor_credentials(value, type, status)` y resuelven con el helper compartido
+  **`resolveJvpm`**; `mapCreateError` traduce `P0091` a copy claro en la bandeja
+  de afiliación. **`RecetaPrint` NO se tocó.**
+
+> **REGLA VINCULANTE DE LECTURA (panel · receta · claim):**
+> **`pending` y `verified` → la credencial SE USA.**
+> **`rejected` → NO se usa y NO cae a la columna** (existe una fila: su estado manda).
+> **Fallback a `doctors.license_number` SOLO si NO existe fila JVPM** — nunca
+> para evadir un estado.
+
+- **Validación:** `check-s7_62` **2/2** · `_smoke-s7_62` **E2E 13/13** (R1/R2
+  embed+RLS · **C1a** `claim(typed=COLUMNA)`→`P0007` y **C1b**
+  `claim(typed=CREDENCIAL)`→éxito — el **desync** que prueba de qué tabla lee ·
+  **J1** `rejected`→`P0006` aunque la columna coincida · J2–J5 regla+datos ·
+  **P1** duplicado→`P0091` / **P2** otra constraint→23505 propio) · **QA visual
+  7/7 en superficies reales** (panel y receta × `pending`/`verified`/`rejected`/
+  fallback, con valores distintos por fuente para distinguirlas a simple vista) ·
+  cleanup **0 residuos operativos**, Test Phone liberado, `doctor_credentials` en
+  **114**, **auditoría append-only preservada**.
+
+**⚠️ F1-b NO cierra el riesgo residual.** La columna `doctors.license_number`
+**sigue existiendo**, con **dual-write y fallback activos**, y `authenticated`
+**conserva su `SELECT`**. Eso lo cierra **F1-c** (§0.4).
 
 ### 0.1 · 🔒 SEGURIDAD — `s7_60`, hardening de grants sobre `doctors` (#289)
 
@@ -156,10 +229,25 @@ a la **consulta**, no al caller.
 
 ### 0.4 · Pendientes vivos — reemplaza a §4
 
-**`doctor_credentials` F1–F5 — PRIORIDAD REFORZADA POR SEGURIDAD.** Ya **no es
-solo mejora de modelo**: es el cierre estructural del riesgo residual de §0.2.
-Ver `docs/ANALISIS_CREDENCIALES_MEDICAS.md` (§0 = nota de vigencia). **No abrir
-sin instrucción.**
+**`doctor_credentials` F1-c — SIGUIENTE FASE, NO INICIADA. No abrir sin
+instrucción.** F1-a (#291) y F1-b (#292) están cerradas (§0.0). **F1-c es la que
+CIERRA el riesgo residual de §0.2:**
+
+1. retirar el **fallback** de los lectores (panel y receta);
+2. re-emitir el **claim** sin fallback;
+3. **cortar el dual-write** (drop de `trg_sync_license_to_credential`);
+4. **revocar `SELECT (license_number)` a `authenticated`**;
+5. **DROPEAR `doctors.license_number`**;
+6. actualizar los scripts que la leen: `import-doctors.mjs`,
+   `check-s7_13/21/22`, `setup-test-doctor-prb`.
+
+Con la columna fuera, **no queda secreto que proteger en `doctors`** — y sin el
+"impuesto" de grants por columna. **Antes de F1-c conviene verificar la sincronía
+columna ↔ credencial**, para no dropear con drift.
+
+Después de F1-c: **F2** (UI LucyAdmin para verificar/rechazar) · **F3**
+(propuesta del médico) · **F4** (señal pública **sin número**) · **F5**
+(reportería). Ver `docs/ANALISIS_CREDENCIALES_MEDICAS.md` §0.
 
 Sigue vigente el resto de §4 **menos** el punto 2 (dependencias muertas — hecho
 en #286): Search Console operativo (owner, manual) · Perf segundo paso opcional
