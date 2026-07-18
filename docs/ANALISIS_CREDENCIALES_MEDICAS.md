@@ -27,6 +27,19 @@
 | **F1-c — cerrar el residual** (retirar fallback · cortar dual-write · revocar grant · **DROP** de la columna) | ⏳ **NO INICIADA** | — |
 | F2 UI LucyAdmin · F3 propuesta del médico · F4 señal pública · F5 reportería | ⏳ no iniciadas | — |
 
+> 🧭 **Frente SEPARADO de producto — "Gestión y validación de credenciales
+> profesionales".** **No mezclar con F1-c** (F1-c es infraestructura: retirar una
+> columna heredada; esto es producto). Objetivo futuro: **actualización
+> autoservicio de JVPM/NUE** por el médico · **propuesta del médico** que queda
+> `pending` (no se auto-aprueba) · **validación de formato y duplicados** (el
+> índice antifraude ya existe) · **la credencial anterior sigue vigente mientras
+> se revisa** (no dejar al médico sin licencia durante la revisión) ·
+> **aprobación/rechazo trazable** (`verified_by`/`verified_at`/
+> `rejection_reason` + `audit_log`, ya modelados en `s7_61`) · **mínima
+> dependencia de soporte** (hoy el cambio de licencia es manual). Se apoya en
+> **F2/F3** de este documento — leerlos antes de abrirlo, para no rediseñar lo ya
+> decidido.
+
 **Cómo quedó implementado (difiere/precisa lo esbozado en §6):**
 
 - **`doctor_credentials`** con `value` + **`value_normalized` GENERATED** (espejo
@@ -87,16 +100,63 @@ activos**, y `authenticated` **conserva su `SELECT`**.
 
 Lo cierra **F1-c**, que es una **fase PENDIENTE y NO INICIADA**.
 
-> ⚠️ **PLAN PRELIMINAR, sujeto a preflight.** Lo de abajo es la dirección
-> prevista, **no un alcance aprobado**. **NO hay autorización** para tocar
-> código, DB, grants, triggers ni para eliminar la columna. El alcance real se
-> define al abrir el frente, después de un análisis read-only.
+### 0-bis.4 · Preflight de F1-c (2026-07-18) — resultado
 
-Dirección prevista (a validar, no a ejecutar): retirar el fallback de los
-lectores · re-emitir el claim sin fallback · cortar el dual-write · revocar el
-grant de `authenticated` · **dropear la columna** · actualizar los scripts que la
-leen. **Antes de cualquier DROP hay que verificar la sincronía columna ↔
-credencial**, para no dropear con drift.
+**Hecho sin `service_role` y sin tocar la DB** (análisis de código, migraciones,
+scripts y tipos). Detalle completo en
+`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-18_POST_F1B_F1C_PREFLIGHT.md` §4.
+
+> **VEREDICTO: NO APTO para un F1-c de un solo PR con DROP.**
+> Potencialmente apto **en dos etapas**, condicionado al preflight de DB.
+
+**Bloqueante:** **`admin_approve_and_create_doctor` (`s7_42`, vigente) INSERTA
+`license_number` en `doctors`** → dropear la columna **rompe la creación de
+médicos desde afiliación**, y exige re-emitir sus **430 líneas** (justo el riesgo
+que F1-a evitó usando un trigger).
+
+**Siguen dependiendo de la columna:** el **fallback** del claim (`s7_62` §5) y
+del frontend (`resolveJvpm`/`columnFallback` en panel y receta) · el **trigger
+`trg_sync_license_to_credential`** · `import-doctors.mjs` (**la escribe**) ·
+`setup-test-doctor-prb.mjs` · `check-s7_13.mjs` · los smokes `s7_60/61/62` ·
+`database.types.ts`.
+
+**Dependencia de orden (crítica):** hoy las altas por afiliación generan su
+credencial **gracias al trigger**. Si se corta el dual-write **antes** de que el
+approve escriba la credencial por su cuenta, **los médicos nuevos nacerían sin
+credencial**.
+
+**NO dependen** (son `doctor_affiliation_requests.license_number`, **otra
+tabla**): toda la UI/servicios de afiliación y la licencia **tipeada** del claim.
+**Vistas:** ninguna de `migrations/` referencia la columna.
+
+**Grants:** `authenticated` conserva `SELECT` mientras la columna exista — y ese
+**acceso residual desaparece SOLO con el DROP** (no hace falta revocar por
+columna, ni pagar el "impuesto" de re-otorgar las demás).
+
+**Pendiente antes de decidir alcance:** (a) el **SQL de sincronía** columna ↔
+credencial, que ejecuta el **owner** (§6 del handoff; sus valores esperados son
+**hipótesis, no confirmados**), y (b) el **preflight de DB** — `pg_depend`,
+`pg_views`, triggers/índices/constraints/defaults reales del **schema inicial**
+(que no está versionado: `migrations/` arranca en `s4_01`) — requiere
+autorización específica de `service_role` read-only.
+
+### 0-bis.5 · Propuesta preliminar — NO autorizada, NO iniciada
+
+> ⚠️ **NO es un alcance aprobado. NO hay autorización** para tocar código, DB,
+> grants, triggers ni para eliminar la columna. **No crear ramas, migraciones ni
+> código.** El alcance final se decide tras el preflight de DB.
+
+**F1-c1 · retiro lógico (reversible)** — approve escribe la credencial · claim
+sin fallback · frontend sin `columnFallback` · actualizar `import-doctors.mjs` ·
+cortar el dual-write. La columna queda **viva pero muerta en uso**.
+
+**F1-c2 · DROP físico (irreversible)** — tras observación: verificar sincronía +
+dependencias → `DROP COLUMN` → actualizar tipos y scripts de test.
+
+**Por qué dividir:** separa el cambio funcional riesgoso (approve) del acto
+irreversible (DROP); si algo falla en F1-c1, la columna sigue ahí como red.
+**Antes de cualquier DROP: verificar la sincronía columna ↔ credencial**, para no
+dropear con drift.
 
 ---
 
