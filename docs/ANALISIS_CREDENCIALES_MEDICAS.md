@@ -1,16 +1,109 @@
 # Análisis — Credenciales médicas (JVPM / NUE) como señal de confianza
 
-> Documento de análisis + decisión de diseño. **Snapshot 2026-06-29 (post-#197, HEAD `7f55f6a`).**
-> **Estado: DISEÑO APROBADO conceptualmente. NO implementar código ni tocar la DB
-> hasta abrir las fases (§8) con su alcance.** Read-only / design.
+> Documento de análisis + decisión de diseño. **Cuerpo = snapshot 2026-06-29
+> (post-#197, HEAD `7f55f6a`), cuando esto era solo diseño.**
 >
-> 📌 **Leer §0 primero: nota de vigencia 2026-07-16.** El cuerpo del documento
-> sigue vigente; §0 agrega lo que cambió después y **por qué F1 subió de
-> prioridad**.
+> 📌 **LEER §0-bis PRIMERO (2026-07-18): F1-a y F1-b ya están LIVE**
+> (#291/`s7_61` y #292/`s7_62`). Ahí está el estado real, cómo quedó
+> implementado, la **regla vinculante de lectura** (`pending`/`verified` sí ·
+> `rejected` no y sin fallback · fallback solo si no hay fila) y qué falta
+> (**F1-c**, la que cierra el riesgo residual). **§0-bis manda** sobre el resto
+> del documento donde haya diferencia.
+>
+> §0 (2026-07-16) queda como nota histórica: explica **por qué F1 subió de
+> prioridad**. El cuerpo (§1–§10) sigue siendo válido como diseño de fondo.
+
+---
+
+## 0-bis. ESTADO DE IMPLEMENTACIÓN — 2026-07-18 (post-#292)
+
+> **El modelo de §6 ya NO es solo diseño: F1-a y F1-b están LIVE.**
+> Esta sección manda sobre el resto del documento donde haya diferencia.
+
+| Fase | Estado | PR / migración |
+|---|---|---|
+| **F1-a — modelo** (tabla, RLS, grants, audit redactado, backfill, dual-write) | ✅ **LIVE** | **#291 / `s7_61`** |
+| **F1-b — cutover de lectores** (panel · receta · claim) | ✅ **LIVE** | **#292 / `s7_62`** |
+| **F1-c — cerrar el residual** (retirar fallback · cortar dual-write · revocar grant · **DROP** de la columna) | ⏳ **NO INICIADA** | — |
+| F2 UI LucyAdmin · F3 propuesta del médico · F4 señal pública · F5 reportería | ⏳ no iniciadas | — |
+
+**Cómo quedó implementado (difiere/precisa lo esbozado en §6):**
+
+- **`doctor_credentials`** con `value` + **`value_normalized` GENERATED** (espejo
+  exacto de la normalización de `s7_13`: `upper` + quitar espacios).
+- **RLS por FILA** — `is_admin() OR doctor_id = get_user_doctor_id()`. Ésta es la
+  pieza central: el valor es inalcanzable **por fila**, no por columna, así que
+  **no hicieron falta RPCs de lectura** ni grants por columna (y no queda el
+  "impuesto" de otorgar cada columna nueva). `anon` sin acceso; `authenticated`
+  con SELECT filtrado por RLS y **sin escritura directa**; `directory_editor`
+  **no ve** credenciales.
+- **Índice antifraude parcial** `UNIQUE(type, value_normalized) WHERE type IN
+  ('JVPM','NUE') AND status <> 'rejected'`. El `status <> 'rejected'` es
+  **crítico**: sin él, un JVPM ajeno **rechazado** bloquearía para siempre al
+  dueño legítimo — el antifraude protegería al fraude. *(Nota: `doctors` nunca
+  tuvo una restricción así; esto **agrega** una garantía que no existía.)*
+- **Audit con el `value` REDACTADO** + booleano `value_changed`. El patrón
+  habitual (`to_jsonb` de la fila) habría duplicado el secreto en `audit_log`.
+  El actor se resuelve con `COALESCE(auth.uid(), doctors.profile_id)` y se marca
+  el origen en **`actor_source`** (`session`/`system`), porque `auth.uid()` es
+  NULL con `service_role` / en el SQL Editor.
+- **Backfill: 114 credenciales JVPM en `pending`.** A propósito: **nunca existió
+  verificación a nivel de credencial**; marcarlas `verified` habría afirmado algo
+  que nadie chequeó. `is_verified` global **no se tocó** (siguen desacopladas).
+- **Dual-write por trigger** (`doctors.license_number → doctor_credentials`), no
+  dentro de la RPC de afiliación: esa RPC **no es el único escritor** (también
+  scripts con `service_role`), y el trigger los cubre a todos.
+
+### 0-bis.1 · REGLA VINCULANTE de lectura (panel · receta · claim)
+
+> **`pending` y `verified` → la credencial SE USA.**
+> **`rejected` → NO se usa y NO cae a la columna** (existe una fila: su estado manda).
+> **Fallback a `doctors.license_number` SOLO si NO existe fila JVPM** — nunca
+> para evadir un estado.
+
+Implementada en el helper compartido **`resolveJvpm`** (frontend) y en la sección
+5 de `claim_doctor_profile` (`rejected` → **`P0006`**, sin comparar contra la
+columna). **El fallback es transitorio: F1-c lo retira junto con la columna.**
+
+### 0-bis.2 · Validación
+
+- `check-s7_61` **5/5** · `_smoke-s7_61` **22/22** (incl. reset a `pending` al
+  cambiar el valor de una credencial `verified`/`rejected`, y "misma licencia →
+  sin churn ni fila de audit").
+- `check-s7_62` **2/2** · `_smoke-s7_62` **E2E 13/13** — incluye el **desync**
+  que prueba de qué tabla lee el claim (`typed=COLUMNA`→`P0007`,
+  `typed=CREDENCIAL`→éxito) y `rejected`→`P0006` aunque la columna coincida.
+- **QA visual 7/7 en superficies reales** (panel y receta ×
+  `pending`/`verified`/`rejected`/fallback), con valores distintos por fuente
+  para distinguirlas a simple vista.
+- Cleanup **0 residuos operativos**; **auditoría append-only preservada** (no se
+  borra: es inmutable por diseño).
+
+### 0-bis.3 · Lo que sigue abierto
+
+**El riesgo residual de `s7_60` NO está cerrado.** La columna
+`doctors.license_number` **sigue existiendo**, con **dual-write y fallback
+activos**, y `authenticated` **conserva su `SELECT`**.
+
+Lo cierra **F1-c**, que es una **fase PENDIENTE y NO INICIADA**.
+
+> ⚠️ **PLAN PRELIMINAR, sujeto a preflight.** Lo de abajo es la dirección
+> prevista, **no un alcance aprobado**. **NO hay autorización** para tocar
+> código, DB, grants, triggers ni para eliminar la columna. El alcance real se
+> define al abrir el frente, después de un análisis read-only.
+
+Dirección prevista (a validar, no a ejecutar): retirar el fallback de los
+lectores · re-emitir el claim sin fallback · cortar el dual-write · revocar el
+grant de `authenticated` · **dropear la columna** · actualizar los scripts que la
+leen. **Antes de cualquier DROP hay que verificar la sincronía columna ↔
+credencial**, para no dropear con drift.
 
 ---
 
 ## 0. NOTA DE VIGENCIA — 2026-07-16 (post-#289 / `s7_60`)
+
+> *(Histórica: escrita cuando F1 aún no se había implementado. Su diagnóstico
+> sigue siendo correcto; el estado actual está en §0-bis.)*
 
 **Verificado contra HEAD `db8cf5e`: el análisis sigue vigente en todo lo
 principal.** Sin cambios en el modelo:
