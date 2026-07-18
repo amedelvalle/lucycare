@@ -83,10 +83,20 @@ columna). **El fallback es transitorio: F1-c lo retira junto con la columna.**
 
 **El riesgo residual de `s7_60` NO está cerrado.** La columna
 `doctors.license_number` **sigue existiendo**, con **dual-write y fallback
-activos**, y `authenticated` **conserva su `SELECT`**. Lo cierra **F1-c**:
-retirar el fallback · re-emitir el claim sin fallback · cortar el dual-write ·
-revocar el grant · **DROPEAR la columna** · actualizar los scripts que la leen.
-**Conviene verificar la sincronía columna ↔ credencial antes de dropear.**
+activos**, y `authenticated` **conserva su `SELECT`**.
+
+Lo cierra **F1-c**, que es una **fase PENDIENTE y NO INICIADA**.
+
+> ⚠️ **PLAN PRELIMINAR, sujeto a preflight.** Lo de abajo es la dirección
+> prevista, **no un alcance aprobado**. **NO hay autorización** para tocar
+> código, DB, grants, triggers ni para eliminar la columna. El alcance real se
+> define al abrir el frente, después de un análisis read-only.
+
+Dirección prevista (a validar, no a ejecutar): retirar el fallback de los
+lectores · re-emitir el claim sin fallback · cortar el dual-write · revocar el
+grant de `authenticated` · **dropear la columna** · actualizar los scripts que la
+leen. **Antes de cualquier DROP hay que verificar la sincronía columna ↔
+credencial**, para no dropear con drift.
 
 ---
 

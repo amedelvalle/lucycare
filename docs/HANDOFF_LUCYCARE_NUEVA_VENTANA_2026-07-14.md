@@ -229,9 +229,17 @@ a la **consulta**, no al caller.
 
 ### 0.4 · Pendientes vivos — reemplaza a §4
 
-**`doctor_credentials` F1-c — SIGUIENTE FASE, NO INICIADA. No abrir sin
-instrucción.** F1-a (#291) y F1-b (#292) están cerradas (§0.0). **F1-c es la que
-CIERRA el riesgo residual de §0.2:**
+**`doctor_credentials` F1-c — FASE PENDIENTE, NO INICIADA. No abrir sin
+instrucción explícita del owner.** F1-a (#291) y F1-b (#292) están cerradas
+(§0.0). **F1-c es la que CIERRA el riesgo residual de §0.2.**
+
+> ⚠️ **Lo que sigue es un PLAN PRELIMINAR, sujeto a preflight y a rediseño.**
+> **NO hay autorización** para tocar código, DB, grants, triggers ni para
+> eliminar la columna. El alcance definitivo se define al abrir el frente, tras
+> un análisis read-only que confirme el estado real (sincronía columna ↔
+> credencial, lectores residuales, scripts afectados).
+
+Pasos previstos (a validar, no a ejecutar):
 
 1. retirar el **fallback** de los lectores (panel y receta);
 2. re-emitir el **claim** sin fallback;
