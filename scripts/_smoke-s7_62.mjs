@@ -225,6 +225,15 @@ async function runFixtures(svc, testPhone) {
     const { data: v, error: verErr } = await session.auth.verifyOtp({ phone: phoneE164, token: OTP, type: 'sms' });
     if (verErr || !v?.session) throw new Error(`verifyOtp: ${verErr?.message ?? 'sin sesión'}`);
 
+    // CONTRA-CHEQUEO: el usuario de la sesión debe ser el que registramos. Si
+    // difiere (el OTP resolvió a otro auth.user), registramos TAMBIÉN ese ID
+    // para que el cleanup lo alcance — nunca dejar un usuario fuera de `made`.
+    const sessionUserId = v.session.user?.id ?? v.user?.id ?? null;
+    if (sessionUserId && sessionUserId !== claimUserId) {
+      made.users.push(sessionUserId);
+      no(`AVISO: el usuario de la sesión (${sessionUserId.slice(0, 8)}…) ≠ el registrado (${claimUserId.slice(0, 8)}…); ambos quedan registrados para cleanup`);
+    }
+
     // El perfil ya existe (lo creó el trigger con el phone). No se toca full_name
     // (evita el trigger audit_profiles_identity/s7_32).
     const { data: cl } = await svc.from('clinics')
@@ -352,35 +361,81 @@ async function runFixtures(svc, testPhone) {
   } catch (e) {
     no(`fixtures: ${e.message}`);
   } finally {
-    // Cleanup SOLO por IDs creados/registrados en esta corrida. Nada por
-    // teléfono ni por heurística. Orden: dependientes → base.
+    // ═══ CLEANUP ═══
+    // SOLO por IDs creados/registrados en esta corrida. Nada por teléfono ni
+    // por heurística. Orden: dependientes → base.
+    // NINGÚN error se silencia: cada fallo se reporta con no() (antes un
+    // `.catch(() => {})` en deleteUser podía dejar un usuario vivo sin aviso).
     const NONE = ['00000000-0000-0000-0000-000000000000'];
-    for (const m of made.memberships) await svc.from('clinic_members').delete().eq('id', m); // membresía por ID exacto
-    for (const d of made.doctors) await svc.from('doctors').delete().eq('id', d);            // cascade → credentials
-    for (const c of made.clinics) await svc.from('clinics').delete().eq('id', c);
-    for (const u of made.users) {
-      await svc.from('profiles').delete().eq('id', u);
-      await svc.auth.admin.deleteUser(u).catch(() => {});
+    const delFails = [];
+
+    for (const m of made.memberships) {
+      const { error } = await svc.from('clinic_members').delete().eq('id', m);
+      if (error) delFails.push(`clinic_members ${m.slice(0, 8)}…: ${error.message}`);
     }
-    // Verificación de 0 residuales POR ID creado.
+    for (const d of made.doctors) {
+      const { error } = await svc.from('doctors').delete().eq('id', d); // cascade → credentials
+      if (error) delFails.push(`doctors ${d.slice(0, 8)}…: ${error.message}`);
+    }
+    for (const c of made.clinics) {
+      const { error } = await svc.from('clinics').delete().eq('id', c);
+      if (error) delFails.push(`clinics ${c.slice(0, 8)}…: ${error.message}`);
+    }
+    for (const u of made.users) {
+      const { error: pe } = await svc.from('profiles').delete().eq('id', u);
+      if (pe) delFails.push(`profiles ${u.slice(0, 8)}…: ${pe.message}`);
+      // deleteUser puede lanzar O devolver {error}: se cubren ambas formas.
+      let ue = null;
+      try { ({ error: ue } = await svc.auth.admin.deleteUser(u)); }
+      catch (e) { ue = e; }
+      if (ue) delFails.push(`auth.user ${u.slice(0, 8)}…: ${ue.message ?? ue}`);
+    }
+    if (delFails.length) no(`cleanup: ${delFails.length} borrado(s) fallaron → ${delFails.join(' | ')}`);
+
+    // ═══ VERIFICACIÓN 1 — residuos OPERATIVOS por ID EXACTO ═══
     const { count: credsLeft } = await svc.from('doctor_credentials').select('id', { count: 'exact', head: true }).in('doctor_id', made.doctors.length ? made.doctors : NONE);
     const { count: docsLeft } = await svc.from('doctors').select('id', { count: 'exact', head: true }).in('id', made.doctors.length ? made.doctors : NONE);
     const { count: clinLeft } = await svc.from('clinics').select('id', { count: 'exact', head: true }).in('id', made.clinics.length ? made.clinics : NONE);
     const { count: profLeft } = await svc.from('profiles').select('id', { count: 'exact', head: true }).in('id', made.users.length ? made.users : NONE);
     const { count: memLeft } = await svc.from('clinic_members').select('id', { count: 'exact', head: true }).in('id', made.memberships.length ? made.memberships : NONE);
-    const total = (credsLeft ?? 0) + (docsLeft ?? 0) + (clinLeft ?? 0) + (profLeft ?? 0) + (memLeft ?? 0);
-    if (total === 0) ok(`cleanup: 0 residuales (creds/doctores/clínicas/profiles/memberships)`);
-    else no(`cleanup: residuales → creds=${credsLeft} doctors=${docsLeft} clinics=${clinLeft} profiles=${profLeft} members=${memLeft}`);
 
-    // El Test Phone debe quedar SIN auth.user ni profile.
-    const { data: profsPhone } = await svc.from('profiles').select('id').in('phone', variants);
-    let authGone = true;
+    // auth.users por ID EXACTO. getUserById devuelve error tanto si el usuario
+    // NO existe como si la llamada falla: hay que DISTINGUIRLOS. Solo
+    // 'not found' cuenta como borrado; cualquier otro error = NO verificado.
+    let authAlive = 0, authUnverified = 0;
     for (const u of made.users) {
-      const { data } = await svc.auth.admin.getUserById(u);
-      if (data?.user) authGone = false;
+      const { data, error } = await svc.auth.admin.getUserById(u);
+      if (data?.user) { authAlive++; continue; }
+      const msg = (error?.message ?? '').toLowerCase();
+      const notFound = msg.includes('not found') || msg.includes('no rows') || error?.status === 404;
+      if (!notFound && error) authUnverified++;
     }
-    if ((profsPhone ?? []).length === 0 && authGone) ok('el Test Phone quedó SIN auth.user ni profile');
-    else no(`el Test Phone NO quedó limpio → profiles(phone)=${(profsPhone ?? []).length} authGone=${authGone}`);
+
+    const opTotal = (credsLeft ?? 0) + (docsLeft ?? 0) + (clinLeft ?? 0) + (profLeft ?? 0) + (memLeft ?? 0) + authAlive;
+    if (opTotal === 0 && authUnverified === 0 && delFails.length === 0) {
+      ok('cleanup: 0 residuos OPERATIVOS por ID exacto (creds/doctores/clínicas/profiles/memberships/auth.users)');
+    } else {
+      no(`cleanup: residuos → creds=${credsLeft} doctors=${docsLeft} clinics=${clinLeft} profiles=${profLeft} members=${memLeft} authVivos=${authAlive} authNoVerificados=${authUnverified}`);
+    }
+
+    // ═══ VERIFICACIÓN 2 — por TELÉFONO (COMPLEMENTARIA, no sustituto) ═══
+    // Caza lo que el ID exacto NO puede ver: un auth.user/profile del Test
+    // Phone que quedara FUERA de `made` (exactamente el caso de la cáscara
+    // 693282b2 del 17/07, que el chequeo por ID no podía detectar).
+    const { data: profsPhone } = await svc.from('profiles').select('id').in('phone', variants);
+    if ((profsPhone ?? []).length === 0) {
+      ok('verificación complementaria por teléfono: 0 profiles con el Test Phone');
+    } else {
+      no(`verificación por teléfono: quedan ${(profsPhone ?? []).length} profile(s) del Test Phone (ids: ${(profsPhone ?? []).map((p) => p.id.slice(0, 8) + '…').join(' ')}) — NO se borran acá: requieren decisión explícita del owner`);
+    }
+
+    // ═══ NOTA — auditoría append-only ═══
+    // `audit_log` NO se limpia y NO debe limpiarse: es inmutable por diseño.
+    // Las operaciones de esta corrida (crear/mutar/borrar credenciales,
+    // paciente, consulta, receta, claim) dejan filas PERMANENTES, con el
+    // `value` de la credencial REDACTADO (s7_61). Eso NO es un residuo
+    // operativo: es el registro de auditoría esperado.
+    console.log('  ℹ️  auditoría: las filas de audit_log de esta corrida son PERMANENTES y esperadas (append-only, no se borran; el value de credenciales va redactado).');
   }
 }
 
