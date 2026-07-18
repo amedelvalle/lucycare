@@ -382,22 +382,71 @@ documento primero para no rediseñar lo ya decidido.**
 
 ### Aprendizajes de método (de este eje)
 
-- **`audit_log.user_id` es NOT NULL y `auth.uid()` es NULL** con `service_role` o
-  en el SQL Editor → todo trigger de audit nuevo necesita un fallback de actor
-  (`COALESCE(auth.uid(), <sujeto>)`) y marcar el origen. Sin eso se rompen los
-  scripts de import.
-- **`GET STACKED DIAGNOSTICS`**: el item es **`CONSTRAINT_NAME`**, sin prefijo
-  `PG_` (ese lo llevan `PG_EXCEPTION_DETAIL`/`_HINT`/`_CONTEXT`).
-- **`.catch(() => {})` en un cleanup es veneno:** silencia fallos y produce
-  falsos "limpio". `getUserById` devuelve error tanto si el usuario **no existe**
-  como si **la llamada falla** — hay que distinguirlos.
-- **Verificación de cleanup por ID exacto**, con la verificación **por teléfono
-  como complementaria** (no sustituto): un usuario fuera del registro de la
-  corrida solo se detecta por la segunda.
-- **`signInWithOtp` crea el `auth.user` ANTES de `verifyOtp`** → registrar el ID
-  para cleanup **antes** de verificar el OTP, o un OTP fallido deja huérfanos.
-- **`profiles.full_name` no se puede actualizar con `service_role`**: dispara
-  `audit_profiles_identity` (`s7_32`) y falla con `23502`.
-- **Guards de agenda al crear fixtures de cita:** `s6_03` bloquea fechas pasadas
-  y `s6_04` exige disponibilidad → una cita fixture necesita ser **futura** y
-  tener su `availability_rules`.
+> ⚠️ **Cómo leer esta sección.** Los ítems están clasificados en tres
+> categorías, para **no convertir un incidente puntual en una regla universal**:
+>
+> - **[COMPORTAMIENTO]** — comportamiento **confirmado del sistema actual**
+>   (este esquema, esta implementación). Puede cambiar si cambia el esquema.
+> - **[RECOMENDACIÓN]** — práctica operativa que conviene seguir; no es una
+>   restricción del sistema.
+> - **[LIMITACIÓN OBSERVADA]** — lo que **se observó durante estas pruebas**, en
+>   este contexto concreto. **No generalizar** más allá de lo verificado.
+
+**[COMPORTAMIENTO — confirmado en el sistema actual]**
+
+- **`audit_log.user_id` es `NOT NULL` en la implementación vigente**, y
+  `auth.uid()` devuelve NULL cuando se escribe con `service_role` o desde el SQL
+  Editor (no hay sesión). En consecuencia, **en este esquema**, un trigger de
+  audit que use `auth.uid()` pelado falla con `23502` en esos contextos. *(Es una
+  característica del diseño actual de `audit_log`, no una ley de Postgres ni de
+  Supabase: si `user_id` pasara a ser nullable, esto dejaría de aplicar.)*
+- **`GET STACKED DIAGNOSTICS`**: el item correcto es **`CONSTRAINT_NAME`**, sin
+  prefijo `PG_` (ese lo llevan `PG_EXCEPTION_DETAIL` / `_HINT` / `_CONTEXT`).
+  *(Esto sí es de Postgres, no del proyecto.)*
+- **`signInWithOtp` crea el `auth.user` ANTES de `verifyOtp`** (con
+  `shouldCreateUser` por defecto): un OTP que falla deja el usuario creado.
+- **Guards de agenda vigentes:** `s6_03` bloquea citas en fechas pasadas y
+  `s6_04` exige que la cita caiga dentro de la disponibilidad del médico.
+
+**[RECOMENDACIÓN — práctica operativa]**
+
+- **Un trigger de audit nuevo conviene que tenga fallback de actor**
+  (`COALESCE(auth.uid(), <sujeto>)`) y que **marque el origen** (p. ej.
+  `actor_source: 'session' | 'system'`), para no atribuir a una persona algo que
+  hizo un proceso. Mientras `audit_log.user_id` siga siendo `NOT NULL`, además
+  evita romper los scripts que escriben con `service_role`.
+- **Nunca silenciar errores en un cleanup.** Un `.catch(() => {})` produce falsos
+  "limpio": en este eje dejó una cuenta cáscara sin aviso. Verificar el `error`
+  de cada borrado y reportarlo.
+- **Distinguir "no existe" de "la llamada falló".** `getUserById` devuelve error
+  en ambos casos; si no se separan, un fallo de red se lee como "borrado".
+- **Verificar el cleanup por ID exacto**, y usar la verificación **por teléfono
+  (u otra clave natural) como COMPLEMENTARIA, no como sustituto**: un recurso
+  creado fuera del registro de la corrida solo se detecta por la segunda.
+- **Registrar el ID del usuario creado por OTP ANTES de `verifyOtp`**, para que
+  el cleanup lo alcance aunque el OTP falle.
+- **Fixtures de cita:** crearlas **futuras** y con su `availability_rules`, por
+  los guards de arriba.
+
+**[LIMITACIÓN OBSERVADA — durante estas pruebas]**
+
+- **Actualizar `profiles.full_name` con `service_role` falló en este esquema.**
+  El trigger `audit_profiles_identity` (`s7_32`) es
+  `AFTER UPDATE OF full_name, …` y audita con `auth.uid()`; sin sesión, ese
+  `auth.uid()` es NULL y el INSERT en `audit_log` viola el `NOT NULL` de
+  `user_id` → `23502`, y el UPDATE se aborta.
+  **No es que `service_role` no pueda actualizar `full_name`**: `service_role`
+  tiene privilegios de sobra. Es la **combinación** trigger de auditoría +
+  ausencia de sesión + `user_id NOT NULL` la que lo impide **en la
+  implementación actual**. Se esquivó creando el profile por INSERT (que no
+  dispara ese trigger) en vez de actualizarlo. Si se necesitara hacerlo, las
+  salidas serían corregir ese trigger (fallback de actor, como el de
+  `doctor_credentials`) o establecer un contexto de sesión.
+- **`auth.admin.listUsers()` falló con "Database error finding users"** en varias
+  páginas de este proyecto (bug ya anotado en `CLAUDE.md`). El workaround usado
+  fue derivar el `auth.user` desde `profiles.id` con `getUserById`. **Eso deja un
+  hueco conocido:** un `auth.user` **huérfano** (sin `profile`) con un teléfono
+  dado **no es detectable** por esa vía — la red de seguridad real fue que
+  `createUser` falla si el teléfono ya existe.
+- **El Test Phone debe configurarse con el prefijo de país** (`503…`): sin él,
+  `verifyOtp` rechazó el código estático y `signInWithOtp` intentó envío real.
