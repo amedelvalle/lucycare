@@ -324,6 +324,7 @@ export type AffiliationCreateErrorCode =
   | 'invalid_email'            // P0005
   | 'not_approved'             // P0002
   | 'already_linked'           // P0003
+  | 'jvpm_duplicate'           // P0091 (colisión doctor_credentials_registry_uniq — s7_62)
   | 'duplicate'                // 23505 (fallback — no debería ocurrir con s7_42)
   | 'unknown'
 
@@ -348,6 +349,8 @@ const CREATE_ERROR_COPY: Record<AffiliationCreateErrorCode, string> = {
   invalid_email: 'El email indicado no tiene un formato válido.',
   not_approved: 'La solicitud no está en estado aprobado.',
   already_linked: 'Esta solicitud ya tiene un médico vinculado.',
+  jvpm_duplicate:
+    'Ese número de licencia (JVPM) ya pertenece a otro médico. Verificá el dato antes de crear la ficha.',
   duplicate:
     'Ya existe una cuenta con esos datos (teléfono o email). Requiere revisión manual.',
   unknown: 'No pudimos crear el médico. Revisá los datos e intentá de nuevo.',
@@ -363,6 +366,7 @@ function mapCreateError(err: { code?: string; message?: string } | null): Affili
     P0005: 'invalid_email',
     P0002: 'not_approved',
     P0003: 'already_linked',
+    P0091: 'jvpm_duplicate',
     '23505': 'duplicate',
   }
   const code: AffiliationCreateErrorCode =

@@ -1,5 +1,34 @@
 import { supabase } from '@/lib/supabase';
 
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * F1-b: resuelve el JVPM efectivo desde el embed `doctor_credentials`, con la
+ * columna `doctors.license_number` como fallback SOLO defensivo.
+ *
+ * PostgREST devuelve la relación como ARREGLO (0..N credenciales); el índice
+ * `one_per_type` garantiza ≤1 fila JVPM. Regla (F1-b):
+ *   • fila JVPM 'pending' | 'verified' → utilizable, se usa su value;
+ *   • fila JVPM 'rejected'             → NO utilizable, y NO se cae a la
+ *     columna (una fila existe, su estado manda);
+ *   • NO existe fila JVPM              → fallback a la columna (temporal, F1-c
+ *     lo elimina).
+ * El fallback es solo para el caso de que no exista fila, nunca para revivir
+ * un rechazo.
+ */
+export function resolveJvpm(
+  rows: Array<{ value: string | null; type: string; status: string }> | null | undefined,
+  columnFallback: string | null,
+): string | null {
+  const jvpm = (rows ?? []).find((c) => c.type === 'JVPM');
+  if (jvpm) {
+    // La fila existe → su estado gobierna; la columna no se mira.
+    return jvpm.status === 'rejected' ? null : (jvpm.value ?? null);
+  }
+  // No hay fila JVPM → fallback defensivo a la columna.
+  return columnFallback ?? null;
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────
 
 export interface MyDoctorProfile {
@@ -68,7 +97,8 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
       lucy_status,
       profile_id,
       profiles!inner(full_name, email, phone, avatar_url),
-      specialties(id, name)
+      specialties(id, name),
+      doctor_credentials(value, type, status)
     `)
     .eq('profile_id', user.id)
     .single();
@@ -80,6 +110,8 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as any;
+  // F1-b: el JVPM se lee de doctor_credentials (fuente principal, filtrando
+  // 'rejected'); doctors.license_number es fallback SOLO si no hay fila JVPM.
   return {
     doctor_id: d.id,
     slug: d.slug ?? null,
@@ -88,7 +120,7 @@ export async function getMyDoctorProfile(): Promise<MyDoctorProfile | null> {
     consultation_fee: d.consultation_fee != null ? Number(d.consultation_fee) : null,
     experience_years: d.experience_years,
     languages: d.languages,
-    license_number: d.license_number,
+    license_number: resolveJvpm(d.doctor_credentials, d.license_number ?? null),
     specialty_id: d.specialty_id,
     specialty_name: d.specialties?.name ?? null,
     is_published: d.is_published,
