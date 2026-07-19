@@ -139,7 +139,7 @@ export async function getOrCreateConsultationForAppointment(
         .single(),
       supabase
         .from('doctors')
-        .select('id, license_number, profiles!inner(full_name), specialties(name), doctor_credentials(value, type, status)')
+        .select('id, profiles!inner(full_name), specialties(name), doctor_credentials(value, type, status)')
         .eq('id', consultation.doctor_id)
         .single(),
       // Adendas de corrección: las más recientes primero. Vacío en borradores
@@ -182,12 +182,11 @@ export async function getOrCreateConsultationForAppointment(
     doctor: {
       id: doctorAny.id,
       full_name: doctorAny.profiles?.full_name ?? '—',
-      // F1-b: JVPM desde doctor_credentials (fuente principal). Una credencial
-      // 'rejected' NO se imprime y NO cae a la columna; el fallback a la columna
-      // es solo si no existe fila JVPM. 'pending'/'verified' sí se imprimen —
-      // la licencia identifica al prescriptor, no es el badge de verificación.
-      // Ver resolveJvpm.
-      license_number: resolveJvpm(doctorAny.doctor_credentials, doctorAny.license_number ?? null),
+      // F1-c1: JVPM EXCLUSIVAMENTE desde doctor_credentials. Una credencial
+      // 'rejected' NO se imprime; sin fila JVPM no hay licencia. 'pending'/
+      // 'verified' sí se imprimen — la licencia identifica al prescriptor,
+      // no es el badge de verificación. Ver resolveJvpm.
+      license_number: resolveJvpm(doctorAny.doctor_credentials),
       specialty_name: doctorAny.specialties?.name ?? null,
     },
     amendment_count: amendments?.length ?? 0,
