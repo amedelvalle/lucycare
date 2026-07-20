@@ -174,7 +174,7 @@ export default function ClaimProfileModal({
     setGenericError('');
     setLoading(true);
     try {
-      const result = await sendOtp(fullPhone);
+      const result = await sendOtp(fullPhone, 'claim');
       if (result.success) {
         setOtpSent(true);
       } else {

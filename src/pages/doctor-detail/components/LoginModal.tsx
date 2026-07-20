@@ -13,6 +13,14 @@ interface LoginModalProps {
   onClose: () => void;
   /** Disparado después de OTP teléfono exitoso (continúa flujo del caller). */
   onSuccess: () => void;
+  /**
+   * AUTH-P1A — contexto OBLIGATORIO del OTP (sin default: cada mount declara
+   * su intención o el build falla). 'login' = ingreso genérico (header/Home);
+   * 'booking' = autenticación dentro de la reserva (flujo permitido de
+   * creación de pacientes). Es clasificación funcional, no autorización
+   * server-side (ver OtpContext en auth.service).
+   */
+  context: 'login' | 'booking';
 }
 
 type Tab = 'phone' | 'email';
@@ -29,7 +37,7 @@ const formatSvPhone = (value: string): { rawDigits: string; displayValue: string
   return { rawDigits: limited, displayValue: formatted };
 };
 
-export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
+export default function LoginModal({ isOpen, onClose, onSuccess, context }: LoginModalProps) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('phone');
 
@@ -125,7 +133,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
     }
     setLoading(true);
     try {
-      const result = await sendOtp(fullPhone);
+      const result = await sendOtp(fullPhone, context);
       if (result.success) {
         setPhoneStep('otp');
         startResendCountdown();
@@ -167,7 +175,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
     setError('');
     setLoading(true);
     try {
-      const result = await sendOtp(fullPhone);
+      const result = await sendOtp(fullPhone, context);
       if (result.success) startResendCountdown();
       else setError(result.error || 'Error al reenviar');
     } catch {
