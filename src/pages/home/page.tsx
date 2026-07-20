@@ -411,8 +411,9 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Login Modal */}
+      {/* Login Modal (AUTH-P1A: contexto obligatorio — header/Home = ingreso genérico) */}
       <LoginModal
+        context="login"
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
         onSuccess={handleLoginSuccess}

@@ -11,6 +11,105 @@
 
 import { supabase } from '../lib/supabase'
 import { isAuthError } from '@supabase/supabase-js'
+import { toAuthPhone, toAppPhone } from '../lib/authPhone'
+import { probeSessionState } from '../lib/sessionState'
+
+// ═══════════════════════════════════════════════════════════
+// AUTH-P1A — teléfono como identidad, formato único y contexto de OTP
+// ═══════════════════════════════════════════════════════════
+// La normalización vive en `src/lib/authPhone.ts` (módulo PURO, sin copias
+// locales acá): `toAuthPhone` = E.164 para Supabase Auth · `toAppPhone` =
+// representación interna, validada con el mismo normalizador, derivada
+// SIEMPRE de `data.user.phone`. El check local `check-auth-p1a-phone.mjs`
+// prueba esas funciones reales.
+
+/**
+ * Cierre seguro cuando un login queda sin identidad utilizable (sin
+ * teléfono autenticado canonicalizable).
+ *
+ * Usa `probeSessionState` (src/lib/sessionState.ts), que distingue SIN
+ * ambigüedad: 'none' (consulta completada, sin sesión) · 'present'
+ * (consulta completada, hay sesión) · 'timeout' · 'error'.
+ *
+ * Secuencia ACOTADA (sin loops ni reintentos indefinidos):
+ *   1. espera `hardLocalSignOut()`;
+ *   2. consulta el estado etiquetado;
+ *   3. si NO es 'none' → SEGUNDA y última limpieza;
+ *   4. consulta nuevamente;
+ *   5. devuelve `true` ÚNICAMENTE si el resultado final es 'none';
+ *   6. para 'present'/'timeout'/'error' devuelve `false` — el caller no
+ *      ejecuta side-effects, no navega y responde con error genérico.
+ *
+ * La revisión de claves `sb-*` es solo diagnóstico SECUNDARIO. Jamás se
+ * registran teléfono, tokens ni datos sensibles.
+ */
+async function safeAbortSession(logTag: string): Promise<boolean> {
+  console.warn(`[${logTag}] sesión sin teléfono autenticado canonicalizable — cierre seguro`)
+
+  await hardLocalSignOut()
+
+  // Diagnóstico secundario: persistencia local.
+  try {
+    const leftover = Object.keys(localStorage).filter((k) => k.startsWith('sb-'))
+    if (leftover.length > 0) {
+      console.warn(`[${logTag}] persistencia local incompleta — limpiando claves restantes`)
+      leftover.forEach((k) => localStorage.removeItem(k))
+    }
+  } catch {
+    // localStorage inaccesible → nada más que limpiar.
+  }
+
+  // Prueba PRINCIPAL: estado etiquetado de la sesión real del cliente.
+  let state = await probeSessionState(() => supabase.auth.getSession(), 3000)
+
+  if (state !== 'none') {
+    // Segunda y ÚLTIMA limpieza controlada.
+    console.warn(`[${logTag}] estado de sesión '${state}' tras la limpieza — segunda y última limpieza`)
+    await hardLocalSignOut()
+    state = await probeSessionState(() => supabase.auth.getSession(), 3000)
+  }
+
+  if (state === 'none') return true
+
+  // 'present' | 'timeout' | 'error': cierre NO confirmado. Constancia sin
+  // datos sensibles; el caller aborta con error genérico, sin side-effects
+  // ni navegación.
+  console.warn(`[${logTag}] cierre no confirmado (estado '${state}') — abortado sin side-effects`)
+  return false
+}
+
+/**
+ * Contexto del envío de OTP (OBLIGATORIO en `sendOtp`).
+ *
+ * ⚠️ SEGURIDAD — leer antes de tocar este tipo:
+ *   - El contexto lo envía el NAVEGADOR: es plumbing y clasificación
+ *     funcional, NO una autorización server-side. Un cliente hostil puede
+ *     mandar cualquier contexto (o llamar a /auth/v1/otp directo).
+ *   - `shouldCreateUser` explícito en P1A CONSERVA transitoriamente el
+ *     comportamiento actual (ver mapa abajo).
+ *   - La elegibilidad REAL de creación de cuentas se aplicará en AUTH-P1B
+ *     con controles server-side (Before User Created Hook + Send SMS Hook).
+ */
+export type OtpContext = 'login' | 'booking' | 'claim' | 'activation' | 'recovery'
+
+/**
+ * Mapa transitorio contexto → shouldCreateUser (APROBADO para P1A):
+ *   booking    → true  (flujo permitido de creación de pacientes)
+ *   login      → true  (transitorio: el flip llega con /activar-cuenta en P1C)
+ *   claim      → true  (seed/legacy sin auth.user crean el suyo al reclamar, s7_13)
+ *   activation → true  (SIN caller en P1A; la elegibilidad la decide P1B)
+ *   recovery   → false (SIN caller en P1A; recuperación jamás crea usuarios)
+ */
+// Exportado SOLO para el check estructural (check-auth-p1a-phone.mjs
+// verifica que cada contexto conserva el valor aprobado). No consumir
+// desde la UI: el contexto se pasa a sendOtp, no se decide por fuera.
+export const OTP_SHOULD_CREATE_USER: Readonly<Record<OtpContext, boolean>> = {
+  login: true,
+  booking: true,
+  claim: true,
+  activation: true,
+  recovery: false,
+}
 
 export interface AuthUser {
   id: string
@@ -97,11 +196,24 @@ export async function hardLocalSignOut(): Promise<void> {
 
 /**
  * Paso 1: Enviar OTP por SMS al teléfono del usuario.
- * Si el usuario no existe, Supabase lo crea automáticamente.
+ *
+ * AUTH-P1A: el CONTEXTO es obligatorio (ver `OtpContext` arriba: es
+ * clasificación funcional, no autorización server-side) y el teléfono se
+ * normaliza SIEMPRE con `toAuthPhone` — variantes de formato del mismo
+ * número no pueden producir identidades distintas.
  */
-export async function sendOtp(phone: string): Promise<{ success: boolean; error?: string }> {
+export async function sendOtp(
+  phone: string,
+  context: OtpContext,
+): Promise<{ success: boolean; error?: string }> {
+  const authPhone = toAuthPhone(phone)
+  if (!authPhone) {
+    return { success: false, error: 'Número de teléfono inválido. Verifica el formato.' }
+  }
+
   const { error } = await supabase.auth.signInWithOtp({
-    phone,
+    phone: authPhone,
+    options: { shouldCreateUser: OTP_SHOULD_CREATE_USER[context] },
   })
 
   if (error) {
@@ -126,11 +238,18 @@ export async function sendOtp(phone: string): Promise<{ success: boolean; error?
  * Si es correcto, crea la sesión JWT y el profile si no existe.
  */
 export async function verifyOtp(
-  phone: string, 
+  phone: string,
   token: string
 ): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
+  // Mismo formato único que sendOtp: la verificación debe apuntar al MISMO
+  // número al que se envió el código, sin depender del formato tipeado.
+  const authPhone = toAuthPhone(phone)
+  if (!authPhone) {
+    return { success: false, error: 'Número de teléfono inválido. Verifica el formato.' }
+  }
+
   const { data, error } = await supabase.auth.verifyOtp({
-    phone,
+    phone: authPhone,
     token,
     type: 'sms',
   })
@@ -152,8 +271,59 @@ export async function verifyOtp(
     return { success: false, error: 'No se pudo crear la sesión.' }
   }
 
+  // AUTH-P1A: la IDENTIDAD post-login proviene SIEMPRE de data.user.phone
+  // (lo autenticado según Supabase), nunca del texto tipeado. Sin teléfono
+  // autenticado no hay identidad utilizable → cierre seguro, sin
+  // side-effects, error genérico, sin datos sensibles en logs.
+  const appPhone = toAppPhone(data.user.phone)
+  if (!appPhone) {
+    await safeAbortSession('verifyOtp')
+    return { success: false, error: 'No se pudo crear la sesión.' }
+  }
+
+  const effects = await runPostLoginSideEffects(data.user.id, appPhone, {
+    // s7_44 (regla vinculante): la activación de una invitación de admin
+    // SOLO ocurre tras un OTP (prueba de posesión del teléfono).
+    includeAdminActivation: true,
+  })
+
+  return {
+    success: true,
+    user: {
+      id: data.user.id,
+      phone: appPhone,
+      name: effects.name,
+      role: effects.role,
+    },
+  }
+}
+
+/**
+ * Side-effects post-login COMPARTIDOS (AUTH-P1A).
+ *
+ * Se ejecutan después de CUALQUIER login del flujo teléfono (OTP y
+ * teléfono+contraseña) para que una invitación o vinculación posterior a la
+ * activación no quede huérfana cuando el usuario ya no vuelve a usar OTP.
+ * Todas las operaciones son idempotentes y self-gated SERVER-SIDE
+ * (ensureProfile: select-then-insert; las 3 RPCs solo actúan sobre
+ * pendientes propios) y fail-safe: jamás rompen el login.
+ *
+ * `includeAdminActivation`: `accept_platform_admin_invitation` corre
+ * ÚNICAMENTE tras OTP (regla vinculante de s7_44 — prueba de posesión del
+ * teléfono); NUNCA tras un login por contraseña.
+ *
+ * NOTA DE ALCANCE (AUTH-P1A): el "login con contraseña" de este frente es el
+ * flujo NUEVO teléfono+contraseña. El login legado por EMAIL
+ * (`signInWithEmail`) queda INTACTO en este PR: hoy no corre side-effects y
+ * sigue sin correrlos (decisión consciente, se revisará fuera de P1A).
+ */
+async function runPostLoginSideEffects(
+  userId: string,
+  phone: string,
+  opts: { includeAdminActivation: boolean },
+): Promise<{ role: string; name: string | null }> {
   // Verificar/crear profile en la tabla profiles
-  const profile = await ensureProfile(data.user.id, phone)
+  const profile = await ensureProfile(userId, phone)
 
   // Procesar invitaciones pendientes (si la asistente fue invitada por un doctor)
   // Esto puede cambiar el role del profile de 'patient' a 'assistant'
@@ -167,30 +337,32 @@ export async function verifyOtp(
       const { data: updated } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', data.user.id)
+        .eq('id', userId)
         .single()
       if (updated?.role) finalRole = updated.role
     }
   } catch (err) {
-    console.warn('[verifyOtp] error procesando invitaciones (no crítico):', err)
+    console.warn('[runPostLoginSideEffects] error procesando invitaciones (no crítico):', err)
   }
 
   // Administración de LucyAdmins Fase 1 (s7_44): activar una invitación de
   // admin pendiente al primer login/OTP (prueba de posesión del teléfono).
   // Fail-safe: si la RPC falla o no hay invitación, el login sigue normal.
   // La invitación pending NO otorga privilegios; recién acá se promueve.
-  try {
-    const { data: adminAct } = await supabase.rpc('accept_platform_admin_invitation')
-    if ((adminAct as { activated?: boolean } | null)?.activated) {
-      const { data: updated } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-      if (updated?.role) finalRole = updated.role
+  if (opts.includeAdminActivation) {
+    try {
+      const { data: adminAct } = await supabase.rpc('accept_platform_admin_invitation')
+      if ((adminAct as { activated?: boolean } | null)?.activated) {
+        const { data: updated } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .single()
+        if (updated?.role) finalRole = updated.role
+      }
+    } catch (err) {
+      console.warn('[runPostLoginSideEffects] accept_platform_admin_invitation (silenciado):', err)
     }
-  } catch (err) {
-    console.warn('[verifyOtp] accept_platform_admin_invitation (silenciado):', err)
   }
 
   // Paciente Global Fase 1 — vinculación retroactiva de patients legacy.
@@ -202,20 +374,75 @@ export async function verifyOtp(
     try {
       const { error: claimErr } = await supabase.rpc('claim_patient_records')
       if (claimErr) {
-        console.warn('[verifyOtp] claim_patient_records error (silenciado):', claimErr.message)
+        console.warn('[runPostLoginSideEffects] claim_patient_records error (silenciado):', claimErr.message)
       }
     } catch (err) {
-      console.warn('[verifyOtp] claim_patient_records exception (silenciado):', err)
+      console.warn('[runPostLoginSideEffects] claim_patient_records exception (silenciado):', err)
     }
   }
+
+  return { role: finalRole, name: profile?.full_name || null }
+}
+
+/**
+ * AUTH-P1A: login habitual con TELÉFONO + CONTRASEÑA.
+ *
+ * - Normaliza la entrada con `toAuthPhone` (mismo formato único que sendOtp).
+ * - Mensaje de error ÚNICO y genérico: no distingue "teléfono inexistente"
+ *   de "contraseña incorrecta" (no se filtra qué números tienen cuenta).
+ * - El error técnico se conserva solo para logging interno seguro (sin
+ *   teléfono, sin contraseña, sin tokens).
+ * - Ejecuta los side-effects compartidos SIN activación de admin (s7_44:
+ *   esa activación exige OTP).
+ */
+export async function signInWithPhonePassword(
+  phoneRaw: string,
+  password: string,
+): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
+  const GENERIC_ERROR = 'El teléfono o la contraseña no son correctos.'
+
+  const authPhone = toAuthPhone(phoneRaw)
+  if (!authPhone) {
+    // Entrada no interpretable como teléfono → mismo mensaje genérico.
+    return { success: false, error: GENERIC_ERROR }
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    phone: authPhone,
+    password,
+  })
+
+  if (error) {
+    // Logging interno SIN datos sensibles (ni teléfono ni contraseña).
+    console.warn('[signInWithPhonePassword] auth error:', error.name, error.status ?? '')
+    return { success: false, error: GENERIC_ERROR }
+  }
+
+  if (!data.user) {
+    return { success: false, error: 'No se pudo crear la sesión.' }
+  }
+
+  // PROTECCIÓN (AUTH-P1A): la identidad post-login proviene SIEMPRE de
+  // data.user.phone. Si el usuario autenticado no tiene teléfono, NO se
+  // ejecutan side-effects: cierre seguro de la sesión (mecanismo existente),
+  // error genérico, y ningún dato sensible en logs.
+  const appPhone = toAppPhone(data.user.phone)
+  if (!appPhone) {
+    await safeAbortSession('signInWithPhonePassword')
+    return { success: false, error: 'No se pudo crear la sesión.' }
+  }
+
+  const effects = await runPostLoginSideEffects(data.user.id, appPhone, {
+    includeAdminActivation: false,
+  })
 
   return {
     success: true,
     user: {
       id: data.user.id,
-      phone: phone,
-      name: profile?.full_name || null,
-      role: finalRole,
+      phone: appPhone,
+      name: effects.name,
+      role: effects.role,
     },
   }
 }
