@@ -16,6 +16,7 @@ import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { AUTH_PHONE_CASES, APP_PHONE_CASES } from './_lib/auth-phone-cases.mjs';
 
 // ─── Transpilar el módulo REAL a un .mjs temporal ───────────
 const require = createRequire(import.meta.url);
@@ -51,58 +52,17 @@ const check = (desc, got, expected) => {
 console.log('\ncheck-auth-p1a-phone — normalizador real (src/lib/authPhone.ts)\n');
 console.log(`  países habilitados: ${AUTH_COUNTRIES.map((c) => '+' + c.code).join(' ')}\n`);
 
-// ─── toAuthPhone: SV local, 503 y +503 (consistencia) ───────
-check('SV +503 E.164', toAuthPhone('+50378627694'), '+50378627694');
-check('SV 503 sin +', toAuthPhone('50378627694'), '+50378627694');
-check('SV local celular 7…', toAuthPhone('78627694'), '+50378627694');
-check('SV local celular 6…', toAuthPhone('61234567'), '+50361234567');
-check('SV local fijo 2…', toAuthPhone('22601234'), '+50322601234');
-// Consistencia local ↔ prefijado: la MISMA regla nacional en ambas formas.
-check('nacional inválido local (12345678)', toAuthPhone('12345678'), null);
-check('nacional inválido con 503 (50312345678)', toAuthPhone('50312345678'), null);
-check('nacional inválido con +503 (+50312345678)', toAuthPhone('+50312345678'), null);
-check('nacional 9… local', toAuthPhone('91234567'), null);
-check('nacional 9… con +503', toAuthPhone('+50391234567'), null);
-
-// ─── GT / HN / MX / US, con y sin + ─────────────────────────
-check('GT +502', toAuthPhone('+50255551234'), '+50255551234');
-check('GT 502', toAuthPhone('50255551234'), '+50255551234');
-check('GT nacional inválido (+50295551234)', toAuthPhone('+50295551234'), null);
-check('HN +504', toAuthPhone('+50499887766'), '+50499887766');
-check('HN 504', toAuthPhone('50499887766'), '+50499887766');
-check('MX +52 (10 nac.)', toAuthPhone('+525512345678'), '+525512345678');
-check('MX 52', toAuthPhone('525512345678'), '+525512345678');
-check('MX nacional inválido (+521512345678)', toAuthPhone('+521512345678'), null);
-check('US +1 (10 nac.)', toAuthPhone('+14155550100'), '+14155550100');
-check('US 1', toAuthPhone('14155550100'), '+14155550100');
-check('US área inválida (+11234567890)', toAuthPhone('+11234567890'), null);
-
-// ─── Limpieza de separadores ────────────────────────────────
-check('espacios y guion', toAuthPhone('+503 7862-7694'), '+50378627694');
-check('paréntesis', toAuthPhone('(503) 7862 7694'), '+50378627694');
-check('guion local', toAuthPhone('2260-1234'), '+50322601234');
-
-// ─── Longitud incorrecta ────────────────────────────────────
-check('+503 con 7 nac.', toAuthPhone('+5037862769'), null);
-check('+503 con 9 nac.', toAuthPhone('+503786276941'), null);
-check('503… longitud errada sin +', toAuthPhone('5037862769412'), null);
-check('MX con 9 nac.', toAuthPhone('+52551234567'), null);
-
-// ─── Prefijo incorrecto / caracteres inválidos / vacíos ─────
-check('+ código no habilitado', toAuthPhone('+9791234567'), null);
-check('letras', toAuthPhone('78627694x'), null);
-check('vacío', toAuthPhone(''), null);
-check('solo espacios', toAuthPhone('   '), null);
-check('null', toAuthPhone(null), null);
+// ─── toAuthPhone: matriz COMPLETA (fuente única compartida) ─────
+// Los casos viven en scripts/_lib/auth-phone-cases.mjs — la MISMA lista
+// que consume check-s7_65 para la paridad frontend ↔ SQL. No duplicar acá.
+for (const c of AUTH_PHONE_CASES) {
+  check(`toAuthPhone ${JSON.stringify(c.input)} — ${c.desc}`, toAuthPhone(c.input), c.expected);
+}
 
 // ─── toAppPhone: únicamente sobre E.164 válido ──────────────
-check('appPhone desde GoTrue SV (sin +)', toAppPhone('50378627694'), '50378627694');
-check('appPhone desde E.164 SV', toAppPhone('+50378627694'), '50378627694');
-check('appPhone desde GoTrue MX', toAppPhone('525512345678'), '525512345678');
-check('appPhone rechaza no canonicalizable', toAppPhone('12345678'), null);
-check('appPhone rechaza basura', toAppPhone('garbage'), null);
-check('appPhone null', toAppPhone(null), null);
-check('appPhone vacío', toAppPhone(''), null);
+for (const c of APP_PHONE_CASES) {
+  check(`toAppPhone ${JSON.stringify(c.input)} — ${c.desc}`, toAppPhone(c.input), c.expected);
+}
 
 // ─── C2: matching de país (config como única fuente de verdad) ──
 {

@@ -110,8 +110,18 @@ const LOCAL_DEFAULT: AuthCountry = AUTH_COUNTRIES.find((c) => c.code === '503')!
  *   6. RECHAZA (null) toda entrada ambigua o inválida, sin reinterpretarla
  *      como salvadoreña.
  */
+/**
+ * Corte temprano de longitud: una entrada absurdamente larga se rechaza
+ * ANTES de limpiar/evaluar expresiones regulares. DEBE mantenerse idéntico
+ * al de `public.auth_phone_e164` (s7_65) — si divergieran, un input largo
+ * podría normalizar distinto en frontend y en DB.
+ * 32 cubre con holgura el peor formato admitido ('(503) 7862 7694' = 15).
+ */
+const MAX_INPUT_LENGTH = 32
+
 export function toAuthPhone(input: string | null | undefined): string | null {
   if (input == null) return null
+  if (input.length > MAX_INPUT_LENGTH) return null
   const cleaned = input.trim().replace(/[\s\-().]/g, '')
   if (!cleaned) return null
   const hasPlus = cleaned.startsWith('+')

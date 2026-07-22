@@ -283,6 +283,53 @@ export type Database = {
         }
         Relationships: []
       }
+      auth_creation_grants: {
+        Row: {
+          booking_intent_id: string | null
+          context: Json | null
+          created_at: string
+          expires_at: string
+          flow: string
+          id: string
+          issued_by: string
+          revoked_at: string | null
+          subject_normalized: string
+          subject_type: string
+        }
+        Insert: {
+          booking_intent_id?: string | null
+          context?: Json | null
+          created_at?: string
+          expires_at: string
+          flow: string
+          id?: string
+          issued_by: string
+          revoked_at?: string | null
+          subject_normalized: string
+          subject_type: string
+        }
+        Update: {
+          booking_intent_id?: string | null
+          context?: Json | null
+          created_at?: string
+          expires_at?: string
+          flow?: string
+          id?: string
+          issued_by?: string
+          revoked_at?: string | null
+          subject_normalized?: string
+          subject_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auth_creation_grants_booking_intent_id_fkey"
+            columns: ["booking_intent_id"]
+            isOneToOne: false
+            referencedRelation: "booking_intents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       availability_overrides: {
         Row: {
           block_type_id: string | null
@@ -422,6 +469,77 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      booking_intents: {
+        Row: {
+          clinic_id: string
+          consumed_appointment_id: string | null
+          consumed_at: string | null
+          created_at: string
+          doctor_id: string
+          end_at: string
+          expires_at: string
+          id: string
+          phone_e164: string
+          service_id: string
+          start_at: string
+        }
+        Insert: {
+          clinic_id: string
+          consumed_appointment_id?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          doctor_id: string
+          end_at: string
+          expires_at: string
+          id?: string
+          phone_e164: string
+          service_id: string
+          start_at: string
+        }
+        Update: {
+          clinic_id?: string
+          consumed_appointment_id?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          doctor_id?: string
+          end_at?: string
+          expires_at?: string
+          id?: string
+          phone_e164?: string
+          service_id?: string
+          start_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_intents_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_intents_consumed_appointment_id_fkey"
+            columns: ["consumed_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_intents_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_intents_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cancel_reasons: {
         Row: {
@@ -1813,6 +1931,10 @@ export type Database = {
       accept_clinic_invitations: {
         Args: { user_phone: string }
         Returns: number
+      }
+      auth_phone_e164: {
+        Args: { p_input: string }
+        Returns: string
       }
       can_access_lucyadmin: {
         Args: Record<PropertyKey, never>
