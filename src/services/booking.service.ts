@@ -254,3 +254,154 @@ export async function cancelBooking(
 
   return { success: true }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTH-P1B1B — camino de reserva por INTENT (s7_66). Wrappers tipados.
+//
+// Superficie tipada de las RPCs register_booking_intent /
+// create_booking_with_intent, para consumirla desde la UI en PR B2. NO
+// reemplazan todavia el flujo de produccion: createBooking / getOrCreatePatient
+// (arriba) siguen siendo la ruta activa. Estos wrappers NO insertan
+// directamente en patients ni appointments (toda la escritura la hace la RPC
+// SECURITY DEFINER en el servidor), NO mantienen estado global y NO persisten
+// el intent. Conservan el SQLSTATE de PostgREST y NO exponen el mensaje interno
+// de PostgreSQL. Los textos visibles se definen en PR B2.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Categorias estables de error del camino de reserva por intent. */
+export type BookingIntentErrorCategory =
+  | 'invalid_phone'
+  | 'unavailable'
+  | 'too_many_requests'
+  | 'intent_missing_or_expired'
+  | 'already_consumed'
+  | 'phone_mismatch'
+  | 'availability_changed'
+  | 'doctor_or_service_unavailable'
+  | 'invalid_name'
+  | 'invalid_notes'
+  | 'unknown'
+
+/** Mapa SQLSTATE -> categoria. Codigos de s7_66 (docs/OWNER_S7_66_APPLY.md). */
+const BOOKING_INTENT_ERROR_CATEGORIES: Readonly<Record<string, BookingIntentErrorCategory>> = {
+  P0095: 'invalid_phone',
+  P009F: 'unavailable',
+  P009B: 'unavailable',
+  P0090: 'unavailable',
+  P009G: 'too_many_requests',
+  P0092: 'intent_missing_or_expired',
+  P0094: 'intent_missing_or_expired',
+  P0093: 'already_consumed',
+  P0096: 'phone_mismatch',
+  P0097: 'availability_changed',
+  P0098: 'availability_changed',
+  P0099: 'availability_changed',
+  P009A: 'availability_changed',
+  P009C: 'doctor_or_service_unavailable',
+  P009D: 'doctor_or_service_unavailable',
+  P009E: 'doctor_or_service_unavailable',
+  P009H: 'invalid_name',
+  P009I: 'invalid_name',
+  P009J: 'invalid_notes',
+}
+
+/**
+ * Clasifica un SQLSTATE de PostgREST en una categoria estable. Cualquier codigo
+ * no mapeado (incluido 28000 = sin sesion) cae en 'unknown'.
+ */
+export function bookingIntentErrorCategory(
+  code: string | null | undefined,
+): BookingIntentErrorCategory {
+  if (code && Object.prototype.hasOwnProperty.call(BOOKING_INTENT_ERROR_CATEGORIES, code)) {
+    return BOOKING_INTENT_ERROR_CATEGORIES[code]
+  }
+  return 'unknown'
+}
+
+/** Error de la capa de servicio: SQLSTATE crudo + su categoria. NO incluye el
+ *  mensaje interno de PostgreSQL (se omite a proposito). */
+export interface BookingIntentError {
+  code: string | null
+  category: BookingIntentErrorCategory
+}
+
+export interface RegisterBookingIntentInput {
+  doctorId: string
+  serviceId: string
+  /**
+   * Instante LOCAL sin offset, en el formato de los slots pero recortado al
+   * reloj de pared: `YYYY-MM-DDTHH:mm:ss` (sin `Z` ni `-06:00`). El caller
+   * (PR B2) es responsable de recortar el offset del `startTime` del slot.
+   */
+  startLocal: string
+  phone: string
+}
+export interface RegisterBookingIntentData {
+  intentId: string
+  reused: boolean
+}
+export type RegisterBookingIntentResult =
+  | { ok: true; data: RegisterBookingIntentData }
+  | { ok: false; error: BookingIntentError }
+
+export interface CreateBookingWithIntentInput {
+  intentId: string
+  patientName: string
+  notes?: string
+}
+export interface CreateBookingWithIntentData {
+  appointmentId: string
+}
+export type CreateBookingWithIntentResult =
+  | { ok: true; data: CreateBookingWithIntentData }
+  | { ok: false; error: BookingIntentError }
+
+/**
+ * Registra una intencion de reserva (pre-OTP; anon o authenticated). Llama
+ * public.register_booking_intent y devuelve intentId + reused. Idempotente por
+ * 5-tupla del lado del servidor. Conserva el SQLSTATE; no expone el mensaje
+ * interno; no modifica estado.
+ */
+export async function registerBookingIntent(
+  input: RegisterBookingIntentInput,
+): Promise<RegisterBookingIntentResult> {
+  const { data, error } = await supabase.rpc('register_booking_intent', {
+    p_doctor_id: input.doctorId,
+    p_service_id: input.serviceId,
+    p_start_local: input.startLocal,
+    p_phone: input.phone,
+  })
+  if (error) {
+    return { ok: false, error: { code: error.code ?? null, category: bookingIntentErrorCategory(error.code) } }
+  }
+  const payload = (data ?? null) as { intent_id?: string; reused?: boolean } | null
+  if (!payload?.intent_id) {
+    return { ok: false, error: { code: null, category: 'unknown' } }
+  }
+  return { ok: true, data: { intentId: payload.intent_id, reused: payload.reused === true } }
+}
+
+/**
+ * Crea la cita a partir de un intent ya emitido (post-OTP; authenticated). Llama
+ * public.create_booking_with_intent. Solo recibe intentId / patientName / notes:
+ * doctor, clinica, servicio, horario, patientId y telefono los resuelve la RPC
+ * server-side (el telefono sale del JWT). Devuelve appointmentId. NO inserta
+ * directamente en patients ni appointments. Conserva el SQLSTATE.
+ */
+export async function createBookingWithIntent(
+  input: CreateBookingWithIntentInput,
+): Promise<CreateBookingWithIntentResult> {
+  const { data, error } = await supabase.rpc('create_booking_with_intent', {
+    p_intent_id: input.intentId,
+    p_patient_name: input.patientName,
+    p_notes: input.notes,
+  })
+  if (error) {
+    return { ok: false, error: { code: error.code ?? null, category: bookingIntentErrorCategory(error.code) } }
+  }
+  const payload = (data ?? null) as { success?: boolean; appointment_id?: string } | null
+  if (!payload?.appointment_id) {
+    return { ok: false, error: { code: null, category: 'unknown' } }
+  }
+  return { ok: true, data: { appointmentId: payload.appointment_id } }
+}
