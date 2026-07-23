@@ -2196,6 +2196,35 @@ export type Database = {
         Returns: boolean
       }
       resend_invitation: { Args: { p_invitation_id: string }; Returns: string }
+      register_booking_intent: {
+        Args: {
+          p_doctor_id: string
+          p_service_id: string
+          p_start_local: string
+          p_phone: string
+        }
+        Returns: Json
+      }
+      create_booking_with_intent: {
+        Args: {
+          p_intent_id: string
+          p_patient_name: string
+          p_notes?: string
+        }
+        Returns: Json
+      }
+      validate_booking_slot: {
+        Args: {
+          p_doctor_id: string
+          p_service_id: string
+          p_start_local: string
+        }
+        Returns: {
+          o_clinic_id: string
+          o_start_at: string
+          o_end_at: string
+        }[]
+      }
     }
     Enums: {
       appointment_source: "manual" | "lucy_directorio" | "lucy_seguimiento"
