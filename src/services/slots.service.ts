@@ -17,8 +17,10 @@
 import { supabase } from '../lib/supabase'
 
 export interface TimeSlot {
-  startTime: string    // ISO string: 2026-04-10T09:00:00-06:00
-  endTime: string      // ISO string: 2026-04-10T09:30:00-06:00
+  // Reloj LOCAL (America/El_Salvador) SIN offset, generado en generateSlots:
+  // `${date}T${HH}:${MM}:00`. NO lleva `-06:00` ni `Z`. Ej: 2026-04-10T09:00:00
+  startTime: string
+  endTime: string      // Igual que startTime, sin offset. Ej: 2026-04-10T09:30:00
   displayTime: string  // "9:00 AM"
   available: boolean
 }

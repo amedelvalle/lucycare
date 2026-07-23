@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   sendOtp,
@@ -11,8 +11,20 @@ import {
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Disparado después de OTP teléfono exitoso (continúa flujo del caller). */
-  onSuccess: () => void;
+  /**
+   * Disparado después de OTP teléfono exitoso. En 'booking' entrega el
+   * `intentId` registrado en `onBeforeSendOtp` (o `undefined` si no aplica).
+   * Retrocompatible con consumidores que ignoran el argumento (`() => void`).
+   */
+  onSuccess: (intentId?: string) => void;
+  /**
+   * AUTH-P1B1B (solo 'booking'): registra la intención de reserva ANTES de
+   * enviar el OTP, con el mismo `fullPhone` al que se enviará el código. Si
+   * devuelve `{ ok: false }` se muestra el error y NO se envía OTP; si
+   * `{ ok: true }` el `intentId` se guarda en un ref y se entrega a `onSuccess`
+   * tras verificar. Opcional: quien no lo pasa conserva el flujo previo.
+   */
+  onBeforeSendOtp?: (fullPhone: string) => Promise<{ ok: boolean; intentId?: string; error?: string }>;
   /**
    * AUTH-P1A — contexto OBLIGATORIO del OTP (sin default: cada mount declara
    * su intención o el build falla). 'login' = ingreso genérico (header/Home);
@@ -37,9 +49,12 @@ const formatSvPhone = (value: string): { rawDigits: string; displayValue: string
   return { rawDigits: limited, displayValue: formatted };
 };
 
-export default function LoginModal({ isOpen, onClose, onSuccess, context }: LoginModalProps) {
+export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp, context }: LoginModalProps) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('phone');
+  // AUTH-P1B1B: intentId devuelto por onBeforeSendOtp. Ref SÍNCRONO (no setState
+  // async) para entregarlo a onSuccess tras verificar el OTP. Sin persistencia.
+  const intentIdRef = useRef<string | null>(null);
 
   // ─── Phone tab ───
   const [phoneStep, setPhoneStep] = useState<PhoneStep>('phone');
@@ -133,6 +148,16 @@ export default function LoginModal({ isOpen, onClose, onSuccess, context }: Logi
     }
     setLoading(true);
     try {
+      // AUTH-P1B1B (booking): registrar la intención de reserva ANTES del OTP,
+      // con el MISMO fullPhone. Si falla, no se envía OTP.
+      if (onBeforeSendOtp) {
+        const pre = await onBeforeSendOtp(fullPhone);
+        if (!pre.ok) {
+          setError(pre.error || 'No pudimos preparar la reserva. Inténtalo de nuevo.');
+          return;
+        }
+        intentIdRef.current = pre.intentId ?? null;
+      }
       const result = await sendOtp(fullPhone, context);
       if (result.success) {
         setPhoneStep('otp');
@@ -158,7 +183,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, context }: Logi
     try {
       const result = await verifyOtp(fullPhone, otpCode);
       if (result.success) {
-        onSuccess();
+        onSuccess(intentIdRef.current ?? undefined);
         resetState();
       } else {
         setError(result.error || 'Código incorrecto');
@@ -238,6 +263,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, context }: Logi
     setError('');
     setPhoneError('');
     setResendCountdown(0);
+    intentIdRef.current = null;
   };
 
   const handleClose = () => {
@@ -263,6 +289,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, context }: Logi
     if (tab === 'phone' && phoneStep === 'otp') {
       setPhoneStep('phone');
       setOtpCode('');
+      intentIdRef.current = null; // volver al teléfono: cambiarlo registra otro intent
     } else if (tab === 'email' && emailStep === 'forgot') {
       setEmailStep('login');
     } else if (tab === 'email' && emailStep === 'forgot_sent') {
