@@ -4,6 +4,31 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
+> 🟢 **ESTADO VIGENTE (2026-07-22) — AUTH-P1B1B etapa A / `s7_66` APLICADA y VERIFICADA.**
+> Punto de entrada: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-22_AUTH_P1B1B_S7_66.md` (leer PRIMERO).
+> **AUTH-P1A ✅ (#297)**, **AUTH-P1B1A ✅ (#298 / `s7_65`; Before User Created Hook creado pero
+> SIN configurar)** y **AUTH-P1B1B etapa A ✅ (`s7_66`)**: las 3 RPCs de reserva por intent
+> (`validate_booking_slot` interno · `register_booking_intent` anon+authenticated ·
+> `create_booking_with_intent` authenticated) **aplicadas en Supabase y verificadas**.
+> **`create` usa `SET search_path = pg_catalog, public, pg_temp`** (excepción necesaria: escribe
+> en `patients` → trigger legacy `audit_patients` que hereda el search_path; con `''` daba
+> `42P01`); `validate`/`register` quedan en `''`. Preflight de seguridad del schema `public`
+> OK (PUBLIC/anon/authenticated **sin** CREATE; solo `pg_database_owner`). **Verificación:**
+> §A1–§A4 verdes · `check-s7_66 --runtime` **32/32** · `_smoke-s7_66` E2E **34/34** (idempotencia,
+> P-codes `P0093/P0094/P0095/P0096/P009B/P009F`, mapeo patient/appointment, no-sobrescritura,
+> teléfono distinto, **concurrencia real con un solo ganador + rollback del perdedor**),
+> **0 residuos operativos AP66**, 4 auth.users sintéticos borrados y verificados, `audit_log`
+> append-only preservado (2 filas sintéticas, **fuera** del objetivo de cleanup), Test Phones
+> `503700066 01/02` **ya retirados**. **ADITIVA:** `appointments_insert` sigue **INTACTO** (el
+> bypass lo cierra `s7_67`/paso C). **PR de la etapa A: abierto (rama `claude/auth-p1b1b-s7-66`).**
+> **Siguiente paso: FRONTEND (paso B)** — `BookingCard`/`LoginModal`/`booking.service` al camino
+> de intents; **después `s7_67`** (REVOKE INSERT a anon + `appointments_insert` = solo
+> `is_clinic_member`). **Prohibiciones vigentes:** no configurar el Auth Hook · no iniciar
+> frontend/paso B, `s7_67` ni B1C sin instrucción · no tocar Twilio/P1C/P1D/F1-c2 · fixtures
+> jamás Camilo/Katherine (`AP66_FIXTURE`/`503700066xx`) · **deuda técnica documentada:** los
+> triggers de auditoría legacy (`audit_patients` s4_02, `audit_profiles_identity` s7_32) usan
+> `auth.uid()`/`search_path` del caller y chocan con `service_role`/`''` en tablas auditadas.
+
 ## Cómo retomar el proyecto en una sesión nueva
 
 `origin/main` (GitHub) es la **única fuente de verdad**. Antes de
