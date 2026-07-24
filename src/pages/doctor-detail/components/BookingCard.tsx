@@ -68,6 +68,23 @@ export default function BookingCard({
   // servicio/fecha/slot y ante categorías de error que lo invalidan.
   const intentIdRef = useRef<string | null>(null);
 
+  // AUTH-P1B1B — clave estable del CONTEXTO de reserva.
+  // Se usa como `key` de LoginModal: al cambiar cualquiera de sus partes React
+  // DESMONTA y remonta el modal, descartando TODO su estado interno (paso
+  // teléfono/OTP, número, código, countdown y su propio intentIdRef). Sin esto,
+  // cerrar el modal en el paso OTP y cambiar de slot dejaba vivo el intent
+  // ANTERIOR: al verificar el código se reservaba el horario viejo mostrando
+  // éxito, mientras la UI marcaba el nuevo.
+  // `isOpen` NO forma parte de la clave: abrir/cerrar sin tocar la reserva
+  // conserva el paso OTP y reutiliza el intent vigente.
+  const bookingContextKey = [
+    doctorId,
+    clinicId ?? '',
+    selectedService?.id ?? '',
+    selectedDate,
+    selectedSlotStart,
+  ].join('|');
+
   const isAuthenticated = !!currentUser;
   const statusUpper = lucyStatus?.toUpperCase() || 'LISTED_ONLY';
 
@@ -521,7 +538,7 @@ export default function BookingCard({
         )}
       </div>
 
-      <LoginModal context="booking" isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onSuccess={handleLoginSuccess} onBeforeSendOtp={registerIntentBeforeOtp} />
+      <LoginModal key={bookingContextKey} context="booking" isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onSuccess={handleLoginSuccess} onBeforeSendOtp={registerIntentBeforeOtp} />
       <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorId={doctorId} doctorName={doctorName} />
     </>
   );
