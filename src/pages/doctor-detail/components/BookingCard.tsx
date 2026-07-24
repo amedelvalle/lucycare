@@ -1,13 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import LoginModal from './LoginModal';
 import WaitlistModal from './WaitlistModal';
 import { getCurrentAuthUser, signOut } from '../../../services/auth.service';
 import { useAvailableSlots, useAvailableDays } from '../../../hooks/useBooking';
-import { createBooking } from '../../../services/booking.service';
+import { registerBookingIntent, createBookingWithIntent } from '../../../services/booking.service';
+import type { BookingIntentError, BookingIntentErrorCategory } from '../../../services/booking.service';
 import { localDateStr } from '../../../services/slots.service';
 import { supabase } from '../../../lib/supabase';
 import type { AuthUser } from '../../../services/auth.service';
 import type { DoctorService } from '../../../types/directory.types';
+
+/**
+ * AUTH-P1B1B — mensajes visibles del camino de reserva por intent. TUTEO
+ * obligatorio (no voseo), aunque existan constantes con voseo en otras partes.
+ */
+const BOOKING_INTENT_MESSAGES: Record<BookingIntentErrorCategory, string> = {
+  invalid_phone: 'El número de teléfono no es válido.',
+  unavailable: 'Ese horario ya no está disponible. Elige otro horario.',
+  too_many_requests: 'Tienes varias reservas en curso. Espera unos minutos e inténtalo de nuevo.',
+  intent_missing_or_expired: 'La reserva expiró. Elige el horario nuevamente.',
+  already_consumed: 'Esta reserva ya se completó.',
+  phone_mismatch: 'El teléfono de tu sesión no coincide con la reserva. Inicia sesión de nuevo.',
+  availability_changed: 'El médico ya no tiene disponibilidad en ese horario. Elige otro.',
+  doctor_or_service_unavailable: 'Este médico o servicio ya no está disponible para reservas en línea.',
+  invalid_name: 'Necesitamos un nombre válido para la reserva.',
+  invalid_notes: 'Las notas son demasiado largas.',
+  unknown: 'No pudimos completar la reserva. Inténtalo de nuevo.',
+};
+
+// startLocal debe ser reloj local sin offset: YYYY-MM-DDTHH:mm:ss (ver slots.service).
+const START_LOCAL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
 
 interface BookingCardProps {
   doctorId: string;
@@ -42,6 +64,26 @@ export default function BookingCard({
   const [booking, setBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingError, setBookingError] = useState('');
+  // AUTH-P1B1B: intentId vigente, SOLO en memoria. Se limpia al cambiar
+  // servicio/fecha/slot y ante categorías de error que lo invalidan.
+  const intentIdRef = useRef<string | null>(null);
+
+  // AUTH-P1B1B — clave estable del CONTEXTO de reserva.
+  // Se usa como `key` de LoginModal: al cambiar cualquiera de sus partes React
+  // DESMONTA y remonta el modal, descartando TODO su estado interno (paso
+  // teléfono/OTP, número, código, countdown y su propio intentIdRef). Sin esto,
+  // cerrar el modal en el paso OTP y cambiar de slot dejaba vivo el intent
+  // ANTERIOR: al verificar el código se reservaba el horario viejo mostrando
+  // éxito, mientras la UI marcaba el nuevo.
+  // `isOpen` NO forma parte de la clave: abrir/cerrar sin tocar la reserva
+  // conserva el paso OTP y reutiliza el intent vigente.
+  const bookingContextKey = [
+    doctorId,
+    clinicId ?? '',
+    selectedService?.id ?? '',
+    selectedDate,
+    selectedSlotStart,
+  ].join('|');
 
   const isAuthenticated = !!currentUser;
   const statusUpper = lucyStatus?.toUpperCase() || 'LISTED_ONLY';
@@ -128,47 +170,124 @@ export default function BookingCard({
   const handleSlotSelect = (startTime: string, endTime: string) => {
     setSelectedSlotStart(startTime);
     setSelectedSlotEnd(endTime);
+    intentIdRef.current = null; // nuevo slot ⇒ intent anterior obsoleto
   };
 
-  const handleBooking = async () => {
-    if (!canBook || !selectedService || !selectedSlotStart) return;
+  // Mapea el error de la RPC a mensaje visible y limpia el intent en memoria
+  // ante las categorías que lo invalidan.
+  const handleIntentError = (error: BookingIntentError) => {
+    setBookingError(BOOKING_INTENT_MESSAGES[error.category] ?? BOOKING_INTENT_MESSAGES.unknown);
+    if (
+      error.category === 'intent_missing_or_expired' ||
+      error.category === 'already_consumed' ||
+      error.category === 'phone_mismatch' ||
+      error.category === 'availability_changed'
+    ) {
+      intentIdRef.current = null;
+    }
+  };
 
-    if (!isAuthenticated) {
-      setShowLoginModal(true);
+  // Completa la reserva a partir de un intent ya emitido, usando el objeto de
+  // usuario LOCAL (no el estado currentUser, que puede no haber propagado).
+  const completeBooking = async (intentId: string, user: AuthUser) => {
+    const patientName = (user.name?.trim() || user.phone || '').trim();
+    if (!patientName) {
+      setBookingError(BOOKING_INTENT_MESSAGES.invalid_name);
       return;
     }
-
-    setBooking(true);
-    setBookingError('');
-
-    const result = await createBooking({
-      doctorId,
-      clinicId: clinicId || '',
-      serviceId: selectedService.id,
-      startTime: selectedSlotStart,
-      endTime: selectedSlotEnd,
-      patientName: currentUser?.name || currentUser?.phone || '',
-      patientPhone: currentUser?.phone || '',
-    });
-
-    setBooking(false);
-
-    if (result.success) {
+    const res = await createBookingWithIntent({ intentId, patientName });
+    if (res.ok) {
+      intentIdRef.current = null;
       setBookingSuccess(true);
       setSelectedService(null);
       setSelectedDate('');
       setSelectedSlotStart('');
       setSelectedSlotEnd('');
     } else {
-      setBookingError(result.error || 'Error al reservar');
+      handleIntentError(res.error);
     }
   };
 
-  const handleLoginSuccess = async () => {
+  // Callback pre-OTP del LoginModal (context='booking'): registra el intent con
+  // el MISMO fullPhone al que se enviará el OTP. Devuelve el intentId.
+  const registerIntentBeforeOtp = async (
+    fullPhone: string,
+  ): Promise<{ ok: boolean; intentId?: string; error?: string }> => {
+    if (!selectedService || !selectedSlotStart || !START_LOCAL_RE.test(selectedSlotStart)) {
+      return { ok: false, error: BOOKING_INTENT_MESSAGES.unknown };
+    }
+    const reg = await registerBookingIntent({
+      doctorId,
+      serviceId: selectedService.id,
+      startLocal: selectedSlotStart,
+      phone: fullPhone,
+    });
+    if (!reg.ok) {
+      return { ok: false, error: BOOKING_INTENT_MESSAGES[reg.error.category] ?? BOOKING_INTENT_MESSAGES.unknown };
+    }
+    intentIdRef.current = reg.data.intentId;
+    return { ok: true, intentId: reg.data.intentId };
+  };
+
+  const handleBooking = async () => {
+    if (!canBook || !selectedService || !selectedSlotStart || booking) return;
+
+    // startLocal debe ser reloj local sin offset (YYYY-MM-DDTHH:mm:ss).
+    if (!START_LOCAL_RE.test(selectedSlotStart)) {
+      setBookingError(BOOKING_INTENT_MESSAGES.unknown);
+      return;
+    }
+
+    // Sin sesión: abrir LoginModal. onBeforeSendOtp registrará el intent.
+    if (!isAuthenticated) {
+      setBookingError('');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // Autenticado: el teléfono debe estar en la sesión (la RPC lo toma del JWT).
+    if (!currentUser?.phone) {
+      setBookingError('Para reservar como paciente, inicia sesión con tu número de teléfono.');
+      return;
+    }
+
+    setBooking(true);
+    setBookingError('');
+    try {
+      const reg = await registerBookingIntent({
+        doctorId,
+        serviceId: selectedService.id,
+        startLocal: selectedSlotStart,
+        phone: currentUser.phone,
+      });
+      if (!reg.ok) {
+        handleIntentError(reg.error);
+        return;
+      }
+      intentIdRef.current = reg.data.intentId;
+      await completeBooking(reg.data.intentId, currentUser);
+    } finally {
+      setBooking(false);
+    }
+  };
+
+  const handleLoginSuccess = async (intentId?: string) => {
     setShowLoginModal(false);
+    // Usuario autenticado FRESCO (no esperar a que setCurrentUser propague).
     const user = await getCurrentAuthUser();
     setCurrentUser(user);
-    // No intentar booking automático — dejar que el usuario haga clic en "Reservar ahora"
+    if (!intentId || !user) {
+      setBookingError(BOOKING_INTENT_MESSAGES.unknown);
+      return;
+    }
+    setBooking(true);
+    setBookingError('');
+    try {
+      intentIdRef.current = intentId;
+      await completeBooking(intentId, user);
+    } finally {
+      setBooking(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -292,7 +411,7 @@ export default function BookingCard({
                 {services.map((service) => (
                   <button
                     key={service.id}
-                    onClick={() => setSelectedService(service)}
+                    onClick={() => { setSelectedService(service); intentIdRef.current = null; }}
                     className={`w-full p-3 rounded-lg border-2 transition-all text-left cursor-pointer ${
                       selectedService?.id === service.id ? 'border-brand-purple bg-brand-mint/20' : 'border-gray-200 hover:border-gray-300'
                     }`}
@@ -324,6 +443,7 @@ export default function BookingCard({
                   setSelectedDate(e.target.value);
                   setSelectedSlotStart('');
                   setSelectedSlotEnd('');
+                  intentIdRef.current = null; // nueva fecha ⇒ intent obsoleto
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent cursor-pointer"
               />
@@ -418,7 +538,7 @@ export default function BookingCard({
         )}
       </div>
 
-      <LoginModal context="booking" isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onSuccess={handleLoginSuccess} />
+      <LoginModal key={bookingContextKey} context="booking" isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onSuccess={handleLoginSuccess} onBeforeSendOtp={registerIntentBeforeOtp} />
       <WaitlistModal isOpen={showWaitlistModal} onClose={() => setShowWaitlistModal(false)} doctorId={doctorId} doctorName={doctorName} />
     </>
   );
