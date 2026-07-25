@@ -93,23 +93,39 @@ async function safeAbortSession(logTag: string): Promise<boolean> {
 export type OtpContext = 'login' | 'booking' | 'claim' | 'activation' | 'recovery'
 
 /**
- * Mapa transitorio contexto → shouldCreateUser (APROBADO para P1A):
- *   booking    → true  (flujo permitido de creación de pacientes)
- *   login      → true  (transitorio: el flip llega con /activar-cuenta en P1C)
+ * Mapa contexto → shouldCreateUser (APROBADO en AUTH-P1B2A):
+ *   booking    → true  (flujo permitido de creación de pacientes: el intent
+ *                       emite el auth_creation_grant ANTES del OTP, s7_66)
+ *   login      → false (DECISIÓN DE PRODUCTO CONGELADA: el login genérico
+ *                       NUNCA origina una cuenta. Un teléfono sin cuenta
+ *                       recibe NO_ACCOUNT_LOGIN_MESSAGE y se le guía a
+ *                       reservar; JAMÁS se crea auth.user/profile/paciente)
  *   claim      → true  (seed/legacy sin auth.user crean el suyo al reclamar, s7_13)
- *   activation → true  (SIN caller en P1A; la elegibilidad la decide P1B)
- *   recovery   → false (SIN caller en P1A; recuperación jamás crea usuarios)
+ *   activation → true  (SIN caller aún; la elegibilidad server-side la decide
+ *                       el Before User Created Hook, s7_65)
+ *   recovery   → false (SIN caller aún; recuperación jamás crea usuarios)
  */
-// Exportado SOLO para el check estructural (check-auth-p1a-phone.mjs
-// verifica que cada contexto conserva el valor aprobado). No consumir
-// desde la UI: el contexto se pasa a sendOtp, no se decide por fuera.
+// Exportado SOLO para el check estructural (check-auth-p1a-phone.mjs /
+// check-auth-p1b2a-login-gating.mjs verifican que cada contexto conserva el
+// valor aprobado). No consumir desde la UI: el contexto se pasa a sendOtp, no
+// se decide por fuera.
 export const OTP_SHOULD_CREATE_USER: Readonly<Record<OtpContext, boolean>> = {
-  login: true,
+  login: false,
   booking: true,
   claim: true,
   activation: true,
   recovery: false,
 }
+
+/**
+ * Mensaje visible cuando un login genérico (shouldCreateUser=false) apunta a
+ * un teléfono SIN cuenta. Tuteo, claro y accionable: guía a reservar (único
+ * camino de creación de pacientes) SIN confirmar de forma tajante si el número
+ * tiene o no cuenta — el mismo texto sirve para "no existe" y "número mal
+ * tipeado". No se crea ningún auth.user/profile/paciente.
+ */
+export const NO_ACCOUNT_LOGIN_MESSAGE =
+  'No pudimos enviarte un código a ese número. Si es tu primera vez en Lucy, reserva una cita para crear tu cuenta; si ya tienes cuenta, revisa el número e intenta de nuevo.'
 
 export interface AuthUser {
   id: string
@@ -218,7 +234,7 @@ export async function sendOtp(
 
   if (error) {
     console.error('Error enviando OTP:', error)
-    
+
     // Mensajes de error amigables
     if (error.message.includes('rate limit')) {
       return { success: false, error: 'Demasiados intentos. Espera un momento antes de intentar de nuevo.' }
@@ -226,7 +242,18 @@ export async function sendOtp(
     if (error.message.includes('invalid phone')) {
       return { success: false, error: 'Número de teléfono inválido. Verifica el formato.' }
     }
-    
+    // Login genérico (shouldCreateUser=false) sobre un teléfono SIN cuenta:
+    // GoTrue responde "Signups not allowed for otp" (code 'otp_disabled') y NO
+    // crea nada. Se traduce a un mensaje que guía a reservar sin revelar de
+    // más la existencia de la cuenta.
+    if (
+      (error as { code?: string }).code === 'otp_disabled' ||
+      /signups?\s+not\s+allowed/i.test(error.message) ||
+      /otp_disabled|signup_disabled/i.test(error.message)
+    ) {
+      return { success: false, error: NO_ACCOUNT_LOGIN_MESSAGE }
+    }
+
     return { success: false, error: error.message }
   }
 
