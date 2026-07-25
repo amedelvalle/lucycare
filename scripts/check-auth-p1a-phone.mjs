@@ -149,7 +149,8 @@ for (const c of APP_PHONE_CASES) {
   ], { stdio: 'pipe' });
   const { OTP_SHOULD_CREATE_USER } = await import(pathToFileURL(svcFile).href);
 
-  const APPROVED = { login: true, booking: true, claim: true, activation: true, recovery: false };
+  // AUTH-P1B2A: login → false (el login genérico nunca crea cuenta).
+  const APPROVED = { login: false, booking: true, claim: true, activation: true, recovery: false };
   for (const [ctx, expected] of Object.entries(APPROVED)) {
     check(`contexto '${ctx}' → shouldCreateUser=${expected} (mapa aprobado)`, OTP_SHOULD_CREATE_USER[ctx], expected);
   }
