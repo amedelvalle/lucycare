@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import LoginModal from './LoginModal';
 import WaitlistModal from './WaitlistModal';
 import { getCurrentAuthUser, signOut } from '../../../services/auth.service';
@@ -67,6 +68,7 @@ export default function BookingCard({
   // AUTH-P1B1B: intentId vigente, SOLO en memoria. Se limpia al cambiar
   // servicio/fecha/slot y ante categorías de error que lo invalidan.
   const intentIdRef = useRef<string | null>(null);
+  const queryClient = useQueryClient();
 
   // AUTH-P1B1B — clave estable del CONTEXTO de reserva.
   // Se usa como `key` de LoginModal: al cambiar cualquiera de sus partes React
@@ -203,6 +205,12 @@ export default function BookingCard({
       setSelectedDate('');
       setSelectedSlotStart('');
       setSelectedSlotEnd('');
+      // La cita recién creada debe verse de inmediato en "Mis atenciones".
+      // Se invalida la consulta canónica del paciente (la DB sigue siendo la
+      // fuente de verdad); no se agrega una cita al estado local. Con el
+      // staleTime global de 2 min, sin esto la página reutilizaría el cache y
+      // la cita nueva no aparecería hasta un refetch/reingreso.
+      queryClient.invalidateQueries({ queryKey: ['my-appointments'] });
     } else {
       handleIntentError(res.error);
     }
@@ -276,15 +284,40 @@ export default function BookingCard({
     // Usuario autenticado FRESCO (no esperar a que setCurrentUser propague).
     const user = await getCurrentAuthUser();
     setCurrentUser(user);
-    if (!intentId || !user) {
+    if (!user) {
       setBookingError(BOOKING_INTENT_MESSAGES.unknown);
       return;
     }
     setBooking(true);
     setBookingError('');
     try {
-      intentIdRef.current = intentId;
-      await completeBooking(intentId, user);
+      let effectiveIntentId = intentId;
+      if (!effectiveIntentId) {
+        // AUTH-P1C1: acceso por TELÉFONO+CONTRASEÑA (paciente existente). El
+        // intent aún no se registró (no pasó por onBeforeSendOtp). Se registra
+        // ahora con el teléfono de la sesión — sin crear otro usuario.
+        if (!selectedService || !selectedSlotStart || !START_LOCAL_RE.test(selectedSlotStart)) {
+          setBookingError(BOOKING_INTENT_MESSAGES.unknown);
+          return;
+        }
+        if (!user.phone) {
+          setBookingError('Para reservar como paciente, inicia sesión con tu número de teléfono.');
+          return;
+        }
+        const reg = await registerBookingIntent({
+          doctorId,
+          serviceId: selectedService.id,
+          startLocal: selectedSlotStart,
+          phone: user.phone,
+        });
+        if (!reg.ok) {
+          handleIntentError(reg.error);
+          return;
+        }
+        effectiveIntentId = reg.data.intentId;
+      }
+      intentIdRef.current = effectiveIntentId;
+      await completeBooking(effectiveIntentId, user);
     } finally {
       setBooking(false);
     }

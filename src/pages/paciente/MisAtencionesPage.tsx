@@ -69,6 +69,11 @@ export default function MisAtencionesPage() {
     queryKey: ['my-appointments', page],
     queryFn: () => listMyAppointments({ page, pageSize: PAGE_SIZE }),
     placeholderData: (prev) => prev,
+    // Al abrir "Mis atenciones" siempre se trae el estado actual desde la DB
+    // (con el staleTime global de 2 min, sin esto se reutilizaría un cache
+    // obsoleto y una cita recién creada/cancelada no se reflejaría sin
+    // reingreso). La DB sigue siendo la fuente de verdad.
+    refetchOnMount: 'always',
   });
 
   const rows = data?.rows ?? [];

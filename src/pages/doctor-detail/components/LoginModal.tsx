@@ -2,19 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   sendOtp,
-  verifyOtp,
+  verifyOtpForPasswordSetup,
   signInWithEmail,
+  signInWithPhonePassword,
+  setPasswordFromClaim,
   requestPasswordReset,
   destinationForRole,
 } from '../../../services/auth.service';
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_HINT } from '../../../lib/password';
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   /**
-   * Disparado después de OTP teléfono exitoso. En 'booking' entrega el
-   * `intentId` registrado en `onBeforeSendOtp` (o `undefined` si no aplica).
-   * Retrocompatible con consumidores que ignoran el argumento (`() => void`).
+   * Disparado después de completar el acceso por TELÉFONO (teléfono+contraseña,
+   * o código + creación de contraseña). En 'booking' entrega el `intentId`
+   * registrado en `onBeforeSendOtp` cuando el acceso fue por código (o
+   * `undefined` cuando fue por teléfono+contraseña — el caller registra el
+   * intent al continuar). Retrocompatible con `() => void`.
    */
   onSuccess: (intentId?: string) => void;
   /**
@@ -22,21 +27,26 @@ interface LoginModalProps {
    * enviar el OTP, con el mismo `fullPhone` al que se enviará el código. Si
    * devuelve `{ ok: false }` se muestra el error y NO se envía OTP; si
    * `{ ok: true }` el `intentId` se guarda en un ref y se entrega a `onSuccess`
-   * tras verificar. Opcional: quien no lo pasa conserva el flujo previo.
+   * tras completar la contraseña. Opcional: quien no lo pasa conserva el flujo.
    */
   onBeforeSendOtp?: (fullPhone: string) => Promise<{ ok: boolean; intentId?: string; error?: string }>;
   /**
    * AUTH-P1A — contexto OBLIGATORIO del OTP (sin default: cada mount declara
    * su intención o el build falla). 'login' = ingreso genérico (header/Home);
-   * 'booking' = autenticación dentro de la reserva (flujo permitido de
-   * creación de pacientes). Es clasificación funcional, no autorización
-   * server-side (ver OtpContext en auth.service).
+   * 'booking' = autenticación dentro de la reserva. Es clasificación funcional,
+   * no autorización server-side (ver OtpContext en auth.service). Gobierna el
+   * `shouldCreateUser` del código: 'login' → false (nunca crea), 'booking' →
+   * true (creación autorizada por booking_intent).
    */
   context: 'login' | 'booking';
 }
 
 type Tab = 'phone' | 'email';
-type PhoneStep = 'phone' | 'otp';
+// AUTH-P1C1 — tab Teléfono:
+//   'credentials'  = acceso principal: teléfono + contraseña.
+//   'otp'          = secundario "Usar un código": verificación por OTP.
+//   'set_password' = paso OBLIGATORIO tras el OTP: crear/restablecer contraseña.
+type PhoneStep = 'credentials' | 'otp' | 'set_password';
 type EmailStep = 'login' | 'forgot' | 'forgot_sent';
 
 const formatSvPhone = (value: string): { rawDigits: string; displayValue: string } => {
@@ -53,15 +63,21 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('phone');
   // AUTH-P1B1B: intentId devuelto por onBeforeSendOtp. Ref SÍNCRONO (no setState
-  // async) para entregarlo a onSuccess tras verificar el OTP. Sin persistencia.
+  // async) para entregarlo a onSuccess tras completar la contraseña. Sin persistencia.
   const intentIdRef = useRef<string | null>(null);
+  // AUTH-P1C1: token de la sesión OTP capturado tras verificar, para setear la
+  // contraseña vía fetch (patrón de ClaimProfileModal). Solo en memoria.
+  const sessionTokenRef = useRef<{ accessToken: string; userId: string } | null>(null);
 
   // ─── Phone tab ───
-  const [phoneStep, setPhoneStep] = useState<PhoneStep>('phone');
+  const [phoneStep, setPhoneStep] = useState<PhoneStep>('credentials');
   const [phoneRaw, setPhoneRaw] = useState('');
   const [phoneDisplay, setPhoneDisplay] = useState('');
   const [countryCode, setCountryCode] = useState('+503');
+  const [loginPassword, setLoginPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
@@ -76,25 +92,24 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Cerrar con Escape (excepto durante loading). Cierre por click
-  // fuera del modal está DESHABILITADO a propósito para no perder
-  // contexto cuando el usuario tipea en mobile/desktop. El modal
-  // solo se cierra por X, Escape, o éxito.
+  // Cerrar con Escape (excepto durante loading y durante el paso OBLIGATORIO de
+  // contraseña). El cierre por click fuera del modal está DESHABILITADO a
+  // propósito. El modal solo se cierra por X, Escape, o éxito.
   //
   // IMPORTANTE: este hook debe declararse ANTES del early return
-  // `if (!isOpen) return null` — si va después, React detecta orden
-  // de hooks variable entre renders y rompe el árbol (pantalla
-  // blanca). El listener internamente chequea isOpen y loading.
+  // `if (!isOpen) return null` — si va después, React detecta orden de hooks
+  // variable entre renders y rompe el árbol (pantalla blanca).
+  const isMandatoryStep = tab === 'phone' && phoneStep === 'set_password';
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) {
+      if (e.key === 'Escape' && !loading && !isMandatoryStep) {
         onClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, loading, onClose]);
+  }, [isOpen, loading, isMandatoryStep, onClose]);
 
   if (!isOpen) return null;
 
@@ -108,8 +123,13 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
 
   const fullPhone = `${countryCode}${phoneRaw}`;
   const isPhoneValid = phoneRaw.length === 8;
+  const isLoginPasswordValid = loginPassword.length > 0;
   const isEmailValid = email.includes('@') && email.length >= 5;
   const isPasswordValid = password.length >= 6;
+  const newPasswordMismatch =
+    newPassword.length > 0 && newPasswordConfirm.length > 0 && newPassword !== newPasswordConfirm;
+  const canSetNewPassword =
+    newPassword.length >= MIN_PASSWORD_LENGTH && newPassword === newPasswordConfirm && !loading;
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { rawDigits, displayValue } = formatSvPhone(e.target.value);
@@ -139,17 +159,51 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     }, 1000);
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  // ─── Acceso PRINCIPAL: teléfono + contraseña ───
+  const handlePhonePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!isPhoneValid) {
       setPhoneError('El teléfono debe tener 8 dígitos');
       return;
     }
+    if (!isLoginPasswordValid || loading) return;
     setLoading(true);
     try {
-      // AUTH-P1B1B (booking): registrar la intención de reserva ANTES del OTP,
-      // con el MISMO fullPhone. Si falla, no se envía OTP.
+      const result = await signInWithPhonePassword(fullPhone, loginPassword);
+      if (result.success && result.user) {
+        if (context === 'booking') {
+          // El BookingCard continúa la reserva (registra el intent y reserva).
+          onSuccess(undefined);
+        } else {
+          onClose();
+          navigate(destinationForRole(result.user.role));
+        }
+        resetState();
+      } else {
+        // Mensaje GENÉRICO (no revela si el teléfono existe).
+        setError(result.error || 'El teléfono o la contraseña no son correctos.');
+      }
+    } catch {
+      setError('Error de conexión. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Acción SECUNDARIA "Usar un código": envía OTP ───
+  // 'login'  → shouldCreateUser=false (nunca crea; un teléfono sin cuenta recibe
+  //            el mensaje guía y no se revela explícitamente que no existe).
+  // 'booking'→ registra el intent (onBeforeSendOtp) y luego shouldCreateUser=true.
+  const handleUseCode = async () => {
+    setError('');
+    if (!isPhoneValid) {
+      setPhoneError('El teléfono debe tener 8 dígitos');
+      return;
+    }
+    if (loading) return;
+    setLoading(true);
+    try {
       if (onBeforeSendOtp) {
         const pre = await onBeforeSendOtp(fullPhone);
         if (!pre.ok) {
@@ -160,6 +214,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       }
       const result = await sendOtp(fullPhone, context);
       if (result.success) {
+        setOtpCode('');
         setPhoneStep('otp');
         startResendCountdown();
       } else {
@@ -175,16 +230,22 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (otpCode.length !== 6) {
-      setError('El código debe tener 6 dígitos');
+    if (otpCode.length !== 6 || loading) {
+      if (otpCode.length !== 6) setError('El código debe tener 6 dígitos');
       return;
     }
     setLoading(true);
     try {
-      const result = await verifyOtp(fullPhone, otpCode);
-      if (result.success) {
-        onSuccess(intentIdRef.current ?? undefined);
-        resetState();
+      // AUTH-P1C1: verificación con cliente TRANSITORIO (no persiste sesión en
+      // el cliente principal, no corre side-effects). El token queda SOLO en
+      // memoria para setear la contraseña; el acceso real se hace después con
+      // signInWithPhonePassword.
+      const result = await verifyOtpForPasswordSetup(fullPhone, otpCode);
+      if (result.success && result.accessToken && result.userId) {
+        sessionTokenRef.current = { accessToken: result.accessToken, userId: result.userId };
+        setNewPassword('');
+        setNewPasswordConfirm('');
+        setPhoneStep('set_password');
       } else {
         setError(result.error || 'Código incorrecto');
       }
@@ -196,7 +257,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   };
 
   const handleResendOtp = async () => {
-    if (resendCountdown > 0) return;
+    if (resendCountdown > 0 || loading) return;
     setError('');
     setLoading(true);
     try {
@@ -210,10 +271,57 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     }
   };
 
+  // ─── Paso OBLIGATORIO: crear/restablecer contraseña tras el OTP ───
+  // Secuencia (AUTH-P1C1): (1) guardar la contraseña con el token TRANSITORIO;
+  // (2) login REAL en el cliente principal con signInWithPhonePassword (recién
+  // aquí se crea la sesión persistente + corren los side-effects); (3) completar
+  // login/booking. Si falla el guardado o el login, NO se completa el acceso ni
+  // la reserva y el cliente principal no queda con sesión de este flujo.
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!canSetNewPassword) return;
+    const tok = sessionTokenRef.current;
+    if (!tok) {
+      setError('No pudimos confirmar tu sesión. Refresca la página y vuelve a intentar.');
+      return;
+    }
+    setLoading(true);
+    try {
+      // 1. Guardar la contraseña usando el token transitorio (fetch directo).
+      const saved = await setPasswordFromClaim(newPassword, tok.accessToken);
+      if (!saved.success) {
+        setError(saved.error || 'No pudimos guardar tu contraseña. Prueba de nuevo.');
+        return;
+      }
+      // 2. Login REAL en el cliente principal (sesión persistente + side-effects).
+      const login = await signInWithPhonePassword(fullPhone, newPassword);
+      if (!login.success || !login.user) {
+        setError(
+          login.error ||
+            'Guardamos tu contraseña, pero no pudimos iniciar sesión. Ingresa con tu teléfono y contraseña.',
+        );
+        return;
+      }
+      // 3. Recién ahora se completa el acceso.
+      if (context === 'booking') {
+        onSuccess(intentIdRef.current ?? undefined);
+      } else {
+        onClose();
+        navigate(destinationForRole(login.user.role));
+      }
+      resetState();
+    } catch {
+      setError('Error de conexión al guardar la contraseña.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!isEmailValid || !isPasswordValid) return;
+    if (!isEmailValid || !isPasswordValid || loading) return;
     setLoading(true);
     try {
       const result = await signInWithEmail(email, password);
@@ -252,10 +360,13 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
 
   const resetState = () => {
     setTab('phone');
-    setPhoneStep('phone');
+    setPhoneStep('credentials');
     setPhoneRaw('');
     setPhoneDisplay('');
+    setLoginPassword('');
     setOtpCode('');
+    setNewPassword('');
+    setNewPasswordConfirm('');
     setEmailStep('login');
     setEmail('');
     setPassword('');
@@ -264,32 +375,32 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     setPhoneError('');
     setResendCountdown(0);
     intentIdRef.current = null;
+    sessionTokenRef.current = null;
   };
 
   const handleClose = () => {
-    // Bloquea el cierre durante una operación en curso: evita que el
-    // usuario pierda contexto si toca X o Esc mientras se procesa el
-    // login. La X queda visible pero deshabilitada (gris) mientras
-    // loading=true.
-    if (loading) return;
+    // Bloquea el cierre durante una operación en curso y durante el paso
+    // OBLIGATORIO de contraseña (no hay X en ese paso; guard defensivo).
+    if (loading || isMandatoryStep) return;
     onClose();
     resetState();
   };
 
   const selectedCountry = countries.find((c) => c.code === countryCode) || countries[0];
 
-  // Botón "atrás" muestra OTP → phone, forgot → email login, etc.
+  // Botón "atrás": OTP → credentials, forgot → email login. En set_password NO
+  // hay atrás (paso obligatorio).
   const showBackButton =
     (tab === 'phone' && phoneStep === 'otp') ||
     (tab === 'email' && emailStep !== 'login');
 
   const handleBack = () => {
-    if (loading) return;          // mismo guard que handleClose
+    if (loading) return;
     setError('');
     if (tab === 'phone' && phoneStep === 'otp') {
-      setPhoneStep('phone');
+      setPhoneStep('credentials');
       setOtpCode('');
-      intentIdRef.current = null; // volver al teléfono: cambiarlo registra otro intent
+      intentIdRef.current = null; // volver: cambiar el teléfono registra otro intent
     } else if (tab === 'email' && emailStep === 'forgot') {
       setEmailStep('login');
     } else if (tab === 'email' && emailStep === 'forgot_sent') {
@@ -301,13 +412,16 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   // Header dynamic title
   let headerTitle = 'Inicia sesión o regístrate';
   if (tab === 'phone' && phoneStep === 'otp') headerTitle = 'Confirma tu número';
+  if (tab === 'phone' && phoneStep === 'set_password') headerTitle = 'Crea tu contraseña';
   if (tab === 'email' && emailStep === 'forgot') headerTitle = 'Restablecer contraseña';
   if (tab === 'email' && emailStep === 'forgot_sent') headerTitle = 'Revisá tu correo';
 
+  // En el paso obligatorio de contraseña se oculta el control de cierre.
+  const showCloseControl = !isMandatoryStep;
+
   return (
-    // El overlay NO cierra al click. El modal solo se cierra por X,
-    // Escape o éxito de auth — evita pérdida de contexto al tocar
-    // fuera mientras el usuario escribe (especialmente en mobile).
+    // El overlay NO cierra al click. El modal solo se cierra por X, Escape o
+    // éxito de auth — evita pérdida de contexto al tocar fuera mientras escribe.
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
       role="presentation"
@@ -319,23 +433,27 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-5 flex items-center justify-between rounded-t-3xl z-10">
-          <button
-            onClick={showBackButton ? handleBack : handleClose}
-            type="button"
-            disabled={loading}
-            className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
-              loading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 cursor-pointer'
-            }`}
-            aria-label={showBackButton ? 'Atrás' : 'Cerrar'}
-          >
-            <i className={`${showBackButton ? 'ri-arrow-left-line' : 'ri-close-line'} text-xl text-gray-700`}></i>
-          </button>
+          {showCloseControl ? (
+            <button
+              onClick={showBackButton ? handleBack : handleClose}
+              type="button"
+              disabled={loading}
+              className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+                loading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 cursor-pointer'
+              }`}
+              aria-label={showBackButton ? 'Atrás' : 'Cerrar'}
+            >
+              <i className={`${showBackButton ? 'ri-arrow-left-line' : 'ri-close-line'} text-xl text-gray-700`}></i>
+            </button>
+          ) : (
+            <div className="w-8"></div>
+          )}
           <h2 className="text-base font-semibold text-gray-900">{headerTitle}</h2>
           <div className="w-8"></div>
         </div>
 
-        {/* Tabs — solo visibles cuando el usuario aún no eligió OTP enviado o forgot flow */}
-        {!showBackButton && (
+        {/* Tabs — solo cuando el usuario aún no eligió OTP/forgot/set_password */}
+        {!showBackButton && !isMandatoryStep && (
           <div className="flex border-b border-gray-200 px-6 pt-4">
             <button
               type="button"
@@ -375,13 +493,13 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
             </div>
           )}
 
-          {/* ═══════════════════════ TAB PHONE ═══════════════════════ */}
-          {tab === 'phone' && phoneStep === 'phone' && (
+          {/* ═══════════ TAB PHONE — credenciales (teléfono + contraseña) ═══════════ */}
+          {tab === 'phone' && phoneStep === 'credentials' && (
             <>
               <h3 className="text-2xl font-semibold text-gray-900 mb-2">¡Te damos la bienvenida a Lucy Care!</h3>
-              <p className="text-sm text-gray-600 mb-6">Ingresá con tu teléfono para reservar citas.</p>
+              <p className="text-sm text-gray-600 mb-6">Ingresa con tu teléfono y contraseña.</p>
 
-              <form onSubmit={handleSendOtp} className="space-y-4">
+              <form onSubmit={handlePhonePasswordLogin} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-2">País/Región</label>
                   <div className="relative">
@@ -427,6 +545,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                   <input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="username"
                     value={phoneDisplay}
                     onChange={handlePhoneChange}
                     onPaste={handlePhonePaste}
@@ -443,21 +562,46 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                   )}
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-2">Contraseña</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-900 text-gray-900"
+                    placeholder="••••••••"
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  disabled={loading || !isPhoneValid}
+                  disabled={loading || !isPhoneValid || !isLoginPasswordValid}
                   className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
-                    loading || !isPhoneValid
+                    loading || !isPhoneValid || !isLoginPasswordValid
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                       : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
                   }`}
                 >
-                  {loading ? 'Enviando código…' : 'Continuar'}
+                  {loading ? 'Ingresando…' : 'Ingresar'}
                 </button>
+
+                <div className="text-center pt-1">
+                  <p className="text-xs text-gray-500 mb-1">¿Primera vez o no tienes contraseña?</p>
+                  <button
+                    type="button"
+                    onClick={handleUseCode}
+                    disabled={loading || !isPhoneValid}
+                    className="text-sm text-brand-purple font-semibold hover:underline cursor-pointer disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    Usar un código
+                  </button>
+                </div>
               </form>
             </>
           )}
 
+          {/* ═══════════ TAB PHONE — OTP ═══════════ */}
           {tab === 'phone' && phoneStep === 'otp' && (
             <>
               <div className="text-center mb-6">
@@ -513,6 +657,66 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                     </button>
                   )}
                 </div>
+              </form>
+            </>
+          )}
+
+          {/* ═══════════ TAB PHONE — crear contraseña (OBLIGATORIO) ═══════════ */}
+          {tab === 'phone' && phoneStep === 'set_password' && (
+            <>
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-brand-mint/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i className="ri-lock-2-line text-3xl text-brand-purple"></i>
+                </div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-2">Crea tu contraseña</h3>
+                <p className="text-sm text-gray-600">
+                  La usarás para ingresar con tu teléfono la próxima vez.
+                </p>
+              </div>
+
+              <form onSubmit={handleSetPassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-2">Nueva contraseña</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
+                    placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                    autoFocus
+                  />
+                  {newPassword.length > 0 && newPassword.length < MIN_PASSWORD_LENGTH && (
+                    <p className="text-xs text-amber-700 mt-1">{PASSWORD_MIN_HINT}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-2">Confirmar contraseña</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPasswordConfirm}
+                    onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
+                    placeholder="Repite la contraseña"
+                  />
+                  {newPasswordMismatch && (
+                    <p className="text-xs text-red-600 mt-1">Las contraseñas no coinciden.</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!canSetNewPassword}
+                  className={`w-full py-3.5 rounded-lg transition-all font-semibold whitespace-nowrap text-base ${
+                    !canSetNewPassword
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
+                  }`}
+                >
+                  {loading ? 'Guardando…' : 'Guardar y continuar'}
+                </button>
               </form>
             </>
           )}

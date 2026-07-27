@@ -10,9 +10,10 @@
  */
 
 import { supabase } from '../lib/supabase'
-import { isAuthError } from '@supabase/supabase-js'
+import { isAuthError, createClient } from '@supabase/supabase-js'
 import { toAuthPhone, toAppPhone } from '../lib/authPhone'
 import { probeSessionState } from '../lib/sessionState'
+import { MIN_PASSWORD_LENGTH } from '../lib/password'
 
 // ═══════════════════════════════════════════════════════════
 // AUTH-P1A — teléfono como identidad, formato único y contexto de OTP
@@ -695,7 +696,7 @@ async function setPasswordWithFetch(
     if (resp.status === 422 || /password/i.test(msg)) {
       return {
         success: false,
-        error: 'La contraseña no cumple los requisitos mínimos. Probá una distinta de al menos 8 caracteres.',
+        error: `La contraseña no cumple los requisitos mínimos. Probá una distinta de al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
       }
     }
     console.warn('[setPasswordWithFetch] HTTP', resp.status, code, msg)
@@ -830,6 +831,73 @@ export async function getMyProfileEmail(
     console.warn('[getMyProfileEmail] error (silenciado):', err)
     return null
   }
+}
+
+// Lock no-op (mismo patrón que src/lib/supabase.ts): evita el cuelgue por
+// navigator.locks. El cliente transitorio no persiste ni refresca, así que en
+// la práctica no toma el lock; se pasa por consistencia y previsibilidad.
+const noopLock = async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn()
+
+/**
+ * AUTH-P1C1 — Verificación de OTP para el SETUP de contraseña por teléfono, con
+ * un cliente Supabase TRANSITORIO. Deliberadamente SEPARADA de `verifyOtp` (que
+ * NO se toca: sigue sirviendo a claim médico, cambio de teléfono y demás
+ * callers, estableciendo la sesión principal + side-effects).
+ *
+ * El cliente transitorio usa `persistSession:false`, `autoRefreshToken:false`,
+ * `detectSessionInUrl:false`:
+ *   - NO toca la sesión del cliente PRINCIPAL (`supabase`);
+ *   - NO ejecuta side-effects post-login;
+ *   - conserva el token SOLO en memoria (lo devuelve al caller).
+ *
+ * El caller usa ese token para setear la contraseña y RECIÉN DESPUÉS inicia
+ * sesión real con `signInWithPhonePassword` (ahí corren los side-effects). Si el
+ * usuario recarga/cierra la página o el guardado falla ANTES de ese login, el
+ * cliente principal NUNCA quedó con una sesión persistente y no se completa el
+ * acceso ni la reserva.
+ */
+export async function verifyOtpForPasswordSetup(
+  phoneRaw: string,
+  token: string,
+): Promise<{ success: boolean; accessToken?: string; userId?: string; error?: string }> {
+  const authPhone = toAuthPhone(phoneRaw)
+  if (!authPhone) {
+    return { success: false, error: 'Número de teléfono inválido. Verifica el formato.' }
+  }
+
+  const transient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      lock: noopLock,
+    },
+  })
+
+  const { data, error } = await transient.auth.verifyOtp({
+    phone: authPhone,
+    token,
+    type: 'sms',
+  })
+
+  if (error) {
+    console.warn('[verifyOtpForPasswordSetup] error:', error.name, error.status ?? '')
+    if (error.message.includes('expired')) {
+      return { success: false, error: 'El código ha expirado. Solicita uno nuevo.' }
+    }
+    // Genérico: no exponemos el mensaje crudo de GoTrue.
+    return { success: false, error: 'Código incorrecto. Verifica e intenta de nuevo.' }
+  }
+
+  const accessToken = data.session?.access_token
+  const userId = data.user?.id
+  if (!accessToken || !userId) {
+    return { success: false, error: 'No se pudo confirmar tu sesión. Intenta de nuevo.' }
+  }
+
+  // A PROPÓSITO: aquí NO se corren side-effects. El caller setea la contraseña
+  // con este token y luego hace login real en el cliente principal.
+  return { success: true, accessToken, userId }
 }
 
 /**

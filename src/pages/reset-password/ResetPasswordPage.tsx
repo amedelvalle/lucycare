@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
 import { destinationForRole, setPasswordFromRecovery } from '@/services/auth.service';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password';
 
 type PageState = 'checking' | 'ready' | 'no_session' | 'success';
 
@@ -70,8 +71,8 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError('');
 
-    if (password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres.');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
       return;
     }
     if (password !== confirm) {
@@ -152,7 +153,7 @@ export default function ResetPasswordPage() {
           <>
             <h1 className="text-xl font-semibold text-gray-900 mb-2">Nueva contraseña</h1>
             <p className="text-sm text-gray-600 mb-6">
-              Elegí una contraseña de al menos 8 caracteres. Después de guardarla quedás logueado automáticamente.
+              Elegí una contraseña de al menos {MIN_PASSWORD_LENGTH} caracteres. Después de guardarla quedás logueado automáticamente.
             </p>
 
             {error && (
@@ -170,7 +171,7 @@ export default function ResetPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-900 text-gray-900"
-                  placeholder="Mín. 8 caracteres"
+                  placeholder={`Mín. ${MIN_PASSWORD_LENGTH} caracteres`}
                   required
                 />
               </div>
@@ -188,9 +189,9 @@ export default function ResetPasswordPage() {
               </div>
               <button
                 type="submit"
-                disabled={loading || password.length < 8 || password !== confirm}
+                disabled={loading || password.length < MIN_PASSWORD_LENGTH || password !== confirm}
                 className={`w-full py-3 rounded-lg font-semibold whitespace-nowrap ${
-                  loading || password.length < 8 || password !== confirm
+                  loading || password.length < MIN_PASSWORD_LENGTH || password !== confirm
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer'
                 }`}
