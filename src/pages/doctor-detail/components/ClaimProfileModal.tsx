@@ -8,6 +8,9 @@ import {
 } from '../../../services/auth.service';
 import { claimDoctorProfile, type ClaimErrorCode } from '../../../services/claimProfile.service';
 import { getSessionWithTimeout } from '../../../lib/session';
+// AUTH-P1C1: fuente única de la política de contraseña (creación). Alias local
+// para conservar las referencias existentes sin cambiar el valor (sigue 8).
+import { MIN_PASSWORD_LENGTH as MIN_PASSWORD_LEN } from '../../../lib/password';
 
 interface ClaimProfileModalProps {
   isOpen: boolean;
@@ -80,8 +83,6 @@ type PasswordMode = 'choose' | 'create' | 'email';
  * según qué eligió el médico en el step `password`.
  */
 type ClaimOutcome = 'password_set' | 'email_sent';
-
-const MIN_PASSWORD_LEN = 8;
 
 export default function ClaimProfileModal({
   isOpen,
@@ -634,7 +635,7 @@ export default function ClaimProfileModal({
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Mínimo 8 caracteres"
+                      placeholder={`Mínimo ${MIN_PASSWORD_LEN} caracteres`}
                       autoComplete="new-password"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                       autoFocus
