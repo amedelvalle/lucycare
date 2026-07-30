@@ -123,8 +123,23 @@ check('errores genéricos (invalid_request)', /RAISE EXCEPTION 'invalid_request'
   check('smoke termina con ROLLBACK', /^ROLLBACK;/m.test(smoke));
   check('smoke SIN COMMIT', /^COMMIT;/m.test(smokeSql) === false);
   check('smoke sin service_role (SQL real)', /service_role/.test(smokeSql) === false);
-  check('smoke con salida única consolidada', (smoke.match(/^SELECT case_name/gm) || []).length, 1);
-  check('smoke usa tabla temporal ON COMMIT DROP', /CREATE TEMP TABLE[\s\S]*ON COMMIT DROP/.test(smoke));
+  check('smoke con salida única consolidada',
+    (smoke.match(/^SELECT ord, case_name/gm) || []).length, 1);
+  check('smoke usa tabla temporal ON COMMIT DROP',
+    /CREATE TABLE pg_temp\._p1d2_smoke[\s\S]*ON COMMIT DROP/.test(smoke));
+  // ── CAUSA RAÍZ del 42P01: referencias SIN calificar dependen de que pg_temp
+  //    esté en el search_path del SQL Editor. TODAS deben ir con `pg_temp.`.
+  {
+    const refs = smoke.match(/(^|[^.\w])_p1d2_smoke\b/gm) || [];
+    check('sin referencias a _p1d2_smoke SIN calificar (causa del 42P01)', refs.length, 0);
+    check('todas las referencias van calificadas con pg_temp.',
+      (smoke.match(/pg_temp\._p1d2_smoke/g) || []).length > 0);
+    check('la salida final lee de pg_temp._p1d2_smoke',
+      /FROM pg_temp\._p1d2_smoke/.test(smoke));
+    // Sin `serial`: evita depender también de una secuencia temporal.
+    check('sin columna serial (sin secuencia temporal que resolver)',
+      /\bserial\b/.test(smoke) === false);
+  }
   // Los 10 casos requeridos.
   for (const c of ['1_primer_registro', '2_idempotente_exacto', '3_rid_reusado_otro_telefono',
                    '4_diez_permitidas', '5_onceava_bloqueada', '6_idempotente_pese_al_limite',
