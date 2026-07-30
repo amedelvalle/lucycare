@@ -123,29 +123,46 @@ check('errores genéricos (invalid_request)', /RAISE EXCEPTION 'invalid_request'
   check('smoke termina con ROLLBACK', /^ROLLBACK;/m.test(smoke));
   check('smoke SIN COMMIT', /^COMMIT;/m.test(smokeSql) === false);
   check('smoke sin service_role (SQL real)', /service_role/.test(smokeSql) === false);
-  check('smoke con salida única consolidada',
-    (smoke.match(/^SELECT ord, case_name/gm) || []).length, 1);
-  check('smoke usa tabla temporal ON COMMIT DROP',
-    /CREATE TABLE pg_temp\._p1d2_smoke[\s\S]*ON COMMIT DROP/.test(smoke));
-  // ── CAUSA RAÍZ del 42P01: referencias SIN calificar dependen de que pg_temp
-  //    esté en el search_path del SQL Editor. TODAS deben ir con `pg_temp.`.
-  {
-    const refs = smoke.match(/(^|[^.\w])_p1d2_smoke\b/gm) || [];
-    check('sin referencias a _p1d2_smoke SIN calificar (causa del 42P01)', refs.length, 0);
-    check('todas las referencias van calificadas con pg_temp.',
-      (smoke.match(/pg_temp\._p1d2_smoke/g) || []).length > 0);
-    check('la salida final lee de pg_temp._p1d2_smoke',
-      /FROM pg_temp\._p1d2_smoke/.test(smoke));
-    // Sin `serial`: evita depender también de una secuencia temporal.
-    check('sin columna serial (sin secuencia temporal que resolver)',
-      /\bserial\b/.test(smoke) === false);
+  // ── CAUSAS RAÍZ ya corregidas: SIN objetos temporales de ningún tipo ──
+  //   42P01: referencias sin calificar dependían de pg_temp en el search_path.
+  //   3F000: `pg_temp` solo resuelve tras materializarse el esquema temporal
+  //          de la sesión → usarlo en el propio CREATE falla en sesión fresca.
+  //   Diseño final: resultados en una variable jsonb + set_config/current_setting.
+  check('smoke SIN "TEMP TABLE"', /TEMP\s+TABLE/i.test(smokeSql) === false);
+  check('smoke SIN referencias a pg_temp (causa del 3F000)',
+    /pg_temp/i.test(smokeSql) === false);
+  check('smoke sin CREATE TABLE de ningún tipo', /CREATE\s+TABLE/i.test(smokeSql) === false);
+  check('smoke sin dependencia de search_path para guardar resultados',
+    /search_path/i.test(smokeSql) === false);
+
+  // ── Diseño obligatorio: jsonb + set_config + current_setting ──
+  check('acumula resultados en v_results jsonb', /v_results\s+jsonb\s*:=\s*'\[\]'::jsonb/.test(smoke));
+  check('publica con set_config (local a la transacción)',
+    /set_config\(\s*\r?\n?\s*'p1d2\.smoke_results'/.test(smoke));
+  check('set_config con is_local = true', /'p1d2\.smoke_results'[\s\S]{0,400}?true\s*\r?\n?\s*\)/.test(smoke));
+  check('lee con current_setting', /current_setting\('p1d2\.smoke_results', true\)/.test(smoke));
+  check('salida ÚNICA con jsonb_pretty', (smoke.match(/jsonb_pretty\(/g) || []).length, 1);
+  check('salida única: un solo SELECT top-level',
+    (smoke.match(/^SELECT /gm) || []).length, 1);
+  check('veredicto global en la salida', /'veredicto_global'/.test(smoke));
+  check('subtransacciones con EXCEPTION', (smoke.match(/EXCEPTION WHEN OTHERS THEN/g) || []).length >= 10);
+  // Campos mínimos por caso.
+  for (const f of ['orden', 'caso', 'esperado', 'obtenido', 'pass', 'detalle']) {
+    check(`cada caso registra '${f}'`, new RegExp(`'${f}',`).test(smoke));
   }
-  // Los 10 casos requeridos.
+
+  // ── Los 12 casos requeridos ──
   for (const c of ['1_primer_registro', '2_idempotente_exacto', '3_rid_reusado_otro_telefono',
+                   '3b_rid_reusado_otro_contexto', '3c_rid_reusado_otro_hash',
                    '4_diez_permitidas', '5_onceava_bloqueada', '6_idempotente_pese_al_limite',
-                   '7a_telefono_no_sv', '8_', '9_', '10_pre_rollback']) {
+                   '7a_telefono_no_sv', '7b_contexto_invalido', '7c_version_invalida',
+                   '7d_hash_invalido', '8_anon_sin_acceso_directo',
+                   '9_authenticated_sin_acceso_directo', '10_execute_rpc_segun_grants',
+                   '11_filas_en_transaccion']) {
     check(`smoke cubre el caso ${c}`, smoke.includes(c));
   }
+  check('ROLLBACK es la ÚLTIMA sentencia',
+    /ROLLBACK;\s*$/.test(smokeSql.trimEnd()));
   check('smoke usa fixtures sintéticas (+503 7006 99xx)', /\+50370069901/.test(smoke));
   check('smoke NO usa números reales (Katherine/Camilo)',
     /50372608827|50378627694/.test(smokeSql) === false);
