@@ -10,6 +10,9 @@ import {
   destinationForRole,
 } from '../../../services/auth.service';
 import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_HINT } from '../../../lib/password';
+import { CAPTCHA_ENABLED, captchaRequired, captchaMisconfigured } from '../../../lib/authFlags';
+import TurnstileWidget, { type TurnstileHandle } from '../../../components/TurnstileWidget';
+import OtpConsentNotice from '../../../components/OtpConsentNotice';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -68,6 +71,11 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   // AUTH-P1C1: token de la sesión OTP capturado tras verificar, para setear la
   // contraseña vía fetch (patrón de ClaimProfileModal). Solo en memoria.
   const sessionTokenRef = useRef<{ accessToken: string; userId: string } | null>(null);
+  // AUTH-P1D2: token de Turnstile (solo en memoria). El widget solo se monta si
+  // CAPTCHA_ENABLED; con el flag apagado, captchaToken queda null y las llamadas
+  // pasan sin token (comportamiento actual).
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   // ─── Phone tab ───
   const [phoneStep, setPhoneStep] = useState<PhoneStep>('credentials');
@@ -159,6 +167,30 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     }, 1000);
   };
 
+  // AUTH-P1D2: reset del captcha tras CADA intento (token de un solo uso) y
+  // guard que BLOQUEA el envío si el captcha es requerido y no hay token, o si
+  // está habilitado pero mal configurado (FAIL-CLOSED).
+  const resetCaptcha = () => {
+    setCaptchaToken(null);
+    turnstileRef.current?.reset();
+  };
+  const captchaBlock = (): string | null => {
+    if (!captchaRequired()) return null;
+    if (captchaMisconfigured()) return 'La verificación de seguridad no está disponible ahora. Intenta más tarde.';
+    if (!captchaToken) return 'Completa la verificación de seguridad para continuar.';
+    return null;
+  };
+  const captchaWidget = CAPTCHA_ENABLED ? (
+    <div className="pt-1">
+      <TurnstileWidget
+        ref={turnstileRef}
+        onToken={setCaptchaToken}
+        onExpire={() => setCaptchaToken(null)}
+        onError={() => setCaptchaToken(null)}
+      />
+    </div>
+  ) : null;
+
   // ─── Acceso PRINCIPAL: teléfono + contraseña ───
   const handlePhonePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,9 +200,11 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       return;
     }
     if (!isLoginPasswordValid || loading) return;
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
     setLoading(true);
     try {
-      const result = await signInWithPhonePassword(fullPhone, loginPassword);
+      const result = await signInWithPhonePassword(fullPhone, loginPassword, captchaToken ?? undefined);
       if (result.success && result.user) {
         if (context === 'booking') {
           // El BookingCard continúa la reserva (registra el intent y reserva).
@@ -188,6 +222,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setError('Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -202,6 +237,9 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       return;
     }
     if (loading) return;
+    // AUTH-P1D2: Turnstile válido ANTES de registrar el intent y enviar.
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
     setLoading(true);
     try {
       if (onBeforeSendOtp) {
@@ -212,7 +250,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
         }
         intentIdRef.current = pre.intentId ?? null;
       }
-      const result = await sendOtp(fullPhone, context);
+      const result = await sendOtp(fullPhone, context, { captchaToken: captchaToken ?? undefined });
       if (result.success) {
         setOtpCode('');
         setPhoneStep('otp');
@@ -224,6 +262,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setError('Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -259,15 +298,19 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   const handleResendOtp = async () => {
     if (resendCountdown > 0 || loading) return;
     setError('');
+    // AUTH-P1D2: el reenvío es un envío NUEVO → exige token fresco de Turnstile.
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
     setLoading(true);
     try {
-      const result = await sendOtp(fullPhone, context);
+      const result = await sendOtp(fullPhone, context, { captchaToken: captchaToken ?? undefined });
       if (result.success) startResendCountdown();
       else setError(result.error || 'Error al reenviar');
     } catch {
       setError('Error de conexión');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -322,9 +365,11 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     e.preventDefault();
     setError('');
     if (!isEmailValid || !isPasswordValid || loading) return;
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
     setLoading(true);
     try {
-      const result = await signInWithEmail(email, password);
+      const result = await signInWithEmail(email, password, captchaToken ?? undefined);
       if (result.success && result.user) {
         // Redirect según rol: médico/asistente → /panel, admin → /admin.
         // Diferencia clave vs OTP teléfono: el email es flujo del médico,
@@ -339,15 +384,18 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setError('Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
     setLoading(true);
     try {
-      await requestPasswordReset(emailForReset);
+      await requestPasswordReset(emailForReset, captchaToken ?? undefined);
       // Siempre mostramos el mismo mensaje, sea o no real el email.
       setEmailStep('forgot_sent');
     } catch {
@@ -355,6 +403,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setEmailStep('forgot_sent');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -376,6 +425,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
     setResendCountdown(0);
     intentIdRef.current = null;
     sessionTokenRef.current = null;
+    setCaptchaToken(null);
   };
 
   const handleClose = () => {
@@ -574,6 +624,8 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                   />
                 </div>
 
+                {captchaWidget}
+
                 <button
                   type="submit"
                   disabled={loading || !isPhoneValid || !isLoginPasswordValid}
@@ -586,8 +638,11 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                   {loading ? 'Ingresando…' : 'Ingresar'}
                 </button>
 
-                <div className="text-center pt-1">
-                  <p className="text-xs text-gray-500 mb-1">¿Primera vez o no tienes contraseña?</p>
+                <div className="text-center pt-1 space-y-2">
+                  <p className="text-xs text-gray-500">¿Primera vez o no tienes contraseña?</p>
+                  {/* Consentimiento visible ANTES de solicitar el código (la
+                      acción de solicitarlo constituye el consentimiento). */}
+                  <OtpConsentNotice className="text-left" />
                   <button
                     type="button"
                     onClick={handleUseCode}
@@ -640,6 +695,10 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                 >
                   {loading ? 'Verificando…' : 'Verificar código'}
                 </button>
+
+                {/* Reenvío = envío NUEVO: aviso de consentimiento + Turnstile. */}
+                {resendCountdown === 0 && <OtpConsentNotice className="text-center" />}
+                {resendCountdown === 0 && captchaWidget}
 
                 <div className="text-center">
                   {resendCountdown > 0 ? (
@@ -754,6 +813,8 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                   />
                 </div>
 
+                {captchaWidget}
+
                 <button
                   type="submit"
                   disabled={loading || !isEmailValid || !isPasswordValid}
@@ -801,6 +862,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                     required
                   />
                 </div>
+                {captchaWidget}
                 <button
                   type="submit"
                   disabled={loading || !emailForReset.includes('@')}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   sendOtp,
   verifyOtp,
@@ -11,6 +11,9 @@ import { getSessionWithTimeout } from '../../../lib/session';
 // AUTH-P1C1: fuente única de la política de contraseña (creación). Alias local
 // para conservar las referencias existentes sin cambiar el valor (sigue 8).
 import { MIN_PASSWORD_LENGTH as MIN_PASSWORD_LEN } from '../../../lib/password';
+import { CAPTCHA_ENABLED, captchaRequired, captchaMisconfigured } from '../../../lib/authFlags';
+import TurnstileWidget, { type TurnstileHandle } from '../../../components/TurnstileWidget';
+import OtpConsentNotice from '../../../components/OtpConsentNotice';
 
 interface ClaimProfileModalProps {
   isOpen: boolean;
@@ -124,6 +127,9 @@ export default function ClaimProfileModal({
     null,
   );
   const [genericError, setGenericError] = useState('');
+  // AUTH-P1D2: token de Turnstile (solo en memoria; widget solo si CAPTCHA_ENABLED).
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -171,11 +177,25 @@ export default function ClaimProfileModal({
     setPhoneDisplay(digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits);
   };
 
+  // AUTH-P1D2: Turnstile para el envío de OTP del claim.
+  const resetCaptcha = () => {
+    setCaptchaToken(null);
+    turnstileRef.current?.reset();
+  };
+  const captchaBlock = (): string | null => {
+    if (!captchaRequired()) return null;
+    if (captchaMisconfigured()) return 'La verificación de seguridad no está disponible ahora. Intenta más tarde.';
+    if (!captchaToken) return 'Completa la verificación de seguridad para continuar.';
+    return null;
+  };
+
   const handleSendOtp = async () => {
     setGenericError('');
+    const cb = captchaBlock();
+    if (cb) { setGenericError(cb); return; }
     setLoading(true);
     try {
-      const result = await sendOtp(fullPhone, 'claim');
+      const result = await sendOtp(fullPhone, 'claim', { captchaToken: captchaToken ?? undefined });
       if (result.success) {
         setOtpSent(true);
       } else {
@@ -185,6 +205,7 @@ export default function ClaimProfileModal({
       setGenericError('Error de conexión');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -450,6 +471,16 @@ export default function ClaimProfileModal({
                       className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                     />
                   </div>
+                  {/* Consentimiento visible ANTES de solicitar el código. */}
+                  <OtpConsentNotice />
+                  {CAPTCHA_ENABLED && (
+                    <TurnstileWidget
+                      ref={turnstileRef}
+                      onToken={setCaptchaToken}
+                      onExpire={() => setCaptchaToken(null)}
+                      onError={() => setCaptchaToken(null)}
+                    />
+                  )}
                   <button
                     onClick={handleSendOtp}
                     disabled={!isPhoneValid || loading}

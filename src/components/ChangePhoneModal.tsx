@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneSV } from '@/lib/phone';
+import { PHONE_CHANGE_SUSPENDED, PHONE_CHANGE_SUSPENDED_MESSAGE } from '@/lib/authFlags';
 
 /**
  * Modal de cambio de teléfono por OTP (reusable: paciente y médico).
@@ -45,6 +46,7 @@ export default function ChangePhoneModal({ currentPhone, onClose, onChanged }: P
   }, [loading, onClose]);
 
   const sendCode = async () => {
+    if (PHONE_CHANGE_SUSPENDED) return; // AUTH-P1D2: no ejecutar updateUser({phone})
     setError(null);
     const norm = normalizePhoneSV(phoneRaw);
     if (!norm) { setError('Ingresá un número válido.'); return; }
@@ -82,6 +84,7 @@ export default function ChangePhoneModal({ currentPhone, onClose, onChanged }: P
   };
 
   const resend = async () => {
+    if (PHONE_CHANGE_SUSPENDED) return; // AUTH-P1D2: no ejecutar updateUser({phone})
     setError(null);
     setLoading(true);
     try {
@@ -91,6 +94,33 @@ export default function ChangePhoneModal({ currentPhone, onClose, onChanged }: P
       setLoading(false);
     }
   };
+
+  // AUTH-P1D2: cambio de teléfono SUSPENDIDO temporalmente. Se muestra un aviso
+  // breve y NO se ejecuta updateUser({ phone }). El código del flujo se conserva
+  // (no se elimina) para restaurarlo cuando se levante la suspensión.
+  if (PHONE_CHANGE_SUSPENDED) {
+    return (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Cambiar teléfono</h3>
+            <button type="button" onClick={onClose} aria-label="Cerrar"
+              className="text-gray-400 hover:text-gray-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-sm text-gray-700">{PHONE_CHANGE_SUSPENDED_MESSAGE}</p>
+          <button type="button" onClick={onClose}
+            className="mt-5 w-full px-4 py-2.5 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer">
+            Entendido
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
