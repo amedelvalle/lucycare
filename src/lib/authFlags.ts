@@ -30,7 +30,20 @@ export function captchaRequired(): boolean {
   return CAPTCHA_ENABLED;
 }
 
-// ─── Cambio de teléfono: suspendido temporalmente (AUTH-P1D2) ───
-export const PHONE_CHANGE_SUSPENDED = true;
+// ─── Cambio de teléfono (AUTH-P1D2) ───
+/**
+ * El cambio de teléfono se suspende ÚNICAMENTE cuando el CAPTCHA está activo.
+ *
+ * Motivo: `supabase.auth.updateUser({ phone })` —la llamada que envía el OTP al
+ * número nuevo— NO admite `captchaToken` en supabase-js, así que con CAPTCHA
+ * activo quedaría como una superficie de envío de SMS sin protección. Con
+ * CAPTCHA desactivado no hay tal desprotección relativa y el flujo sigue
+ * disponible EXACTAMENTE como hoy.
+ *
+ * Se deriva de la MISMA bandera (`VITE_CAPTCHA_ENABLED`): una sola fuente de
+ * verdad, sin variables nuevas ni configuraciones contradictorias, y la
+ * suspensión se activa automáticamente al activar el CAPTCHA.
+ */
+export const PHONE_CHANGE_SUSPENDED: boolean = CAPTCHA_ENABLED;
 export const PHONE_CHANGE_SUSPENDED_MESSAGE =
   'El cambio de teléfono está temporalmente no disponible.';

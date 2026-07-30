@@ -8,7 +8,14 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const esbuildBin = path.join(path.dirname(require.resolve('esbuild/package.json')), 'bin', 'esbuild');
 
 let pass = 0, fail = 0;
 const check = (desc, got, expected = true) => {
@@ -91,7 +98,10 @@ console.log('\ncheck-auth-p1d2 — consentimiento OTP + Turnstile\n');
   check("CAPTCHA_ENABLED por VITE_CAPTCHA_ENABLED === 'true'", /VITE_CAPTCHA_ENABLED\s*===\s*'true'/.test(src));
   check('TURNSTILE_SITE_KEY de VITE_TURNSTILE_SITE_KEY', /VITE_TURNSTILE_SITE_KEY/.test(src));
   check('fail-closed si habilitado y sin site key', /captchaMisconfigured/.test(src) && /CAPTCHA_ENABLED && TURNSTILE_SITE_KEY\.length === 0/.test(src));
-  check('PHONE_CHANGE_SUSPENDED = true', /PHONE_CHANGE_SUSPENDED\s*=\s*true/.test(src));
+  check('PHONE_CHANGE_SUSPENDED se deriva de CAPTCHA_ENABLED (bandera única)',
+    /PHONE_CHANGE_SUSPENDED:\s*boolean\s*=\s*CAPTCHA_ENABLED/.test(src));
+  check('sin variable de entorno nueva para el cambio de teléfono',
+    /VITE_[A-Z_]*PHONE[A-Z_]*/.test(src) === false);
   const env = read('.env.example');
   check('.env.example con VITE_TURNSTILE_SITE_KEY (placeholder vacío)', /VITE_TURNSTILE_SITE_KEY=\s*$/m.test(env));
   check('.env.example sin valor real de site key', /VITE_TURNSTILE_SITE_KEY=\S/.test(env) === false);
@@ -152,13 +162,58 @@ console.log('\ncheck-auth-p1d2 — consentimiento OTP + Turnstile\n');
   check('claim médico sigue conectado (verifyOtp + claimDoctorProfile)', /verifyOtp\(fullPhone, otpCode\)/.test(src) && /claimDoctorProfile\(\{/.test(src));
 }
 
-// ─── 7. ChangePhoneModal suspendido ───
+// ─── 7. ChangePhoneModal: suspensión ATADA al CAPTCHA ───
 {
   const src = read('src/components/ChangePhoneModal.tsx');
   check('importa PHONE_CHANGE_SUSPENDED', /PHONE_CHANGE_SUSPENDED/.test(src));
   check('early return con el mensaje de suspensión', /if \(PHONE_CHANGE_SUSPENDED\) \{[\s\S]*PHONE_CHANGE_SUSPENDED_MESSAGE/.test(src));
+  // (3) Con la suspensión activa NO se alcanza updateUser: guard al inicio de
+  //     sendCode y de resend, ANTES de la llamada.
   check('guard en sendCode y resend (no updateUser)', (src.match(/if \(PHONE_CHANGE_SUSPENDED\) return;/g) || []).length >= 2);
+  const sendBody = between(src, 'const sendCode = async', 'const verify');
+  check('el guard precede a updateUser en sendCode',
+    sendBody.indexOf('if (PHONE_CHANGE_SUSPENDED) return;') >= 0 &&
+    sendBody.indexOf('if (PHONE_CHANGE_SUSPENDED) return;') < sendBody.indexOf('updateUser({ phone'), true);
   check('código de updateUser NO eliminado (se conserva)', /supabase\.auth\.updateUser\(\{ phone/.test(src));
+}
+
+// ─── 7b. Comportamiento REAL de la bandera con CAPTCHA off/on ───
+// Se transpila el módulo REAL dos veces (esbuild --define) y se lee el valor
+// efectivo: prueba conductual, no textual.
+{
+  const evalFlags = async (captchaEnabled, siteKey) => {
+    const f = path.join(os.tmpdir(), `authFlags-${captchaEnabled}-${Date.now()}-${Math.random().toString(16).slice(2)}.mjs`);
+    execFileSync(process.execPath, [
+      esbuildBin, 'src/lib/authFlags.ts', '--format=esm',
+      `--define:import.meta.env.VITE_CAPTCHA_ENABLED=${JSON.stringify(captchaEnabled)}`,
+      `--define:import.meta.env.VITE_TURNSTILE_SITE_KEY=${JSON.stringify(siteKey)}`,
+      `--outfile=${f}`,
+    ], { stdio: 'pipe' });
+    const mod = await import(pathToFileURL(f).href);
+    try { fs.unlinkSync(f); } catch { /* tmp */ }
+    return mod;
+  };
+
+  // (1) CAPTCHA OFF (estado actual del despliegue) → cambio de teléfono DISPONIBLE.
+  const off = await evalFlags('', '');
+  check('CAPTCHA off → CAPTCHA_ENABLED = false', off.CAPTCHA_ENABLED, false);
+  check('CAPTCHA off → cambio de teléfono NO suspendido', off.PHONE_CHANGE_SUSPENDED, false);
+  check('CAPTCHA off → no se exige captcha', off.captchaRequired(), false);
+
+  // (2)(4) CAPTCHA ON → suspensión AUTOMÁTICA, sin variable adicional.
+  const on = await evalFlags('true', 'test-site-key');
+  check('CAPTCHA on → CAPTCHA_ENABLED = true', on.CAPTCHA_ENABLED, true);
+  check('CAPTCHA on → cambio de teléfono SUSPENDIDO (automático)', on.PHONE_CHANGE_SUSPENDED, true);
+  check('CAPTCHA on → se exige captcha', on.captchaRequired(), true);
+
+  // Fail-closed sigue vigente: CAPTCHA on sin Site Key.
+  const onNoKey = await evalFlags('true', '');
+  check('CAPTCHA on sin Site Key → mal configurado (fail-closed)', onNoKey.captchaMisconfigured(), true);
+  check('CAPTCHA off sin Site Key → NO bloquea', off.captchaMisconfigured(), false);
+
+  // El mensaje visible es el aprobado.
+  check('mensaje de suspensión exacto',
+    on.PHONE_CHANGE_SUSPENDED_MESSAGE, 'El cambio de teléfono está temporalmente no disponible.');
 }
 
 // ─── 8. Migración/hook intactos (Auth Hook, s7_65/66/67) ───
