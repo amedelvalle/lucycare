@@ -116,9 +116,16 @@ console.log('\ncheck-auth-p1b2a-login-gating — gating del login genérico\n');
   }
   const changed = execFileSync('git', ['diff', '--name-only', base], { encoding: 'utf8' })
     .split('\n').map((s) => s.trim()).filter(Boolean);
-  const migrationsTouched = changed.filter((f) => f.startsWith('migrations/'));
-  check('ningún archivo bajo migrations/ modificado (grants/intents intactos)',
-    migrationsTouched.length, 0);
+  // Lo sustantivo es que NINGUNA migración preexistente se MODIFIQUE (grants e
+  // intents intactos). Altas nuevas de migraciones en frentes posteriores
+  // (p.ej. s7_69 en AUTH-P1D2) son legítimas y no violan esta garantía:
+  // --diff-filter=M excluye archivos añadidos.
+  const migrationsModified = execFileSync(
+    'git', ['diff', '--diff-filter=M', '--name-only', base, '--', 'migrations/'],
+    { encoding: 'utf8' },
+  ).split('\n').map((s) => s.trim()).filter(Boolean);
+  check('ninguna migración preexistente modificada (grants/intents intactos)',
+    migrationsModified.length, 0);
   // También: no se tocó ninguna RPC/hook de s7_65/s7_66/s7_67.
   const authInfraTouched = changed.filter((f) => /s7_6[567]/.test(f));
   check('ninguna migración s7_65/66/67 modificada', authInfraTouched.length, 0);

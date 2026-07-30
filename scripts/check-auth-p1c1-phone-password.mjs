@@ -63,7 +63,8 @@ console.log('\ncheck-auth-p1c1-phone-password — acceso teléfono+contraseña +
 {
   const src = read('src/pages/doctor-detail/components/LoginModal.tsx');
   check('LoginModal importa signInWithPhonePassword', /import[\s\S]*signInWithPhonePassword[\s\S]*from '\.\.\/\.\.\/\.\.\/services\/auth\.service'/.test(src), true);
-  check('signInWithPhonePassword tiene caller real (LoginModal)', /signInWithPhonePassword\(fullPhone, loginPassword\)/.test(src), true);
+  // [,)] tolera argumentos añadidos después (p.ej. captchaToken en AUTH-P1D2).
+  check('signInWithPhonePassword tiene caller real (LoginModal)', /signInWithPhonePassword\(fullPhone, loginPassword[,)]/.test(src), true);
   check("PhoneStep incluye 'credentials'/'otp'/'set_password'",
     /'credentials'/.test(src) && /'otp'/.test(src) && /'set_password'/.test(src), true);
   check('el paso credentials tiene input de contraseña (current-password)',
@@ -72,7 +73,7 @@ console.log('\ncheck-auth-p1c1-phone-password — acceso teléfono+contraseña +
 
   // "Usar un código" envía OTP con el contexto (login→false, booking→true)
   const useCode = between(src, 'const handleUseCode', 'const handleVerifyOtp');
-  check('handleUseCode envía OTP con el contexto', /sendOtp\(fullPhone, context\)/.test(useCode), true);
+  check('handleUseCode envía OTP con el contexto', /sendOtp\(fullPhone, context[,)]/.test(useCode), true);
 
   // verifyOtp handler: usa el cliente TRANSITORIO, NO completa el acceso.
   const verify = between(src, 'const handleVerifyOtp', 'const handleResendOtp');
@@ -96,7 +97,7 @@ console.log('\ncheck-auth-p1c1-phone-password — acceso teléfono+contraseña +
   check('la contraseña obligatoria usa la política central (MIN_PASSWORD_LENGTH)', /MIN_PASSWORD_LENGTH/.test(src), true);
 
   // login por correo sigue conectado
-  check('login por correo sigue conectado (signInWithEmail)', /signInWithEmail\(email, password\)/.test(src), true);
+  check('login por correo sigue conectado (signInWithEmail)', /signInWithEmail\(email, password[,)]/.test(src), true);
 }
 
 // ─── 2b. auth.service: verifyOtpForPasswordSetup (cliente transitorio) ──
@@ -152,7 +153,14 @@ console.log('\ncheck-auth-p1c1-phone-password — acceso teléfono+contraseña +
   try { execFileSync('git', ['rev-parse', '--verify', 'main'], { stdio: 'pipe' }); } catch { base = 'HEAD'; }
   const changed = execFileSync('git', ['diff', '--name-only', base], { encoding: 'utf8' })
     .split('\n').map((s) => s.trim()).filter(Boolean);
-  check('ningún archivo bajo migrations/ modificado', changed.filter((f) => f.startsWith('migrations/')).length, 0);
+  // Altas nuevas de migraciones en frentes posteriores (p.ej. s7_69 en
+  // AUTH-P1D2) son legítimas; lo que NO debe ocurrir es modificar una
+  // migración preexistente (--diff-filter=M excluye los archivos añadidos).
+  const migrationsModified = execFileSync(
+    'git', ['diff', '--diff-filter=M', '--name-only', base, '--', 'migrations/'],
+    { encoding: 'utf8' },
+  ).split('\n').map((s) => s.trim()).filter(Boolean);
+  check('ninguna migración preexistente modificada', migrationsModified.length, 0);
   check('ninguna migración/hook s7_65/66/67 modificada', changed.filter((f) => /s7_6[567]/.test(f)).length, 0);
 }
 

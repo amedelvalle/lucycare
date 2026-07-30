@@ -14,6 +14,7 @@ import { isAuthError, createClient } from '@supabase/supabase-js'
 import { toAuthPhone, toAppPhone } from '../lib/authPhone'
 import { probeSessionState } from '../lib/sessionState'
 import { MIN_PASSWORD_LENGTH } from '../lib/password'
+import { OTP_CONSENT_VERSION, OTP_CONSENT_TEXT_SHA256 } from '../lib/otpConsent'
 
 // ═══════════════════════════════════════════════════════════
 // AUTH-P1A — teléfono como identidad, formato único y contexto de OTP
@@ -219,18 +220,82 @@ export async function hardLocalSignOut(): Promise<void> {
  * normaliza SIEMPRE con `toAuthPhone` — variantes de formato del mismo
  * número no pueden producir identidades distintas.
  */
+/**
+ * AUTH-P1D2 — registro OBLIGATORIO de la evidencia del consentimiento de OTP,
+ * PRE-AUTH y ANTES de signInWithOtp.
+ *
+ * NO es best-effort: si la RPC `record_otp_consent` (s7_69) falla, el caller
+ * NO debe enviar el OTP (sin evidencia, no hay SMS). Devuelve `true` solo con
+ * éxito o idempotencia válida (mismo `request_id` reinsertado → la RPC hace
+ * ON CONFLICT DO NOTHING y no devuelve error).
+ *
+ * `requestId`: se genera uno NUEVO por intento visible de envío/reenvío. El
+ * parámetro existe únicamente para REINTENTOS TÉCNICOS de una misma operación
+ * (conservar idempotencia); la UI no lo reutiliza entre intentos.
+ *
+ * Nunca se registran OTP, captcha token, IP ni datos sensibles. Los errores se
+ * loguean sin detalle (código corto) y jamás se propagan al usuario: el caller
+ * muestra un mensaje genérico.
+ */
+async function recordOtpConsent(
+  authPhoneE164: string,
+  context: OtpContext,
+  requestId?: string,
+): Promise<boolean> {
+  try {
+    const rid =
+      requestId ||
+      (globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const { error } = await supabase.rpc('record_otp_consent', {
+      p_phone: authPhoneE164,
+      p_context: context,
+      p_consent_version: OTP_CONSENT_VERSION,
+      p_consent_text_hash: OTP_CONSENT_TEXT_SHA256,
+      p_request_id: rid,
+    })
+    if (error) {
+      // Sin detalle: no se revelan límites internos, existencia del teléfono
+      // ni errores SQL.
+      console.warn('[recordOtpConsent] fallo del registro:', error.code ?? 'error')
+      return false
+    }
+    return true
+  } catch {
+    console.warn('[recordOtpConsent] excepción en el registro')
+    return false
+  }
+}
+
+/** Mensaje genérico cuando no se pudo registrar el consentimiento. */
+const CONSENT_RECORD_FAILED_MESSAGE =
+  'No pudimos procesar la solicitud. Inténtalo de nuevo en un momento.'
+
 export async function sendOtp(
   phone: string,
   context: OtpContext,
+  opts: { captchaToken?: string; requestId?: string } = {},
 ): Promise<{ success: boolean; error?: string }> {
   const authPhone = toAuthPhone(phone)
   if (!authPhone) {
     return { success: false, error: 'Número de teléfono inválido. Verifica el formato.' }
   }
 
+  // AUTH-P1D2 (orden VINCULANTE): consentimiento visible (UI) → Turnstile válido
+  // (UI) → record_otp_consent (aquí, OBLIGATORIO) → signInWithOtp (aquí) →
+  // reset del captcha (UI, en finally).
+  // Si el registro falla NO se llama a signInWithOtp y NO se envía OTP.
+  const consentRecorded = await recordOtpConsent(authPhone, context, opts.requestId)
+  if (!consentRecorded) {
+    return { success: false, error: CONSENT_RECORD_FAILED_MESSAGE }
+  }
+
   const { error } = await supabase.auth.signInWithOtp({
     phone: authPhone,
-    options: { shouldCreateUser: OTP_SHOULD_CREATE_USER[context] },
+    options: {
+      shouldCreateUser: OTP_SHOULD_CREATE_USER[context],
+      captchaToken: opts.captchaToken,
+    },
   })
 
   if (error) {
@@ -426,6 +491,7 @@ async function runPostLoginSideEffects(
 export async function signInWithPhonePassword(
   phoneRaw: string,
   password: string,
+  captchaToken?: string,
 ): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
   const GENERIC_ERROR = 'El teléfono o la contraseña no son correctos.'
 
@@ -438,6 +504,7 @@ export async function signInWithPhonePassword(
   const { data, error } = await supabase.auth.signInWithPassword({
     phone: authPhone,
     password,
+    options: { captchaToken },
   })
 
   if (error) {
@@ -561,10 +628,12 @@ export async function signOut(): Promise<void> {
 export async function signInWithEmail(
   email: string,
   password: string,
+  captchaToken?: string,
 ): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
   const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password,
+    options: { captchaToken },
   })
 
   if (error) {
@@ -611,6 +680,7 @@ export async function signInWithEmail(
  */
 export async function requestPasswordReset(
   email: string,
+  captchaToken?: string,
 ): Promise<{ success: boolean }> {
   const cleanEmail = email.trim().toLowerCase()
   if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -620,6 +690,7 @@ export async function requestPasswordReset(
   const redirectTo = `${window.location.origin}/reset-password`
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
     redirectTo,
+    captchaToken,
   })
 
   if (error) {
