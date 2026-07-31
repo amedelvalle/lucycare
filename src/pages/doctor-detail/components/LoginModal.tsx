@@ -320,6 +320,13 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
   // aquí se crea la sesión persistente + corren los side-effects); (3) completar
   // login/booking. Si falla el guardado o el login, NO se completa el acceso ni
   // la reserva y el cliente principal no queda con sesión de este flujo.
+  //
+  // AUTH-P1D2: el paso (2) usa `signInWithPassword`, superficie PROTEGIDA por el
+  // CAPTCHA. El token de Turnstile del envío del OTP ya fue consumido y limpiado
+  // (es de un solo uso), así que este paso exige uno FRESCO — por eso el widget
+  // se renderiza también aquí. El guard corre ANTES de guardar la contraseña:
+  // fallar después dejaría al usuario con la contraseña ya cambiada y sin sesión
+  // (y, en booking, con el intent registrado y la cita sin crear).
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -329,6 +336,10 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setError('No pudimos confirmar tu sesión. Refresca la página y vuelve a intentar.');
       return;
     }
+    const cb = captchaBlock();
+    if (cb) { setError(cb); return; }
+    // Se captura antes de cualquier await: `resetCaptcha()` (finally) lo limpia.
+    const loginCaptchaToken = captchaToken ?? undefined;
     setLoading(true);
     try {
       // 1. Guardar la contraseña usando el token transitorio (fetch directo).
@@ -337,8 +348,9 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
         setError(saved.error || 'No pudimos guardar tu contraseña. Prueba de nuevo.');
         return;
       }
-      // 2. Login REAL en el cliente principal (sesión persistente + side-effects).
-      const login = await signInWithPhonePassword(fullPhone, newPassword);
+      // 2. Login REAL en el cliente principal (sesión persistente + side-effects),
+      //    con el token FRESCO de Turnstile validado arriba.
+      const login = await signInWithPhonePassword(fullPhone, newPassword, loginCaptchaToken);
       if (!login.success || !login.user) {
         setError(
           login.error ||
@@ -358,6 +370,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       setError('Error de conexión al guardar la contraseña.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -764,6 +777,10 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
                     <p className="text-xs text-red-600 mt-1">Las contraseñas no coinciden.</p>
                   )}
                 </div>
+
+                {/* El acceso posterior es un login por contraseña: superficie
+                    protegida por el CAPTCHA. Token FRESCO (el del OTP ya se usó). */}
+                {captchaWidget}
 
                 <button
                   type="submit"

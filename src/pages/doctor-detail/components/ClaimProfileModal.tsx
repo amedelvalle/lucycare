@@ -330,20 +330,29 @@ export default function ClaimProfileModal({
     }
   };
 
+  // AUTH-P1D2: `resetPasswordForEmail` es superficie PROTEGIDA por el CAPTCHA.
+  // El guard corre ANTES de llamar y ANTES de mostrar éxito: como
+  // requestPasswordReset siempre responde success (anti-enumeración), sin token
+  // el correo no saldría y la pantalla de éxito estaría mintiendo.
   const handleSendResetLink = async () => {
     if (!profileEmail) return;
     setGenericError('');
+    const cb = captchaBlock();
+    if (cb) { setGenericError(cb); return; }
+    // Se captura antes de cualquier await: `resetCaptcha()` (finally) lo limpia.
+    const resetCaptchaToken = captchaToken ?? undefined;
     setLoading(true);
     try {
       // requestPasswordReset siempre devuelve success:true (genérico).
       // Igual lo llamamos para que Supabase mande el email real.
-      await requestPasswordReset(profileEmail);
+      await requestPasswordReset(profileEmail, resetCaptchaToken);
       setOutcome('email_sent');
       setStep('success');
     } catch {
       setGenericError('Error de conexión al solicitar el link de email.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -740,6 +749,16 @@ export default function ClaimProfileModal({
                         Contactá a soporte para actualizarlo, o elegí <strong>Crear contraseña ahora</strong>.
                       </p>
                     </div>
+                  )}
+                  {/* Envío del link de recuperación: superficie protegida por el
+                      CAPTCHA. Token FRESCO (el del OTP del claim ya se usó). */}
+                  {CAPTCHA_ENABLED && profileEmail && (
+                    <TurnstileWidget
+                      ref={turnstileRef}
+                      onToken={setCaptchaToken}
+                      onExpire={() => setCaptchaToken(null)}
+                      onError={() => setCaptchaToken(null)}
+                    />
                   )}
                   <button
                     onClick={handleSendResetLink}
