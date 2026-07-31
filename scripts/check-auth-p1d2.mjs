@@ -150,6 +150,26 @@ console.log('\ncheck-auth-p1d2 — consentimiento OTP + Turnstile\n');
   check('reset del captcha tras cada intento (resetCaptcha en finally)', (src.match(/resetCaptcha\(\)/g) || []).length >= 4);
   check('captchaToken solo en memoria (sin localStorage)', /localStorage\.setItem\([^)]*captcha/i.test(src) === false);
   check('handleResendOtp con guard captcha (token fresco)', /const handleResendOtp[\s\S]*?captchaBlock\(\)/.test(src));
+
+  // ─── PILOTO-P0 / GAP-1 ───
+  // El login PRINCIPAL posterior a crear la contraseña es `signInWithPassword`:
+  // superficie PROTEGIDA por el CAPTCHA. El token del envío del OTP ya se
+  // consumió, así que este paso exige uno FRESCO (widget propio + guard).
+  const setPwd = between(src, 'const handleSetPassword = async', 'const handleEmailLogin = async');
+  check('set_password: guard captchaBlock ANTES del login principal',
+    setPwd.indexOf('captchaBlock()') >= 0 &&
+    setPwd.indexOf('captchaBlock()') < setPwd.indexOf('signInWithPhonePassword('), true);
+  check('set_password: guard ANTES de guardar la contraseña (no deja password sin sesión)',
+    setPwd.indexOf('captchaBlock()') < setPwd.indexOf('setPasswordFromClaim('), true);
+  check('set_password: token fresco pasado a signInWithPhonePassword',
+    /signInWithPhonePassword\(fullPhone,\s*newPassword,\s*loginCaptchaToken\)/.test(setPwd));
+  check('set_password: resetCaptcha en el finally', /finally \{[\s\S]*?resetCaptcha\(\)/.test(setPwd));
+  check('set_password: NO reutiliza el token del envío de OTP (se captura tras el guard)',
+    /const loginCaptchaToken = captchaToken \?\? undefined;/.test(setPwd));
+  // El widget debe estar DENTRO del bloque JSX de set_password (no basta con que
+  // exista en el archivo: en los otros pasos no sirve para este login).
+  const setPwdJsx = between(src, "phoneStep === 'set_password' && (", 'TAB EMAIL');
+  check('widget de Turnstile montado dentro del paso set_password', /\{captchaWidget\}/.test(setPwdJsx));
 }
 
 // ─── 6. ClaimProfileModal: consentimiento + captcha en el envío ───
@@ -160,6 +180,25 @@ console.log('\ncheck-auth-p1d2 — consentimiento OTP + Turnstile\n');
   check("sendOtp('claim') con captchaToken", /sendOtp\(fullPhone, 'claim', \{ captchaToken: captchaToken \?\? undefined \}\)/.test(src));
   check('reset del captcha tras el intento', /resetCaptcha\(\)/.test(src));
   check('claim médico sigue conectado (verifyOtp + claimDoctorProfile)', /verifyOtp\(fullPhone, otpCode\)/.test(src) && /claimDoctorProfile\(\{/.test(src));
+
+  // ─── PILOTO-P0 / GAP-2 ───
+  // "Recibir link por email" llama `resetPasswordForEmail`: superficie PROTEGIDA.
+  // Sin token no debe llamarse NI mostrarse éxito (requestPasswordReset siempre
+  // responde success por anti-enumeración → la falla sería silenciosa).
+  const resetLink = between(src, 'const handleSendResetLink = async', 'const stepIndex');
+  check('link por email: guard captchaBlock ANTES de requestPasswordReset',
+    resetLink.indexOf('captchaBlock()') >= 0 &&
+    resetLink.indexOf('captchaBlock()') < resetLink.indexOf('requestPasswordReset('), true);
+  check('link por email: guard ANTES de mostrar éxito',
+    resetLink.indexOf('captchaBlock()') < resetLink.indexOf("setStep('success')"), true);
+  check('link por email: token pasado a requestPasswordReset',
+    /requestPasswordReset\(profileEmail,\s*resetCaptchaToken\)/.test(resetLink));
+  check('link por email: resetCaptcha en el finally', /finally \{[\s\S]*?resetCaptcha\(\)/.test(resetLink));
+  check('link por email: anti-enumeración intacta (éxito genérico, sin ramificar por el resultado)',
+    /if \(!profileEmail\) return;/.test(resetLink) &&
+    /await requestPasswordReset\([^)]*\);\s*[\r\n]+\s*setOutcome\('email_sent'\);/.test(resetLink));
+  check('widget de Turnstile en el paso de link por email (2 superficies)',
+    (src.match(/<TurnstileWidget/g) || []).length >= 2);
 }
 
 // ─── 7. ChangePhoneModal: suspensión ATADA al CAPTCHA ───
