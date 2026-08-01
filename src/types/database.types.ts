@@ -59,6 +59,45 @@ export type Database = {
           },
         ]
       }
+      appointment_patient_cancellations: {
+        Row: {
+          appointment_id: string
+          cancelled_at: string
+          cancelled_by_profile_id: string
+          note: string | null
+          reason: string | null
+        }
+        Insert: {
+          appointment_id: string
+          cancelled_at: string
+          cancelled_by_profile_id: string
+          note?: string | null
+          reason?: string | null
+        }
+        Update: {
+          appointment_id?: string
+          cancelled_at?: string
+          cancelled_by_profile_id?: string
+          note?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_patient_cancellations_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: true
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_patient_cancellations_cancelled_by_profile_id_fkey"
+            columns: ["cancelled_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_reasons: {
         Row: {
           doctor_id: string
@@ -1935,6 +1974,24 @@ export type Database = {
       auth_phone_e164: {
         Args: { p_input: string }
         Returns: string
+      }
+      cancel_my_appointment: {
+        Args: {
+          p_appointment_id: string
+          p_reason?: string | null
+          p_note?: string | null
+        }
+        Returns: Json
+      }
+      list_recent_patient_cancellations: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          appointment_id: string
+          patient_name: string
+          appointment_start: string
+          cancelled_at: string
+          reason: string | null
+        }[]
       }
       can_access_lucyadmin: {
         Args: Record<PropertyKey, never>
