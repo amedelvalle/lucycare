@@ -146,22 +146,34 @@ async function main() {
   const uDoctor = await createUser('doctor');
   const uOther = await createUser('other');
 
-  // ⚠️ NO se escribe `full_name` en profiles. El trigger legacy
-  // audit_profiles_identity_fn (s7_32) se dispara con
-  // `AFTER UPDATE OF full_name, document_type, …` e inserta `auth.uid()` en
-  // audit_log.user_id, que es NOT NULL — bajo service_role auth.uid() es NULL
-  // y la escritura revienta. `role` y `email` NO están en esa lista, así que
-  // actualizarlos es seguro. El nombre visible del paciente vive en
+  // El trigger `handle_new_user` YA creó la fila de profiles al crear el
+  // usuario Auth (documentado en s7_22 §167 y s7_24 §164). Por eso acá se
+  // hace UPDATE, no upsert:
+  //   · un upsert construye una tupla candidata y choca con
+  //     `full_name NOT NULL` antes de resolver el conflicto;
+  //   · y si la tupla trae full_name, el conflicto resuelve por UPDATE y
+  //     dispara el trigger legacy audit_profiles_identity_fn (s7_32), que
+  //     inserta `auth.uid()` en audit_log.user_id (NOT NULL) — bajo
+  //     service_role auth.uid() es NULL y la escritura revienta.
+  // Solo se toca `role`, que NO está entre las columnas vigiladas por ese
+  // trigger (full_name, document_type, document_number, date_of_birth,
+  // gender, department_id, municipality_id). `full_name` y `email` los deja
+  // handle_new_user. El nombre visible del paciente vive en
   // patients.full_name, que es lo que consume la tarjeta del médico.
-  // (Sanear ese trigger con COALESCE es AUDIT-SEC-P0, frente aparte.)
+  // (Sanear el trigger con COALESCE es AUDIT-SEC-P0, frente aparte.)
   for (const [u, role, label] of [
     [uPatient, 'patient', 'paciente'],
     [uDoctor, 'doctor', 'medico'],
     [uOther, 'doctor', 'ajeno'],
   ]) {
-    const { error } = await admin.from('profiles')
-      .upsert({ id: u.id, role, email: u.email });
+    const { data, error } = await admin.from('profiles')
+      .update({ role })
+      .eq('id', u.id)
+      .select('id');
     if (error) throw new Error(`profile(${label}): ${error.message}`);
+    if (data?.length !== 1) {
+      throw new Error(`profile(${label}): handle_new_user no creó exactamente una fila`);
+    }
   }
 
   const { data: spec } = await admin.from('specialties').select('id').limit(1).single();

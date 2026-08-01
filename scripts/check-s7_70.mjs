@@ -411,8 +411,16 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
     .replace(/^\s*\/\/.*$/gm, '');
   check('profiles NO se prepara con full_name (evita el trigger legacy)',
     /full_name/.test(setup) === false);
-  check('profiles solo actualiza role y email',
-    /\.upsert\(\{ id: u\.id, role, email: u\.email \}\)/.test(setup));
+  check('profiles NO se prepara con email (lo pone handle_new_user)',
+    /email/.test(setup) === false);
+  check('sin upsert ni insert directo sobre profiles en todo el smoke',
+    /from\('profiles'\)\s*\.\s*(upsert|insert)\(/.test(sm.replace(/^\s*\/\/.*$/gm, '')) === false);
+  check('el setup usa update({ role }) sobre la fila de handle_new_user',
+    /\.update\(\{ role \}\)/.test(setup) && /\.eq\('id', u\.id\)/.test(setup));
+  check('confirma que se actualizó EXACTAMENTE una fila',
+    /\.select\('id'\)/.test(setup) && /data\?\.length !== 1/.test(setup));
+  check('aborta con error explícito si handle_new_user no creó la fila',
+    /handle_new_user no creó exactamente una fila/.test(setup));
   // Impresión de IDs sintéticos.
   check('imprime el inventario de UUID sintéticos', /function printInventory\(\)/.test(sm));
   for (const obj of ['usuario Auth / perfil', 'clínica', 'membresías', 'médico',
