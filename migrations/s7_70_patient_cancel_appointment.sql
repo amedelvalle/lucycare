@@ -81,6 +81,12 @@
 
 BEGIN;
 
+-- Protección operativa del lock: si no se obtiene rápido, aborta SIN cambios
+-- en vez de bloquear la tabla de citas en producción. Ambos son SET LOCAL:
+-- solo viven dentro de esta transacción.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
 LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;
 
 -- ─── 0. PRECONDICIONES ────────────────────────────────────────────────
@@ -90,6 +96,7 @@ DECLARE
   v_force      boolean;
   v_owner_nm   text;
   v_bypass     boolean;
+  v_cur_bypass boolean;
   v_named      int;
   v_perm_upd   int;
   v_perm_names text;
@@ -117,6 +124,20 @@ BEGIN
   SELECT r.rolbypassrls INTO v_bypass FROM pg_roles r WHERE r.rolname = v_owner_nm;
   IF v_bypass IS NOT TRUE THEN
     RAISE EXCEPTION 's7_70 PRE: el owner de appointments (%) no tiene BYPASSRLS; las RPC no funcionarían', v_owner_nm;
+  END IF;
+
+  -- 0.1.b La premisa REAL del SECURITY DEFINER es el propietario de las
+  --       FUNCIONES, no solo el de la tabla. Las funciones nacen siendo
+  --       propiedad de current_user, así que es current_user quien debe
+  --       tener BYPASSRLS. Si la migración se aplicara con un rol distinto
+  --       del esperado, las RPC no saltarían RLS y el diseño no se sostiene.
+  SELECT r.rolbypassrls INTO v_cur_bypass
+  FROM pg_roles r WHERE r.rolname = current_user;
+  IF v_cur_bypass IS NOT TRUE THEN
+    RAISE EXCEPTION 's7_70 PRE: current_user (%) no tiene BYPASSRLS; las RPC SECURITY DEFINER no saltarían RLS', current_user;
+  END IF;
+  IF current_user <> v_owner_nm THEN
+    RAISE EXCEPTION 's7_70 PRE: current_user (%) difiere del owner de appointments (%); las RPC quedarían con otro propietario', current_user, v_owner_nm;
   END IF;
 
   -- 0.2 Panorama de policies que habilitan UPDATE (cmd 'w' o '*'):
@@ -327,26 +348,22 @@ BEGIN
     RAISE EXCEPTION 'La nota supera el máximo permitido.' USING ERRCODE = 'P0115';
   END IF;
 
-  -- 7.3 Bloqueo de la fila: serializa el doble clic.
-  SELECT * INTO v_appt
+  -- 7.3 Bloqueo Y pertenencia en la MISMA sentencia.
+  --     La pertenencia (ficha del caller + vínculo confirmado, s7_43) va en
+  --     el JOIN, no en una comprobación posterior: así NUNCA se bloquea una
+  --     cita ajena o arbitraria. `FOR UPDATE OF a` bloquea solo la fila de
+  --     appointments; `patients` no se bloquea.
+  SELECT a.* INTO v_appt
   FROM public.appointments a
+  JOIN public.patients p ON p.id = a.patient_id
   WHERE a.id = p_appointment_id
-  FOR UPDATE;
+    AND p.profile_id = v_uid
+    AND p.link_confirmed_at IS NOT NULL
+  FOR UPDATE OF a;
 
-  -- Mensaje GENÉRICO e idéntico para "no existe" y "es de otro": no se
-  -- revela la existencia de citas ajenas.
+  -- Mensaje GENÉRICO e idéntico para "no existe", "es de otro" y "vínculo
+  -- sin confirmar": no se revela la existencia de citas ajenas.
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'No pudimos procesar la solicitud.' USING ERRCODE = 'P0111';
-  END IF;
-
-  -- 7.4 Pertenencia server-side: ficha del caller Y vínculo confirmado
-  --     (coherente con lo que "Mis atenciones" lista, s7_43).
-  IF NOT EXISTS (
-    SELECT 1 FROM public.patients p
-    WHERE p.id = v_appt.patient_id
-      AND p.profile_id = v_uid
-      AND p.link_confirmed_at IS NOT NULL
-  ) THEN
     RAISE EXCEPTION 'No pudimos procesar la solicitud.' USING ERRCODE = 'P0111';
   END IF;
 
@@ -550,7 +567,14 @@ DECLARE
   v_cols      text;
   v_expected_cols text :=
     'cancel_reason_id,end_time,internal_notes,notes,price,service_id,start_time,status_id,updated_at';
-  v_tbl_upd   boolean;
+  v_tbl_upd     boolean;
+  v_sel_pols    int;
+  v_wr_pols     int;
+  v_fn_oid      oid;
+  v_fn_name     text;
+  v_fn_owner_nm text;
+  v_secdef      boolean;
+  v_cfg         text[];
 BEGIN
   -- 13.1 La policy nueva, semánticamente.
   SELECT p.polcmd, p.polpermissive, p.polroles,
@@ -621,17 +645,71 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: authenticated no puede ejecutar alguna de las RPC nuevas';
   END IF;
 
-  -- 13.6 RLS activa en la tabla nueva y sin policies de escritura.
+  -- 13.6 RLS activa en la tabla nueva, EXACTAMENTE una policy de SELECT y
+  --      CERO de escritura.
   IF NOT (SELECT c.relrowsecurity FROM pg_class c
           WHERE c.oid = 'public.appointment_patient_cancellations'::regclass) THEN
     RAISE EXCEPTION 's7_70 POST: RLS no quedó activa en appointment_patient_cancellations';
   END IF;
-  IF EXISTS (
-    SELECT 1 FROM pg_policy p
-    WHERE p.polrelid = 'public.appointment_patient_cancellations'::regclass
-      AND p.polcmd <> 'r'
-  ) THEN
-    RAISE EXCEPTION 's7_70 POST: existen policies de escritura en appointment_patient_cancellations';
+  SELECT count(*) INTO v_sel_pols
+  FROM pg_policy p
+  WHERE p.polrelid = 'public.appointment_patient_cancellations'::regclass
+    AND p.polcmd = 'r';
+  IF v_sel_pols <> 1 THEN
+    RAISE EXCEPTION 's7_70 POST: se esperaba exactamente 1 policy SELECT en la tabla nueva; hay %', v_sel_pols;
+  END IF;
+  SELECT count(*) INTO v_wr_pols
+  FROM pg_policy p
+  WHERE p.polrelid = 'public.appointment_patient_cancellations'::regclass
+    AND p.polcmd <> 'r';
+  IF v_wr_pols <> 0 THEN
+    RAISE EXCEPTION 's7_70 POST: existen % policies de escritura en appointment_patient_cancellations', v_wr_pols;
+  END IF;
+
+  -- 13.7 Las RPC: propietario esperado, SECURITY DEFINER y search_path
+  --      EXACTO. Es la premisa que sostiene todo el diseño: sin owner con
+  --      BYPASSRLS no saltan RLS, y sin el search_path correcto fallarían
+  --      al resolver relaciones desde los triggers heredados.
+  FOR v_fn_oid IN
+    SELECT unnest(ARRAY[
+      to_regprocedure('public.cancel_my_appointment(uuid, text, text)'),
+      to_regprocedure('public.list_recent_patient_cancellations()')
+    ])
+  LOOP
+    IF v_fn_oid IS NULL THEN
+      RAISE EXCEPTION 's7_70 POST: alguna de las RPC no existe con la firma esperada';
+    END IF;
+    SELECT p.proname, pg_get_userbyid(p.proowner), p.prosecdef, p.proconfig
+      INTO v_fn_name, v_fn_owner_nm, v_secdef, v_cfg
+    FROM pg_proc p WHERE p.oid = v_fn_oid;
+
+    IF v_fn_owner_nm <> current_user THEN
+      RAISE EXCEPTION 's7_70 POST: % pertenece a % y se esperaba % (rol ejecutor)', v_fn_name, v_fn_owner_nm, current_user;
+    END IF;
+    IF NOT (SELECT r.rolbypassrls FROM pg_roles r WHERE r.rolname = v_fn_owner_nm) THEN
+      RAISE EXCEPTION 's7_70 POST: el owner de % (%) no tiene BYPASSRLS', v_fn_name, v_fn_owner_nm;
+    END IF;
+    IF v_secdef IS NOT TRUE THEN
+      RAISE EXCEPTION 's7_70 POST: % no es SECURITY DEFINER', v_fn_name;
+    END IF;
+    IF v_cfg IS NULL OR array_length(v_cfg, 1) <> 1 THEN
+      RAISE EXCEPTION 's7_70 POST: % no tiene exactamente un ajuste en proconfig (%)', v_fn_name, v_cfg;
+    END IF;
+    -- Comparación canónica: el formato almacenado conserva los espacios de
+    -- la declaración, así que se normalizan antes de comparar.
+    IF replace(v_cfg[1], ' ', '') <> 'search_path=pg_catalog,public,pg_temp' THEN
+      RAISE EXCEPTION 's7_70 POST: search_path de % es "%" y se esperaba "search_path=pg_catalog, public, pg_temp"', v_fn_name, v_cfg[1];
+    END IF;
+  END LOOP;
+
+  -- 13.8 PUBLIC sin acceso a la tabla nueva ni a las RPC.
+  IF has_table_privilege('public', 'public.appointment_patient_cancellations', 'SELECT')
+     OR has_table_privilege('public', 'public.appointment_patient_cancellations', 'INSERT') THEN
+    RAISE EXCEPTION 's7_70 POST: PUBLIC conserva acceso a appointment_patient_cancellations';
+  END IF;
+  IF has_function_privilege('public', 'public.cancel_my_appointment(uuid, text, text)', 'EXECUTE')
+     OR has_function_privilege('public', 'public.list_recent_patient_cancellations()', 'EXECUTE') THEN
+    RAISE EXCEPTION 's7_70 POST: PUBLIC puede ejecutar alguna de las RPC nuevas';
   END IF;
 
   RAISE NOTICE 's7_70 POST: OK — cancelación por RPC habilitada y UPDATE del paciente cerrado';

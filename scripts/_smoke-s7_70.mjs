@@ -161,8 +161,15 @@ async function main() {
   if (ePatient) throw new Error(`patient: ${ePatient.message}`);
   ids.patientId = patient.id;
 
-  const { data: statuses } = await admin.from('appointment_statuses').select('id, name');
+  // `is_final` DEBE seleccionarse: sin él, el cálculo de estados finales
+  // daría `undefined !== false` = true para TODOS y el test del slot
+  // liberado pasaría siempre (falso positivo).
+  const { data: statuses, error: eStatuses } = await admin
+    .from('appointment_statuses').select('id, name, is_final');
+  if (eStatuses) throw new Error(`statuses: ${eStatuses.message}`);
   const statusId = (n) => statuses.find((s) => s.name === n).id;
+  const FINAL_IDS = statuses.filter((s) => s.is_final === true).map((s) => s.id);
+  if (FINAL_IDS.length === 0) throw new Error('catálogo sin estados finales: is_final no llegó');
 
   /** Crea una cita futura en un slot libre (offset en días para no solapar). */
   const makeAppt = async (offsetDays, statusName = 'programada') => {
@@ -182,7 +189,6 @@ async function main() {
 
   const apptVectors = await makeAppt(3);   // para los 6 PATCH bloqueados
   const apptCancel = await makeAppt(5);    // cancelación legítima por RPC
-  const apptDoctor = await makeAppt(7);    // operaciones del médico
   console.log(`  fixtures listas · clinic=${ids.clinicId} doctor=${ids.doctorId}\n`);
 
   const cPatient = await sessionFor(uPatient);
@@ -244,30 +250,68 @@ async function main() {
   // Horario liberado.
   const { data: activos } = await admin.from('appointments')
     .select('id, status_id').eq('doctor_id', ids.doctorId).eq('start_time', apptCancel.start_time);
-  const finales = statuses.filter((s) => s.is_final !== false).map((s) => s.id);
   check('el slot quedó libre (0 citas activas)',
-    activos.filter((a) => !finales.includes(a.status_id)).length, 0);
+    activos.filter((a) => !FINAL_IDS.includes(a.status_id)).length, 0);
   // Historial conservado.
   const { count: stillThere } = await admin.from('appointments')
     .select('id', { count: 'exact', head: true }).eq('id', apptCancel.id);
   check('la cita sigue existiendo (sin borrado físico)', stillThere, 1);
 
-  // ═══ 8. El médico conserva sus operaciones ══════════════════════════
+  // ═══ 8. El médico conserva TODAS sus operaciones ════════════════════
+  // Las transiciones terminales consumen la cita, así que cada una usa su
+  // propia cita: encadenarlas sobre una sola daría falsos negativos.
   console.log('\n8. Operaciones legítimas del médico');
-  for (const [label, payload] of [
-    ['confirmar', { status_id: statusId('confirmada') }],
-    ['notas', { notes: 'CP0 nota del medico' }],
-    ['precio', { price: 30 }],
-    ['cancelar', { status_id: statusId('cancelada'), cancel_reason_id: null }],
+
+  const docUpd = async (label, apptId, payload) => {
+    const { data, error } = await cDoctor.from('appointments')
+      .update(payload).eq('id', apptId).select('id');
+    check(`médico puede ${label}`, !error && Array.isArray(data) && data.length === 1);
+  };
+
+  // 8.a Columnas editables sobre una cita que no cambia de estado.
+  const apptEdit = await makeAppt(13);
+  await docUpd('editar notes', apptEdit.id, { notes: 'CP0 nota visible' });
+  await docUpd('editar internal_notes', apptEdit.id, { internal_notes: 'CP0 nota interna' });
+  await docUpd('editar price', apptEdit.id, { price: 30 });
+  await docUpd('editar service_id', apptEdit.id, { service_id: ids.serviceId });
+  await docUpd('escribir updated_at (el cliente lo manda)', apptEdit.id,
+    { updated_at: new Date().toISOString() });
+  // Reprogramar: start_time + end_time juntos, a un slot libre.
+  const reStart = new Date(Date.now() + 14 * 86400000); reStart.setUTCMinutes(0, 0, 0);
+  await docUpd('reprogramar start_time/end_time', apptEdit.id, {
+    start_time: reStart.toISOString(),
+    end_time: new Date(reStart.getTime() + 30 * 60000).toISOString(),
+  });
+
+  // 8.b Cadena completa de estados no terminales.
+  const apptFlow = await makeAppt(15);
+  await docUpd('confirmar', apptFlow.id, { status_id: statusId('confirmada') });
+  await docUpd('pasar a sala', apptFlow.id, { status_id: statusId('en_sala') });
+  await docUpd('atender', apptFlow.id, { status_id: statusId('atendida') });
+
+  // 8.c Terminales, cada una en su propia cita.
+  const apptNoShow = await makeAppt(17);
+  await docUpd('marcar no asistió', apptNoShow.id, { status_id: statusId('no_asistio') });
+
+  const apptDocCancel = await makeAppt(19);
+  const { data: reasons } = await admin.from('cancel_reasons')
+    .select('id').eq('is_active', true).limit(1);
+  await docUpd('cancelar con cancel_reason_id', apptDocCancel.id, {
+    status_id: statusId('cancelada'),
+    cancel_reason_id: reasons?.[0]?.id ?? null,
+  });
+
+  // 8.d Columnas fuera del grant: bloqueadas incluso para el médico.
+  for (const [col, payload] of [
+    ['payment_status', { payment_status: 'paid' }],
+    ['patient_id', { patient_id: ids.patientId }],
+    ['doctor_id', { doctor_id: ids.doctorId }],
+    ['clinic_id', { clinic_id: ids.clinicId }],
   ]) {
     const { data, error } = await cDoctor.from('appointments')
-      .update(payload).eq('id', apptDoctor.id).select('id');
-    check(`médico puede ${label}`, !error && Array.isArray(data) && data.length === 1);
+      .update(payload).eq('id', apptEdit.id).select('id');
+    check(`médico NO puede escribir ${col} (fuera del grant)`, isDenied(error, data));
   }
-  // Columnas fuera del grant: bloqueadas incluso para el médico.
-  const { data: dOut, error: eOut } = await cDoctor.from('appointments')
-    .update({ payment_status: 'paid' }).eq('id', apptDoctor.id).select('id');
-  check('médico NO puede escribir payment_status (fuera del grant)', isDenied(eOut, dOut));
 
   // ═══ 9. Otra clínica ════════════════════════════════════════════════
   console.log('\n9. Aislamiento entre clínicas');
@@ -319,20 +363,22 @@ async function main() {
     stillOpen.status_id === statusId('programada'));
 
   // ═══ 12. Elegibilidad temporal y de estado ══════════════════════════
-  console.log('\n12. Elegibilidad');
-  const { error: ePast } = await cPatient.rpc('cancel_my_appointment', {
-    p_appointment_id: apptDoctor.id,
+  console.log('\n12. Elegibilidad y no atribución');
+  // Cita cancelada por el MÉDICO: no tiene fila de evento del paciente.
+  const { data: rpcOther2, error: eOther2 } = await cPatient.rpc('cancel_my_appointment', {
+    p_appointment_id: apptDocCancel.id,
   });
-  check('cita ya cancelada por el médico → terminal o P0112',
-    ePast?.code === 'P0112' || ePast === null || ePast === undefined);
-  const { data: rpcOther2 } = await cPatient.rpc('cancel_my_appointment', {
-    p_appointment_id: apptDoctor.id,
-  });
-  check('cancelada sin evento → NO se atribuye al paciente',
-    rpcOther2?.outcome, 'already_cancelled_by_other');
+  check('cancelada por el médico → resultado terminal, sin error',
+    !eOther2 && rpcOther2?.outcome === 'already_cancelled_by_other');
+  check('no se atribuye al paciente', rpcOther2?.success, false);
   const { data: evtNone } = await admin.from('appointment_patient_cancellations')
-    .select('appointment_id').eq('appointment_id', apptDoctor.id);
+    .select('appointment_id').eq('appointment_id', apptDocCancel.id);
   check('no se insertó evento retrospectivo', evtNone.length, 0);
+  // Estado no cancelable (atendida).
+  const { error: eAtendida } = await cPatient.rpc('cancel_my_appointment', {
+    p_appointment_id: apptFlow.id,
+  });
+  check('cita atendida → P0112', eAtendida?.code, 'P0112');
 
   // ═══ 13. Tarjeta del médico ═════════════════════════════════════════
   console.log('\n13. list_recent_patient_cancellations');
@@ -349,44 +395,120 @@ async function main() {
 }
 
 // ═══ CLEANUP ══════════════════════════════════════════════════════════
+// Cada borrado se verifica: un error silenciado dejaría residuos y el
+// "0 residuos" sería una afirmación falsa. Al final se cuenta CADA objeto.
 async function cleanup() {
   console.log('\nCLEANUP');
-  try {
-    if (ids.apptIds.length) {
-      await admin.from('appointment_patient_cancellations').delete().in('appointment_id', ids.apptIds);
-      await admin.from('appointments').delete().in('id', ids.apptIds);
-    }
-    if (ids.doctorId) {
-      await admin.from('availability_rules').delete().eq('doctor_id', ids.doctorId);
-      await admin.from('services').delete().eq('doctor_id', ids.doctorId);
-    }
-    if (ids.patientId) await admin.from('patients').delete().eq('id', ids.patientId);
-    if (ids.doctorId) await admin.from('doctors').delete().eq('id', ids.doctorId);
-    if (ids.clinicId) {
-      await admin.from('clinic_members').delete().eq('clinic_id', ids.clinicId);
-      await admin.from('clinics').delete().eq('id', ids.clinicId);
-    }
-    for (const uid of ids.users) {
-      await admin.from('profiles').delete().eq('id', uid);
-      await admin.auth.admin.deleteUser(uid).catch(() => {});
-    }
+  const NIL = '00000000-0000-0000-0000-000000000000';
+  const apptIds = ids.apptIds.length ? ids.apptIds : [NIL];
+  const userIds = ids.users.length ? ids.users : [NIL];
+  let cleanupErrors = 0;
 
-    // Verificación de 0 residuos.
-    const { count: cAppt } = await admin.from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .in('id', ids.apptIds.length ? ids.apptIds : ['00000000-0000-0000-0000-000000000000']);
-    const { count: cClinic } = await admin.from('clinics')
-      .select('id', { count: 'exact', head: true }).like('name', `${MARK}%`);
-    const { count: cPat } = await admin.from('patients')
-      .select('id', { count: 'exact', head: true }).like('full_name', `${MARK}%`);
-    check('0 citas residuales', cAppt ?? 0, 0);
-    check('0 clínicas residuales', cClinic ?? 0, 0);
-    check('0 pacientes residuales', cPat ?? 0, 0);
-    console.log('  ℹ️  audit_log NO se limpia: es append-only por diseño.');
-  } catch (err) {
-    console.error('  ⚠️  cleanup incompleto:', err.message);
-    fail++;
+  /** Ejecuta un borrado y falla ruidosamente si la DB devuelve error. */
+  const del = async (label, promise) => {
+    const { error } = await promise;
+    if (error) {
+      console.error(`  ⚠️  fallo al borrar ${label}: ${error.message}`);
+      cleanupErrors++;
+    }
+  };
+
+  // 1. Auditorías SINTÉTICAS: solo las de las citas CP0 y solo las que la
+  //    RPC del paciente generó. Nunca se toca auditoría ajena.
+  await del('audit_log sintético',
+    admin.from('audit_log').delete()
+      .eq('table_name', 'appointments')
+      .in('record_id', apptIds)
+      .eq('new_data->>edited_via', 'patient_self_cancel'));
+
+  // 2. Eventos → citas (respeta la FK sin ON DELETE).
+  await del('eventos de cancelación',
+    admin.from('appointment_patient_cancellations').delete().in('appointment_id', apptIds));
+  await del('citas', admin.from('appointments').delete().in('id', apptIds));
+
+  // 3. Dependencias del médico.
+  if (ids.doctorId) {
+    await del('reglas de disponibilidad',
+      admin.from('availability_rules').delete().eq('doctor_id', ids.doctorId));
+    await del('servicios', admin.from('services').delete().eq('doctor_id', ids.doctorId));
   }
+
+  // 4. Fichas, médico, membresías, clínica.
+  if (ids.patientId) await del('paciente', admin.from('patients').delete().eq('id', ids.patientId));
+  if (ids.doctorId) await del('médico', admin.from('doctors').delete().eq('id', ids.doctorId));
+  if (ids.clinicId) {
+    await del('membresías', admin.from('clinic_members').delete().eq('clinic_id', ids.clinicId));
+    await del('clínica', admin.from('clinics').delete().eq('id', ids.clinicId));
+  }
+
+  // 5. Perfiles y usuarios de Auth.
+  await del('perfiles', admin.from('profiles').delete().in('id', userIds));
+  for (const uid of ids.users) {
+    const { error } = await admin.auth.admin.deleteUser(uid);
+    if (error) {
+      console.error(`  ⚠️  fallo al borrar auth user ${uid}: ${error.message}`);
+      cleanupErrors++;
+    }
+  }
+
+  // ── Verificación de CERO residuos, objeto por objeto ──
+  const countOf = async (table, col, filter) => {
+    const q = admin.from(table).select(col, { count: 'exact', head: true });
+    const { count, error } = await filter(q);
+    if (error) {
+      console.error(`  ⚠️  no se pudo contar ${table}: ${error.message}`);
+      cleanupErrors++;
+      return -1;
+    }
+    return count ?? 0;
+  };
+
+  check('0 eventos residuales',
+    await countOf('appointment_patient_cancellations', 'appointment_id',
+      (q) => q.in('appointment_id', apptIds)), 0);
+  check('0 citas residuales',
+    await countOf('appointments', 'id', (q) => q.in('id', apptIds)), 0);
+  check('0 reglas de disponibilidad residuales',
+    await countOf('availability_rules', 'id',
+      (q) => q.eq('doctor_id', ids.doctorId ?? NIL)), 0);
+  check('0 servicios residuales',
+    await countOf('services', 'id', (q) => q.like('name', `${MARK}%`)), 0);
+  check('0 pacientes residuales',
+    await countOf('patients', 'id', (q) => q.like('full_name', `${MARK}%`)), 0);
+  check('0 médicos residuales',
+    await countOf('doctors', 'id', (q) => q.eq('id', ids.doctorId ?? NIL)), 0);
+  check('0 membresías residuales',
+    await countOf('clinic_members', 'profile_id',
+      (q) => q.eq('clinic_id', ids.clinicId ?? NIL)), 0);
+  check('0 clínicas residuales',
+    await countOf('clinics', 'id', (q) => q.like('name', `${MARK}%`)), 0);
+  check('0 perfiles residuales',
+    await countOf('profiles', 'id', (q) => q.in('id', userIds)), 0);
+  check('0 auditorías sintéticas residuales',
+    await countOf('audit_log', 'id',
+      (q) => q.eq('table_name', 'appointments').in('record_id', apptIds)
+              .eq('new_data->>edited_via', 'patient_self_cancel')), 0);
+
+  // Usuarios de Auth: se confirma con getUserById, NO con listUsers — esa
+  // API está rota en este proyecto (paginación con fila corrupta) y daría
+  // un falso "no existe". Un 403 intermitente es INDETERMINADO, no ausencia:
+  // se reintenta antes de concluir.
+  let ghosts = 0;
+  for (const uid of ids.users) {
+    let gone = false;
+    for (let attempt = 0; attempt < 3 && !gone; attempt++) {
+      const { data, error } = await admin.auth.admin.getUserById(uid);
+      if (error && /not.?found/i.test(error.message || '')) { gone = true; break; }
+      if (!error && !data?.user) { gone = true; break; }
+      if (!error && data?.user) break;           // existe de verdad
+      await new Promise((r) => setTimeout(r, 400)); // 403 → indeterminado
+    }
+    if (!gone) ghosts++;
+  }
+  check('0 usuarios Auth residuales (getUserById, no listUsers)', ghosts, 0);
+
+  check('cleanup sin errores de escritura', cleanupErrors, 0);
+  console.log('  ℹ️  audit_log de OTROS orígenes no se toca: es append-only por diseño.');
 }
 
 main()

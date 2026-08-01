@@ -44,6 +44,16 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('sin ROLLBACK dentro de la migración', /^\s*ROLLBACK;/m.test(sql) === false);
   check('LOCK ACCESS EXCLUSIVE sobre appointments',
     /LOCK TABLE public\.appointments IN ACCESS EXCLUSIVE MODE;/.test(sql));
+  check('lock_timeout acotado antes del LOCK',
+    /SET LOCAL lock_timeout = '5s';/.test(sql)
+    && sql.indexOf("SET LOCAL lock_timeout") < sql.indexOf('LOCK TABLE public.appointments'), true);
+  check('statement_timeout acotado antes del LOCK',
+    /SET LOCAL statement_timeout = '60s';/.test(sql)
+    && sql.indexOf("SET LOCAL statement_timeout") < sql.indexOf('LOCK TABLE public.appointments'), true);
+  // Solo sentencias SET completas (terminadas en `;`): el `SET search_path`
+  // de las funciones es un atributo, no una sentencia de transacción.
+  check('los timeouts son SET LOCAL (no escapan de la transacción)',
+    /^\s*SET (?!LOCAL)[^;\n]*;/m.test(sql) === false);
   // El hardening y la creación de la RPC deben ir en la MISMA transacción.
   const iRpc = sql.indexOf('CREATE FUNCTION public.cancel_my_appointment');
   const iPol = sql.indexOf('DROP POLICY "appointments_update"');
@@ -128,11 +138,20 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
     /SET search_path = pg_catalog, public, pg_temp/.test(fn));
   check('firma (uuid, text, text) con defaults NULL',
     /p_appointment_id uuid,\s*p_reason\s+text DEFAULT NULL,\s*p_note\s+text DEFAULT NULL/.test(fn));
-  check('SELECT ... FOR UPDATE (serializa el doble clic)', /FOR UPDATE;/.test(fn));
   check('gate de sesión P0110', /P0110/.test(fn));
+  // Pertenencia y bloqueo en la MISMA sentencia: nunca se bloquea una cita
+  // ajena para verificar después.
+  const lockStmt = between(fn, 'SELECT a.* INTO v_appt', 'IF NOT FOUND THEN');
+  check('el FOR UPDATE incluye el JOIN a patients', /JOIN public\.patients p ON p\.id = a\.patient_id/.test(lockStmt));
+  check('la pertenencia va en el WHERE del mismo SELECT',
+    /p\.profile_id = v_uid/.test(lockStmt) && /p\.link_confirmed_at IS NOT NULL/.test(lockStmt));
+  check('FOR UPDATE OF a (bloquea appointments, no patients)', /FOR UPDATE OF a;/.test(lockStmt));
+  check('sin verificación de pertenencia POSTERIOR al lock',
+    /IF NOT EXISTS \(\s*SELECT 1 FROM public\.patients/.test(fn) === false);
+  check('sin fila → P0111 genérico',
+    /IF NOT FOUND THEN\s*RAISE EXCEPTION[^;]*P0111/.test(fn));
   check('pertenencia genérica P0111 (no revela citas ajenas)',
     (fn.match(/P0111/g) || []).length >= 2);
-  check('exige link_confirmed_at IS NOT NULL', /link_confirmed_at IS NOT NULL/.test(fn));
   check('elegibilidad de estado P0112', /P0112/.test(fn));
   check('regla temporal start_time > now() → P0113',
     /v_appt\.start_time <= now\(\)/.test(fn) && /P0113/.test(fn));
@@ -243,6 +262,10 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('PRE: verifica que no haya policies RESTRICTIVAS', /v_restr_upd <> 0/.test(pre));
   check('PRE: premisa del DEFINER (FORCE off + owner BYPASSRLS)',
     /relforcerowsecurity/.test(pre) && /rolbypassrls/.test(pre));
+  check('PRE: current_user con BYPASSRLS (owner REAL de las funciones)',
+    /r\.rolname = current_user/.test(pre) && /v_cur_bypass IS NOT TRUE/.test(pre));
+  check('PRE: current_user coincide con el owner de appointments',
+    /current_user <> v_owner_nm/.test(pre));
   check('PRE: los objetos nuevos no existen todavía',
     /to_regclass\('public\.appointment_patient_cancellations'\) IS NOT NULL/.test(pre));
   check('PRE: deja constancia de trg_block_inactive_service',
@@ -256,8 +279,22 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('POST: la tabla nueva sin escritura para authenticated',
     /conserva escritura sobre appointment_patient_cancellations/.test(post));
   check('POST: RPC no ejecutables por anon', /anon puede ejecutar alguna de las RPC/.test(post));
-  check('POST: RLS activa y sin policies de escritura en la tabla nueva',
-    /RLS no quedó activa/.test(post) && /policies de escritura/.test(post));
+  check('POST: RLS activa en la tabla nueva', /RLS no quedó activa/.test(post));
+  check('POST: EXACTAMENTE 1 policy SELECT en la tabla nueva',
+    /v_sel_pols <> 1/.test(post));
+  check('POST: CERO policies de escritura en la tabla nueva',
+    /v_wr_pols <> 0/.test(post));
+  check('POST: owner de ambas RPC = rol ejecutor',
+    /pertenece a % y se esperaba %/.test(post) && /v_fn_owner_nm <> current_user/.test(post));
+  check('POST: owner de las RPC con BYPASSRLS', /no tiene BYPASSRLS/.test(post));
+  check('POST: ambas RPC son SECURITY DEFINER', /no es SECURITY DEFINER/.test(post));
+  check('POST: proconfig EXACTO = search_path pg_catalog, public, pg_temp',
+    /search_path=pg_catalog,public,pg_temp/.test(post)
+    && /array_length\(v_cfg, 1\) <> 1/.test(post));
+  check('POST: PUBLIC sin acceso a la tabla nueva',
+    /PUBLIC conserva acceso a appointment_patient_cancellations/.test(post));
+  check('POST: PUBLIC sin EXECUTE de las RPC',
+    /PUBLIC puede ejecutar alguna de las RPC/.test(post));
 }
 
 // ─── 11. Tipos generados ──────────────────────────────────────────────
@@ -274,6 +311,46 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
 {
   console.log('\n12. Alcance de PR-A');
   check('la migración no referencia archivos de src/', /src\//.test(sql) === false);
+}
+
+// ─── 13. Invariantes del smoke (que no vuelva a regresar) ─────────────
+{
+  console.log('\n13. _smoke-s7_70 — invariantes');
+  const sm = read('scripts/_smoke-s7_70.mjs');
+  check('no se autoejecuta (exige --run + CP0_SMOKE_AUTHORIZED)',
+    /process\.argv\.includes\('--run'\)/.test(sm)
+    && /process\.env\.CP0_SMOKE_AUTHORIZED === '1'/.test(sm));
+  check('selecciona is_final del catálogo de estados',
+    /\.select\('id, name, is_final'\)/.test(sm));
+  check('los estados finales se calculan con is_final === true',
+    /s\.is_final === true/.test(sm) && /is_final !== false/.test(sm) === false);
+  check('aborta si is_final no llegó (anti falso positivo)',
+    /catálogo sin estados finales/.test(sm));
+  const doctorOps = [
+    'confirmar', 'pasar a sala', 'atender', 'marcar no asistió',
+    'cancelar con cancel_reason_id', 'reprogramar start_time/end_time',
+    'editar service_id', 'editar notes', 'editar internal_notes',
+    'editar price', 'escribir updated_at',
+  ];
+  for (const op of doctorOps) {
+    check(`cobertura médica: ${op}`, sm.includes(`'${op}`), true);
+  }
+  check('transiciones terminales en citas separadas',
+    /apptNoShow/.test(sm) && /apptDocCancel/.test(sm) && /apptFlow/.test(sm));
+  check('cleanup borra solo auditoría sintética del paciente',
+    /\.eq\('new_data->>edited_via', 'patient_self_cancel'\)/.test(sm));
+  check('cleanup valida el error de cada escritura', /cleanupErrors\+\+/.test(sm));
+  check('cleanup verifica 0 residuos en todos los objetos',
+    ['eventos', 'citas', 'reglas de disponibilidad', 'servicios', 'pacientes',
+     'médicos', 'membresías', 'clínicas', 'perfiles', 'auditorías sintéticas']
+      .every((o) => sm.includes(`0 ${o} residuales`)));
+  // Se prohíbe la LLAMADA a listUsers (rota en este proyecto), no su
+  // mención en comentarios o en el texto de un check.
+  check('usuarios Auth verificados con getUserById (sin llamar a listUsers)',
+    /admin\.auth\.admin\.getUserById\(/.test(sm) && /listUsers\s*\(/.test(sm) === false);
+  check('fixtures marcadas CP0_FIXTURE', /const MARK = 'CP0_FIXTURE'/.test(sm));
+  check('sin teléfonos ni datos reales (usuarios por email .test)',
+    /@lucycare\.test/.test(sm) && /503\d{8}/.test(sm) === false);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_70: pass=${pass} fail=${fail}\n`);
