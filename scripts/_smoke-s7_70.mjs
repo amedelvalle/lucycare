@@ -18,8 +18,11 @@
  *   • Usuarios de prueba por EMAIL + contraseña: no se envía ningún SMS,
  *     no se toca Twilio ni el flujo OTP.
  *   • Cleanup obligatorio con verificación de 0 residuos.
- *   • Las filas de audit_log generadas NO se borran: la auditoría es
- *     append-only por diseño.
+ *   • La auditoría generada por las fixtures SÍ se borra, pero SOLO la
+ *     acotada al conjunto EXACTO de UUID sintéticos, a las tablas que el
+ *     smoke escribe y a filas posteriores al inicio de la corrida. Sin
+ *     filtros por nombre, correo ni prefijo. La auditoría de datos reales
+ *     nunca se toca.
  *
  * ── QUÉ PRUEBA ──
  *   El paciente pierde el UPDATE directo (6 vectores) y gana la RPC.
@@ -77,10 +80,42 @@ const isDenied = (error, data) =>
   (error && (error.code === '42501' || /permission denied/i.test(error.message || ''))) ||
   (!error && Array.isArray(data) && data.length === 0);
 
+/** Instante de arranque: acota el borrado de auditoría a ESTA corrida. */
+const RUN_STARTED_AT = new Date().toISOString();
+
 const ids = {
   users: [], clinicId: null, doctorId: null, specialtyId: null,
-  patientId: null, apptIds: [], serviceId: null,
+  patientId: null, apptIds: [], serviceIds: [], ruleIds: [], eventIds: [],
 };
+
+/** Tablas que el smoke escribe: acota el borrado de auditoría por table_name. */
+const SMOKE_TABLES = [
+  'appointments', 'patients', 'profiles', 'clinics', 'clinic_members',
+  'doctors', 'services', 'availability_rules', 'appointment_patient_cancellations',
+];
+
+/** Conjunto EXACTO de UUID sintéticos. Nada se borra fuera de este conjunto. */
+const allSyntheticIds = () => [
+  ...ids.users,          // usuarios Auth == perfiles (comparten id)
+  ids.clinicId, ids.doctorId, ids.patientId,
+  ...ids.serviceIds, ...ids.ruleIds, ...ids.apptIds, ...ids.eventIds,
+].filter(Boolean);
+
+/** Inventario legible de lo creado. Sin secretos, tokens ni contraseñas. */
+function printInventory() {
+  console.log('\nIDs SINTÉTICOS CREADOS (CP0_FIXTURE)');
+  console.log(`  corrida iniciada: ${RUN_STARTED_AT}`);
+  ids.users.forEach((u, i) => console.log(`  usuario Auth / perfil [${i}]: ${u}`));
+  console.log(`  clínica:      ${ids.clinicId ?? '—'}`);
+  console.log(`  membresías:   clinic_id=${ids.clinicId ?? '—'} × profile_id=${ids.users[1] ?? '—'}`);
+  console.log(`  médico:       ${ids.doctorId ?? '—'}`);
+  console.log(`  paciente:     ${ids.patientId ?? '—'}`);
+  console.log(`  servicios:    ${ids.serviceIds.join(', ') || '—'}`);
+  console.log(`  reglas:       ${ids.ruleIds.length} (${ids.ruleIds.join(', ') || '—'})`);
+  console.log(`  citas:        ${ids.apptIds.join(', ') || '—'}`);
+  console.log(`  eventos:      ${ids.eventIds.join(', ') || '—'}`);
+  console.log(`  total de UUID sintéticos: ${allSyntheticIds().length}\n`);
+}
 
 async function createUser(tag) {
   const email = `cp0.${tag}.${Date.now()}@lucycare.test`;
@@ -111,14 +146,22 @@ async function main() {
   const uDoctor = await createUser('doctor');
   const uOther = await createUser('other');
 
-  for (const [u, role, name] of [
-    [uPatient, 'patient', `${MARK} Paciente`],
-    [uDoctor, 'doctor', `${MARK} Medico`],
-    [uOther, 'doctor', `${MARK} Ajeno`],
+  // ⚠️ NO se escribe `full_name` en profiles. El trigger legacy
+  // audit_profiles_identity_fn (s7_32) se dispara con
+  // `AFTER UPDATE OF full_name, document_type, …` e inserta `auth.uid()` en
+  // audit_log.user_id, que es NOT NULL — bajo service_role auth.uid() es NULL
+  // y la escritura revienta. `role` y `email` NO están en esa lista, así que
+  // actualizarlos es seguro. El nombre visible del paciente vive en
+  // patients.full_name, que es lo que consume la tarjeta del médico.
+  // (Sanear ese trigger con COALESCE es AUDIT-SEC-P0, frente aparte.)
+  for (const [u, role, label] of [
+    [uPatient, 'patient', 'paciente'],
+    [uDoctor, 'doctor', 'medico'],
+    [uOther, 'doctor', 'ajeno'],
   ]) {
     const { error } = await admin.from('profiles')
-      .upsert({ id: u.id, role, full_name: name, email: u.email });
-    if (error) throw new Error(`profile(${name}): ${error.message}`);
+      .upsert({ id: u.id, role, email: u.email });
+    if (error) throw new Error(`profile(${label}): ${error.message}`);
   }
 
   const { data: spec } = await admin.from('specialties').select('id').limit(1).single();
@@ -143,14 +186,17 @@ async function main() {
     .insert({ doctor_id: ids.doctorId, name: `${MARK} Consulta`, duration_minutes: 30, is_active: true })
     .select('id').single();
   if (eSvc) throw new Error(`service: ${eSvc.message}`);
-  ids.serviceId = svc.id;
+  ids.serviceIds.push(svc.id);
 
   // Disponibilidad amplia para no chocar con block_outside_availability.
   const rules = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
     doctor_id: ids.doctorId, day_of_week: d,
     start_time: '00:00:00', end_time: '23:59:00', is_active: true,
   }));
-  await admin.from('availability_rules').insert(rules);
+  const { data: ruleRows, error: eRules } = await admin
+    .from('availability_rules').insert(rules).select('id');
+  if (eRules) throw new Error(`availability_rules: ${eRules.message}`);
+  ids.ruleIds.push(...(ruleRows ?? []).map((r) => r.id));
 
   const { data: patient, error: ePatient } = await admin.from('patients')
     .insert({
@@ -178,7 +224,7 @@ async function main() {
     const end = new Date(start.getTime() + 30 * 60000);
     const { data, error } = await admin.from('appointments').insert({
       clinic_id: ids.clinicId, doctor_id: ids.doctorId, patient_id: ids.patientId,
-      service_id: ids.serviceId, status_id: statusId(statusName),
+      service_id: ids.serviceIds[0], status_id: statusId(statusName),
       start_time: start.toISOString(), end_time: end.toISOString(),
       source: 'lucy_directorio', price: 25,
     }).select('id, start_time').single();
@@ -189,7 +235,7 @@ async function main() {
 
   const apptVectors = await makeAppt(3);   // para los 6 PATCH bloqueados
   const apptCancel = await makeAppt(5);    // cancelación legítima por RPC
-  console.log(`  fixtures listas · clinic=${ids.clinicId} doctor=${ids.doctorId}\n`);
+  printInventory();
 
   const cPatient = await sessionFor(uPatient);
   const cDoctor = await sessionFor(uDoctor);
@@ -230,6 +276,7 @@ async function main() {
   const { data: evt } = await admin.from('appointment_patient_cancellations')
     .select('*').eq('appointment_id', apptCancel.id);
   check('1 fila de evento', evt.length, 1);
+  if (evt.length) ids.eventIds.push(apptCancel.id);
   check('actor = el paciente', evt[0]?.cancelled_by_profile_id === uPatient.id);
   check('nota solo-espacios normalizada a NULL', evt[0]?.note, null);
   check('motivo persistido', evt[0]?.reason, 'no_puedo_asistir');
@@ -273,7 +320,7 @@ async function main() {
   await docUpd('editar notes', apptEdit.id, { notes: 'CP0 nota visible' });
   await docUpd('editar internal_notes', apptEdit.id, { internal_notes: 'CP0 nota interna' });
   await docUpd('editar price', apptEdit.id, { price: 30 });
-  await docUpd('editar service_id', apptEdit.id, { service_id: ids.serviceId });
+  await docUpd('editar service_id', apptEdit.id, { service_id: ids.serviceIds[0] });
   await docUpd('escribir updated_at (el cliente lo manda)', apptEdit.id,
     { updated_at: new Date().toISOString() });
   // Reprogramar: start_time + end_time juntos, a un slot libre.
@@ -413,27 +460,19 @@ async function cleanup() {
     }
   };
 
-  // 1. Auditorías SINTÉTICAS: solo las de las citas CP0 y solo las que la
-  //    RPC del paciente generó. Nunca se toca auditoría ajena.
-  await del('audit_log sintético',
-    admin.from('audit_log').delete()
-      .eq('table_name', 'appointments')
-      .in('record_id', apptIds)
-      .eq('new_data->>edited_via', 'patient_self_cancel'));
-
-  // 2. Eventos → citas (respeta la FK sin ON DELETE).
+  // 1. Eventos → citas (respeta la FK sin ON DELETE).
   await del('eventos de cancelación',
     admin.from('appointment_patient_cancellations').delete().in('appointment_id', apptIds));
   await del('citas', admin.from('appointments').delete().in('id', apptIds));
 
-  // 3. Dependencias del médico.
+  // 2. Dependencias del médico.
   if (ids.doctorId) {
     await del('reglas de disponibilidad',
       admin.from('availability_rules').delete().eq('doctor_id', ids.doctorId));
     await del('servicios', admin.from('services').delete().eq('doctor_id', ids.doctorId));
   }
 
-  // 4. Fichas, médico, membresías, clínica.
+  // 3. Fichas, médico, membresías, clínica.
   if (ids.patientId) await del('paciente', admin.from('patients').delete().eq('id', ids.patientId));
   if (ids.doctorId) await del('médico', admin.from('doctors').delete().eq('id', ids.doctorId));
   if (ids.clinicId) {
@@ -441,7 +480,7 @@ async function cleanup() {
     await del('clínica', admin.from('clinics').delete().eq('id', ids.clinicId));
   }
 
-  // 5. Perfiles y usuarios de Auth.
+  // 4. Perfiles y usuarios de Auth.
   await del('perfiles', admin.from('profiles').delete().in('id', userIds));
   for (const uid of ids.users) {
     const { error } = await admin.auth.admin.deleteUser(uid);
@@ -450,6 +489,30 @@ async function cleanup() {
       cleanupErrors++;
     }
   }
+
+  // 5. AUDITORÍA — AL FINAL, después de borrar todo lo demás, y acotada al
+  //    conjunto EXACTO de UUID sintéticos. Sin filtros por nombre, correo ni
+  //    prefijo: solo record_id ∈ {ids de esta corrida} y table_name ∈ {tablas
+  //    que el smoke escribe}, restringido además a filas creadas DESPUÉS del
+  //    inicio de la corrida. Auditoría de datos reales: intacta.
+  const synthetic = allSyntheticIds();
+  const syntheticSafe = synthetic.length ? synthetic : [NIL];
+
+  // 5.a La auditoría de la cancelación por RPC, con su marca específica.
+  await del('audit_log · cancelación del paciente',
+    admin.from('audit_log').delete()
+      .eq('table_name', 'appointments')
+      .in('record_id', apptIds)
+      .eq('new_data->>edited_via', 'patient_self_cancel')
+      .gte('created_at', RUN_STARTED_AT));
+
+  // 5.b Cualquier otra auditoría que las fixtures hayan disparado (triggers
+  //     legacy de patients/consultations/prescriptions, etc.).
+  await del('audit_log · resto de fixtures',
+    admin.from('audit_log').delete()
+      .in('record_id', syntheticSafe)
+      .in('table_name', SMOKE_TABLES)
+      .gte('created_at', RUN_STARTED_AT));
 
   // ── Verificación de CERO residuos, objeto por objeto ──
   const countOf = async (table, col, filter) => {
@@ -484,10 +547,17 @@ async function cleanup() {
     await countOf('clinics', 'id', (q) => q.like('name', `${MARK}%`)), 0);
   check('0 perfiles residuales',
     await countOf('profiles', 'id', (q) => q.in('id', userIds)), 0);
-  check('0 auditorías sintéticas residuales',
-    await countOf('audit_log', 'id',
-      (q) => q.eq('table_name', 'appointments').in('record_id', apptIds)
-              .eq('new_data->>edited_via', 'patient_self_cancel')), 0);
+
+  // Auditoría: cero filas para TODO el conjunto sintético, no solo para las
+  // citas canceladas. Se cuenta por tabla para poder reportar el detalle.
+  let auditTotal = 0;
+  for (const t of SMOKE_TABLES) {
+    const n = await countOf('audit_log', 'id',
+      (q) => q.eq('table_name', t).in('record_id', syntheticSafe));
+    if (n !== 0) console.log(`     · audit_log[${t}] = ${n}`);
+    auditTotal += Math.max(n, 0);
+  }
+  check('0 auditorías residuales para TODO el conjunto sintético', auditTotal, 0);
 
   // Usuarios de Auth: se confirma con getUserById, NO con listUsers — esa
   // API está rota en este proyecto (paginación con fila corrupta) y daría
@@ -508,7 +578,9 @@ async function cleanup() {
   check('0 usuarios Auth residuales (getUserById, no listUsers)', ghosts, 0);
 
   check('cleanup sin errores de escritura', cleanupErrors, 0);
-  console.log('  ℹ️  audit_log de OTROS orígenes no se toca: es append-only por diseño.');
+  console.log(`  ℹ️  auditoría borrada SOLO para ${synthetic.length} UUID sintéticos, ` +
+    `en ${SMOKE_TABLES.length} tablas, desde ${RUN_STARTED_AT}. ` +
+    'La auditoría de datos reales no se toca.');
 }
 
 main()

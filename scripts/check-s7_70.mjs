@@ -404,13 +404,47 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   }
   check('transiciones terminales en citas separadas',
     /apptNoShow/.test(sm) && /apptDocCancel/.test(sm) && /apptFlow/.test(sm));
-  check('cleanup borra solo auditoría sintética del paciente',
-    /\.eq\('new_data->>edited_via', 'patient_self_cancel'\)/.test(sm));
+  // Preparación de profiles sin disparar audit_profiles_identity_fn (s7_32).
+  // Se ignoran los comentarios: el `//` que explica POR QUÉ no se usa
+  // full_name menciona la columna, y no debe contar como uso.
+  const setup = between(sm, 'const uPatient = await createUser', 'const { data: spec }')
+    .replace(/^\s*\/\/.*$/gm, '');
+  check('profiles NO se prepara con full_name (evita el trigger legacy)',
+    /full_name/.test(setup) === false);
+  check('profiles solo actualiza role y email',
+    /\.upsert\(\{ id: u\.id, role, email: u\.email \}\)/.test(setup));
+  // Impresión de IDs sintéticos.
+  check('imprime el inventario de UUID sintéticos', /function printInventory\(\)/.test(sm));
+  for (const obj of ['usuario Auth / perfil', 'clínica', 'membresías', 'médico',
+    'paciente', 'servicios', 'reglas', 'citas', 'eventos']) {
+    check(`inventario incluye ${obj}`, sm.includes(obj), true);
+  }
+  check('el inventario se imprime tras crear las fixtures', /printInventory\(\);/.test(sm));
+  check('el inventario no imprime contraseñas ni tokens',
+    /console\.log\([^)]*password|console\.log\([^)]*access_token/.test(sm) === false);
+  // Cleanup de auditoría: al final, acotado, sin filtros amplios.
+  const cl = between(sm, 'async function cleanup()', 'main()');
+  check('la auditoría se borra AL FINAL (después de perfiles y usuarios Auth)',
+    cl.indexOf("del('perfiles'") < cl.indexOf("del('audit_log · cancelación"), true);
+  check('borra la auditoría de la cancelación con su marca específica',
+    /\.eq\('new_data->>edited_via', 'patient_self_cancel'\)/.test(cl));
+  check('borra el resto acotado a record_id ∈ IDs sintéticos',
+    /\.in\('record_id', syntheticSafe\)/.test(cl));
+  check('acota por table_name ∈ tablas del smoke',
+    /\.in\('table_name', SMOKE_TABLES\)/.test(cl));
+  check('acota por created_at >= inicio de la corrida',
+    (cl.match(/\.gte\('created_at', RUN_STARTED_AT\)/g) || []).length >= 2);
+  check('sin filtros amplios por nombre/correo/prefijo en el borrado de auditoría',
+    /audit_log[\s\S]{0,400}?\.(like|ilike)\(/.test(cl) === false);
+  check('verifica 0 auditorías para TODO el conjunto sintético (no solo citas)',
+    /for \(const t of SMOKE_TABLES\)/.test(cl)
+    && /0 auditorías residuales para TODO el conjunto sintético/.test(cl));
   check('cleanup valida el error de cada escritura', /cleanupErrors\+\+/.test(sm));
   check('cleanup verifica 0 residuos en todos los objetos',
     ['eventos', 'citas', 'reglas de disponibilidad', 'servicios', 'pacientes',
-     'médicos', 'membresías', 'clínicas', 'perfiles', 'auditorías sintéticas']
-      .every((o) => sm.includes(`0 ${o} residuales`)));
+     'médicos', 'membresías', 'clínicas', 'perfiles']
+      .every((o) => sm.includes(`0 ${o} residuales`))
+    && sm.includes('0 auditorías residuales para TODO el conjunto sintético'));
   // Se prohíbe la LLAMADA a listUsers (rota en este proyecto), no su
   // mención en comentarios o en el texto de un check.
   check('usuarios Auth verificados con getUserById (sin llamar a listUsers)',
