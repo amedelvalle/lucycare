@@ -521,6 +521,41 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('verificación de médicos cubre ambos', /0 médicos residuales \(ambos\)/.test(cl2));
   check('sin teléfonos ni datos reales (usuarios por email .test)',
     /@lucycare\.test/.test(sm) && /503\d{8}/.test(sm) === false);
+
+  // ── Sesiones compatibles con Turnstile activo (PILOTO-P0) ──
+  const smNoComments = sm.replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+  check('usa admin.auth.admin.generateLink con type magiclink',
+    /admin\.auth\.admin\.generateLink\(\{\s*type: 'magiclink'/.test(smNoComments));
+  check('toma properties.hashed_token', /link\?\.properties\?\.hashed_token/.test(smNoComments));
+  check('canjea con verifyOtp({ token_hash, type: email })',
+    /verifyOtp\(\{\s*token_hash: hashedToken,\s*type: 'email',?\s*\}\)/.test(smNoComments));
+  check('verifica ausencia de error y sesión con access_token',
+    /if \(error\) throw new Error\(`verifyOtp/.test(smNoComments)
+    && /!data\?\.session\?\.access_token/.test(smNoComments));
+  check('verifica que data.user.id sea el UUID sintético esperado',
+    /data\.user\?\.id !== user\.id/.test(smNoComments));
+  check('SIN signInWithPassword ni signInWithOtp',
+    /signInWithPassword|signInWithOtp/.test(smNoComments) === false);
+  check('sin contraseñas en el smoke', /password/i.test(smNoComments) === false);
+  check('no imprime tokens, links ni credenciales',
+    /console\.log\([^)]*(hashed_token|action_link|email_otp|access_token|refresh_token|password)/i
+      .test(sm) === false);
+  check('no persiste esos valores en archivos',
+    /writeFileSync|appendFileSync|createWriteStream/.test(sm) === false);
+  check('clientes anon independientes por usuario (anonClient() por sesión)',
+    /const c = anonClient\(\);/.test(smNoComments)
+    && /persistSession: false, autoRefreshToken: false/.test(smNoComments));
+  // Canario ANTES de las fixtures de negocio.
+  const iCanary = sm.indexOf('CANARIO — sesiones autenticadas reales');
+  const iClinic = sm.indexOf("from('clinics')");
+  const iPatientIns = sm.indexOf("from('patients')");
+  const iApptIns = sm.indexOf("from('appointments').insert");
+  check('canario de autenticación ANTES de crear clínicas/pacientes/citas',
+    iCanary > 0 && iCanary < iClinic && iCanary < iPatientIns && iCanary < iApptIns, true);
+  check('las tres sesiones se abren en el canario',
+    /const cPatient = await sessionFor\(uPatient\);[\s\S]{0,400}const cOther = await sessionFor\(uOther\);/.test(sm));
+  check('service_role no se usa en aserciones conductuales',
+    /check\([^)]*admin\.from\(/.test(sm) === false);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_70: pass=${pass} fail=${fail}\n`);

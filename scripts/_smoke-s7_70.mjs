@@ -124,20 +124,53 @@ function printInventory() {
 
 async function createUser(tag) {
   const email = `cp0.${tag}.${Date.now()}@lucycare.test`;
-  const password = `Cp0-${Math.random().toString(36).slice(2)}-${Date.now()}`;
   const { data, error } = await admin.auth.admin.createUser({
-    email, password, email_confirm: true,
+    email, email_confirm: true,
     user_metadata: { fixture: MARK },
   });
   if (error) throw new Error(`createUser(${tag}): ${error.message}`);
   ids.users.push(data.user.id);
-  return { id: data.user.id, email, password };
+  return { id: data.user.id, email, tag };
 }
 
+/**
+ * Sesión `authenticated` REAL sin pasar por endpoints protegidos por CAPTCHA.
+ *
+ * Turnstile está ACTIVO en Supabase (PILOTO-P0), así que `signInWithPassword` y
+ * `signInWithOtp` con la anon key son rechazados: un script no puede resolver
+ * un challenge. `verifyOtp` NO está protegido — su `captchaToken` está marcado
+ * `@deprecated` en @supabase/auth-js y GoTrue no aplica el middleware a
+ * /verify. Entonces:
+ *
+ *   1. `service_role` genera un magiclink (NO envía correo: generateLink
+ *      devuelve el token, no dispara el email);
+ *   2. un cliente anon INDEPENDIENTE lo canjea con verifyOtp;
+ *   3. queda un JWT de `authenticated` genuino, que es con lo que se ejecutan
+ *      TODAS las aserciones conductuales.
+ *
+ * Un token por usuario, sin reutilización. Ningún valor sensible se imprime ni
+ * se persiste: `hashed_token`, `email_otp`, `action_link`, `access_token` y
+ * `refresh_token` viven solo en memoria dentro de esta función.
+ */
 async function sessionFor(user) {
+  const { data: link, error: eLink } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: user.email,
+  });
+  if (eLink) throw new Error(`generateLink(${user.tag}): ${eLink.message}`);
+  const hashedToken = link?.properties?.hashed_token;
+  if (!hashedToken) throw new Error(`generateLink(${user.tag}): sin properties.hashed_token`);
+
   const c = anonClient();
-  const { error } = await c.auth.signInWithPassword({ email: user.email, password: user.password });
-  if (error) throw new Error(`signIn(${user.email}): ${error.message}`);
+  const { data, error } = await c.auth.verifyOtp({
+    token_hash: hashedToken,
+    type: 'email',
+  });
+  if (error) throw new Error(`verifyOtp(${user.tag}): ${error.message}`);
+  if (!data?.session?.access_token) throw new Error(`verifyOtp(${user.tag}): sin sesión`);
+  if (data.user?.id !== user.id) {
+    throw new Error(`verifyOtp(${user.tag}): la sesión es de otro usuario`);
+  }
   return c;
 }
 
@@ -181,6 +214,21 @@ async function main() {
     }
   }
 
+  // ═══ CANARIO DE AUTENTICACIÓN ═══════════════════════════════════════
+  // Las tres sesiones se abren ANTES de crear una sola fixture de negocio.
+  // Si el mecanismo de sesión falla —como pasó al activarse Turnstile— se
+  // aborta acá y el cleanup solo tiene que deshacer usuarios y perfiles,
+  // no clínicas, médicos, pacientes ni citas.
+  console.log('\nCANARIO — sesiones autenticadas reales (sin CAPTCHA)');
+  const cPatient = await sessionFor(uPatient);
+  console.log('  ✅ sesión del paciente abierta y verificada contra su UUID');
+  const cDoctor = await sessionFor(uDoctor);
+  console.log('  ✅ sesión del médico A abierta y verificada contra su UUID');
+  const cOther = await sessionFor(uOther);
+  console.log('  ✅ sesión del médico B abierta y verificada contra su UUID');
+  console.log('  (ningún token, link ni credencial se imprime ni se persiste)\n');
+
+  console.log('SETUP — fixtures de negocio');
   const { data: spec } = await admin.from('specialties').select('id').limit(1).single();
   ids.specialtyId = spec.id;
 
@@ -278,10 +326,6 @@ async function main() {
   const apptVectors = await makeAppt(3);   // para los 6 PATCH bloqueados
   const apptCancel = await makeAppt(5);    // cancelación legítima por RPC
   printInventory();
-
-  const cPatient = await sessionFor(uPatient);
-  const cDoctor = await sessionFor(uDoctor);
-  const cOther = await sessionFor(uOther);
 
   // ═══ 1-6. El paciente NO puede escribir columnas de su cita ═════════
   console.log('1-6. UPDATE directo del paciente — debe quedar cerrado');
