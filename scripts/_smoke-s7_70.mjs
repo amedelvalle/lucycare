@@ -507,11 +507,12 @@ async function cleanup() {
     admin.from('appointment_patient_cancellations').delete().in('appointment_id', apptIds));
   await del('citas', admin.from('appointments').delete().in('id', apptIds));
 
-  // 2. Dependencias del médico.
-  if (ids.doctorId) {
+  // 2. Dependencias de los médicos (A y B, simétrico aunque hoy solo A tenga).
+  const doctorIdsAll = [ids.doctorId, ids.doctorId2].filter(Boolean);
+  if (doctorIdsAll.length) {
     await del('reglas de disponibilidad',
-      admin.from('availability_rules').delete().eq('doctor_id', ids.doctorId));
-    await del('servicios', admin.from('services').delete().eq('doctor_id', ids.doctorId));
+      admin.from('availability_rules').delete().in('doctor_id', doctorIdsAll));
+    await del('servicios', admin.from('services').delete().in('doctor_id', doctorIdsAll));
   }
 
   // 3. Fichas, médicos, membresías, clínicas — en orden inverso a las FK.
@@ -578,17 +579,24 @@ async function cleanup() {
       (q) => q.in('appointment_id', apptIds)), 0);
   check('0 citas residuales',
     await countOf('appointments', 'id', (q) => q.in('id', apptIds)), 0);
-  check('0 reglas de disponibilidad residuales',
+  const doctorIdsCheck = [ids.doctorId, ids.doctorId2].filter(Boolean);
+  check('0 reglas de disponibilidad residuales (ambos médicos)',
     await countOf('availability_rules', 'id',
-      (q) => q.eq('doctor_id', ids.doctorId ?? NIL)), 0);
+      (q) => q.in('doctor_id', doctorIdsCheck.length ? doctorIdsCheck : [NIL])), 0);
   check('0 servicios residuales',
     await countOf('services', 'id', (q) => q.like('name', `${MARK}%`)), 0);
   check('0 pacientes residuales',
     await countOf('patients', 'id', (q) => q.like('full_name', `${MARK}%`)), 0);
-  check('0 médicos residuales',
+  check('0 médicos residuales (ambos)',
     await countOf('doctors', 'id',
-      (q) => q.in('id', [ids.doctorId, ids.doctorId2].filter(Boolean).length
-        ? [ids.doctorId, ids.doctorId2].filter(Boolean) : [NIL])), 0);
+      (q) => q.in('id', doctorIdsCheck.length ? doctorIdsCheck : [NIL])), 0);
+  // review_tokens: NO se borra directamente. El trigger trg_generate_review_token
+  // puede crear una fila al pasar una cita a 'atendida'; su FK a appointments es
+  // ON DELETE CASCADE, así que desaparece sola al borrar la cita. Acá solo se
+  // VERIFICA que no quedó residuo. Que exista o no la fila no es requisito
+  // funcional de s7_70.
+  check('0 review_tokens residuales (por CASCADE al borrar las citas)',
+    await countOf('review_tokens', 'id', (q) => q.in('appointment_id', apptIds)), 0);
   check('0 membresías residuales',
     await countOf('clinic_members', 'profile_id',
       (q) => q.in('clinic_id', [ids.clinicId, ids.clinicId2].filter(Boolean).length

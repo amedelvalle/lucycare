@@ -506,6 +506,19 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
     cl2.indexOf("from('clinics')") < cl2.indexOf("from('profiles')"), true);
   check('cero residuos se verifica sobre TODOS los IDs sintéticos',
     /allSyntheticIds\(\)/.test(sm) && /syntheticSafe/.test(cl2));
+  // review_tokens: solo verificación, nunca DELETE directo (lo borra el CASCADE).
+  check('verifica 0 review_tokens por appointment_id exacto',
+    /countOf\('review_tokens', 'id', \(q\) => q\.in\('appointment_id', apptIds\)\)/.test(cl2));
+  check('sin DELETE directo sobre review_tokens',
+    /from\('review_tokens'\)[\s\S]{0,60}?\.delete\(/.test(sm) === false);
+  check('review_tokens no es requisito funcional (solo se cuenta)',
+    /insert[\s\S]{0,40}review_tokens/i.test(sm) === false);
+  // availability_rules simétrico para ambos médicos.
+  check('cleanup de availability_rules cubre ambos médicos',
+    /availability_rules'\)\.delete\(\)\.in\('doctor_id', doctorIdsAll\)/.test(cl2));
+  check('verificación de reglas cubre ambos médicos',
+    /q\.in\('doctor_id', doctorIdsCheck\.length \? doctorIdsCheck : \[NIL\]\)/.test(cl2));
+  check('verificación de médicos cubre ambos', /0 médicos residuales \(ambos\)/.test(cl2));
   check('sin teléfonos ni datos reales (usuarios por email .test)',
     /@lucycare\.test/.test(sm) && /503\d{8}/.test(sm) === false);
 }
