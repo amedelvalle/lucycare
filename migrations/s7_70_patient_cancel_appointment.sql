@@ -73,10 +73,21 @@
 --   audit_log queda como AUDIT-SEC-P0, frente separado.
 --
 -- ── SEGURIDAD DEL APPLY ──
---   Todo bajo LOCK TABLE ACCESS EXCLUSIVE. PRECONDICIONES semánticas
---   (nombre, comando, roles, USING y WITH CHECK por igualdad canónica
---   insensible a espacios) y POSTCONDICIONES antes del COMMIT. Cualquier
---   drift → RAISE EXCEPTION y revierte todo: imposible quedar a medias.
+--   Una sola transacción, pero el LOCK ACCESS EXCLUSIVE sobre appointments
+--   se toma LO MÁS TARDE POSIBLE (paso 11), justo antes de tocar la tabla:
+--   crear la tabla, el índice y las dos funciones bajo ese lock bloquearía
+--   la agenda durante toda la compilación sin necesidad. Secuencia:
+--     0. precondiciones generales, sin lock
+--     1-10. objetos nuevos + REVOKE/GRANT propios
+--     11. LOCK + REVERIFICACIÓN de lo sensible a drift (owner, RLS, FORCE,
+--         definición semántica de appointments_update, grants de partida)
+--     12-13. hardening
+--     14. postcondiciones · COMMIT
+--   Entre el LOCK y el COMMIT no hay creación de objetos ni trabajo
+--   prolongado. Las comprobaciones son SEMÁNTICAS (nombre, comando, roles,
+--   USING y WITH CHECK por igualdad canónica insensible a espacios).
+--   Cualquier drift → RAISE EXCEPTION y revierte todo: imposible quedar a
+--   medias. lock_timeout 5s: si la tabla está ocupada, aborta sin cambios.
 -- ═══════════════════════════════════════════════════════════
 
 BEGIN;
@@ -87,9 +98,13 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 
-LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;
+-- ⚠️ El LOCK ACCESS EXCLUSIVE sobre appointments NO se toma acá: se toma
+--    en el paso 11, inmediatamente antes de tocar la tabla. Crear la
+--    tabla, el índice y las dos funciones bajo ese lock bloquearía la
+--    agenda durante toda la compilación. Después del lock solo hay
+--    reverificación, hardening, postcondiciones y COMMIT.
 
--- ─── 0. PRECONDICIONES ────────────────────────────────────────────────
+-- ─── 0. PRECONDICIONES GENERALES (sin lock) ───────────────────────────
 DO $pre$
 DECLARE
   v_rls        boolean;
@@ -518,7 +533,84 @@ GRANT EXECUTE ON FUNCTION public.cancel_my_appointment(uuid, text, text)
 GRANT EXECUTE ON FUNCTION public.list_recent_patient_cancellations()
   TO authenticated;
 
--- ─── 11. HARDENING: appointments_update sin rama de paciente ──────────
+-- ═══════════════════════════════════════════════════════════════════════
+-- A PARTIR DE AQUÍ se toca public.appointments. El lock se toma AHORA y
+-- se suelta con el COMMIT, unos milisegundos después: entre el LOCK y el
+-- COMMIT solo hay reverificación, dos DDL de privilegios, la sustitución
+-- de la policy y las postcondiciones. Ninguna creación de tabla, índice
+-- o función, ni trabajo prolongado.
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- ─── 11. LOCK + REVERIFICACIÓN BAJO EL LOCK ───────────────────────────
+LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;
+
+-- Las precondiciones del paso 0 se evaluaron SIN lock: entre aquel
+-- momento y este, otra sesión pudo haber cambiado la policy o los grants.
+-- Las sensibles a drift se repiten AHORA, ya bajo ACCESS EXCLUSIVE, que
+-- es el único punto en el que el estado no puede moverse bajo los pies.
+DO $relock$
+DECLARE
+  v_rls        boolean;
+  v_force      boolean;
+  v_owner_nm   text;
+  v_pol_cmd    "char";
+  v_pol_perm   boolean;
+  v_pol_roles  oid[];
+  v_using      text;
+  v_check      text;
+  v_expected   text :=
+    '(is_clinic_member(clinic_id) OR (patient_id IN ( SELECT p.id FROM patients p WHERE (p.profile_id = auth.uid()))))';
+BEGIN
+  -- 11.1 Owner y flags de RLS de la tabla.
+  SELECT c.relrowsecurity, c.relforcerowsecurity, pg_get_userbyid(c.relowner)
+    INTO v_rls, v_force, v_owner_nm
+  FROM pg_class c WHERE c.oid = 'public.appointments'::regclass;
+  IF v_owner_nm <> current_user THEN
+    RAISE EXCEPTION 's7_70 RELOCK: el owner de appointments cambió a % (se esperaba %)', v_owner_nm, current_user;
+  END IF;
+  IF v_rls IS NOT TRUE THEN
+    RAISE EXCEPTION 's7_70 RELOCK: RLS dejó de estar activa en appointments';
+  END IF;
+  IF v_force IS NOT FALSE THEN
+    RAISE EXCEPTION 's7_70 RELOCK: relforcerowsecurity pasó a %; el DEFINER dejaría de saltar RLS', v_force;
+  END IF;
+
+  -- 11.2 Definición SEMÁNTICA de appointments_update, otra vez.
+  SELECT p.polcmd, p.polpermissive, p.polroles,
+         pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)
+    INTO v_pol_cmd, v_pol_perm, v_pol_roles, v_using, v_check
+  FROM pg_policy p
+  WHERE p.polrelid = 'public.appointments'::regclass AND p.polname = 'appointments_update';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 's7_70 RELOCK: appointments_update desapareció entre las precondiciones y el lock';
+  END IF;
+  IF v_pol_cmd <> 'w' OR v_pol_perm IS NOT TRUE
+     OR v_pol_roles IS DISTINCT FROM ARRAY[0::oid] THEN
+    RAISE EXCEPTION 's7_70 RELOCK: appointments_update cambió de forma (cmd=%, perm=%, roles=%)',
+      v_pol_cmd, v_pol_perm, v_pol_roles;
+  END IF;
+  IF v_check IS NOT NULL THEN
+    RAISE EXCEPTION 's7_70 RELOCK: appointments_update ganó un WITH CHECK propio (%)', v_check;
+  END IF;
+  IF replace(regexp_replace(coalesce(v_using, ''), '\s', '', 'g'), 'public.', '')
+   <> replace(regexp_replace(v_expected,           '\s', '', 'g'), 'public.', '') THEN
+    RAISE EXCEPTION 's7_70 RELOCK: el USING de appointments_update cambió. Actual: %', v_using;
+  END IF;
+
+  -- 11.3 Grants de partida, otra vez: authenticated con UPDATE (lo que
+  --      vamos a acotar) y anon sin él (no debe ganarlo nunca).
+  IF NOT has_table_privilege('authenticated', 'public.appointments', 'UPDATE') THEN
+    RAISE EXCEPTION 's7_70 RELOCK: authenticated perdió el UPDATE entre las precondiciones y el lock';
+  END IF;
+  IF has_table_privilege('anon', 'public.appointments', 'UPDATE') THEN
+    RAISE EXCEPTION 's7_70 RELOCK: anon ganó UPDATE sobre appointments';
+  END IF;
+
+  RAISE NOTICE 's7_70 RELOCK: OK — estado reverificado bajo ACCESS EXCLUSIVE';
+END
+$relock$;
+
+-- ─── 12. HARDENING: appointments_update sin rama de paciente ──────────
 -- Fail-closed: sin IF EXISTS. Si la policy no está, la migración aborta.
 DROP POLICY "appointments_update" ON public.appointments;
 CREATE POLICY "appointments_update" ON public.appointments
@@ -530,7 +622,7 @@ CREATE POLICY "appointments_update" ON public.appointments
 -- pero auditable y a prueba de cambios futuros del USING. Impide además
 -- mover la cita a una clínica sobre la que el actor no tiene acceso.
 
--- ─── 12. UPDATE de authenticated acotado a 9 columnas ─────────────────
+-- ─── 13. UPDATE de authenticated acotado a 9 columnas ─────────────────
 -- En PostgreSQL NO se puede revocar una columna de un grant de tabla:
 -- hay que revocar el UPDATE de tabla y re-otorgar por columna.
 -- ⚠️ Impuesto permanente: toda columna NUEVA de appointments deberá
@@ -554,7 +646,7 @@ GRANT UPDATE (
   price
 ) ON public.appointments TO authenticated;
 
--- ─── 13. POSTCONDICIONES ──────────────────────────────────────────────
+-- ─── 14. POSTCONDICIONES ──────────────────────────────────────────────
 DO $post$
 DECLARE
   v_pol_cmd   "char";
@@ -576,7 +668,7 @@ DECLARE
   v_secdef      boolean;
   v_cfg         text[];
 BEGIN
-  -- 13.1 La policy nueva, semánticamente.
+  -- 14.1 La policy nueva, semánticamente.
   SELECT p.polcmd, p.polpermissive, p.polroles,
          pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)
     INTO v_pol_cmd, v_pol_perm, v_pol_roles, v_using, v_check
@@ -601,7 +693,7 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: WITH CHECK inesperado: %', v_check;
   END IF;
 
-  -- 13.2 El paciente pierde el UPDATE de tabla; quedan exactamente las 9
+  -- 14.2 El paciente pierde el UPDATE de tabla; quedan exactamente las 9
   --      columnas aprobadas.
   SELECT has_table_privilege('authenticated', 'public.appointments', 'UPDATE')
     INTO v_tbl_upd;
@@ -617,14 +709,14 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: el set de columnas UPDATE de authenticated es "%" y se esperaba "%"', v_cols, v_expected_cols;
   END IF;
 
-  -- 13.3 anon no ganó nada.
+  -- 14.3 anon no ganó nada.
   IF has_table_privilege('anon', 'public.appointments', 'UPDATE')
      OR has_table_privilege('anon', 'public.appointment_patient_cancellations', 'SELECT')
      OR has_table_privilege('anon', 'public.appointment_patient_cancellations', 'INSERT') THEN
     RAISE EXCEPTION 's7_70 POST: anon obtuvo privilegios sobre appointments o sobre la tabla nueva';
   END IF;
 
-  -- 13.4 La tabla nueva: sin escritura para authenticated, con SELECT.
+  -- 14.4 La tabla nueva: sin escritura para authenticated, con SELECT.
   IF has_table_privilege('authenticated', 'public.appointment_patient_cancellations', 'INSERT')
      OR has_table_privilege('authenticated', 'public.appointment_patient_cancellations', 'UPDATE')
      OR has_table_privilege('authenticated', 'public.appointment_patient_cancellations', 'DELETE')
@@ -635,7 +727,7 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: authenticated no puede leer appointment_patient_cancellations';
   END IF;
 
-  -- 13.5 Las RPC: solo authenticated ejecuta.
+  -- 14.5 Las RPC: solo authenticated ejecuta.
   IF has_function_privilege('anon', 'public.cancel_my_appointment(uuid, text, text)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.list_recent_patient_cancellations()', 'EXECUTE') THEN
     RAISE EXCEPTION 's7_70 POST: anon puede ejecutar alguna de las RPC nuevas';
@@ -645,7 +737,7 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: authenticated no puede ejecutar alguna de las RPC nuevas';
   END IF;
 
-  -- 13.6 RLS activa en la tabla nueva, EXACTAMENTE una policy de SELECT y
+  -- 14.6 RLS activa en la tabla nueva, EXACTAMENTE una policy de SELECT y
   --      CERO de escritura.
   IF NOT (SELECT c.relrowsecurity FROM pg_class c
           WHERE c.oid = 'public.appointment_patient_cancellations'::regclass) THEN
@@ -666,7 +758,7 @@ BEGIN
     RAISE EXCEPTION 's7_70 POST: existen % policies de escritura en appointment_patient_cancellations', v_wr_pols;
   END IF;
 
-  -- 13.7 Las RPC: propietario esperado, SECURITY DEFINER y search_path
+  -- 14.7 Las RPC: propietario esperado, SECURITY DEFINER y search_path
   --      EXACTO. Es la premisa que sostiene todo el diseño: sin owner con
   --      BYPASSRLS no saltan RLS, y sin el search_path correcto fallarían
   --      al resolver relaciones desde los triggers heredados.
@@ -702,7 +794,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 13.8 PUBLIC sin acceso a la tabla nueva ni a las RPC.
+  -- 14.8 PUBLIC sin acceso a la tabla nueva ni a las RPC.
   IF has_table_privilege('public', 'public.appointment_patient_cancellations', 'SELECT')
      OR has_table_privilege('public', 'public.appointment_patient_cancellations', 'INSERT') THEN
     RAISE EXCEPTION 's7_70 POST: PUBLIC conserva acceso a appointment_patient_cancellations';

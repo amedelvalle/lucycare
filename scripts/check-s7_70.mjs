@@ -44,6 +44,8 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('sin ROLLBACK dentro de la migración', /^\s*ROLLBACK;/m.test(sql) === false);
   check('LOCK ACCESS EXCLUSIVE sobre appointments',
     /LOCK TABLE public\.appointments IN ACCESS EXCLUSIVE MODE;/.test(sql));
+  check('un solo LOCK TABLE en toda la migración',
+    (sql.match(/LOCK TABLE public\.appointments IN ACCESS EXCLUSIVE MODE;/g) || []).length, 1);
   check('lock_timeout acotado antes del LOCK',
     /SET LOCAL lock_timeout = '5s';/.test(sql)
     && sql.indexOf("SET LOCAL lock_timeout") < sql.indexOf('LOCK TABLE public.appointments'), true);
@@ -60,6 +62,64 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   const iCommit = sql.indexOf('\nCOMMIT;');
   check('cancel_my_appointment se crea ANTES del hardening', iRpc > 0 && iRpc < iPol, true);
   check('el hardening ocurre antes del COMMIT', iPol > 0 && iPol < iCommit, true);
+}
+
+// ─── 1b. Ventana del ACCESS EXCLUSIVE — lo más corta posible ──────────
+// El lock debe tomarse DESPUÉS de crear y asegurar todo lo nuevo, y solo
+// puede haber reverificación + hardening + postcondiciones antes del COMMIT.
+{
+  console.log('\n1b. Ventana del lock');
+  const iLock = sql.indexOf('LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;');
+  const iCommit = sql.indexOf('\nCOMMIT;');
+  const iTable = sql.indexOf('CREATE TABLE public.appointment_patient_cancellations');
+  const iIndex = sql.indexOf('CREATE INDEX idx_appt_patient_cancellations_cancelled_at');
+  const iRls = sql.indexOf('ALTER TABLE public.appointment_patient_cancellations ENABLE ROW LEVEL SECURITY');
+  const iSelPol = sql.indexOf('CREATE POLICY appointment_patient_cancellations_select');
+  const iFn1 = sql.indexOf('CREATE FUNCTION public.cancel_my_appointment');
+  const iFn2 = sql.indexOf('CREATE FUNCTION public.list_recent_patient_cancellations');
+  const iGrantExec = sql.indexOf('GRANT EXECUTE ON FUNCTION public.cancel_my_appointment');
+  const iDrop = sql.indexOf('DROP POLICY "appointments_update"');
+  const iRevoke = sql.indexOf('REVOKE UPDATE ON public.appointments FROM authenticated;');
+  const iPost = sql.indexOf('DO $post$');
+
+  for (const [label, idx] of [
+    ['la tabla', iTable], ['el índice', iIndex], ['la RLS', iRls],
+    ['la policy de lectura', iSelPol], ['cancel_my_appointment', iFn1],
+    ['list_recent_patient_cancellations', iFn2], ['los GRANT EXECUTE', iGrantExec],
+  ]) {
+    check(`${label} se crea ANTES de tomar el lock`, idx > 0 && idx < iLock, true);
+  }
+
+  // Nada pesado después del lock.
+  const afterLock = sql.slice(iLock, iCommit);
+  check('tras el LOCK no se crean tablas', /CREATE TABLE/.test(afterLock) === false);
+  check('tras el LOCK no se crean índices', /CREATE INDEX/.test(afterLock) === false);
+  check('tras el LOCK no se crean funciones', /CREATE FUNCTION/.test(afterLock) === false);
+  check('tras el LOCK no se crean tipos ni triggers',
+    /CREATE (TYPE|TRIGGER|MATERIALIZED)/.test(afterLock) === false);
+
+  // Reverificación bajo el lock, antes del hardening.
+  const iRelock = sql.indexOf('DO $relock$');
+  check('hay bloque de reverificación bajo el lock', iRelock > 0, true);
+  check('la reverificación va después del LOCK y antes del hardening',
+    iRelock > iLock && iRelock < iDrop, true);
+  const relock = between(sql, 'DO $relock$', '$relock$;');
+  check('RELOCK: owner de appointments', /v_owner_nm <> current_user/.test(relock));
+  check('RELOCK: relrowsecurity', /v_rls IS NOT TRUE/.test(relock));
+  check('RELOCK: relforcerowsecurity', /v_force IS NOT FALSE/.test(relock));
+  check('RELOCK: definición semántica de appointments_update',
+    /polcmd/.test(relock) && /polpermissive/.test(relock) && /polroles/.test(relock)
+    && /polqual/.test(relock) && /polwithcheck/.test(relock));
+  check('RELOCK: comparación canónica del USING (no literal)',
+    /regexp_replace\(coalesce\(v_using, ''\), '\\s', '', 'g'\)/.test(relock));
+  check('RELOCK: grant UPDATE actual de authenticated',
+    /has_table_privilege\('authenticated', 'public\.appointments', 'UPDATE'\)/.test(relock));
+  check('RELOCK: ausencia de UPDATE para anon',
+    /has_table_privilege\('anon', 'public\.appointments', 'UPDATE'\)/.test(relock));
+
+  // Orden final: reverificación → hardening → grants → postcondiciones → COMMIT.
+  check('orden tras el lock: relock < drop policy < revoke/grant < post < commit',
+    iLock < iRelock && iRelock < iDrop && iDrop < iRevoke && iRevoke < iPost && iPost < iCommit, true);
 }
 
 // ─── 2. Tabla append-only ─────────────────────────────────────────────
