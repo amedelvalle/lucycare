@@ -654,7 +654,11 @@ DECLARE
   v_pol_roles oid[];
   v_using     text;
   v_check     text;
-  v_expected  text := '(is_clinic_member(clinic_id))';
+  -- OJO: `pg_get_expr` deparsa una llamada a función SIMPLE **sin** paréntesis
+  -- envolventes (`is_clinic_member(clinic_id)`), a diferencia de una expresión
+  -- compuesta como el `OR` de la policy anterior, que sí los lleva. El valor
+  -- esperado debe ser la forma deparsada, no la que se escribió en el DDL.
+  v_expected  text := 'is_clinic_member(clinic_id)';
   v_auth_oid  oid;
   v_cols      text;
   v_expected_cols text :=

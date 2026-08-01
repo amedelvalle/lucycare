@@ -332,6 +332,13 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
     /trg_block_inactive_service/.test(pre));
   const post = between(sql, 'DO $post$', '$post$;');
   check('POST: valida la policy nueva semánticamente', /polwithcheck/.test(post));
+  // `pg_get_expr` deparsa una llamada a función SIMPLE sin paréntesis
+  // envolventes. Esperar "(is_clinic_member(clinic_id))" hace fallar la POST
+  // con un falso drift y aborta la migración entera.
+  check('POST: el valor esperado usa la forma DEPARSADA (sin paréntesis envolventes)',
+    /v_expected\s+text := 'is_clinic_member\(clinic_id\)';/.test(post));
+  check('POST: no espera la forma del DDL con paréntesis',
+    /v_expected\s+text := '\(is_clinic_member\(clinic_id\)\)';/.test(post) === false);
   check('POST: authenticated pierde el UPDATE de tabla',
     /conserva UPDATE de TABLA completa/.test(post));
   check('POST: set exacto de columnas', /v_expected_cols/.test(post));
