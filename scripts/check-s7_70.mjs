@@ -458,6 +458,54 @@ const sql = read('migrations/s7_70_patient_cancel_appointment.sql');
   check('usuarios Auth verificados con getUserById (sin llamar a listUsers)',
     /admin\.auth\.admin\.getUserById\(/.test(sm) && /listUsers\s*\(/.test(sm) === false);
   check('fixtures marcadas CP0_FIXTURE', /const MARK = 'CP0_FIXTURE'/.test(sm));
+
+  // ── Columnas NOT NULL reales de cada fixture (extraídas de los Insert de
+  //    database.types.ts). Cada una costó una corrida fallida; se fijan acá.
+  check('clinics: owner_id presente (NOT NULL)', /owner_id: uDoctor\.id/.test(sm));
+  check('availability_rules: clinic_id presente (NOT NULL)',
+    /clinic_id: ids\.clinicId, doctor_id: ids\.doctorId, day_of_week/.test(sm));
+  check('patients: gender presente (NOT NULL, enum gender_type)', /gender: 'otro'/.test(sm));
+  check('patients: profile_id del usuario Auth paciente', /profile_id: uPatient\.id/.test(sm));
+  check('patients: link_confirmed_at NO nulo (lo exige cancel_my_appointment)',
+    /link_confirmed_at: new Date\(\)\.toISOString\(\)/.test(sm));
+  check('patients: full_name y date_of_birth presentes',
+    /full_name: `\$\{MARK\} Paciente`/.test(sm) && /date_of_birth: '1990-01-01'/.test(sm));
+  check('doctor A: profile_id, clinic_id y membresía activa',
+    /profile_id: uDoctor\.id, specialty_id/.test(sm)
+    && /clinic_id: ids\.clinicId, profile_id: uDoctor\.id, role: 'owner', is_active: true/.test(sm));
+  // Dos servicios: el cambio de service_id debe apuntar a uno DISTINTO.
+  check('dos servicios sintéticos', /for \(const n of \['Consulta', 'Control'\]\)/.test(sm));
+  check('el cambio de service_id usa el segundo servicio',
+    /service_id: ids\.serviceIds\[1\]/.test(sm));
+  // Aislamiento honesto: segunda clínica REAL con membresía, no un suelto.
+  check('existe una segunda clínica sintética con owner propio',
+    /name: `\$\{MARK\} Clinica B`, owner_id: uOther\.id/.test(sm));
+  check('el usuario "other" tiene membresía activa en la clínica B',
+    /clinic_id: ids\.clinicId2, profile_id: uOther\.id, role: 'owner', is_active: true/.test(sm));
+  check('el usuario "other" es médico de la clínica B',
+    /clinic_id: ids\.clinicId2, profile_id: uOther\.id, specialty_id/.test(sm));
+  check('la prueba se llama "médico de OTRA clínica" (no "sin acceso")',
+    /médico de OTRA clínica no modifica la cita/.test(sm));
+  // cancel_reasons: solo lectura.
+  check('cancel_reasons se lee, nunca se escribe',
+    /from\('cancel_reasons'\)\s*\n?\s*\.select\(/.test(sm)
+    && /from\('cancel_reasons'\)[\s\S]{0,80}?\.(insert|update|delete|upsert)\(/.test(sm) === false);
+  // Cleanup en orden inverso a las FK.
+  const cl2 = between(sm, 'async function cleanup()', 'main()');
+  const order = ['appointment_patient_cancellations', "from('appointments')", 'availability_rules',
+    "from('services')", "from('patients')", "from('doctors')", "from('clinic_members')",
+    "from('clinics')", "from('profiles')", 'deleteUser', "from('audit_log')"];
+  let lastIdx = -1, ordered = true;
+  for (const token of order) {
+    const i = cl2.indexOf(token);
+    if (i < 0 || i < lastIdx) { ordered = false; break; }
+    lastIdx = i;
+  }
+  check('cleanup respeta el orden inverso a las FK (eventos→…→clínicas→perfiles→auth→audit)', ordered);
+  check('las clínicas se borran ANTES que los perfiles (clinics.owner_id → profiles)',
+    cl2.indexOf("from('clinics')") < cl2.indexOf("from('profiles')"), true);
+  check('cero residuos se verifica sobre TODOS los IDs sintéticos',
+    /allSyntheticIds\(\)/.test(sm) && /syntheticSafe/.test(cl2));
   check('sin teléfonos ni datos reales (usuarios por email .test)',
     /@lucycare\.test/.test(sm) && /503\d{8}/.test(sm) === false);
 }

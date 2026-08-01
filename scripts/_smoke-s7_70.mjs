@@ -86,6 +86,9 @@ const RUN_STARTED_AT = new Date().toISOString();
 const ids = {
   users: [], clinicId: null, doctorId: null, specialtyId: null,
   patientId: null, apptIds: [], serviceIds: [], ruleIds: [], eventIds: [],
+  // Segunda clínica sintética + su médico: la prueba de aislamiento debe ser
+  // honesta ("usuario de OTRA clínica"), no un autenticado sin membresía.
+  clinicId2: null, doctorId2: null,
 };
 
 /** Tablas que el smoke escribe: acota el borrado de auditoría por table_name. */
@@ -97,7 +100,7 @@ const SMOKE_TABLES = [
 /** Conjunto EXACTO de UUID sintéticos. Nada se borra fuera de este conjunto. */
 const allSyntheticIds = () => [
   ...ids.users,          // usuarios Auth == perfiles (comparten id)
-  ids.clinicId, ids.doctorId, ids.patientId,
+  ids.clinicId, ids.clinicId2, ids.doctorId, ids.doctorId2, ids.patientId,
   ...ids.serviceIds, ...ids.ruleIds, ...ids.apptIds, ...ids.eventIds,
 ].filter(Boolean);
 
@@ -106,9 +109,11 @@ function printInventory() {
   console.log('\nIDs SINTÉTICOS CREADOS (CP0_FIXTURE)');
   console.log(`  corrida iniciada: ${RUN_STARTED_AT}`);
   ids.users.forEach((u, i) => console.log(`  usuario Auth / perfil [${i}]: ${u}`));
-  console.log(`  clínica:      ${ids.clinicId ?? '—'}`);
-  console.log(`  membresías:   clinic_id=${ids.clinicId ?? '—'} × profile_id=${ids.users[1] ?? '—'}`);
-  console.log(`  médico:       ${ids.doctorId ?? '—'}`);
+  console.log(`  clínica A:    ${ids.clinicId ?? '—'}`);
+  console.log(`  clínica B:    ${ids.clinicId2 ?? '—'}  (aislamiento)`);
+  console.log(`  membresías:   A→${ids.users[1] ?? '—'} (owner) · B→${ids.users[2] ?? '—'} (owner)`);
+  console.log(`  médico A:     ${ids.doctorId ?? '—'}`);
+  console.log(`  médico B:     ${ids.doctorId2 ?? '—'}`);
   console.log(`  paciente:     ${ids.patientId ?? '—'}`);
   console.log(`  servicios:    ${ids.serviceIds.join(', ') || '—'}`);
   console.log(`  reglas:       ${ids.ruleIds.length} (${ids.ruleIds.join(', ') || '—'})`);
@@ -179,30 +184,52 @@ async function main() {
   const { data: spec } = await admin.from('specialties').select('id').limit(1).single();
   ids.specialtyId = spec.id;
 
+  // clinics.owner_id es NOT NULL.
   const { data: clinic, error: eClinic } = await admin.from('clinics')
-    .insert({ name: `${MARK} Clinica` }).select('id').single();
-  if (eClinic) throw new Error(`clinic: ${eClinic.message}`);
+    .insert({ name: `${MARK} Clinica A`, owner_id: uDoctor.id }).select('id').single();
+  if (eClinic) throw new Error(`clinic A: ${eClinic.message}`);
   ids.clinicId = clinic.id;
 
   const { error: eMember } = await admin.from('clinic_members')
     .insert({ clinic_id: ids.clinicId, profile_id: uDoctor.id, role: 'owner', is_active: true });
-  if (eMember) throw new Error(`clinic_member: ${eMember.message}`);
+  if (eMember) throw new Error(`clinic_member A: ${eMember.message}`);
 
   const { data: doctor, error: eDoctor } = await admin.from('doctors')
     .insert({ clinic_id: ids.clinicId, profile_id: uDoctor.id, specialty_id: ids.specialtyId })
     .select('id').single();
-  if (eDoctor) throw new Error(`doctor: ${eDoctor.message}`);
+  if (eDoctor) throw new Error(`doctor A: ${eDoctor.message}`);
   ids.doctorId = doctor.id;
 
-  const { data: svc, error: eSvc } = await admin.from('services')
-    .insert({ doctor_id: ids.doctorId, name: `${MARK} Consulta`, duration_minutes: 30, is_active: true })
+  // ── Clínica B: el usuario "other" es médico de OTRA clínica real, no un
+  //    autenticado suelto. Así la prueba de aislamiento dice lo que prueba.
+  const { data: clinicB, error: eClinicB } = await admin.from('clinics')
+    .insert({ name: `${MARK} Clinica B`, owner_id: uOther.id }).select('id').single();
+  if (eClinicB) throw new Error(`clinic B: ${eClinicB.message}`);
+  ids.clinicId2 = clinicB.id;
+
+  const { error: eMemberB } = await admin.from('clinic_members')
+    .insert({ clinic_id: ids.clinicId2, profile_id: uOther.id, role: 'owner', is_active: true });
+  if (eMemberB) throw new Error(`clinic_member B: ${eMemberB.message}`);
+
+  const { data: doctorB, error: eDoctorB } = await admin.from('doctors')
+    .insert({ clinic_id: ids.clinicId2, profile_id: uOther.id, specialty_id: ids.specialtyId })
     .select('id').single();
-  if (eSvc) throw new Error(`service: ${eSvc.message}`);
-  ids.serviceIds.push(svc.id);
+  if (eDoctorB) throw new Error(`doctor B: ${eDoctorB.message}`);
+  ids.doctorId2 = doctorB.id;
+
+  // DOS servicios: el segundo existe para probar el cambio de service_id.
+  for (const n of ['Consulta', 'Control']) {
+    const { data: svc, error: eSvc } = await admin.from('services')
+      .insert({ doctor_id: ids.doctorId, name: `${MARK} ${n}`, duration_minutes: 30, is_active: true })
+      .select('id').single();
+    if (eSvc) throw new Error(`service ${n}: ${eSvc.message}`);
+    ids.serviceIds.push(svc.id);
+  }
 
   // Disponibilidad amplia para no chocar con block_outside_availability.
+  // availability_rules.clinic_id es NOT NULL.
   const rules = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
-    doctor_id: ids.doctorId, day_of_week: d,
+    clinic_id: ids.clinicId, doctor_id: ids.doctorId, day_of_week: d,
     start_time: '00:00:00', end_time: '23:59:00', is_active: true,
   }));
   const { data: ruleRows, error: eRules } = await admin
@@ -210,10 +237,13 @@ async function main() {
   if (eRules) throw new Error(`availability_rules: ${eRules.message}`);
   ids.ruleIds.push(...(ruleRows ?? []).map((r) => r.id));
 
+  // patients.gender es NOT NULL (enum gender_type). `link_confirmed_at` NO es
+  // decorativo: cancel_my_appointment exige el vínculo confirmado (s7_43).
   const { data: patient, error: ePatient } = await admin.from('patients')
     .insert({
       clinic_id: ids.clinicId, profile_id: uPatient.id,
       full_name: `${MARK} Paciente`, date_of_birth: '1990-01-01',
+      gender: 'otro',
       link_confirmed_at: new Date().toISOString(), is_active: true,
     }).select('id').single();
   if (ePatient) throw new Error(`patient: ${ePatient.message}`);
@@ -332,7 +362,7 @@ async function main() {
   await docUpd('editar notes', apptEdit.id, { notes: 'CP0 nota visible' });
   await docUpd('editar internal_notes', apptEdit.id, { internal_notes: 'CP0 nota interna' });
   await docUpd('editar price', apptEdit.id, { price: 30 });
-  await docUpd('editar service_id', apptEdit.id, { service_id: ids.serviceIds[0] });
+  await docUpd('editar service_id (al segundo servicio)', apptEdit.id, { service_id: ids.serviceIds[1] });
   await docUpd('escribir updated_at (el cliente lo manda)', apptEdit.id,
     { updated_at: new Date().toISOString() });
   // Reprogramar: start_time + end_time juntos, a un slot libre.
@@ -376,7 +406,7 @@ async function main() {
   console.log('\n9. Aislamiento entre clínicas');
   const { data: dOther, error: eOther } = await cOther.from('appointments')
     .update({ notes: 'CP0 ajeno' }).eq('id', apptVectors.id).select('id');
-  check('usuario de otra clínica no modifica la cita', isDenied(eOther, dOther));
+  check('médico de OTRA clínica no modifica la cita', isDenied(eOther, dOther));
   const { data: rpcOther } = await cOther.rpc('cancel_my_appointment', {
     p_appointment_id: apptVectors.id,
   }).then((r) => r, (r) => r);
@@ -484,12 +514,17 @@ async function cleanup() {
     await del('servicios', admin.from('services').delete().eq('doctor_id', ids.doctorId));
   }
 
-  // 3. Fichas, médico, membresías, clínica.
+  // 3. Fichas, médicos, membresías, clínicas — en orden inverso a las FK.
+  //    patients → doctors → clinic_members → clinics → profiles → auth.users
+  //    (clinics.owner_id apunta a profiles, así que las clínicas se borran
+  //     ANTES que los perfiles.)
   if (ids.patientId) await del('paciente', admin.from('patients').delete().eq('id', ids.patientId));
-  if (ids.doctorId) await del('médico', admin.from('doctors').delete().eq('id', ids.doctorId));
-  if (ids.clinicId) {
-    await del('membresías', admin.from('clinic_members').delete().eq('clinic_id', ids.clinicId));
-    await del('clínica', admin.from('clinics').delete().eq('id', ids.clinicId));
+  const doctorIds = [ids.doctorId, ids.doctorId2].filter(Boolean);
+  if (doctorIds.length) await del('médicos', admin.from('doctors').delete().in('id', doctorIds));
+  const clinicIds = [ids.clinicId, ids.clinicId2].filter(Boolean);
+  if (clinicIds.length) {
+    await del('membresías', admin.from('clinic_members').delete().in('clinic_id', clinicIds));
+    await del('clínicas', admin.from('clinics').delete().in('id', clinicIds));
   }
 
   // 4. Perfiles y usuarios de Auth.
@@ -551,10 +586,13 @@ async function cleanup() {
   check('0 pacientes residuales',
     await countOf('patients', 'id', (q) => q.like('full_name', `${MARK}%`)), 0);
   check('0 médicos residuales',
-    await countOf('doctors', 'id', (q) => q.eq('id', ids.doctorId ?? NIL)), 0);
+    await countOf('doctors', 'id',
+      (q) => q.in('id', [ids.doctorId, ids.doctorId2].filter(Boolean).length
+        ? [ids.doctorId, ids.doctorId2].filter(Boolean) : [NIL])), 0);
   check('0 membresías residuales',
     await countOf('clinic_members', 'profile_id',
-      (q) => q.eq('clinic_id', ids.clinicId ?? NIL)), 0);
+      (q) => q.in('clinic_id', [ids.clinicId, ids.clinicId2].filter(Boolean).length
+        ? [ids.clinicId, ids.clinicId2].filter(Boolean) : [NIL])), 0);
   check('0 clínicas residuales',
     await countOf('clinics', 'id', (q) => q.like('name', `${MARK}%`)), 0);
   check('0 perfiles residuales',
