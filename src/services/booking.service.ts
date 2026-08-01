@@ -198,62 +198,10 @@ async function getOrCreatePatient(
   return newPatient?.id || null
 }
 
-/**
- * Cancela una cita (paciente puede cancelar hasta 4h antes).
- */
-export async function cancelBooking(
-  appointmentId: string
-): Promise<{ success: boolean; error?: string }> {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.user) {
-    return { success: false, error: 'No autenticado' }
-  }
-
-  // Obtener la cita
-  const { data: appointment } = await supabase
-    .from('appointments')
-    .select('id, start_time, patient_id')
-    .eq('id', appointmentId)
-    .single()
-
-  if (!appointment) {
-    return { success: false, error: 'Cita no encontrada' }
-  }
-
-  // Verificar que faltan más de 4 horas
-  const startTime = new Date(appointment.start_time)
-  const now = new Date()
-  const hoursUntil = (startTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-
-  if (hoursUntil < 4) {
-    return { success: false, error: 'No se puede cancelar con menos de 4 horas de anticipación' }
-  }
-
-  // Obtener status 'Cancelada'
-  const { data: cancelledStatus } = await supabase
-    .from('appointment_statuses')
-    .select('id')
-    .eq('name', 'cancelada')
-    .single()
-
-  if (!cancelledStatus) {
-    return { success: false, error: 'Error de configuración' }
-  }
-
-  // Actualizar status
-  const { error } = await supabase
-    .from('appointments')
-    .update({
-      status_id: cancelledStatus.id,
-    })
-    .eq('id', appointmentId)
-
-  if (error) {
-    return { success: false, error: 'Error al cancelar' }
-  }
-
-  return { success: true }
-}
+// cancelBooking se ELIMINÓ en CANCELACIÓN-PACIENTE-P0 (PR-B). No tenía ni un
+// solo caller, y desde s7_70 el UPDATE directo del paciente sobre
+// appointments está cerrado: la única vía de cancelación del paciente es la
+// RPC cancel_my_appointment (ver patientHistory.service.ts).
 
 // ═══════════════════════════════════════════════════════════════════
 // AUTH-P1B1B — camino de reserva por INTENT (s7_66). Wrappers tipados.

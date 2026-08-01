@@ -12,12 +12,15 @@ import { StatCard } from './components/StatCard'
 import { TodayAppointments } from './components/TodayAppointments'
 import { UpcomingAppointments } from './components/UpcomingAppointments'
 import DoctorActivationCard from './components/DoctorActivationCard'
+import RecentCancellationsCard from './components/RecentCancellationsCard'
 
 export default function PanelHomePage() {
   const {
     todayAppointments,
     upcomingAppointments,
     stats,
+    recentCancellations,
+    isCancellationsLoading,
     isLoading,
     isDoctorLoading,
     error,
@@ -110,6 +113,12 @@ export default function PanelHomePage() {
           accentColor="text-amber-600 bg-amber-50"
         />
       </div>
+
+      {/* ── Cancelaciones recientes hechas por pacientes (se oculta si no hay) ── */}
+      <RecentCancellationsCard
+        cancellations={recentCancellations}
+        isLoading={isCancellationsLoading}
+      />
 
       {/* ── Citas hoy + Próximas 48h ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">

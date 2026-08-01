@@ -15,6 +15,7 @@ import {
   getTodayAppointments,
   getUpcomingAppointments,
   getWeeklyStats,
+  getRecentPatientCancellations,
 } from '../services/dashboard.service'
 import { useClinicContext } from './useClinicContext'
 
@@ -56,10 +57,25 @@ export function useDashboard() {
     refetchInterval: 1000 * 60 * 5,
   })
 
+  // ─── 5. Cancelaciones recientes hechas por pacientes (s7_70) ───
+  // La RPC NO recibe doctorId: lo deriva de auth.uid() server-side. El
+  // `enabled` solo evita una llamada inútil antes de resolver el contexto.
+  const {
+    data: recentCancellations = [],
+    isLoading: isCancellationsLoading,
+  } = useQuery({
+    queryKey: ['dashboard-recent-cancellations', doctorId],
+    queryFn: getRecentPatientCancellations,
+    enabled: !!doctorId,
+    refetchInterval: 1000 * 60 * 5,
+  })
+
   return {
     doctor,
     todayAppointments,
     upcomingAppointments,
+    recentCancellations,
+    isCancellationsLoading,
     stats: stats ?? {
       citasHoy: 0,
       citasSemana: 0,
