@@ -76,7 +76,13 @@ export default function RecentCancellationsCard({ cancellations, isLoading }: Pr
         Últimas cancelaciones hechas por pacientes desde LucyCare.
       </p>
 
-      <ul className="divide-y divide-gray-100">
+      {/* En móvil la lista se acota y hace scroll interno: con 5 registros y
+          nombres largos la tarjeta llegaba al 75% del alto en 360 px y
+          empujaba las citas de hoy fuera del primer pantallazo. El límite va
+          SOLO en la lista — título y descripción quedan siempre visibles — y
+          desaparece desde `sm`, así que escritorio no cambia. Los 5 registros
+          siguen accesibles con scroll. */}
+      <ul className="divide-y divide-gray-100 max-h-[320px] overflow-y-auto sm:max-h-none sm:overflow-visible">
         {cancellations.map((c) => (
           <li key={c.appointmentId} className="py-3 first:pt-0 last:pb-0">
             <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -90,9 +96,13 @@ export default function RecentCancellationsCard({ cancellations, isLoading }: Pr
                   {c.reason ? ` · ${REASON_LABEL[c.reason] ?? c.reason}` : ''}
                 </p>
               </div>
+              {/* Objetivo táctil de 44 px de alto: el enlace medía 63×20 y
+                  exigía puntería en móvil. El padding negativo compensa el
+                  px-2 para que el área crezca sin mover el texto ni pisar el
+                  nombre o la fecha. */}
               <Link
                 to={`/panel/citas?date=${localDateStr(c.appointmentStart)}`}
-                className="text-sm font-medium text-emerald-700 hover:text-emerald-800 whitespace-nowrap"
+                className="inline-flex min-h-[44px] items-center px-2 -mx-2 text-sm font-medium text-emerald-700 hover:text-emerald-800 whitespace-nowrap"
               >
                 Ver cita →
               </Link>
