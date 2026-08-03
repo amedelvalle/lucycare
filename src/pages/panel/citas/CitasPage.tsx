@@ -10,6 +10,7 @@
 // - La vista "calendar" maneja su propia fecha internamente
 
 import { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useAppointmentsByDate,
   useAppointmentStatuses,
@@ -50,7 +51,22 @@ export default function CitasPage() {
   const doctorId = ctx?.doctorId ?? null;
 
   // ─── Fecha seleccionada (solo vista Lista) ─────────────────────
-  const [selectedDate, setSelectedDate] = useState(() => getToday());
+  // `/panel/citas?date=YYYY-MM-DD` abre esa fecha (lo usa el enlace "Ver cita"
+  // de la tarjeta de cancelaciones). Se valida el formato Y que sea una fecha
+  // real: un parámetro ausente o inválido cae a hoy en silencio, nunca a una
+  // fecha equivocada. Se lee solo al montar; después manda el estado local.
+  const [searchParams] = useSearchParams();
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const raw = searchParams.get('date');
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m, d] = raw.split('-').map(Number);
+      const parsed = new Date(y, m - 1, d);
+      const isReal =
+        parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
+      if (isReal) return raw;
+    }
+    return getToday();
+  });
 
   const isToday = selectedDate === getToday();
   // Rótulo relativo (Hoy / Mañana / ninguno), en zona local real.

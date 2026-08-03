@@ -209,6 +209,28 @@ function DetailContent({
           ) : null}
         </div>
 
+        {/* Cancelada por el paciente (s7_70). La sola existencia de la fila de
+            evento es la señal: no hay flag redundante. Cancelaciones del
+            médico no la tienen y no muestran este bloque. */}
+        {appointment.patient_cancellation ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-red-900">
+              Cancelada por el paciente en LucyCare
+            </p>
+            <p className="text-xs text-red-800 mt-1">
+              {formatCancelledAt(appointment.patient_cancellation.cancelled_at)}
+              {appointment.patient_cancellation.reason
+                ? ` · ${CANCEL_REASON_LABEL[appointment.patient_cancellation.reason] ?? appointment.patient_cancellation.reason}`
+                : ''}
+            </p>
+            {appointment.patient_cancellation.note ? (
+              <p className="text-xs text-red-800 mt-2 italic break-words">
+                “{appointment.patient_cancellation.note}”
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Notas */}
         {appointment.notes ? (
           <div>
@@ -308,6 +330,24 @@ function DetailContent({
       )}
     </>
   );
+}
+
+/** Etiquetas legibles de los motivos que ofrece el paciente (s7_70). */
+const CANCEL_REASON_LABEL: Record<string, string> = {
+  no_puedo_asistir: 'No puede asistir',
+  otro_horario: 'Necesita otro horario',
+  ya_no_necesito: 'Ya no necesita la consulta',
+  otro: 'Otro motivo',
+};
+
+function formatCancelledAt(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('es-SV', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {

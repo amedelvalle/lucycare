@@ -221,3 +221,40 @@ export async function getWeeklyStats(doctorId: string, clinicId: string): Promis
     tasaAsistencia,
   }
 }
+
+// ─── CANCELACIÓN-PACIENTE-P0 — tarjeta "Cancelaciones recientes" ──────
+
+export interface RecentPatientCancellation {
+  appointmentId: string
+  patientName: string
+  appointmentStart: string
+  cancelledAt: string
+  reason: string | null
+}
+
+/**
+ * Últimas cancelaciones hechas por PACIENTES sobre las citas del médico de la
+ * sesión.
+ *
+ * NO recibe doctorId: la RPC `list_recent_patient_cancellations` (s7_70) lo
+ * deriva server-side de `auth.uid()`. Un doctorId manipulado en el cliente no
+ * tiene por dónde entrar. Máximo 5 filas y ventana de 7 días, ambos fijos en
+ * el servidor.
+ *
+ * Fail-safe: ante error devuelve lista vacía → la tarjeta simplemente no se
+ * muestra. Nunca un error técnico en el dashboard.
+ */
+export async function getRecentPatientCancellations(): Promise<RecentPatientCancellation[]> {
+  const { data, error } = await supabase.rpc('list_recent_patient_cancellations')
+  if (error) {
+    console.warn('[getRecentPatientCancellations] error (silenciado):', error.message)
+    return []
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    appointmentId: r.appointment_id as string,
+    patientName: (r.patient_name as string) ?? 'Paciente',
+    appointmentStart: r.appointment_start as string,
+    cancelledAt: r.cancelled_at as string,
+    reason: (r.reason as string | null) ?? null,
+  }))
+}

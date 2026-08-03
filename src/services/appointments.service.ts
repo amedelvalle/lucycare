@@ -78,6 +78,17 @@ export interface AppointmentListItem {
     name: string;
     duration_minutes: number;
   } | null;
+  /**
+   * Evento de cancelación por el PACIENTE (s7_70). Su sola existencia
+   * significa "Cancelada por el paciente en LucyCare". Ausente (null) para
+   * cancelaciones del médico o citas no canceladas. Lectura protegida por la
+   * policy de la tabla, que espeja la visibilidad de la cita.
+   */
+  patient_cancellation?: {
+    cancelled_at: string;
+    reason: string | null;
+    note: string | null;
+  } | null;
 }
 
 export interface AppointmentStats {
@@ -112,7 +123,8 @@ export async function getAppointmentsByDate(
       created_at,
       status:appointment_statuses(id, name, display_name, color, is_final),
       patient:patients(id, full_name, phone, photo_url),
-      service:services(id, name, duration_minutes)
+      service:services(id, name, duration_minutes),
+      patient_cancellation:appointment_patient_cancellations(cancelled_at, reason, note)
     `)
     .eq('doctor_id', doctorId)
     .gte('start_time', dayStart)
@@ -148,7 +160,8 @@ export async function getAppointmentsByRange(
       created_at,
       status:appointment_statuses(id, name, display_name, color, is_final),
       patient:patients(id, full_name, phone, photo_url),
-      service:services(id, name, duration_minutes)
+      service:services(id, name, duration_minutes),
+      patient_cancellation:appointment_patient_cancellations(cancelled_at, reason, note)
     `)
     .eq('doctor_id', doctorId)
     .gte('start_time', rangeStart)

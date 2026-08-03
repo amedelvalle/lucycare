@@ -219,6 +219,103 @@ export async function listUnconfirmedLinks(): Promise<UnconfirmedLink[]> {
   return out;
 }
 
+// ─── CANCELACIÓN-PACIENTE-P0 (s7_70) ──────────────────────────────────
+
+/** Motivos ofrecidos al paciente. El CHECK de la DB acepta exactamente estos. */
+export const CANCEL_REASONS = [
+  { value: 'no_puedo_asistir', label: 'No puedo asistir' },
+  { value: 'otro_horario', label: 'Necesito otro horario' },
+  { value: 'ya_no_necesito', label: 'Ya no necesito la consulta' },
+  { value: 'otro', label: 'Otro motivo' },
+] as const;
+
+export type CancelReasonValue = (typeof CANCEL_REASONS)[number]['value'];
+
+/** Máximo del CHECK `note <= 300` en la DB. */
+export const CANCEL_NOTE_MAX = 300;
+
+/** Estados en los que el paciente puede cancelar (los mismos que exige la RPC). */
+const CANCELLABLE_STATUSES = ['programada', 'confirmada'];
+
+/**
+ * ¿Se muestra "Cancelar cita"? Espejo EXACTO de la elegibilidad server-side:
+ * estado cancelable y cita futura. La UI solo decide qué dibujar; quien
+ * autoriza es `cancel_my_appointment`.
+ */
+export function canPatientCancel(entry: PatientAppointmentEntry): boolean {
+  if (!CANCELLABLE_STATUSES.includes(entry.statusKey.toLowerCase())) return false;
+  const start = new Date(entry.startTime).getTime();
+  return Number.isFinite(start) && start > Date.now();
+}
+
+export type CancelOutcome =
+  | 'cancelled'
+  | 'already_cancelled_by_patient'
+  | 'already_cancelled_by_other';
+
+export interface CancelResult {
+  outcome: CancelOutcome;
+  appointmentId: string;
+}
+
+/**
+ * Error de cancelación con copy ya resuelto para el usuario. El `code` es el
+ * SQLSTATE de la RPC; el mensaje NUNCA revela si una cita ajena existe.
+ */
+export class CancelAppointmentError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'CancelAppointmentError';
+    this.code = code;
+  }
+}
+
+const CANCEL_ERROR_COPY: Record<string, string> = {
+  P0110: 'Tu sesión venció. Vuelve a entrar e inténtalo de nuevo.',
+  // Genérico a propósito: mismo texto para "no existe", "es de otro" y
+  // "vínculo sin confirmar". No se filtra la existencia de citas ajenas.
+  P0111: 'No pudimos procesar la solicitud. Actualiza la página e inténtalo de nuevo.',
+  P0112: 'Esta cita ya no puede cancelarse por su estado actual.',
+  P0113: 'Esta cita ya pasó, no puede cancelarse.',
+  P0114: 'Ese motivo no es válido. Elige uno de la lista.',
+  P0115: `El detalle no puede superar los ${CANCEL_NOTE_MAX} caracteres.`,
+};
+
+/**
+ * Cancela una cita propia. Única vía: la RPC `cancel_my_appointment` (s7_70).
+ * El UPDATE directo sobre `appointments` está cerrado para el paciente desde
+ * esa misma migración.
+ *
+ * `reason` y `note` son OPCIONALES; se envían `null` cuando el paciente no los
+ * completa (la RPC normaliza vacío/espacios a NULL de todos modos).
+ */
+export async function cancelMyAppointment(
+  appointmentId: string,
+  reason?: CancelReasonValue | null,
+  note?: string | null,
+): Promise<CancelResult> {
+  const { data, error } = await supabase.rpc('cancel_my_appointment', {
+    p_appointment_id: appointmentId,
+    p_reason: reason ?? null,
+    p_note: note?.trim() ? note.trim() : null,
+  });
+
+  if (error) {
+    const code = (error as { code?: string }).code ?? '';
+    throw new CancelAppointmentError(
+      code,
+      CANCEL_ERROR_COPY[code] ?? 'No pudimos cancelar tu cita. Inténtalo de nuevo en un momento.',
+    );
+  }
+
+  const res = (data ?? {}) as { outcome?: string; appointment_id?: string };
+  return {
+    outcome: (res.outcome as CancelOutcome) ?? 'cancelled',
+    appointmentId: res.appointment_id ?? appointmentId,
+  };
+}
+
 /** "Sí, son mías" — sella la confirmación de la ficha (self-gated en la RPC). */
 export async function confirmPatientLink(patientId: string): Promise<void> {
   const { error } = await supabase.rpc('confirm_patient_link', { p_patient_id: patientId });

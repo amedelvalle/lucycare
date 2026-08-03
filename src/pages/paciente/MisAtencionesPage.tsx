@@ -23,11 +23,14 @@ import {
   listUnconfirmedLinks,
   confirmPatientLink,
   rejectPatientLink,
+  canPatientCancel,
   type UnconfirmedLink,
+  type PatientAppointmentEntry,
 } from '@/services/patientHistory.service';
 import PatientHeader from '@/components/PatientHeader';
 import ProfileIncompleteBanner from '@/components/ProfileIncompleteBanner';
 import PersonalAccountNote from '@/components/PersonalAccountNote';
+import CancelAppointmentPatientModal from './components/CancelAppointmentPatientModal';
 
 const PAGE_SIZE = 20;
 
@@ -64,6 +67,9 @@ function statusBadge(statusKey: string, statusLabel: string, isFinal: boolean) {
 
 export default function MisAtencionesPage() {
   const [page, setPage] = useState(0);
+  // Cita elegida para cancelar. El modal se monta solo con una seleccionada.
+  const [toCancel, setToCancel] = useState<PatientAppointmentEntry | null>(null);
+  const qc = useQueryClient();
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['my-appointments', page],
@@ -173,6 +179,20 @@ export default function MisAtencionesPage() {
                     <span className="text-gray-500">Servicio:</span> {row.serviceName}
                   </p>
                 </div>
+
+                {/* Solo para citas FUTURAS en estado cancelable. El gate real
+                    lo aplica cancel_my_appointment server-side. */}
+                {canPatientCancel(row) && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setToCancel(row)}
+                      className="text-sm font-medium text-brand-purple hover:underline cursor-pointer"
+                    >
+                      Cancelar cita
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
 
@@ -208,6 +228,16 @@ export default function MisAtencionesPage() {
           </div>
         )}
       </main>
+
+      {toCancel && (
+        <CancelAppointmentPatientModal
+          appointment={toCancel}
+          onClose={() => setToCancel(null)}
+          // La cita se conserva visible, ahora como cancelada: se refresca la
+          // lista en vez de quitarla del historial.
+          onCancelled={() => qc.invalidateQueries({ queryKey: ['my-appointments'] })}
+        />
+      )}
     </div>
   );
 }
