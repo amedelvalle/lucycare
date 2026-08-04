@@ -81,7 +81,7 @@ git log --oneline -10
 Luego leé los documentos oficiales según el objetivo del día:
 
 **Continuidad / base (siempre):**
-- `docs/HANDOFF_LUCYCARE_SPRINT7.md` — handoff actualizado, snapshot vigente.
+- `docs/HANDOFF_LUCYCARE_SPRINT7.md` — **histórico**: snapshot del Sprint 7. El estado vigente lo manda el handoff canónico listado abajo.
 - `docs/HANDOFF_TOMA_DECISIONES_2.md` — handoff corto de decisiones + estado de infra + próximos pasos.
 - `docs/ESTADO_TECNICO.md` — ER/BD, matriz de reglas, flujos UI/UX.
 
@@ -98,10 +98,10 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **PUNTO DE ENTRADA VIGENTE** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual ejecutada y sus límites, Turnstile ACTIVO en producción y configurado en Preview, **AUDIT-SEC-P0 como siguiente frente no iniciado**, TWILIO-P0 pausado, backlog vigente, objetivo comercial e INSTRUCCIÓN 0). **Leer este PRIMERO.**
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — el **handoff vigente** declarado en el bloque de estado del inicio de este archivo (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual ejecutada y sus límites, Turnstile ACTIVO en producción y configurado en Preview, **AUDIT-SEC-P0 como siguiente frente no iniciado**, TWILIO-P0 pausado, backlog vigente, objetivo comercial e INSTRUCCIÓN 0).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` — **histórico** (estado post-#308: eje Auth cerrado #304/#305/#306, `s7_69` aplicada y validada, **§M = cierre de PILOTO-P0**). Su texto histórico dice "CAPTCHA desactivado" en algunas secciones: **está obsoleto**, manda el handoff `2026-08-03`.
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-14.md` — **histórico** (estado post-#277: **eje clínico F1–F6 CERRADO** (#272–#277) + `s7_58` aplicada + limpieza manual de `vitals` vacías; **regla vinculante de `amend_consultation`** (presencia de clave); pendientes vivos (F7, F8); reglas operativas; aprendizajes de método; prompt de arranque). Leer este PRIMERO.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-14.md` — **histórico** (estado post-#277: **eje clínico F1–F6 CERRADO** (#272–#277) + `s7_58` aplicada + limpieza manual de `vitals` vacías; **regla vinculante de `amend_consultation`** (presencia de clave); pendientes vivos (F7, F8); reglas operativas; aprendizajes de método; prompt de arranque).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-13.md` — **histórico** (estado post-#270: rediseño de receta #268, fix del race de campos de receta #269, manejo de error de sesión/cuenta #270; SEO Brand #266/#267).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-09.md` — **histórico** (estado post-#257: Analytics Fase 3 conversión + Analytics Farma COMPLETO + fix doble reserva `s7_55` + Brand/Favicon corregido en prod; niveles de acceso LucyAdmin `directory_editor` #261–#264). El `2026-07-03_POST_PR220` (y anteriores) también históricos.
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-07-03_POST_PR220.md` — histórico (estado post-#220: Slugs+SEO hasta PR C + Analytics/Search Console Fase 1A/1B + favicon inicial).
@@ -131,9 +131,16 @@ squash-merge, la rama puede borrarse.
 - **#164–#212** ✅ — correcciones clínicas F1–F7 (s7_58–s7_59), onboarding médico, resumen paciente, paginación, Slugs+SEO F1-3 (s7_52) → [detalle](docs/HISTORIAL_FRENTES.md)
 - **#213–#264** ✅ — Analytics conversión (s7_53), Analytics Farma (s7_54), anti-solapamiento (s7_55), índices (s7_56), LucyAdmin niveles (s7_57), favicon, branding completo, Perf P1+P2 → [detalle](docs/HISTORIAL_FRENTES.md)
 - **#265–#293** ✅ — SEO JSON-LD+OG, receta corregida minimal, hardening grants (s7_60), doctor_credentials F1-a/F1-b (s7_61–s7_62) → [detalle](docs/HISTORIAL_FRENTES.md)
-- **#295–#311** ✅ — F1-c cutover (s7_63–s7_64), eje Auth completo OTP+contraseña+consentimiento (s7_65–s7_69), PILOTO-P0 Turnstile (#308), cancelación por paciente (s7_70, #310–#311) → [detalle](docs/HISTORIAL_FRENTES.md)
+- **#295–#311** ✅ — **F1-c1** cutover lógico de `doctor_credentials` (s7_63–s7_64; **F1-c2 / DROP físico sigue PENDIENTE**), eje Auth completo OTP+contraseña+consentimiento (s7_65–s7_69), PILOTO-P0 Turnstile (#308), cancelación por paciente (s7_70, #310–#311) → [detalle](docs/HISTORIAL_FRENTES.md)
 
-**Backlog abierto (ninguno bloquea el piloto — no abrir sin instrucción del owner).
+**Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
+1. **AUDIT-SEC-P0** — **NO iniciado.** `audit_log` admite INSERT arbitrario por `public`/`anon`/`authenticated` (policy con `WITH CHECK true` + grants amplios), por lo que hoy **no es evidencia autoritativa**. Debe empezar por **análisis read-only** con alcance aprobado.
+2. **TWILIO-P0** — **PAUSADO** hasta cerrar AUDIT-SEC-P0. No configurar Twilio todavía.
+
+**Frente diferido con precondiciones (fuera del backlog no bloqueante):**
+- **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).
+
+**Backlog no bloqueante del piloto — no abrir sin instrucción del owner.
 Detalle completo en el handoff vigente §H:**
 - (1) **Traducir al español los errores de contraseña** — no mostrar mensajes crudos de Supabase. Caso observado: `New password should be different from the old password.` → copy aprobado: **"La nueva contraseña debe ser diferente de la contraseña anterior."** Revisar creación, cambio y recuperación. Tuteo.
 - (2) **`NotificationBell`** — cerrar el popover con Escape + devolver el foco al botón. Quedó explícitamente fuera de #311.
@@ -143,7 +150,6 @@ Detalle completo en el handoff vigente §H:**
 - (6) Razón genérica "Otro motivo" en `cancel_reasons` (tabla no versionada en `migrations/`).
 - (7) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
 - (8) UX del widget de Turnstile en móvil — mejora cosmética, no bloqueante.
-- **F1-c (doctor_credentials DROP)** — no abrir sin: sincronía fresca, respaldo, preflight `service_role`, autorización owner. Ver `docs/HISTORIAL_FRENTES.md` § Frentes cerrados para el preflight read-only ya hecho.
 
 ## Decisiones cerradas (NO reabrir)
 
@@ -337,9 +343,11 @@ Admin SaaS completo (dashboard, listado, edición perfil/clínica/info/servicios
 - **Afiliación Fase 1** (PR #56, `s7_21`) — captura de leads, bandeja admin triage.
 - **Afiliación Fase 2** (PR #58, `s7_22`+`s7_23`) — `admin_approve_and_create_doctor`, smoke e2e validado (PR #61, `s7_24`).
 
-## Próximas fases / Backlog
+## Próximas fases (post-piloto)
 
-> Detalle histórico de fases cerradas en `docs/HISTORIAL_FRENTES.md`.
+> El backlog vigente está más arriba, en una sola sección. Aquí quedan
+> las fases de horizonte largo. Detalle histórico de fases cerradas en
+> `docs/HISTORIAL_FRENTES.md`.
 
 ### Fase 4 — Auth robusta del médico
 - ✅ PR-A (PR #39): login email/password + reset por email.

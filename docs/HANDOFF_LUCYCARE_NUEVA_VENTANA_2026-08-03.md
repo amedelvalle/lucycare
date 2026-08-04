@@ -250,8 +250,14 @@ No implementar sin instrucción del owner.
 7. **Revisión de `cancel_reasons` como tabla legacy** — entrar por migración
    versionada.
 8. **UX del widget de Turnstile en móvil** — mejora cosmética, no bloqueante.
-9. **F1-c (`doctor_credentials` DROP)** — no abrir sin: sincronía fresca, respaldo,
-   preflight `service_role` y autorización del owner.
+
+### Frente diferido con precondiciones (fuera del backlog no bloqueante)
+
+**F1-c2 · DROP físico de `doctors.license_number`** — irreversible. **F1-c1
+(retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`); lo que queda
+pendiente es **F1-c2**, según la nomenclatura de
+`docs/ANALISIS_CREDENCIALES_MEDICAS.md`. No abrir sin: sincronía fresca,
+respaldo, preflight `service_role` y autorización del owner.
 
 ### Objetivo comercial
 
