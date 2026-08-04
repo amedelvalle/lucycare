@@ -4,76 +4,56 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-07-31) — post PR #308. SIN frente funcional abierto.**
-> **Punto de entrada: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` (leer PRIMERO).**
-> Ese handoff es autocontenido y reemplaza a los anteriores como referencia de
-> continuidad (los históricos se conservan para el detalle de ejes ya cerrados);
-> su **§M** documenta el cierre de PILOTO-P0.
+> 🟢 **ESTADO VIGENTE (2026-08-03) — post PR #311. SIN frente funcional abierto.**
+> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md`
+> (leer PRIMERO).** Ese handoff es autocontenido y reemplaza al `2026-07-30`, que
+> pasa a **histórico** junto con los anteriores. El detalle por PR de los frentes ya
+> cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `45ec573a1168f9319f0a67028438728b031e338a`** · subject
-> `fix(auth): CAPTCHA en el login post-contraseña y en el reset del claim (#308)` ·
-> **PRs mergeados hasta #308** ·
-> **migraciones aplicadas hasta `s7_69`** · `main == origin/main` · árbol limpio ·
-> **0 PRs abiertos** · producción desplegada y validada (`https://lucycare.app`).
+> **HEAD `cd965ea031dcefe0b7a0e114e7ce06ade0a64c04`** · **PRs mergeados hasta #311**
+> (merge commit de #311: `df0d3b50e11fd9c2a1d0e84c2e4f4a7e858fc8b3`) ·
+> **migraciones aplicadas hasta `s7_70`** · `main == origin/main` · árbol limpio ·
+> **0 PRs abiertos** · producción desplegada (`https://lucycare.app`).
 >
-> **Eje Auth cerrado:** **#304** el login genérico ya **no crea usuarios** (creación
-> solo en contextos autorizados) · **#305** OTP inicial + **contraseña obligatoria**
-> antes de completar acceso/reserva, accesos posteriores por **teléfono+contraseña**
-> (verificación del OTP con **cliente transitorio**, sin sesión persistente ni
-> side-effects hasta guardar la contraseña), recuperación por **Resend**, y
-> "Mis atenciones" refresca de inmediato tras reservar · **#306 / `s7_69`**
-> **consentimiento OTP** (`otp-consent-v1`, hash
-> `86f0dfdf430fd3e100fc7651039b20bf1d127c571e87e07faef22503886c8692`, enlace a
-> `/privacidad`, sin checkbox) con **registro append-only obligatorio**
-> (`otp_consent_events` + RPC `record_otp_consent` `SECURITY DEFINER`,
-> idempotencia estricta por `request_id`, **10 solicitudes por teléfono / 10 min**
-> con **advisory lock transaccional por teléfono**) y **Cloudflare Turnstile
-> preparado**. **Si falla el registro del consentimiento, NO se
-> envía OTP.** Validado: `check-s7_69` 94/94 · `check-auth-p1d2` 78/78 · smoke
-> transaccional **16/16** · `postsmoke_pass = true` · **0 residuos**.
+> **Último eje cerrado — cancelación por el paciente (#310 / `s7_70` + #311):** el
+> paciente cancela su cita desde "Mis atenciones"; el historial la conserva como
+> *Cancelada*; el horario se libera; el médico ve la tarjeta "Cancelaciones
+> recientes" con el motivo y el enlace "Ver cita". Backend con smoke **65/65**;
+> frontend con P1 (scroll interno en móvil) y P2 (objetivo táctil de 44 px).
+> **`NotificationBell` NO se modificó.** Detalle y límites de la QA en el handoff
+> vigente (§B–§E) y en `docs/HISTORIAL_FRENTES.md`.
 >
-> **🔐 PILOTO-P0 — Turnstile CERRADO (2026-07-31, PR #308):** el preflight
-> read-only de las superficies Auth encontró **dos llamadas a endpoints protegidos
-> por el CAPTCHA que viajaban SIN `captchaToken`**, ambas invisibles con el CAPTCHA
-> apagado y bloqueantes al encenderlo. **GAP-1:** tras crear la contraseña
-> obligatoria, `LoginModal` hacía el login principal (`signInWithPassword`) sin
-> token — el usuario nuevo quedaba con la contraseña cambiada y **sin sesión**, y en
-> **booking la cita nunca se creaba** con el intent ya registrado. **GAP-2:**
-> `ClaimProfileModal → "Recibir link por email"` llamaba a `resetPasswordForEmail`
-> sin token; como `requestPasswordReset` siempre responde éxito por
-> anti-enumeración, la pantalla de éxito aparecía y **el correo nunca salía**
-> (falla silenciosa). Fix: **segundo challenge de Turnstile** en ambos pasos, con
-> guard **antes** de guardar la contraseña y **antes** de mostrar éxito, token
-> fresco (el del OTP ya se consumió) y reset en el `finally`. **Se conservó la
-> arquitectura de #305** (OTP transitorio → guardar contraseña → login principal);
-> **no** se usó `setSession`. Frontend-only, sin migración. `check-auth-p1d2`
-> **90/90** (+11 aserciones que fijan ambas rutas). **Matriz QA y riesgos aceptados
-> en `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` §M.**
->
-> **Estado de servicios:** **CAPTCHA ACTIVO en producción** (Turnstile en modo
-> Managed, `VITE_CAPTCHA_ENABLED` activo en Vercel y Secret Key configurada en
-> Supabase; la **Site Key es PÚBLICA** —va en el bundle— y la **Secret Key es
-> SENSIBLE: nunca toca el repo ni el frontend y NO se documenta**) · **Before User Created
-> Hook ACTIVO** · OTP 6 dígitos / 300 s · **Resend SMTP validado E2E** · **Twilio en
-> Trial** con **Programmable Messaging** (Verify disponible pero **no seleccionado**,
-> **Verify Service no creado**) · **cambio de teléfono SUSPENDIDO** mientras el flag
-> esté activo (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`, porque
-> `updateUser({phone})` no admite `captchaToken`): **no hay camino self-service de
-> cambio de teléfono durante el piloto**.
+> **🔐 Turnstile: ACTIVO en producción y configurado también en Preview**
+> (variables de Preview configuradas y hostname del Preview autorizado en
+> Cloudflare). La **Site Key es PÚBLICA** y la **Secret Key es SENSIBLE**:
+> **ninguna se documenta, imprime ni guarda en el repo**. Consecuencia vigente: el
+> **cambio de teléfono sigue SUSPENDIDO** (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`,
+> porque `updateUser({phone})` no admite `captchaToken`).
 >
 > **⚠️ Orden VINCULANTE al tocar el CAPTCHA:** el frontend debe estar enviando
 > tokens **antes** de que Supabase los exija. Frontend ON + Supabase OFF =
 > inofensivo (GoTrue ignora el token). **Supabase ON + frontend OFF = caída total de
 > Auth.** Para desactivar, el orden es el inverso: **apagar el enforcement en
 > Supabase primero**, y recién después quitar `VITE_CAPTCHA_ENABLED` y redeployar.
-> Rollback validado en producción el 2026-07-31 (ver §M del handoff).
+>
+> **Siguiente frente: AUDIT-SEC-P0 — NO iniciado.** Riesgo: `audit_log` admite
+> **INSERT arbitrario** por `public`/`anon`/`authenticated` (policy con
+> `WITH CHECK true` + grants amplios), por lo que **hoy no es evidencia
+> autoritativa**. Debe empezar por un **análisis read-only** con alcance aprobado
+> por el owner. Después vendrá **TWILIO-P0**, que sigue **pausado**: no configurar
+> Twilio todavía.
 >
 > **Prohibiciones vigentes:** **no desactivar ni reconfigurar Turnstile/CAPTCHA** ·
 > no tocar claves en Vercel/Supabase/Cloudflare · no tocar Twilio ni crear Verify
 > Service · no ejecutar SQL ni usar `service_role` sin autorización puntual · no
 > tocar `auth.users` por SQL · **jamás Katherine (`50372608827`)** · no modificar la
 > identidad ni la configuración permanente de **Camilo (`50378627694`)** · no iniciar
-> ningún pendiente de §I del handoff sin instrucción del owner.
+> ningún pendiente del backlog sin instrucción del owner.
+>
+> **Objetivo comercial:** LucyCare listo para lanzamiento en El Salvador **a más
+> tardar el 2 de octubre de 2026** (sin expansión regional en este ciclo).
+> Secuencia: #311 ✅ → AUDIT-SEC-P0 → TWILIO-P0 → QA integral → soporte/recuperación
+> → pagos/facturación → legal/monitoreo → piloto comercial → go/no-go.
 >
 > **Nota de smokes SQL:** no usar tablas temporales en el SQL Editor de Supabase
 > (`42P01` por `search_path`, `3F000` porque `pg_temp` no resuelve hasta que la
@@ -81,11 +61,10 @@
 > `set_config`/`current_setting` dentro de `BEGIN … ROLLBACK`
 > (ver `docs/OWNER_S7_69_SMOKE.md`).
 >
-> **Deuda técnica documentada (sin cambios):** los triggers de auditoría legacy
-> (`audit_patients` s4_02, `audit_profiles_identity` s7_32) usan
-> `auth.uid()`/`search_path` del caller y chocan con `service_role`/`''` en tablas
-> auditadas. **Deuda editorial:** voseo heredado en algunas superficies (sobre todo
-> claim); el copy nuevo mantiene **tuteo**.
+> **Identidad de git (corregida 2026-08-03):** local en este repo
+> `amedelvalle / lucycare.digital@gmail.com`; global
+> `amedelvalle / 240200944+amedelvalle@users.noreply.github.com`. No se reescribió
+> ningún commit anterior.
 
 ## Cómo retomar el proyecto en una sesión nueva
 
@@ -119,7 +98,9 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` — **PUNTO DE ENTRADA VIGENTE** (estado post-#308: eje Auth cerrado #304/#305/#306, `s7_69` aplicada y validada, **§M = cierre de PILOTO-P0 con Turnstile ACTIVO en producción y el cambio de teléfono suspendido**, Twilio en Trial, pendientes vivos e INSTRUCCIÓN 0). **Leer este PRIMERO.**
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **PUNTO DE ENTRADA VIGENTE** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual ejecutada y sus límites, Turnstile ACTIVO en producción y configurado en Preview, **AUDIT-SEC-P0 como siguiente frente no iniciado**, TWILIO-P0 pausado, backlog vigente, objetivo comercial e INSTRUCCIÓN 0). **Leer este PRIMERO.**
+- `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` — **histórico** (estado post-#308: eje Auth cerrado #304/#305/#306, `s7_69` aplicada y validada, **§M = cierre de PILOTO-P0**). Su texto histórico dice "CAPTCHA desactivado" en algunas secciones: **está obsoleto**, manda el handoff `2026-08-03`.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-14.md` — **histórico** (estado post-#277: **eje clínico F1–F6 CERRADO** (#272–#277) + `s7_58` aplicada + limpieza manual de `vitals` vacías; **regla vinculante de `amend_consultation`** (presencia de clave); pendientes vivos (F7, F8); reglas operativas; aprendizajes de método; prompt de arranque). Leer este PRIMERO.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-13.md` — **histórico** (estado post-#270: rediseño de receta #268, fix del race de campos de receta #269, manejo de error de sesión/cuenta #270; SEO Brand #266/#267).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-09.md` — **histórico** (estado post-#257: Analytics Fase 3 conversión + Analytics Farma COMPLETO + fix doble reserva `s7_55` + Brand/Favicon corregido en prod; niveles de acceso LucyAdmin `directory_editor` #261–#264). El `2026-07-03_POST_PR220` (y anteriores) también históricos.
@@ -152,12 +133,16 @@ squash-merge, la rama puede borrarse.
 - **#265–#293** ✅ — SEO JSON-LD+OG, receta corregida minimal, hardening grants (s7_60), doctor_credentials F1-a/F1-b (s7_61–s7_62) → [detalle](docs/HISTORIAL_FRENTES.md)
 - **#295–#311** ✅ — F1-c cutover (s7_63–s7_64), eje Auth completo OTP+contraseña+consentimiento (s7_65–s7_69), PILOTO-P0 Turnstile (#308), cancelación por paciente (s7_70, #310–#311) → [detalle](docs/HISTORIAL_FRENTES.md)
 
-**Backlog abierto (post-PILOTO-P0, ninguno bloquea el piloto — no abrir sin instrucción):**
-- (1) Entregabilidad de correo (SPF/DKIM/DMARC + plantilla de Supabase/Resend).
-- (2) Correo verificado del paciente como canal secundario de recuperación.
-- (3) Razón genérica “Otro motivo” en `cancel_reasons` (tabla no versionada en `migrations/`).
-- (4) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
-- (5) UX del widget de Turnstile en móvil — mejora cosmética, no bloqueante.
+**Backlog abierto (ninguno bloquea el piloto — no abrir sin instrucción del owner).
+Detalle completo en el handoff vigente §H:**
+- (1) **Traducir al español los errores de contraseña** — no mostrar mensajes crudos de Supabase. Caso observado: `New password should be different from the old password.` → copy aprobado: **"La nueva contraseña debe ser diferente de la contraseña anterior."** Revisar creación, cambio y recuperación. Tuteo.
+- (2) **`NotificationBell`** — cerrar el popover con Escape + devolver el foco al botón. Quedó explícitamente fuera de #311.
+- (3) Correo verificado como canal secundario de recuperación (el teléfono sigue siendo la identidad principal).
+- (4) **Botón "Gestionar plan y facturación"** hacia `medicos.lucycare.app` (plan, modalidad, tarjeta, método de pago) + evaluar qué cambios requiere el sitio de médicos. Su flujo actual es **demostrativo** y **no** es todavía sistema autoritativo de cobro.
+- (5) Entregabilidad de correo (SPF/DKIM/DMARC + plantilla de Supabase/Resend).
+- (6) Razón genérica "Otro motivo" en `cancel_reasons` (tabla no versionada en `migrations/`).
+- (7) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
+- (8) UX del widget de Turnstile en móvil — mejora cosmética, no bloqueante.
 - **F1-c (doctor_credentials DROP)** — no abrir sin: sincronía fresca, respaldo, preflight `service_role`, autorización owner. Ver `docs/HISTORIAL_FRENTES.md` § Frentes cerrados para el preflight read-only ya hecho.
 
 ## Decisiones cerradas (NO reabrir)
