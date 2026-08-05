@@ -58,6 +58,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { execSync } from 'node:child_process';
 import { requireEnv } from './_lib/env.mjs';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -334,8 +335,14 @@ const kindOf = (row) => row?.new_data?.change_kind ?? null;
 // INVENTARIO EXHAUSTIVO DE AUTH
 // ═════════════════════════════════════════════════════════════════════
 
-const AUTH_PER_PAGE = 1000;   // máximo admitido por GoTrue
-const AUTH_MAX_PAGES = 200;   // tope defensivo: 200 000 usuarios
+/**
+ * Páginas PEQUEÑAS a propósito. Con perPage=1000 la primera llamada falló
+ * con `Database error finding users` sin devolver nada, y el diagnóstico
+ * quedó ciego. Con 50 se acota el radio del fallo: se sabe qué página lo
+ * dispara y cuántos usuarios se alcanzaron antes.
+ */
+const AUTH_PER_PAGE = 50;
+const AUTH_MAX_PAGES = 400;   // tope defensivo: 20 000 usuarios
 
 /**
  * Recorre TODA la lista de usuarios de Auth por la Admin API y DEMUESTRA que
@@ -360,12 +367,19 @@ async function listAllAuthUsers() {
   const notes = [];
   let pages = 0, complete = false, reason = null;
   let total = null, lastPage = null, effectivePerPage = null;
+  let failedPage = null;
+  /** Metadata de la ÚLTIMA página sana. Nunca contiene datos de usuarios. */
+  let lastHealthyMeta = null;
 
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
   for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: AUTH_PER_PAGE });
-    if (error) { reason = `listUsers(page=${page}) falló: ${error.message}`; break; }
+    if (error) {
+      failedPage = page;
+      reason = `listUsers(page=${page}) falló: ${error.message}`;
+      break;
+    }
 
     const batch = data?.users ?? [];
     pages++;
@@ -374,6 +388,8 @@ async function listAllAuthUsers() {
     const mTotal = num(data?.total);
     const mLast = num(data?.lastPage);
     const mNext = num(data?.nextPage);
+    // Solo cifras y banderas: nunca emails, teléfonos ni datos de usuario.
+    lastHealthyMeta = { page, batch: batch.length, total: mTotal, lastPage: mLast, nextPage: mNext };
 
     if (mTotal !== null) {
       if (total !== null && total !== mTotal) {
@@ -450,7 +466,29 @@ async function listAllAuthUsers() {
   return {
     users: [...byId.values()], unique: byId.size, pages, complete, reason,
     perPage: AUTH_PER_PAGE, effectivePerPage, total, lastPage, notes,
+    failedPage, lastHealthyMeta,
   };
+}
+
+/**
+ * Diagnóstico estructurado del fallo de inventario. Solo cifras y banderas:
+ * NUNCA emails, teléfonos ni ningún dato de usuario.
+ */
+export function authFailureReport(auth) {
+  return [
+    `motivo                       : ${auth.reason ?? '(sin motivo registrado)'}`,
+    `página exacta que falló      : ${auth.failedPage ?? '(no aplica)'}`,
+    `perPage solicitado           : ${auth.perPage}`,
+    `perPage efectivo             : ${auth.effectivePerPage ?? auth.perPage}`,
+    `páginas sanas recorridas     : ${auth.pages}`,
+    `usuarios únicos acumulados   : ${auth.unique}`,
+    `metadata última página sana  : ${auth.lastHealthyMeta
+      ? `page=${auth.lastHealthyMeta.page} batch=${auth.lastHealthyMeta.batch}`
+        + ` total=${auth.lastHealthyMeta.total ?? 'ausente'}`
+        + ` lastPage=${auth.lastHealthyMeta.lastPage ?? 'ausente'}`
+        + ` nextPage=${auth.lastHealthyMeta.nextPage ?? 'ausente'}`
+      : '(ninguna página sana)'}`,
+  ];
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -569,29 +607,58 @@ export function fingerprintOf(manifest) {
 }
 
 /**
+ * Validación de catálogos sobre el manifiesto PLANO.
+ *
+ * Función PURA y exportada a propósito: es exactamente la lógica que usa
+ * `preflight()`, y `check-s7_71a.mjs` la ejercita con manifiestos de ejemplo.
+ * Así, si alguien vuelve a leer una clave que no existe —como el
+ * `manifest.appointment_statuses` que quedó tras aplanar el manifiesto—, el
+ * check falla ANTES de producción en vez de reventar en la corrida.
+ *
+ * Devuelve pares [descripción, ok]. Nunca lanza: una clave ausente es un
+ * `false`, no un TypeError.
+ */
+export function catalogChecks(manifest) {
+  const m = manifest ?? {};
+  return [
+    ['hay especialidad', !!m.specialty_id],
+    ["estado 'programada' existe", !!m.programada_status_id],
+    ["estado 'confirmada' existe", !!m.confirmada_status_id],
+    ["estado 'cancelada' existe", !!m.cancelada_status_id],
+    ['cancel_reasons tiene al menos un motivo', !!m.cancel_reason_id],
+  ];
+}
+
+/** HEAD del repositorio, para el encabezado del preflight. Solo lectura. */
+function repoHead() {
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return '(no disponible)'; }
+}
+
+/**
  * Comprobaciones de colisión, read-only. Las ejecuta --preflight y las
  * REPITE --run antes de la primera escritura.
  */
-async function verifyNoCollisions({ verbose }) {
+async function verifyNoCollisions({ verbose, auth: authPrevio }) {
   const emails = IDENTITIES.map((i) => i.email);
   const phones = IDENTITIES.map((i) => i.phone);
   const emailSet = new Set(emails.map((e) => e.toLowerCase()));
   const phoneSet = new Set(phones.map(normalizePhone));
 
-  // ── Auth: inventario EXHAUSTIVO ──
-  const auth = await listAllAuthUsers();
-  if (verbose) {
+  // ── Auth: inventario EXHAUSTIVO (se reutiliza si ya se hizo) ──
+  const auth = authPrevio ?? await listAllAuthUsers();
+  if (verbose && !authPrevio) {
     console.log(`   páginas recorridas: ${auth.pages} · perPage solicitado: ${auth.perPage}`
       + (auth.effectivePerPage ? ` · servido: ${auth.effectivePerPage}` : ''));
     console.log(`   metadata → total: ${auth.total ?? 'ausente'} · lastPage: ${auth.lastPage ?? 'ausente'}`);
     console.log(`   ids únicos recogidos: ${auth.unique}`);
-    auth.notes.forEach((n) => console.log(`   ⚠️  ${n}`));
   }
   check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
   if (!auth.complete) {
-    console.log(`      ⛔ ${auth.reason}`);
-    console.log('      La API no permitió DEMOSTRAR que el inventario está completo.');
+    authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
     console.log('      FALLA CERRADO: no se emite huella y no se autoriza --run.');
+    return false;
   }
 
   const authHits = [];
@@ -625,7 +692,21 @@ async function verifyNoCollisions({ verbose }) {
 // ═════════════════════════════════════════════════════════════════════
 async function preflight() {
   console.log('\n_smoke-s7_71a — PREFLIGHT (read-only, no escribe nada)\n');
-  console.log(`  ASP0_RUN_ID: ${RUN_ID}   ·   marca: ${MARK}\n`);
+
+  // ── 0. Metadatos seguros, ANTES de tocar Auth ──
+  //    Se imprimen primero para que sigan disponibles aunque el inventario
+  //    falle. Solo el hostname: nunca la URL completa ni ninguna clave.
+  console.log('0. Metadatos de la corrida');
+  console.log(`   project_host      : ${projectHost() ?? '(no derivable)'}`);
+  console.log(`   migration_version : s7_71a`);
+  console.log(`   migration_sha256  : ${migrationSha256()}`);
+  console.log(`   HEAD              : ${repoHead()}`);
+  console.log(`   ASP0_RUN_ID       : ${RUN_ID}`);
+  console.log(`   marca             : ${MARK}`);
+  console.log('   candidatos:');
+  for (const id of IDENTITIES) {
+    console.log(`     ${id.tag.padEnd(8)} ${id.email}   ${id.phone}`);
+  }
 
   // ── 1. Identidades propuestas ──
   console.log('1. Identidades sintéticas propuestas (las mismas que usará --run)');
@@ -683,9 +764,38 @@ async function preflight() {
   check('la comparación tolera el formato sin 503',
     FORBIDDEN_NORMALIZED.has(normalizePhone('78627694')));
 
-  // ── 3. Colisiones ──
-  console.log('\n3. Inventario de Auth y colisiones');
-  const sinColisiones = await verifyNoCollisions({ verbose: true });
+  // ── 3. Inventario de Auth — PUERTA DE ENTRADA ──
+  //    Si no es demostrablemente completo, se corta ACÁ: no se leen
+  //    catálogos, no se construye manifiesto, no se calcula huella y no se
+  //    toca ninguna propiedad posterior. `profiles` NO es sustituto.
+  console.log('\n3. Inventario de Auth');
+  const auth = await listAllAuthUsers();
+  console.log(`   páginas recorridas: ${auth.pages} · perPage solicitado: ${auth.perPage}`
+    + (auth.effectivePerPage ? ` · servido: ${auth.effectivePerPage}` : ''));
+  console.log(`   metadata → total: ${auth.total ?? 'ausente'} · lastPage: ${auth.lastPage ?? 'ausente'}`);
+  console.log(`   ids únicos recogidos: ${auth.unique}`);
+  auth.notes.forEach((n) => console.log(`   ⚠️  ${n}`));
+
+  if (!auth.complete) {
+    ko('inventario de Auth COMPLETO (NO)');
+    console.log('\n   ⛔ DIAGNÓSTICO DEL FALLO (solo cifras, sin datos de usuario):');
+    authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
+    console.log([
+      '',
+      '   La Admin API no permitió DEMOSTRAR que el inventario está completo.',
+      '   FALLA CERRADO: no se leen catálogos, no se construye manifiesto, no',
+      '   se calcula huella y --run queda bloqueado.',
+      '   La tabla profiles NO se usa como sustituto de Auth.',
+      '',
+    ].join('\n'));
+    console.log(`❌ preflight: ${pass} OK, ${fail} fallos — ABORTADO en el inventario de Auth\n`);
+    process.exit(1);
+  }
+  ok(`inventario de Auth COMPLETO (${auth.unique} usuarios únicos)`);
+
+  // ── 4. Colisiones ──
+  console.log('\n4. Colisiones');
+  const sinColisiones = await verifyNoCollisions({ verbose: true, auth });
   console.log('   ℹ️  profiles y el resto de tablas son comprobaciones ADICIONALES:');
   console.log('       no sustituyen el inventario de Auth, que debe estar COMPLETO.');
 
@@ -695,14 +805,10 @@ async function preflight() {
     if (error) console.log(`      ⚠️  ${error.message}`);
   }
 
-  // ── 4. Catálogos ──
-  console.log('\n4. Catálogos requeridos');
+  // ── 5. Catálogos — sobre el manifiesto PLANO ──
+  console.log('\n5. Catálogos requeridos');
   const manifest = await buildManifest();
-  check('hay especialidad', !!manifest.specialty_id);
-  for (const n of ['programada', 'confirmada', 'cancelada']) {
-    check(`estado '${n}' existe`, !!manifest.appointment_statuses[n]);
-  }
-  check('cancel_reasons tiene al menos un motivo', !!manifest.cancel_reason_id);
+  for (const [desc, okCat] of catalogChecks(manifest)) check(desc, okCat);
   if (!manifest.cancel_reason_id) {
     console.log('      ⚠️  sin motivos: el caso 5.6/5.7 fallaría en --run.');
   }
@@ -887,8 +993,8 @@ async function buildFixtures(manifest) {
     clinicId: ids.clinicId, doctorId: ids.doctorId, doctorId2: ids.doctorId2,
     patientId: ids.patientId, patientId2: ids.patientId2,
     serviceId: ids.serviceIds[0], serviceId2: ids.serviceIds[1],
-    statusProgramada: manifest.appointment_statuses.programada,
-    statusConfirmada: manifest.appointment_statuses.confirmada,
+    statusProgramada: manifest.programada_status_id,
+    statusConfirmada: manifest.confirmada_status_id,
     cancelReasonId: manifest.cancel_reason_id,
   };
 }

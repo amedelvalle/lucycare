@@ -21,7 +21,7 @@ const sha256hex = (x) => createHash('sha256').update(x, 'utf8').digest('hex');
 // efectos secundarios al importarse: sus guards viven dentro de main()).
 import {
   stableStringify, fingerprintOf, flatManifest, identitiesFor,
-  normalizePhone, migrationSha256,
+  normalizePhone, migrationSha256, catalogChecks, authFailureReport,
   ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES,
   HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
   DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
@@ -688,8 +688,8 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('preflight descarta Camilo (demo)', /Camilo \(demo\) está en la lista/.test(pf));
   check('preflight descarta Test Phones reservados',
     /los Test Phones documentados están en la lista/.test(pf));
-  check('preflight verifica cancel_reasons',
-    /cancel_reasons tiene al menos un motivo/.test(pf));
+  check('preflight verifica cancel_reasons vía catalogChecks',
+    /catalogChecks\(manifest\)/.test(pf));
   check('preflight documenta el contrato de las RPC de booking',
     /register_booking_intent\(p_doctor_id/.test(pf) && /create_booking_with_intent\(p_intent_id/.test(pf));
   check('preflight aborta con exit ≠ 0 si hay colisión',
@@ -706,7 +706,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   // ── Inventario EXHAUSTIVO de Auth ──
   const la = between(smoke, 'async function listAllAuthUsers()', 'async function buildManifest');
   check('existe listAllAuthUsers()', la.length > 200);
-  check('usa el perPage máximo (1000)', /AUTH_PER_PAGE = 1000/.test(smoke));
+  check('usa páginas pequeñas para acotar el fallo (50)', /AUTH_PER_PAGE = 50;/.test(smoke));
   check('recorre desde page = 1', /for \(let page = 1; page <= AUTH_MAX_PAGES; page\+\+\)/.test(la));
   check('NO usa batch.length < perPage como prueba de finalización',
     /if \(batch\.length < AUTH_PER_PAGE\) \{ complete = true/.test(la) === false);
@@ -734,7 +734,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('detecta páginas repetidas (firma por ids)',
     /seenPages\.has\(sig\)/.test(la) && /paginación rota/.test(la));
   check('detecta ausencia de avance', /no aportó ningún id nuevo \(sin avance\)/.test(la));
-  check('impone un tope defensivo de páginas', /AUTH_MAX_PAGES = 200/.test(smoke)
+  check('impone un tope defensivo de páginas', /AUTH_MAX_PAGES = 400;/.test(smoke)
     && /tope defensivo de \$\{AUTH_MAX_PAGES\} páginas/.test(la), true);
   check('aborta si la API devuelve error', /listUsers\(page=\$\{page\}\) falló/.test(la));
   check('la validación final puede revocar complete',
@@ -1024,6 +1024,131 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     sha256hex(crlf.replace(/\r\n/g, '\n')) === sha1);
   check('el método de normalización está documentado en el código',
     /contenido NORMALIZADO A LF, no el binario/.test(read('scripts/_smoke-s7_71a.mjs')));
+}
+
+// ─── 16. Catálogos: la lógica REAL del preflight, sin DB ─────────────
+//
+// Esta sección existe por un fallo concreto: tras aplanar el manifiesto, el
+// preflight seguía leyendo `manifest.appointment_statuses[n]`, una clave que
+// ya no existía, y reventó con TypeError EN PRODUCCIÓN. El check anterior no
+// lo vio porque solo validaba la estructura del código, nunca la ejecución.
+// Acá se ejercita `catalogChecks()` —la misma función que usa preflight—
+// con manifiestos de ejemplo.
+{
+  console.log('\n16. Validación de catálogos (lógica real, sin DB)');
+
+  const completo = flatManifest({
+    projectHost: 'p.supabase.co', migrationSha: 'a'.repeat(64), runId: 'test01',
+    identities: identitiesFor('test01'),
+    specialtyId: 'spec-1', programadaId: 'st-p', confirmadaId: 'st-c',
+    canceladaId: 'st-x', cancelReasonId: 'cr-1',
+  });
+
+  const res = catalogChecks(completo);
+  check('catalogChecks devuelve 5 comprobaciones', res.length === 5);
+  check('con un manifiesto completo, las 5 pasan', res.every(([, okc]) => okc === true));
+  check('usa las claves PLANAS de estado',
+    res.some(([d]) => d.includes('programada'))
+    && res.some(([d]) => d.includes('confirmada'))
+    && res.some(([d]) => d.includes('cancelada')), true);
+
+  // Cada campo ausente debe producir UN false, nunca una excepción.
+  for (const clave of ['specialty_id', 'programada_status_id', 'confirmada_status_id',
+                       'cancelada_status_id', 'cancel_reason_id']) {
+    const roto = { ...completo, [clave]: null };
+    let lanzo = false, fallos = 0;
+    try { fallos = catalogChecks(roto).filter(([, okc]) => !okc).length; }
+    catch { lanzo = true; }
+    check(`sin ${clave}: reporta fallo y NO lanza`, lanzo === false && fallos === 1);
+  }
+
+  // El caso exacto del bug: un manifiesto SIN la clave anidada anterior.
+  let lanzoUndefined = false;
+  try { catalogChecks({}); } catch { lanzoUndefined = true; }
+  check('un manifiesto vacío NO produce TypeError', lanzoUndefined === false);
+  check('un manifiesto vacío reporta los 5 fallos',
+    catalogChecks({}).filter(([, okc]) => !okc).length === 5);
+  let lanzoNulo = false;
+  try { catalogChecks(null); } catch { lanzoNulo = true; }
+  check('catalogChecks(null) NO lanza', lanzoNulo === false);
+
+  // Nadie puede volver a leer la clave anidada eliminada.
+  // `stripComments` solo quita comentarios SQL (`--`); acá hace falta
+  // descartar también los de JS, porque la explicación del bug menciona la
+  // clave a propósito.
+  const smokeRaw = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smokeRaw.split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+  check('NO queda ninguna lectura de manifest.appointment_statuses',
+    /manifest\.appointment_statuses/.test(codigo) === false);
+  check('NO queda ningún acceso indexado a appointment_statuses[',
+    /appointment_statuses\s*\[/.test(codigo) === false);
+  check('buildFixtures usa las claves planas',
+    /statusProgramada: manifest\.programada_status_id/.test(codigo)
+    && /statusConfirmada: manifest\.confirmada_status_id/.test(codigo), true);
+  check('el preflight usa catalogChecks()',
+    /for \(const \[desc, okCat\] of catalogChecks\(manifest\)\) check\(desc, okCat\)/.test(codigo));
+}
+
+// ─── 17. Fallo inmediato del inventario de Auth ──────────────────────
+{
+  console.log('\n17. Fallo inmediato de Auth (corte antes de catálogos)');
+  const smokeRaw = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = stripComments(smokeRaw);
+  const pfCode = between(codigo, 'async function preflight()', 'async function verifyFingerprintBeforeWriting');
+
+  check('el inventario se resuelve ANTES de los catálogos',
+    pfCode.indexOf('await listAllAuthUsers()') < pfCode.indexOf('await buildManifest()'));
+  check('si no está completo, sale con exit 1',
+    /if \(!auth\.complete\) \{[\s\S]*?process\.exit\(1\);/.test(pfCode));
+  check('el corte ocurre antes de construir el manifiesto',
+    pfCode.indexOf('process.exit(1)') < pfCode.indexOf('await buildManifest()'));
+  check('imprime el diagnóstico estructurado', /authFailureReport\(auth\)/.test(pfCode));
+  check('NO usa profiles como sustituto',
+    /La tabla profiles NO se usa como sustituto de Auth/.test(smokeRaw));
+
+  // El diagnóstico: cifras sí, datos de usuario no.
+  const afr = between(codigo, 'export function authFailureReport(auth)', '\n}');
+  check('el diagnóstico reporta la página exacta que falló', /failedPage/.test(afr));
+  check('el diagnóstico reporta el perPage efectivo', /effectivePerPage/.test(afr));
+  check('el diagnóstico reporta los usuarios únicos acumulados', /auth\.unique/.test(afr));
+  check('el diagnóstico reporta la metadata de la última página sana',
+    /lastHealthyMeta/.test(afr));
+  check('el diagnóstico NO imprime emails ni teléfonos',
+    /email|phone/i.test(afr) === false);
+  check('lastHealthyMeta solo guarda cifras',
+    /lastHealthyMeta = \{ page, batch: batch\.length, total: mTotal, lastPage: mLast, nextPage: mNext \}/
+      .test(codigo));
+
+  check('AUTH_PER_PAGE bajó a 50', /const AUTH_PER_PAGE = 50;/.test(codigo));
+  check('el tope defensivo se ajustó', /const AUTH_MAX_PAGES = 400;/.test(codigo));
+  check('no se omite una página defectuosa (break, no continue)',
+    /failedPage = page;[\s\S]{0,120}break;/.test(codigo));
+}
+
+// ─── 18. Metadatos seguros antes del inventario ──────────────────────
+{
+  console.log('\n18. Metadatos seguros antes de listUsers');
+  const smokeRaw = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = stripComments(smokeRaw);
+  const pfCode = between(codigo, 'async function preflight()', 'async function verifyFingerprintBeforeWriting');
+
+  for (const [desc, re] of [
+    ['project_host',      /project_host      : \$\{projectHost\(\)/],
+    ['migration_version', /migration_version : s7_71a/],
+    ['migration_sha256',  /migration_sha256  : \$\{migrationSha256\(\)\}/],
+    ['HEAD',              /HEAD              : \$\{repoHead\(\)\}/],
+    ['RUN_ID',            /ASP0_RUN_ID       : \$\{RUN_ID\}/],
+  ]) check(`imprime ${desc} antes del inventario`, re.test(pfCode));
+
+  check('imprime los candidatos antes del inventario',
+    pfCode.indexOf('candidatos:') < pfCode.indexOf('await listAllAuthUsers()'));
+  check('todos los metadatos van antes de listUsers',
+    pfCode.indexOf('migration_sha256') < pfCode.indexOf('await listAllAuthUsers()'));
+  check('NO imprime la URL completa',
+    /console\.log\([^)]*\bURL\b[^)]*\)/.test(pfCode) === false);
+  check('repoHead no lanza si git falla', /catch \{ return '\(no disponible\)'; \}/.test(codigo));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
