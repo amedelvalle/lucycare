@@ -503,13 +503,22 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     aparicionesK <= 3);
   check('está declarado en FORBIDDEN_PHONES',
     /FORBIDDEN_PHONES = \[[^\]]*'50372608827'/.test(smoke));
-  check('toda otra aparición es una aserción negada',
+  // Fuera de la constante, solo puede aparecer con forma de GUARDA: una
+  // aserción sobre la propia lista (`FORBIDDEN_NORMALIZED.has(...)`), un
+  // comentario, o una comparación negada. Nunca en una escritura.
+  check('toda otra aparición tiene forma de guarda o comentario',
     smoke.split('\n')
-      .filter((l) => l.includes(K) && !l.includes('FORBIDDEN_PHONES'))
-      .every((l) => /!\s*\w+(\.\w+)*\.includes\(/.test(l) || /^\s*\*/.test(l)));
+      .filter((l) => l.includes(K))
+      .every((l) =>
+        /FORBIDDEN_NORMALIZED\.has\(/.test(l)     // aserción sobre la lista
+        || /^\s*['"]?503/.test(l.trim())          // entrada de la constante
+        || /^\s*(\/\/|\*|--)/.test(l.trim())      // comentario
+        || /!\s*\w+(\.\w+)*\.includes\(/.test(l)  // comparación negada
+      ));
 
   check('existe la guarda assertNotForbidden', /function assertNotForbidden|const assertNotForbidden/.test(smoke));
-  check('la guarda ABORTA con excepción', /throw new Error\(`ABORTADO: teléfono prohibido/.test(smoke));
+  check('la guarda ABORTA con excepción',
+    /throw new Error\(\s*`ABORTADO: teléfono prohibido/.test(smoke));
   check('la guarda cubre también la cuenta demo (Camilo)', /50378627694/.test(smoke));
 
   // Nunca como argumento de escritura.
@@ -523,12 +532,59 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     ['auth.admin',   new RegExp(`auth\\.admin[^;]*${K}`, 's')],
   ]) check(`nunca se usa en ${desc}`, re.test(smoke) === false);
 
-  check('los teléfonos de fixture salen del rango sintético 5037000…',
-    /`5037000\$\{runSeed\}\$\{i\}`/.test(smoke));
+  check('los teléfonos de fixture salen del rango sintético 50369…',
+    /`50369\$\{runSeed\}00\$\{i\}`/.test(smoke));
   check('todo teléfono de fixture pasa por la guarda',
-    /assertNotForbidden\(`5037000/.test(smoke));
+    /assertNotForbidden\(`50369/.test(smoke));
   check('createUser revalida la guarda antes de escribir',
     /assertNotForbidden\(identity\.phone, `createUser/.test(smoke));
+
+  // ── El prefijo elegido no colisiona con nada del repositorio ──
+  const universo = [read('CLAUDE.md'), read('docs/OWNER_S7_71A_APPLY.md'), smoke].join('\n');
+  check('el prefijo 50369 no aparece en CLAUDE.md',
+    /50369\d{6}/.test(read('CLAUDE.md')) === false);
+  check('el rango 5037000xxxx quedó descartado (poblado por QA previo)',
+    /rango `5037000xxxx` está densamente poblado/.test(smoke));
+
+  // ── FORBIDDEN_PHONES: cobertura y normalización ──
+  const fp = between(smoke, 'const FORBIDDEN_PHONES = [', '];');
+  for (const [desc, num] of [
+    ['Katherine',                     '50372608827'],
+    ['Camilo (demo)',                 '50378627694'],
+    ['Test Phone admin plataforma',   '50378056365'],
+    ['Test Phone paciente Fase 1',    '50375000001'],
+    ['sintético 50370007201',         '50370007201'],
+    ['sintético 50370007202',         '50370007202'],
+    ['QA 50375000099',                '50375000099'],
+    ['QA 50377003001',                '50377003001'],
+    ['QA 50370007299',                '50370007299'],
+    ['QA 50370069901',                '50370069901'],
+  ]) check(`FORBIDDEN_PHONES incluye ${desc}`, fp.includes(num));
+
+  check(`FORBIDDEN_PHONES tiene cobertura amplia (${(fp.match(/'503\d{8}'/g) || []).length})`,
+    (fp.match(/'503\d{8}'/g) || []).length >= 25);
+  check('existe normalizePhone', /const normalizePhone = /.test(smoke));
+  check('la normalización quita el prefijo 503',
+    /d\.length === 11 && d\.startsWith\('503'\) \? d\.slice\(3\) : d/.test(smoke));
+  check('la normalización quita separadores', /replace\(\/\\D\/g, ''\)/.test(smoke));
+  check('la comparación usa el set normalizado',
+    /FORBIDDEN_NORMALIZED\.has\(normalizePhone\(phone\)\)/.test(smoke));
+  check('el preflight reporta la lista completa',
+    /Teléfonos prohibidos \(\$\{FORBIDDEN_PHONES\.length\}\)/.test(smoke));
+  check('el preflight verifica que Katherine esté en la lista',
+    /Katherine está en la lista/.test(smoke));
+  check('el preflight verifica los Test Phones documentados',
+    /los Test Phones documentados están en la lista/.test(smoke));
+  check('el preflight verifica el formato sin 503',
+    /la comparación tolera el formato sin 503/.test(smoke));
+
+  // ── Contrato de RPC: no declarado validado ──
+  check('el contrato se declara NO validado por ejecución',
+    /CONTRATO ESPERADO SEGÚN CÓDIGO, TODAVÍA NO VALIDADO MEDIANTE\s*\n?\s*EJECUCIÓN/
+      .test(smoke.replace(/\s+/g, ' ')) || /TODAVÍA NO VALIDADO MEDIANTE/.test(smoke));
+  check('el preflight no afirma haber validado el JSON real',
+    /contrato validado|JSON validado/i.test(smoke) === false);
+  void universo;
 }
 
 // ─── 12-quater. Sin placeholders ──────────────────────────────────────
@@ -570,29 +626,45 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   // ── Modo --preflight read-only ──
   check('existe el modo --preflight', /WANT_PREFLIGHT = ARGV\.includes\('--preflight'\)/.test(smoke));
   check('preflight() está definida', /async function preflight\(\)/.test(smoke));
-  const pf = between(smoke, 'async function preflight()', 'async function createUser');
-  check('preflight NO crea usuarios', /auth\.admin\.createUser/.test(pf) === false);
-  check('preflight NO genera links', /generateLink/.test(pf) === false);
-  check('preflight NO inserta', /\.insert\(/.test(pf) === false);
-  check('preflight NO actualiza', /\.update\(/.test(pf) === false);
-  check('preflight NO borra', /\.delete\(/.test(pf) === false);
+  // El camino read-only son TRES funciones: preflight() y las dos que usa
+  // (listAllAuthUsers, buildManifest, verifyNoCollisions). Todas deben
+  // estar libres de escrituras.
+  const pf = between(smoke, 'async function preflight()', 'async function verifyFingerprintBeforeWriting');
+  const roPath = [
+    pf,
+    between(smoke, 'async function listAllAuthUsers()', 'async function buildManifest'),
+    between(smoke, 'async function buildManifest()', 'function fingerprintOf'),
+    between(smoke, 'async function verifyNoCollisions(', 'async function preflight()'),
+  ].join('\n');
+
+  check('el camino read-only NO crea usuarios', /auth\.admin\.createUser/.test(roPath) === false);
+  check('el camino read-only NO genera links', /generateLink/.test(roPath) === false);
+  check('el camino read-only NO inserta', /\.insert\(/.test(roPath) === false);
+  // `.update({` = UPDATE de PostgREST. Se distingue de `createHash().update(…)`,
+  // que recibe una expresión, no un objeto literal.
+  check('el camino read-only NO actualiza', /\.update\(\s*\{/.test(roPath) === false);
+  check('el camino read-only NO borra', /\.delete\(/.test(roPath) === false);
   // Se busca la LLAMADA (`.rpc('…')`), no la mención en el texto del
   // contrato que el preflight imprime.
-  check('preflight NO llama ninguna RPC', /\.rpc\(/.test(pf) === false);
+  check('el camino read-only NO llama ninguna RPC', /\.rpc\(/.test(roPath) === false);
+
   check('preflight reporta las identidades exactas', /Identidades sintéticas propuestas/.test(pf));
-  check('preflight verifica Auth con Admin API read-only', /auth\.admin\.listUsers/.test(pf));
+  check('preflight verifica Auth con Admin API read-only',
+    /listAllAuthUsers\(\)/.test(roPath) && /admin\.auth\.admin\.listUsers/.test(roPath), true);
   check('preflight comprueba profiles/patients/clinics/services',
-    /profiles · email/.test(pf) && /patients · marca/.test(pf));
+    /profiles · email/.test(roPath) && /patients · marca/.test(roPath));
   check('preflight comprueba booking_intents y grants',
     /booking_intents/.test(pf) && /auth_creation_grants/.test(pf));
-  check('preflight descarta Katherine', /≠ Katherine/.test(pf));
-  check('preflight descarta Camilo (demo)', /≠ Camilo/.test(pf));
-  check('preflight descarta Test Phones reservados', /Test Phone reservado/.test(pf));
-  check('preflight verifica cancel_reasons', /cancel_reasons disponible/.test(pf));
+  check('preflight descarta Katherine', /Katherine está en la lista/.test(pf));
+  check('preflight descarta Camilo (demo)', /Camilo \(demo\) está en la lista/.test(pf));
+  check('preflight descarta Test Phones reservados',
+    /los Test Phones documentados están en la lista/.test(pf));
+  check('preflight verifica cancel_reasons',
+    /cancel_reasons tiene al menos un motivo/.test(pf));
   check('preflight documenta el contrato de las RPC de booking',
     /register_booking_intent\(p_doctor_id/.test(pf) && /create_booking_with_intent\(p_intent_id/.test(pf));
   check('preflight aborta con exit ≠ 0 si hay colisión',
-    /process\.exit\(fail === 0 \? 0 : 1\)/.test(pf));
+    /process\.exit\(usable \? 0 : 1\)/.test(pf));
 
   // ── Identidades deterministas ──
   check('ASP0_RUN_ID es obligatorio', /ASP0_RUN_ID/.test(smoke)
@@ -600,7 +672,65 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('las identidades se derivan del RUN_ID (deterministas)',
     /const IDENTITIES = \['patient', 'doctora', 'doctorb'\]\.map/.test(smoke));
   check('las 3 identidades pasan por la guarda',
-    /assertNotForbidden\(`5037000\$\{runSeed\}\$\{i\}`/.test(smoke));
+    /assertNotForbidden\(`50369\$\{runSeed\}00\$\{i\}`/.test(smoke));
+
+  // ── Inventario EXHAUSTIVO de Auth ──
+  const la = between(smoke, 'async function listAllAuthUsers()', 'async function buildManifest');
+  check('existe listAllAuthUsers()', la.length > 200);
+  check('usa el perPage máximo (1000)', /AUTH_PER_PAGE = 1000/.test(smoke));
+  check('recorre desde page = 1', /for \(let page = 1; page <= AUTH_MAX_PAGES; page\+\+\)/.test(la));
+  check('termina al recibir una página menor que perPage',
+    /if \(batch\.length < AUTH_PER_PAGE\) \{ complete = true; break; \}/.test(la));
+  check('registra páginas y usuarios inspeccionados',
+    /pages\+\+/.test(la) && /users\.push\(\.\.\.batch\)/.test(la));
+  check('detecta páginas repetidas (firma por ids)',
+    /seenPages\.has\(sig\)/.test(la) && /paginación rota/.test(la));
+  check('detecta ausencia de avance', /no devolvió usuarios pero se esperaba avance/.test(la));
+  check('impone un tope defensivo de páginas', /AUTH_MAX_PAGES = 200/.test(smoke)
+    && /tope defensivo de \$\{AUTH_MAX_PAGES\} páginas/.test(la), true);
+  check('aborta si la API devuelve error', /listUsers\(page=\$\{page\}\) falló/.test(la));
+  check('solo `complete: true` por la salida sana', /complete = true/.test(la)
+    && (la.match(/complete = true/g) || []).length === 1, true);
+  check('FALLA CERRADO: sin inventario completo no hay --run',
+    /FALLA CERRADO: no se autoriza --run/.test(smoke));
+  check('la colisión se busca por email normalizado',
+    /emailSet\.has\(u\.email\.toLowerCase\(\)\)/.test(smoke));
+  check('la colisión se busca por teléfono normalizado',
+    /phoneSet\.has\(normalizePhone\(u\.phone\)\)/.test(smoke));
+  check('profiles se declara comprobación ADICIONAL, no sustituto',
+    /comprobación ADICIONAL, nunca un\s*\*? ?sustituto|comprobaciones ADICIONALES:/.test(smoke.replace(/\s+/g, ' ')));
+  check('NUNCA SQL sobre auth.users para el inventario',
+    /Nunca se consulta `auth\.users` por SQL/.test(smoke));
+
+  // ── Manifiesto y huella ──
+  const bm = between(smoke, 'async function buildManifest()', 'function fingerprintOf');
+  check('existe buildManifest()', bm.length > 200);
+  check('el manifiesto incluye run_id', /run_id: RUN_ID/.test(bm));
+  check('el manifiesto incluye los 3 emails', /emails: IDENTITIES\.map/.test(bm));
+  check('el manifiesto incluye los 3 teléfonos', /phones: IDENTITIES\.map/.test(bm));
+  check('el manifiesto incluye specialty_id', /specialty_id:/.test(bm));
+  check('el manifiesto incluye los estados de cita', /appointment_statuses: statusMap/.test(bm));
+  check('el manifiesto incluye cancel_reason_id', /cancel_reason_id:/.test(bm));
+  check('el manifiesto NO incluye claves ni secretos',
+    /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
+  check('la huella es SHA-256 sobre el manifiesto canónico',
+    /createHash\('sha256'\)\.update\(canonical\)\.digest\('hex'\)/.test(smoke));
+  check('preflight emite ASP0_PREFLIGHT_FINGERPRINT',
+    /ASP0_PREFLIGHT_FINGERPRINT=\$\{fp\}/.test(smoke));
+  check('no se emite huella si hay colisión o inventario incompleto',
+    /NO se emite huella: --run queda bloqueado/.test(smoke));
+  check('--run exige la huella', /WANT_RUN && !\/\^\[0-9a-f\]\{64\}\$\/\.test\(EXPECTED_FINGERPRINT\)/.test(smoke));
+  check('la huella se verifica ANTES de la primera escritura',
+    /async function verifyFingerprintBeforeWriting\(\)/.test(smoke)
+    && smoke.indexOf('await verifyFingerprintBeforeWriting()') < smoke.indexOf('await buildFixtures(manifest)'), true);
+  check('--run reconstruye el manifiesto', /const manifest = await buildManifest\(\);[\s\S]{0,120}fingerprintOf\(manifest\)/.test(smoke));
+  check('--run aborta si la huella no coincide',
+    /ABORTADO antes de escribir: la huella del manifiesto no coincide/.test(smoke));
+  check('--run repite las comprobaciones de colisión',
+    /await verifyNoCollisions\(\{ verbose: false \}\)/.test(smoke));
+  check('--run aborta si aparece colisión',
+    /ABORTADO antes de escribir: inventario de Auth incompleto o colisión/.test(smoke));
+  check('el smoke no escribe archivos', /writeFileSync|appendFileSync/.test(smoke) === false);
 
   // ── try/finally global ──
   check('la corrida va en try/finally', /try \{\s*await run\(\);/.test(smoke));

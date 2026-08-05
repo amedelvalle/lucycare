@@ -7,51 +7,53 @@
  *       Guard. Imprime la ayuda y sale con 0. NO toca la DB.
  *
  *   ASP0_RUN_ID=<id> node scripts/_smoke-s7_71a.mjs --preflight
- *       READ-ONLY. No escribe ni crea nada. Reporta las identidades
- *       sintéticas EXACTAS que usaría --run, verifica que no colisionen con
- *       nada existente ni con datos reales, y comprueba precondiciones.
- *       Debe revisarlo y autorizarlo el owner ANTES de --run.
+ *       READ-ONLY. No escribe, no crea, no llama ninguna RPC. Reporta las
+ *       identidades sintéticas EXACTAS que usaría --run, hace un inventario
+ *       EXHAUSTIVO de Auth, verifica colisiones y emite un MANIFIESTO con su
+ *       huella SHA-256:
+ *
+ *           ASP0_PREFLIGHT_FINGERPRINT=<sha256>
  *
  *   ASP0_RUN_ID=<id> ASP0_SMOKE_AUTHORIZED=1 \
+ *   ASP0_PREFLIGHT_FINGERPRINT=<sha256 aprobado> \
  *     node scripts/_smoke-s7_71a.mjs --run
- *       ESCRIBE. Requiere autorización explícita del owner.
+ *       ESCRIBE. Antes de la primera escritura reconstruye el manifiesto,
+ *       exige que la huella coincida y repite las comprobaciones read-only
+ *       de colisión. Si cambió una identidad, un catálogo o una condición,
+ *       ABORTA sin escribir.
  *
  *   …--run --include-sign
  *       Añade el caso de firma de consulta. SOLO local/staging: en
  *       producción esa ruta se prueba con el bloque owner-only
  *       BEGIN/ROLLBACK de docs/OWNER_S7_71A_APPLY.md §13.
  *
- * `ASP0_RUN_ID` es OBLIGATORIO en ambos modos y fija las identidades de
- * forma determinista: --preflight y --run usan EXACTAMENTE las mismas. El
- * script nunca inventa ni cambia identidades en silencio.
+ * `ASP0_RUN_ID` fija las identidades de forma determinista. La huella ata
+ * --run a un --preflight concreto ya revisado por el owner: el script nunca
+ * inventa ni cambia identidades ni catálogos en silencio.
  *
  * ── REGLAS DE DATOS (vinculantes) ──────────────────────────────────────
- *   • Fixtures SINTÉTICAS creadas desde cero y marcadas `S7_71_FIXTURE`.
- *   • JAMÁS Katherine. JAMÁS Camilo. JAMÁS Test Phones reservados. Los
- *     números prohibidos viven en FORBIDDEN_PHONES y solo actúan como
- *     GUARDA que aborta: nunca como fixture, destino, fallback ni argumento
- *     de Auth, tabla o RPC.
- *   • Usuarios Auth creados y eliminados SIEMPRE por la Admin API
- *     (`auth.admin.createUser` / `auth.admin.deleteUser`). NUNCA por SQL
- *     sobre `auth.users`.
- *   • Todo el bloque de escrituras va en try/finally: el cleanup corre
- *     aunque una aserción falle a mitad.
- *   • El borrado de `audit_log` usa una ALLOWLIST explícita de los UUID de
- *     la corrida. `created_at >= RUN_STARTED_AT` es condición ADICIONAL,
- *     nunca criterio suficiente. Si aparece un record_id fuera de la
- *     allowlist, se ABORTA sin borrar.
+ *   • Fixtures SINTÉTICAS marcadas `S7_71_FIXTURE`, en el prefijo `50369`,
+ *     que NO aparece en ningún documento ni script del repositorio.
+ *   • FORBIDDEN_PHONES cubre Katherine, la cuenta demo, TODOS los Test
+ *     Phones documentados y los teléfonos de QA reservados del repo. Solo
+ *     actúan como GUARDA que aborta: nunca como fixture, destino, fallback
+ *     ni argumento de Auth, tabla o RPC. La comparación es NORMALIZADA
+ *     (con y sin prefijo 503).
+ *   • Usuarios Auth creados y eliminados SIEMPRE por la Admin API. NUNCA
+ *     por SQL sobre `auth.users`.
+ *   • Todo el bloque de escrituras va en try/finally.
+ *   • El borrado de `audit_log` usa ALLOWLIST explícita de los UUID de la
+ *     corrida; `created_at` es condición ADICIONAL, nunca suficiente.
  *   • Verificación final de CERO residuos; si queda alguno, exit ≠ 0.
  *
  * ── QUÉ **NO** SE PRUEBA ACÁ (y dónde sí) ──────────────────────────────
- *   · Explotación del agujero de `audit_log`: solo local/staging, nunca
- *     contra producción. Quedó probada documentalmente en la Fase 0.
- *   · `actor_kind='db_direct'` y contexto rechazado: exigen conexión sin
- *     JWT y `set_config` server-side, no alcanzables desde PostgREST.
- *     Bloques owner-only §11 y §12 de la guía.
- *   · Firma de consulta en producción: bloque owner-only §13 (ver arriba).
+ *   · Explotación del agujero de `audit_log`: solo local/staging.
+ *   · `db_direct` y contexto rechazado: bloques owner-only §11 y §12.
+ *   · Firma de consulta en producción: bloque owner-only §13.
  *   · Cierre de privilegios: es s7_71b.
  */
 import { createClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { requireEnv } from './_lib/env.mjs';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -63,6 +65,7 @@ const WANT_RUN = ARGV.includes('--run');
 const INCLUDE_SIGN = ARGV.includes('--include-sign');
 const AUTHORIZED = process.env.ASP0_SMOKE_AUTHORIZED === '1';
 const RUN_ID = (process.env.ASP0_RUN_ID || '').trim();
+const EXPECTED_FINGERPRINT = (process.env.ASP0_PREFLIGHT_FINGERPRINT || '').trim();
 
 const HELP = `
 _smoke-s7_71a — modos disponibles
@@ -70,11 +73,14 @@ _smoke-s7_71a — modos disponibles
   1) PREFLIGHT (read-only, no escribe nada):
        ASP0_RUN_ID=<id> node scripts/_smoke-s7_71a.mjs --preflight
 
-  2) CORRIDA (escribe; requiere autorización del owner):
+     Emite al final:  ASP0_PREFLIGHT_FINGERPRINT=<sha256>
+
+  2) CORRIDA (escribe; requiere autorización del owner Y la huella):
        ASP0_RUN_ID=<id> ASP0_SMOKE_AUTHORIZED=1 \\
+       ASP0_PREFLIGHT_FINGERPRINT=<sha256> \\
          node scripts/_smoke-s7_71a.mjs --run
 
-  <id>: 4-12 caracteres [a-z0-9]. Fija las identidades sintéticas de forma
+  <id>: 4-12 caracteres [a-z0-9]. Fija las identidades de forma
         determinista, para que --preflight y --run usen EXACTAMENTE las
         mismas y el owner pueda autorizarlas antes de escribir.
 
@@ -93,6 +99,13 @@ if (!/^[a-z0-9]{4,12}$/.test(RUN_ID)) {
   console.log(`\n⛔ Falta ASP0_RUN_ID válido (4-12 caracteres [a-z0-9]).\n${HELP}`);
   process.exit(0);
 }
+if (WANT_RUN && !/^[0-9a-f]{64}$/.test(EXPECTED_FINGERPRINT)) {
+  console.log(`
+⛔ --run exige ASP0_PREFLIGHT_FINGERPRINT con la huella SHA-256 emitida por
+   --preflight y aprobada por el owner. No se tocó la base de datos.
+${HELP}`);
+  process.exit(0);
+}
 
 const URL = requireEnv('SUPABASE_URL');
 const ANON = requireEnv('SUPABASE_ANON_KEY');
@@ -106,26 +119,67 @@ const NIL = '00000000-0000-0000-0000-000000000000';
 const RUN_STARTED_AT = new Date().toISOString();
 
 // ═════════════════════════════════════════════════════════════════════
-// IDENTIDADES SINTÉTICAS — deterministas a partir de ASP0_RUN_ID
+// TELÉFONOS PROHIBIDOS — GUARDA, no dato
 // ═════════════════════════════════════════════════════════════════════
 
 /**
- * GUARDA, no dato. Ningún valor de esta lista puede llegar a una fixture,
- * a un destino, a un fallback ni a una llamada de Auth/tabla/RPC.
- *   50372608827 — Katherine (dato REAL, prohibido en toda circunstancia)
- *   50378627694 — Camilo, cuenta demo oficial
- *   50378056365 — admin de plataforma (Test Phone)
- *   50375000001 — paciente de prueba Fase 1 (Test Phone)
+ * Ninguno de estos puede llegar a una fixture, destino, fallback ni a una
+ * llamada de Auth, tabla o RPC. La comparación es NORMALIZADA: se quita el
+ * prefijo 503 y todo separador, así que `7862 7694`, `+503 78627694` y
+ * `50378627694` colisionan por igual.
+ *
+ * Fuentes: CLAUDE.md (tabla de Test Phones y prohibiciones),
+ * docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md y los teléfonos de QA
+ * reservados que ya aparecen en docs/ y scripts/.
  */
-const FORBIDDEN_PHONES = ['50372608827', '50378627694', '50378056365', '50375000001'];
+const FORBIDDEN_PHONES = [
+  // ── Dato REAL. Prohibido en toda circunstancia, ni siquiera read-only.
+  '50372608827',   // Katherine
+
+  // ── Cuenta demo oficial (docs/CUENTA_DEMO_CAMILO.md).
+  '50378627694',   // Dr. Camilo Carrillo — Test Phone
+
+  // ── Test Phones configurados en Supabase (CLAUDE.md §Test Phones).
+  '50378056365',   // admin de plataforma
+  '50375000001',   // paciente test Fase 1
+
+  // ── Sintéticos de QA nombrados por el owner (cancelación por paciente).
+  '50370007201',
+  '50370007202',
+
+  // ── Teléfonos de QA reservados que ya viven en docs/ y scripts/.
+  '50370006502', '50370006601', '50370006602',
+  '50370007102', '50370007203', '50370007204', '50370007205',
+  '50370007206', '50370007207', '50370007208', '50370007299',
+  '50370009001', '50370009002', '50370069901', '50370069902',
+  '50370000000', '50375000099', '50376193396', '50377003001',
+  '50378626108', '50399999999',
+
+  // ── Placeholders de documentación (no deben usarse como fixture).
+  '50312345678', '50322601234', '50361234567', '50371234567', '50391234567',
+];
+
+/** Normaliza a la parte nacional de 8 dígitos: tolera +503, espacios y guiones. */
+const normalizePhone = (p) => {
+  const d = String(p ?? '').replace(/\D/g, '');
+  return d.length === 11 && d.startsWith('503') ? d.slice(3) : d;
+};
+
+const FORBIDDEN_NORMALIZED = new Set(FORBIDDEN_PHONES.map(normalizePhone));
 
 const assertNotForbidden = (phone, where) => {
-  const digits = String(phone).replace(/\D/g, '');
-  if (FORBIDDEN_PHONES.some((f) => digits.includes(f) || f.includes(digits))) {
-    throw new Error(`ABORTADO: teléfono prohibido en ${where}. Este smoke jamás usa datos reales, la cuenta demo ni Test Phones reservados.`);
+  if (FORBIDDEN_NORMALIZED.has(normalizePhone(phone))) {
+    throw new Error(
+      `ABORTADO: teléfono prohibido en ${where}. Este smoke jamás usa datos reales, ` +
+      'la cuenta demo, Test Phones ni teléfonos de QA reservados.'
+    );
   }
   return phone;
 };
+
+// ═════════════════════════════════════════════════════════════════════
+// IDENTIDADES SINTÉTICAS — deterministas a partir de ASP0_RUN_ID
+// ═════════════════════════════════════════════════════════════════════
 
 /** Hash determinista y estable de ASP0_RUN_ID → 3 dígitos. */
 const runSeed = (() => {
@@ -134,12 +188,15 @@ const runSeed = (() => {
   return h % 900 + 100;            // 100..999
 })();
 
-/** Las TRES identidades. Idénticas en --preflight y en --run. */
+/**
+ * Prefijo `50369`: NO aparece en CLAUDE.md, docs/, scripts/ ni src/. El
+ * rango `5037000xxxx` está densamente poblado por QA previo y se descartó
+ * a propósito.  Formato: 503 · 69 · seed(3) · 00 · índice = 11 dígitos.
+ */
 const IDENTITIES = ['patient', 'doctora', 'doctorb'].map((tag, i) => ({
   tag,
   email: `asp0.${tag}.${RUN_ID}@lucycare.test`,
-  // Rango sintético 5037000xxx?, fuera de todo número real conocido.
-  phone: assertNotForbidden(`5037000${runSeed}${i}`, `identidad ${tag}`),
+  phone: assertNotForbidden(`50369${runSeed}00${i}`, `identidad ${tag}`),
 }));
 
 // ═════════════════════════════════════════════════════════════════════
@@ -157,7 +214,6 @@ const ids = {
   serviceIds: [], ruleIds: [], apptIds: [], consultIds: [], eventApptIds: [],
 };
 
-/** Tablas que el smoke escribe. Acota el borrado de auditoría. */
 const SMOKE_TABLES = [
   'appointments', 'patients', 'profiles', 'clinics', 'clinic_members',
   'doctors', 'services', 'availability_rules', 'consultations',
@@ -183,65 +239,136 @@ async function auditRows(apptId) {
 const kindOf = (row) => row?.new_data?.change_kind ?? null;
 
 // ═════════════════════════════════════════════════════════════════════
-// PREFLIGHT — READ-ONLY. No escribe. No crea. No modifica.
+// INVENTARIO EXHAUSTIVO DE AUTH
 // ═════════════════════════════════════════════════════════════════════
-async function preflight() {
-  console.log('\n_smoke-s7_71a — PREFLIGHT (read-only, no escribe nada)\n');
-  console.log(`  ASP0_RUN_ID: ${RUN_ID}   ·   marca: ${MARK}\n`);
 
-  // ── 1. Identidades propuestas, exactas ──
-  console.log('1. Identidades sintéticas propuestas (las mismas que usará --run)');
-  for (const id of IDENTITIES) {
-    console.log(`   · ${id.tag.padEnd(8)} email=${id.email}   phone=${id.phone}`);
-  }
-  console.log(`   · prefijo de nombres: "${MARK} …"`);
-  console.log('   · los UUID los asigna la DB al crear; no son predecibles.');
+const AUTH_PER_PAGE = 1000;   // máximo admitido por GoTrue
+const AUTH_MAX_PAGES = 200;   // tope defensivo: 200 000 usuarios
 
-  // ── 2. No colisionan con datos prohibidos ──
-  console.log('\n2. No colisión con datos reales ni reservados');
-  for (const id of IDENTITIES) {
-    check(`${id.tag}: teléfono ≠ Katherine`, !id.phone.includes('50372608827'));
-    check(`${id.tag}: teléfono ≠ Camilo (demo)`, !id.phone.includes('50378627694'));
-    check(`${id.tag}: teléfono ≠ Test Phone reservado`,
-      !['50378056365', '50375000001'].some((f) => id.phone.includes(f)));
-    check(`${id.tag}: correo en dominio de prueba`, id.email.endsWith('@lucycare.test'));
-  }
+/**
+ * Recorre TODA la lista de usuarios de Auth por la Admin API. Falla CERRADO:
+ * cualquier error, página repetida, falta de avance o tope alcanzado deja
+ * `complete: false`, y con eso --run no puede continuar.
+ *
+ * `profiles` y el resto de tablas son comprobaciones ADICIONALES, nunca un
+ * sustituto de este inventario. Nunca se consulta `auth.users` por SQL.
+ */
+async function listAllAuthUsers() {
+  const users = [];
+  const seenPages = new Set();
+  let pages = 0, complete = false, reason = null;
 
-  // ── 3. Ausencia en Auth (Admin API read-only) ──
-  console.log('\n3. Ausencia en Auth (Admin API, solo lectura)');
-  const emails = new Set(IDENTITIES.map((i) => i.email));
-  const phones = new Set(IDENTITIES.map((i) => i.phone));
-  let scanned = 0, collisions = [], listErr = null;
-  for (let page = 1; page <= 20; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) { listErr = error.message; break; }
-    const users = data?.users ?? [];
-    scanned += users.length;
-    for (const u of users) {
-      if (emails.has(u.email ?? '')) collisions.push(`email ${u.email}`);
-      if (phones.has((u.phone ?? '').replace(/\D/g, ''))) collisions.push(`phone ${u.phone}`);
+  for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: AUTH_PER_PAGE });
+    if (error) { reason = `listUsers(page=${page}) falló: ${error.message}`; break; }
+
+    const batch = data?.users ?? [];
+    pages++;
+
+    // Página repetida: firma por los ids devueltos.
+    const sig = createHash('sha256').update(batch.map((u) => u.id).join(',')).digest('hex');
+    if (batch.length > 0 && seenPages.has(sig)) {
+      reason = `la página ${page} repite el contenido de una anterior (paginación rota)`;
+      break;
     }
-    if (users.length < 200) break;
-  }
-  if (listErr) {
-    ko(`no se pudo listar Auth (${listErr}) — verificar manualmente antes de --run`);
-  } else {
-    console.log(`   (usuarios escaneados: ${scanned})`);
-    check(`sin colisiones en Auth (${collisions.length})`, collisions.length === 0);
-    collisions.forEach((c) => console.log(`      ⚠️  ${c}`));
-  }
-  console.log('   ℹ️  listUsers pagina de forma poco fiable en este proyecto (bug GoTrue');
-  console.log('       documentado); por eso se cruza además contra profiles abajo.');
+    seenPages.add(sig);
 
-  // ── 4. Ausencia en tablas de negocio ──
-  console.log('\n4. Ausencia en tablas de negocio');
+    users.push(...batch);
+
+    // Página incompleta → fin del listado, y es la ÚNICA salida sana.
+    if (batch.length < AUTH_PER_PAGE) { complete = true; break; }
+
+    // Sin avance: página llena que no aporta ids nuevos.
+    if (batch.length === 0) { reason = `la página ${page} no devolvió usuarios pero se esperaba avance`; break; }
+
+    if (page === AUTH_MAX_PAGES) reason = `tope defensivo de ${AUTH_MAX_PAGES} páginas alcanzado sin llegar al final`;
+  }
+
+  return { users, pages, complete, reason, perPage: AUTH_PER_PAGE };
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// MANIFIESTO Y HUELLA
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Manifiesto read-only de todo lo que determina la corrida: identidades y
+ * los IDs de catálogo que se van a usar. NO incluye claves, tokens ni
+ * secretos — solo identificadores públicos del catálogo.
+ */
+async function buildManifest() {
+  const { data: spec, error: eSpec } = await admin
+    .from('specialties').select('id').order('id').limit(1).maybeSingle();
+  if (eSpec) throw new Error(`manifiesto/specialties: ${eSpec.message}`);
+
+  const { data: sts, error: eSts } = await admin
+    .from('appointment_statuses').select('id, name').order('name');
+  if (eSts) throw new Error(`manifiesto/appointment_statuses: ${eSts.message}`);
+
+  const { data: reason, error: eR } = await admin
+    .from('cancel_reasons').select('id').order('id').limit(1).maybeSingle();
+  if (eR) throw new Error(`manifiesto/cancel_reasons: ${eR.message}`);
+
+  const statusMap = {};
+  for (const n of ['programada', 'confirmada', 'cancelada']) {
+    statusMap[n] = (sts ?? []).find((s) => s.name === n)?.id ?? null;
+  }
+
+  return {
+    v: 1,
+    run_id: RUN_ID,
+    emails: IDENTITIES.map((i) => i.email),
+    phones: IDENTITIES.map((i) => i.phone),
+    specialty_id: spec?.id ?? null,
+    appointment_statuses: statusMap,
+    cancel_reason_id: reason?.id ?? null,
+  };
+}
+
+/** SHA-256 sobre el manifiesto canónico (claves ordenadas). */
+function fingerprintOf(manifest) {
+  const canonical = JSON.stringify(manifest, Object.keys(manifest).sort());
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+/**
+ * Comprobaciones de colisión, read-only. Las ejecuta --preflight y las
+ * REPITE --run antes de la primera escritura.
+ */
+async function verifyNoCollisions({ verbose }) {
+  const emails = IDENTITIES.map((i) => i.email);
+  const phones = IDENTITIES.map((i) => i.phone);
+  const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+  const phoneSet = new Set(phones.map(normalizePhone));
+
+  // ── Auth: inventario EXHAUSTIVO ──
+  const auth = await listAllAuthUsers();
+  if (verbose) {
+    console.log(`   páginas recorridas: ${auth.pages} · perPage: ${auth.perPage} · usuarios: ${auth.users.length}`);
+  }
+  check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
+  if (!auth.complete) {
+    console.log(`      ⛔ ${auth.reason}`);
+    console.log('      La paginación no pudo demostrar el final del listado.');
+    console.log('      FALLA CERRADO: no se autoriza --run.');
+  }
+
+  const authHits = [];
+  for (const u of auth.users) {
+    if (u.email && emailSet.has(u.email.toLowerCase())) authHits.push(`email ${u.email}`);
+    if (u.phone && phoneSet.has(normalizePhone(u.phone))) authHits.push(`phone ${u.phone}`);
+  }
+  check(`sin colisiones exactas en Auth (${authHits.length})`, authHits.length === 0);
+  authHits.forEach((h) => console.log(`      ⚠️  ${h}`));
+
+  // ── Tablas de negocio: comprobación ADICIONAL, no sustituto ──
   const like = `${MARK}%`;
   const probes = [
-    ['profiles · email',   admin.from('profiles').select('id', { count: 'exact', head: true }).in('email', [...emails])],
-    ['profiles · phone',   admin.from('profiles').select('id', { count: 'exact', head: true }).in('phone', [...phones])],
-    ['patients · marca',   admin.from('patients').select('id', { count: 'exact', head: true }).like('full_name', like)],
-    ['clinics · marca',    admin.from('clinics').select('id', { count: 'exact', head: true }).like('name', like)],
-    ['services · marca',   admin.from('services').select('id', { count: 'exact', head: true }).like('name', like)],
+    ['profiles · email', admin.from('profiles').select('id', { count: 'exact', head: true }).in('email', emails)],
+    ['profiles · phone', admin.from('profiles').select('id', { count: 'exact', head: true }).in('phone', phones)],
+    ['patients · marca', admin.from('patients').select('id', { count: 'exact', head: true }).like('full_name', like)],
+    ['clinics · marca',  admin.from('clinics').select('id', { count: 'exact', head: true }).like('name', like)],
+    ['services · marca', admin.from('services').select('id', { count: 'exact', head: true }).like('name', like)],
   ];
   for (const [label, q] of probes) {
     const { count, error } = await q;
@@ -249,69 +376,135 @@ async function preflight() {
     else check(`${label}: 0 filas previas (${count ?? 0})`, (count ?? 0) === 0);
   }
 
-  // Tablas donde no hay columna marcable: se comprueba que existan y sean
-  // legibles, para que el cleanup posterior pueda verificarlas.
+  return auth.complete && authHits.length === 0;
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// PREFLIGHT — READ-ONLY
+// ═════════════════════════════════════════════════════════════════════
+async function preflight() {
+  console.log('\n_smoke-s7_71a — PREFLIGHT (read-only, no escribe nada)\n');
+  console.log(`  ASP0_RUN_ID: ${RUN_ID}   ·   marca: ${MARK}\n`);
+
+  // ── 1. Identidades propuestas ──
+  console.log('1. Identidades sintéticas propuestas (las mismas que usará --run)');
+  for (const id of IDENTITIES) {
+    console.log(`   · ${id.tag.padEnd(8)} email=${id.email}   phone=${id.phone}`);
+  }
+  console.log(`   · prefijo de nombres: "${MARK} …"`);
+  console.log('   · prefijo telefónico 50369: no aparece en CLAUDE.md, docs/, scripts/ ni src/.');
+  console.log('   · los UUID los asigna la DB al crear; no son predecibles.');
+
+  // ── 2. Teléfonos prohibidos ──
+  console.log(`\n2. Teléfonos prohibidos (${FORBIDDEN_PHONES.length}) — guarda, nunca fixture`);
+  console.log(`   ${FORBIDDEN_PHONES.join(' ')}`);
+  for (const id of IDENTITIES) {
+    check(`${id.tag}: no colisiona con ningún prohibido (normalizado)`,
+      !FORBIDDEN_NORMALIZED.has(normalizePhone(id.phone)));
+    check(`${id.tag}: correo en dominio de prueba`, id.email.endsWith('@lucycare.test'));
+  }
+  check('Katherine está en la lista', FORBIDDEN_NORMALIZED.has(normalizePhone('50372608827')));
+  check('Camilo (demo) está en la lista', FORBIDDEN_NORMALIZED.has(normalizePhone('50378627694')));
+  check('los Test Phones documentados están en la lista',
+    ['50378056365', '50375000001'].every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
+  check('los sintéticos 50370007201/2 están en la lista',
+    ['50370007201', '50370007202'].every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
+  check('la comparación tolera el formato sin 503',
+    FORBIDDEN_NORMALIZED.has(normalizePhone('78627694')));
+
+  // ── 3. Colisiones ──
+  console.log('\n3. Inventario de Auth y colisiones');
+  const sinColisiones = await verifyNoCollisions({ verbose: true });
+  console.log('   ℹ️  profiles y el resto de tablas son comprobaciones ADICIONALES:');
+  console.log('       no sustituyen el inventario de Auth, que debe estar COMPLETO.');
+
   for (const t of ['doctors', 'clinic_members', 'appointments', 'booking_intents', 'auth_creation_grants']) {
     const { error } = await admin.from(t).select('*', { count: 'exact', head: true }).limit(1);
     check(`${t}: legible para la verificación de residuos`, !error);
     if (error) console.log(`      ⚠️  ${error.message}`);
   }
 
-  // ── 5. Precondiciones del catálogo ──
-  console.log('\n5. Precondiciones del catálogo');
-  const { data: spec } = await admin.from('specialties').select('id').limit(1).maybeSingle();
-  check('hay al menos una especialidad', !!spec);
-
-  const { data: sts } = await admin.from('appointment_statuses').select('id, name');
-  const need = ['programada', 'confirmada', 'cancelada'];
-  for (const n of need) check(`estado '${n}' existe`, !!(sts ?? []).find((s) => s.name === n));
-
-  const { count: crCount } = await admin.from('cancel_reasons')
-    .select('id', { count: 'exact', head: true });
-  check(`cancel_reasons disponible (${crCount ?? 0} filas)`, (crCount ?? 0) > 0);
-  if ((crCount ?? 0) === 0) {
-    console.log('      ⚠️  sin motivos: el caso 5.6/5.7 (cancel_reason_id) fallaría en --run.');
+  // ── 4. Catálogos ──
+  console.log('\n4. Catálogos requeridos');
+  const manifest = await buildManifest();
+  check('hay especialidad', !!manifest.specialty_id);
+  for (const n of ['programada', 'confirmada', 'cancelada']) {
+    check(`estado '${n}' existe`, !!manifest.appointment_statuses[n]);
+  }
+  check('cancel_reasons tiene al menos un motivo', !!manifest.cancel_reason_id);
+  if (!manifest.cancel_reason_id) {
+    console.log('      ⚠️  sin motivos: el caso 5.6/5.7 fallaría en --run.');
   }
 
-  // ── 6. Contrato esperado de las RPC de booking ──
-  console.log('\n6. Contrato esperado de las RPC de booking');
+  // ── 5. Contrato de las RPC de booking ──
+  console.log('\n5. Contrato de las RPC de booking');
   console.log(`
+   ⚠️  CONTRATO ESPERADO SEGÚN CÓDIGO, TODAVÍA NO VALIDADO MEDIANTE
+       EJECUCIÓN. No se llama a ninguna RPC: el preflight es read-only.
+
    register_booking_intent(p_doctor_id uuid, p_service_id uuid,
                            p_start_local timestamp, p_phone text) → jsonb
-       se espera una clave de id: intent_id | id | booking_intent_id
+       clave de id esperada: intent_id | id | booking_intent_id
    create_booking_with_intent(p_intent_id uuid, p_patient_name text,
                               p_notes text) → jsonb
-       se espera una clave de cita: appointment_id | id
+       clave de cita esperada: appointment_id | id
 
-   ⚠️  NO se verifica llamándolas: ambas ESCRIBEN, y el preflight es
-       read-only. --run falla de inmediato e imprime las claves reales si
-       el contrato no coincide; nunca continúa en silencio.`);
+   --run falla de inmediato e imprime las claves reales si el contrato no
+   coincide; nunca continúa en silencio.`);
 
-  // ── 7. Migración aplicada ──
-  console.log('\n7. Migración s7_71a aplicada');
+  // ── 6. Migración ──
+  console.log('\n6. Migración s7_71a aplicada');
   console.log(`
-   No se comprueba desde acá: verificar la existencia del trigger, el
-   SECURITY DEFINER, el search_path y el REVOKE de EXECUTE con las consultas
-   read-only de docs/OWNER_S7_71A_APPLY.md §4 (1 a 4). Este preflight es
-   estrictamente de SOLO LECTURA: no ejecuta ninguna RPC, ni siquiera para
-   sondear, porque una llamada es una llamada.`);
+   No se comprueba desde acá: verificar trigger, SECURITY DEFINER,
+   search_path y REVOKE de EXECUTE con las consultas read-only de
+   docs/OWNER_S7_71A_APPLY.md §4. Este preflight no ejecuta ninguna RPC,
+   ni siquiera para sondear: una llamada es una llamada.`);
 
+  // ── 7. Manifiesto y huella ──
+  const fp = fingerprintOf(manifest);
+  console.log('\n7. Manifiesto de la corrida (sin claves ni secretos)');
+  console.log(JSON.stringify(manifest, null, 2).split('\n').map((l) => `   ${l}`).join('\n'));
+
+  const usable = fail === 0 && sinColisiones;
   console.log(`\n${fail === 0 ? '✅' : '❌'} preflight: ${pass} OK, ${fail} fallos`);
-  console.log(fail === 0
-    ? '\n   Nada se escribió. Autorizá estas identidades antes de correr --run.\n'
-    : '\n   ⛔ Hay colisiones o precondiciones incumplidas: NO ejecutar --run.\n');
-  process.exit(fail === 0 ? 0 : 1);
+  if (usable) {
+    console.log('\n   Nada se escribió. Autorizá estas identidades y pasá la huella a --run:\n');
+    console.log(`ASP0_PREFLIGHT_FINGERPRINT=${fp}\n`);
+  } else {
+    console.log('\n   ⛔ Colisiones, inventario incompleto o precondiciones incumplidas.');
+    console.log('      NO se emite huella: --run queda bloqueado.\n');
+  }
+  process.exit(usable ? 0 : 1);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// VERIFICACIÓN PREVIA A LA PRIMERA ESCRITURA
+// ═════════════════════════════════════════════════════════════════════
+async function verifyFingerprintBeforeWriting() {
+  console.log('\n0. Verificación previa a la primera escritura (read-only)');
+
+  const manifest = await buildManifest();
+  const fp = fingerprintOf(manifest);
+
+  check('la huella coincide con la aprobada por el owner', fp === EXPECTED_FINGERPRINT);
+  if (fp !== EXPECTED_FINGERPRINT) {
+    console.log(`      esperada: ${EXPECTED_FINGERPRINT}`);
+    console.log(`      actual:   ${fp}`);
+    console.log('      Cambió una identidad, un catálogo o una condición desde el preflight.');
+    throw new Error('ABORTADO antes de escribir: la huella del manifiesto no coincide.');
+  }
+
+  const sinColisiones = await verifyNoCollisions({ verbose: false });
+  if (!sinColisiones) {
+    throw new Error('ABORTADO antes de escribir: inventario de Auth incompleto o colisión detectada.');
+  }
+  ok('comprobaciones de colisión repetidas y superadas');
+  return manifest;
 }
 
 // ═════════════════════════════════════════════════════════════════════
 // SESIONES Y FIXTURES
 // ═════════════════════════════════════════════════════════════════════
-
-/**
- * Usuario Auth sintético. SIEMPRE por la Admin API, nunca por SQL sobre
- * auth.users. El user_id se registra ANTES de cualquier otra escritura,
- * para que el finally pueda eliminarlo aunque todo lo demás falle.
- */
 async function createUser(identity) {
   assertNotForbidden(identity.phone, `createUser(${identity.tag})`);
   const { data, error } = await admin.auth.admin.createUser({
@@ -324,11 +517,6 @@ async function createUser(identity) {
   return { ...identity, id: data.user.id };
 }
 
-/**
- * Sesión `authenticated` real sin endpoints protegidos por CAPTCHA:
- * generateLink (no envía correo) + verifyOtp desde un cliente anon.
- * Ningún token, link ni credencial se imprime ni se persiste.
- */
 async function sessionFor(user) {
   const { data: link, error: eLink } = await admin.auth.admin.generateLink({
     type: 'magiclink', email: user.email,
@@ -350,7 +538,7 @@ const nextSlot = () => {
   return { start, end: new Date(start.getTime() + 30 * 60000) };
 };
 
-async function buildFixtures() {
+async function buildFixtures(manifest) {
   const [idPatient, idDoctorA, idDoctorB] = IDENTITIES;
   const uPatient = await createUser(idPatient);
   const uDoctorA = await createUser(idDoctorA);
@@ -366,12 +554,9 @@ async function buildFixtures() {
     if (data?.length !== 1) throw new Error(`profile(${u.tag}): handle_new_user no creó exactamente una fila`);
   }
 
-  // Canario: si la sesión falla, se aborta antes de crear fixtures de negocio.
   const cPatient = await sessionFor(uPatient);
 
-  const { data: spec, error: eSpec } = await admin.from('specialties').select('id').limit(1).single();
-  if (eSpec) throw new Error(`specialties: ${eSpec.message}`);
-  ids.specialtyId = spec.id;
+  ids.specialtyId = manifest.specialty_id;
 
   const { data: clinic, error: eClinic } = await admin.from('clinics')
     .insert({ name: `${MARK} Clinica ${RUN_ID}`, owner_id: uDoctorA.id }).select('id').single();
@@ -426,23 +611,14 @@ async function buildFixtures() {
   if (eP2) throw new Error(`patient 2: ${eP2.message}`);
   ids.patientId2 = p2.id;
 
-  const { data: statuses, error: eSt } = await admin
-    .from('appointment_statuses').select('id, name');
-  if (eSt) throw new Error(`statuses: ${eSt.message}`);
-  const statusId = (n) => {
-    const s = statuses.find((x) => x.name === n);
-    if (!s) throw new Error(`no existe el estado '${n}'`);
-    return s.id;
-  };
-  const { data: reason } = await admin.from('cancel_reasons').select('id').limit(1).maybeSingle();
-
   return {
     uPatient, uDoctorA, uDoctorB, cPatient,
     clinicId: ids.clinicId, doctorId: ids.doctorId, doctorId2: ids.doctorId2,
     patientId: ids.patientId, patientId2: ids.patientId2,
     serviceId: ids.serviceIds[0], serviceId2: ids.serviceIds[1],
-    statusProgramada: statusId('programada'), statusConfirmada: statusId('confirmada'),
-    cancelReasonId: reason?.id ?? null,
+    statusProgramada: manifest.appointment_statuses.programada,
+    statusConfirmada: manifest.appointment_statuses.confirmada,
+    cancelReasonId: manifest.cancel_reason_id,
   };
 }
 
@@ -480,7 +656,6 @@ async function bookViaIntent(fx) {
   if (!appointmentId) throw new Error(`create_booking_with_intent: contrato inesperado — claves: ${Object.keys(booking ?? {}).join(', ')}`);
   ids.apptIds.push(appointmentId);
 
-  // La RPC puede haber creado su propia ficha: se registra para el cleanup.
   const { data: appt } = await admin.from('appointments')
     .select('patient_id').eq('id', appointmentId).maybeSingle();
   if (appt?.patient_id && ![ids.patientId, ids.patientId2].includes(appt.patient_id)) {
@@ -502,18 +677,15 @@ async function cancelAsPatient(fx) {
 }
 
 /**
- * Firma una consulta ligada a una cita → dispara sync_appointment_on_sign
- * (s6_02), que actualiza appointments.status_id en cascada.
+ * Firma una consulta → dispara sync_appointment_on_sign (s6_02).
  *
  * ⚠️ SOLO local/staging (`--include-sign`). En producción esta ruta se
  * prueba con el bloque owner-only BEGIN/ROLLBACK de la guía §13.
  * Reversibilidad verificada por lectura de código: s7_28 restringe UPDATE
- * (policies), NO DELETE; no hay policy ni trigger de DELETE sobre
- * consultations; y service_role tiene rolbypassrls=true (preflight). Las
- * tablas dependientes son consultation_amendments, prescriptions,
- * consultation_diagnoses y consultation_family_history: el cleanup las
- * borra antes que la consulta. Aun así, en producción se prefiere el
- * ROLLBACK a un borrado.
+ * (policies), NO DELETE; el único trigger sobre consultations es
+ * trg_sync_appointment_on_sign; service_role tiene rolbypassrls. Las tablas
+ * dependientes son consultation_amendments, prescriptions,
+ * consultation_diagnoses y consultation_family_history.
  */
 async function signConsultation(fx) {
   const appt = await insertAppointment(fx, { status_id: fx.statusConfirmada });
@@ -537,10 +709,12 @@ async function signConsultation(fx) {
 async function run() {
   console.log('\n_smoke-s7_71a — cobertura server-side de appointments\n');
   console.log(`  ASP0_RUN_ID: ${RUN_ID} · marca: ${MARK} · inicio: ${RUN_STARTED_AT}`);
-  console.log(`  firma de consulta: ${INCLUDE_SIGN ? 'INCLUIDA (--include-sign, solo local/staging)' : 'EXCLUIDA (ver guía §13)'}\n`);
+  console.log(`  firma de consulta: ${INCLUDE_SIGN ? 'INCLUIDA (--include-sign, solo local/staging)' : 'EXCLUIDA (ver guía §13)'}`);
 
-  console.log('0. Fixtures sintéticas');
-  const fx = await buildFixtures();
+  const manifest = await verifyFingerprintBeforeWriting();
+
+  console.log('\n0-bis. Fixtures sintéticas');
+  const fx = await buildFixtures(manifest);
   ok(`clínica ${ids.clinicId.slice(0, 8)}… · 2 médicos · 2 fichas · 2 servicios`);
   ok('sesión authenticated del paciente abierta (sin imprimir credenciales)');
 
@@ -644,7 +818,7 @@ async function run() {
       check('5.6 motivo → 1 fila', rows.length === n + 1);
       check('5.7 change_kind = status_change', kindOf(rows[rows.length - 1]) === 'status_change');
     } else {
-      ko('5.6/5.7 catálogo cancel_reasons vacío — el preflight debió abortar antes');
+      ko('5.6/5.7 catálogo cancel_reasons vacío — el preflight debió bloquear la corrida');
     }
 
     const a4 = await insertAppointment(fx);
@@ -765,7 +939,6 @@ const cleanupErrors = [];
 async function cleanup() {
   console.log('\n13. Cleanup (se ejecuta aunque la corrida haya fallado)');
 
-  /** Ejecuta un borrado y ACUMULA el error sin interrumpir los siguientes. */
   const del = async (label, promise) => {
     try {
       const { error } = await promise;
@@ -781,7 +954,6 @@ async function cleanup() {
   const patientIds = [ids.patientId, ids.patientId2, ...ids.extraPatients].filter(Boolean);
   const doctorIds = [ids.doctorId, ids.doctorId2].filter(Boolean);
 
-  // ── 13.1 Dependencias de consultas (las genera la firma) ──
   if (has(ids.consultIds)) {
     for (const t of ['consultation_amendments', 'prescriptions',
                      'consultation_diagnoses', 'consultation_family_history']) {
@@ -790,26 +962,22 @@ async function cleanup() {
     await del('consultas', admin.from('consultations').delete().in('id', ids.consultIds));
   }
 
-  // ── 13.2 Eventos y citas ──
   if (has(ids.eventApptIds)) {
     await del('eventos de cancelación',
       admin.from('appointment_patient_cancellations').delete().in('appointment_id', ids.eventApptIds));
   }
   if (has(ids.apptIds)) await del('citas', admin.from('appointments').delete().in('id', ids.apptIds));
 
-  // ── 13.3 Intents y grants generados por el flujo de booking ──
   if (has(ids.users)) {
     await del('booking_intents', admin.from('booking_intents').delete().in('created_by', ids.users));
     await del('auth_creation_grants', admin.from('auth_creation_grants').delete().in('issued_by', ids.users));
   }
 
-  // ── 13.4 Dependencias de médicos ──
   if (has(doctorIds)) {
     await del('reglas de disponibilidad', admin.from('availability_rules').delete().in('doctor_id', doctorIds));
     await del('servicios', admin.from('services').delete().in('doctor_id', doctorIds));
   }
 
-  // ── 13.5 Fichas, médicos, membresías, clínicas ──
   if (has(patientIds)) await del('pacientes', admin.from('patients').delete().in('id', patientIds));
   if (has(doctorIds)) await del('médicos', admin.from('doctors').delete().in('id', doctorIds));
   if (ids.clinicId) {
@@ -817,7 +985,6 @@ async function cleanup() {
     await del('clínicas', admin.from('clinics').delete().eq('id', ids.clinicId));
   }
 
-  // ── 13.6 Perfiles y usuarios de Auth (SIEMPRE por la Admin API) ──
   if (has(ids.users)) await del('perfiles', admin.from('profiles').delete().in('id', ids.users));
   for (const uid of ids.users) {
     try {
@@ -829,19 +996,15 @@ async function cleanup() {
     }
   }
 
-  // ── 13.7 audit_log — ALLOWLIST explícita, con reporte y abort ──
   await cleanupAuditLog();
-
-  // ── 13.8 Inventario final y verificación de CERO residuos ──
   await finalInventory(patientIds, doctorIds);
 }
 
 /**
  * Borra la auditoría de las fixtures SOLO por allowlist explícita.
- * `created_at >= RUN_STARTED_AT` es condición ADICIONAL, jamás suficiente:
- * sin la allowlist, un DELETE por fecha alcanzaría auditoría legítima
- * concurrente. Antes de borrar se reporta lo previsto y se ABORTA si
- * aparece cualquier record_id fuera de la lista.
+ * `created_at >= RUN_STARTED_AT` es condición ADICIONAL, jamás suficiente.
+ * Antes de borrar se reporta lo previsto y se ABORTA si aparece cualquier
+ * record_id fuera de la lista.
  */
 async function cleanupAuditLog() {
   const allow = allowlist();
@@ -849,9 +1012,9 @@ async function cleanupAuditLog() {
 
   const { data: previstas, error: eSel } = await admin.from('audit_log')
     .select('id, table_name, record_id')
-    .in('record_id', allow)                       // ← criterio PRINCIPAL
+    .in('record_id', allow)
     .in('table_name', SMOKE_TABLES)
-    .gte('created_at', RUN_STARTED_AT);           // ← condición ADICIONAL
+    .gte('created_at', RUN_STARTED_AT);
   if (eSel) {
     cleanupErrors.push(`audit_log (select previo): ${eSel.message}`);
     console.error(`  ⚠️  audit_log: no se pudo listar (${eSel.message}) — NO se borra nada`);
@@ -909,7 +1072,6 @@ async function finalInventory(patientIds, doctorIds) {
     console.log(`    · ${String(table).padEnd(36)} ${n}`);
   }
 
-  // audit_log sintético.
   const allow = allowlist();
   if (allow.length) {
     const { count, error } = await admin.from('audit_log')
@@ -919,12 +1081,10 @@ async function finalInventory(patientIds, doctorIds) {
     else { residuals += count ?? 0; console.log(`    · ${'audit_log (sintético)'.padEnd(36)} ${count ?? 0}`); }
   }
 
-  // Auth: getUserById NO debe encontrarlos.
   let authLeft = 0;
   for (const uid of ids.users) {
     const { data, error } = await admin.auth.admin.getUserById(uid);
-    const stillThere = !error && !!data?.user?.id;
-    if (stillThere) { authLeft++; console.log(`    · auth.user ${uid} → ⚠️ TODAVÍA EXISTE`); }
+    if (!error && data?.user?.id) { authLeft++; console.log(`    · auth.user ${uid} → ⚠️ TODAVÍA EXISTE`); }
   }
   residuals += authLeft;
   console.log(`    · ${'auth.users (getUserById)'.padEnd(36)} ${authLeft}`);
@@ -948,8 +1108,6 @@ async function main() {
     console.error(`\n💥 la corrida falló: ${e.message}`);
     fail++;
   } finally {
-    // El cleanup corre SIEMPRE: ninguna aserción intermedia puede abandonar
-    // fixtures. Sus propios errores se acumulan y se reportan.
     try {
       await cleanup();
     } catch (e) {
