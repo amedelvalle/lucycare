@@ -15,6 +15,18 @@
  *   · la preservación ÍNTEGRA de las validaciones de s7_70 en la RPC.
  */
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+const sha256hex = (x) => createHash('sha256').update(x, 'utf8').digest('hex');
+// Se importa la implementación REAL del fingerprint (el smoke no tiene
+// efectos secundarios al importarse: sus guards viven dentro de main()).
+import {
+  stableStringify, fingerprintOf, flatManifest, identitiesFor,
+  normalizePhone, migrationSha256,
+  ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES,
+  HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
+  DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
+  SYNTHETIC_PHONES,
+} from './_smoke-s7_71a.mjs';
 
 let pass = 0, fail = 0;
 const check = (desc, got, expected = true) => {
@@ -501,8 +513,8 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   const aparicionesK = (smoke.match(new RegExp(K, 'g')) || []).length;
   check(`el número aparece pocas veces y todas como guarda (${aparicionesK})`,
     aparicionesK <= 3);
-  check('está declarado en FORBIDDEN_PHONES',
-    /FORBIDDEN_PHONES = \[[^\]]*'50372608827'/.test(smoke));
+  check('está declarado en la categoría de datos reales',
+    /REAL_OR_DEMO_PHONES = \[[\s\S]*?'50372608827'/.test(smoke));
   // Fuera de la constante, solo puede aparecer con forma de GUARDA: una
   // aserción sobre la propia lista (`FORBIDDEN_NORMALIZED.has(...)`), un
   // comentario, o una comparación negada. Nunca en una escritura.
@@ -561,56 +573,32 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   // ── Los tres no colisionan con nada conocido ──
   for (const p of TRIPLE) {
     check(`${p}: ausente de CLAUDE.md`, read('CLAUDE.md').includes(p) === false);
-    check(`${p}: no está en FORBIDDEN_PHONES`,
-      new RegExp(`'${p}'`).test(between(smoke, 'const FORBIDDEN_PHONES = [', '];')) === false);
   }
-
-  // ── FORBIDDEN_PHONES: cobertura y normalización ──
-  const fp = between(smoke, 'const FORBIDDEN_PHONES = [', '];');
-  for (const [desc, num] of [
-    ['Katherine',                     '50372608827'],
-    ['Camilo (demo)',                 '50378627694'],
-    ['Test Phone admin plataforma',   '50378056365'],
-    ['Test Phone paciente Fase 1',    '50375000001'],
-    ['sintético 50370007201',         '50370007201'],
-    ['sintético 50370007202',         '50370007202'],
-    ['QA 50375000099',                '50375000099'],
-    ['QA 50377003001',                '50377003001'],
-    ['QA 50370007299',                '50370007299'],
-    ['QA 50370069901',                '50370069901'],
-  ]) check(`FORBIDDEN_PHONES incluye ${desc}`, fp.includes(num));
-
-  // ── Test Phones vigentes que NO están en el repositorio ──
-  // Su presencia demuestra que la lista NO se derivó de un grep.
-  for (const [desc, num] of [
-    ['Test Phone 50378873634', '50378873634'],
-    ['Test Phone 50378590126', '50378590126'],
-    ['Test Phone 50377507479', '50377507479'],
-    ['Test Phone 77316374 (sin 503)', '77316374'],
-  ]) check(`FORBIDDEN_PHONES incluye ${desc}`, fp.includes(num));
+  // La pertenencia a las categorías se comprueba en §14 sobre los arrays
+  // REALES importados, no por texto. Acá solo queda lo estructural.
 
   check('la lista declara que el grep NO es fuente suficiente',
-    /El grep es una de\s*\n?\s*\* cuatro fuentes, y por sí solo es INSUFICIENTE/
-      .test(smoke) || /por sí solo es INSUFICIENTE/.test(smoke));
+    /por sí solo es INSUFICIENTE/.test(smoke));
   check('la lista nombra las cuatro fuentes',
     /Test Phone Numbers/.test(smoke) && /CLAUDE\.md/.test(smoke)
     && /handoff canónico/.test(smoke) && /scripts\//.test(smoke), true);
-
-  check(`FORBIDDEN_PHONES tiene cobertura amplia (${(fp.match(/'\d{8,11}'/g) || []).length})`,
-    (fp.match(/'\d{8,11}'/g) || []).length >= 60);
-  check('el preflight imprime la lista canónica NORMALIZADA y su cantidad',
-    /Lista canónica de teléfonos prohibidos — \$\{FORBIDDEN_PHONES\.length\} entradas/.test(smoke)
-    && /normalizados \(\$\{canon\.length\} únicos\)/.test(smoke), true);
-  check('existe normalizePhone', /const normalizePhone = /.test(smoke));
+  check('advierte que hay que actualizarla si cambian los Test Phones',
+    /hay que actualizar\s*\n?\s*\*?\s*esta constante/.test(smoke));
+  check('existe normalizePhone', /export const normalizePhone = /.test(smoke));
   check('la normalización quita el prefijo 503',
     /d\.length === 11 && d\.startsWith\('503'\) \? d\.slice\(3\) : d/.test(smoke));
   check('la normalización quita separadores', /replace\(\/\\D\/g, ''\)/.test(smoke));
   check('la comparación usa el set normalizado',
     /FORBIDDEN_NORMALIZED\.has\(normalizePhone\(phone\)\)/.test(smoke));
-  check('el preflight reporta la lista canónica y su cantidad',
-    /Lista canónica de teléfonos prohibidos — \$\{FORBIDDEN_PHONES\.length\} entradas/.test(smoke));
-  check('el preflight nombra las cuatro fuentes',
-    /Fuentes combinadas: Supabase Test Phone Numbers · CLAUDE\.md ·/.test(smoke));
+  check('el preflight imprime las categorías por separado',
+    /cat\('ACTIVE_SUPABASE_TEST_PHONES'/.test(smoke)
+    && /cat\('HISTORICAL_OR_RESERVED_PHONES'/.test(smoke)
+    && /cat\('REAL_OR_DEMO_PHONES'/.test(smoke), true);
+  check('el preflight imprime el total crudo y el normalizado',
+    /TOTAL crudo: \$\{FORBIDDEN_PHONES\.length\}/.test(smoke)
+    && /FORBIDDEN_NORMALIZED\.size/.test(smoke), true);
+  check('el preflight reporta cuántas se dedujeron por normalización',
+    /deduplicadas por normalización/.test(smoke));
   check('el preflight advierte que el grep no basta',
     /El grep del repo NO basta/.test(smoke));
   check('el preflight verifica que Katherine esté en la lista',
@@ -711,7 +699,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('ASP0_RUN_ID es obligatorio', /ASP0_RUN_ID/.test(smoke)
     && /\^\[a-z0-9\]\{4,12\}\$/.test(smoke), true);
   check('las identidades se derivan del RUN_ID (deterministas)',
-    /const IDENTITIES = \['patient', 'doctora', 'doctorb'\]\.map/.test(smoke));
+    /export const identitiesFor = \(runId\) => \['patient', 'doctora', 'doctorb'\]\.map/.test(smoke));
   check('las 3 identidades pasan por la guarda',
     /assertNotForbidden\(SYNTHETIC_PHONES\[i\], `identidad \$\{tag\}`\)/.test(smoke));
 
@@ -763,30 +751,39 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /Nunca se consulta `auth\.users` por SQL/.test(smoke));
 
   // ── Manifiesto y huella ──
-  const bm = between(smoke, 'async function buildManifest()', 'function fingerprintOf');
-  check('existe buildManifest()', bm.length > 200);
-  check('el manifiesto incluye run_id', /run_id: RUN_ID/.test(bm));
-  check('el manifiesto incluye los 3 emails', /emails: IDENTITIES\.map/.test(bm));
-  check('el manifiesto incluye los 3 teléfonos', /phones: IDENTITIES\.map/.test(bm));
-  check('el manifiesto incluye specialty_id', /specialty_id:/.test(bm));
-  check('el manifiesto incluye los estados de cita', /appointment_statuses: statusMap/.test(bm));
-  check('el manifiesto incluye cancel_reason_id', /cancel_reason_id:/.test(bm));
-  check('el manifiesto incluye el host del proyecto', /project_host: PROJECT_HOST/.test(bm));
+  // Estructura del manifiesto PLANO. El contenido y la sensibilidad se
+  // prueban en §15 sobre la implementación real importada.
+  const bm = between(smoke, 'export function flatManifest(', 'export function fingerprintOf');
+  check('existe flatManifest()', bm.length > 200);
+  check('el manifiesto incluye run_id', /run_id: runId/.test(bm));
+  check('el manifiesto incluye un email por identidad', /m\[`email_\$\{i\}`\] = id\.email/.test(bm));
+  check('el manifiesto incluye un teléfono por identidad', /m\[`phone_\$\{i\}`\] = id\.phone/.test(bm));
+  check('el manifiesto incluye specialty_id', /specialty_id: specialtyId/.test(bm));
+  check('los estados van PLANOS, sin objeto anidado',
+    /programada_status_id: programadaId/.test(bm)
+    && /confirmada_status_id: confirmadaId/.test(bm)
+    && /cancelada_status_id: canceladaId/.test(bm), true);
+  check('el manifiesto incluye cancel_reason_id', /cancel_reason_id: cancelReasonId/.test(bm));
+  check('el manifiesto incluye el host del proyecto', /project_host: host/.test(bm));
   check('el manifiesto incluye la versión de la migración',
     /migration_version: 's7_71a'/.test(bm));
   check('el manifiesto incluye el SHA-256 de la migración',
-    /migration_sha256: migrationSha256\(\)/.test(bm));
-  check('el SHA-256 se calcula sobre el archivo real',
-    /createHash\('sha256'\)\.update\(readFileSync\(MIGRATION_PATH\)\)/.test(smoke));
+    /migration_sha256: migrationSha/.test(bm));
+  check('el SHA-256 normaliza CRLF a LF antes de hashear',
+    /readFileSync\(path, 'utf8'\)\.replace\(\/\\r\\n\/g, '\\n'\)/.test(smoke));
   check('el host sale de SUPABASE_URL, nunca la clave',
-    /new global\.URL\(URL\)\.hostname/.test(smoke));
+    /new globalThis\.URL\(URL\)\.hostname/.test(smoke));
   check('el manifiesto NO incluye claves ni secretos',
     /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
-  check('el manifiesto NO incluye la service_role key',
-    /SUPABASE_SERVICE_ROLE_KEY/.test(bm) === false);
-  check('el manifiesto subió de versión (v: 2)', /v: 2,/.test(bm));
-  check('la huella es SHA-256 sobre el manifiesto canónico',
-    /createHash\('sha256'\)\.update\(canonical\)\.digest\('hex'\)/.test(smoke));
+  check('el manifiesto subió de versión (v: 3)', /v: 3,/.test(bm));
+  check('advierte contra el replacer array de JSON.stringify',
+    /NO usar `JSON\.stringify\(obj, Object\.keys\(obj\)\.sort\(\)\)`/.test(smoke));
+  check('la huella es SHA-256 sobre la serialización canónica',
+    /createHash\('sha256'\)\.update\(stableStringify\(manifest\), 'utf8'\)\.digest\('hex'\)/.test(smoke));
+  check('stableStringify ordena recursivamente',
+    /export function stableStringify\(value\)/.test(smoke)
+    && /Object\.keys\(value\)\.sort\(\)/.test(smoke)
+    && /value\.map\(stableStringify\)/.test(smoke), true);
   check('preflight emite ASP0_PREFLIGHT_FINGERPRINT',
     /ASP0_PREFLIGHT_FINGERPRINT=\$\{fp\}/.test(smoke));
   check('no se emite huella si hay colisión o inventario incompleto',
@@ -871,6 +868,162 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /NO BORRA DATOS/i.test(rbRaw));
   check('la migración documenta qué queda para s7_71b',
     /QUÉ \*\*NO\*\* HACE \(es s7_71b\)/.test(sqlRaw));
+}
+
+// ─── 14. Categorías de teléfonos — sobre la implementación REAL ───────
+{
+  console.log('\n14. Categorías de teléfonos prohibidos (implementación real)');
+
+  const ACTIVOS_ESPERADOS = [
+    '50378627694', '50378056365', '50378873634', '50378590126',
+    '50375000001', '50375000099', '50378626108', '50377507479',
+    '50377316374', '50376193396', '50370007201',
+  ];
+
+  check(`ACTIVE_SUPABASE_TEST_PHONES tiene exactamente 11 (${ACTIVE_SUPABASE_TEST_PHONES.length})`,
+    ACTIVE_SUPABASE_TEST_PHONES.length === 11);
+  for (const p of ACTIVOS_ESPERADOS) {
+    check(`activo ${p} presente`, ACTIVE_SUPABASE_TEST_PHONES.includes(p));
+  }
+  check('no hay activos de más',
+    ACTIVE_SUPABASE_TEST_PHONES.every((p) => ACTIVOS_ESPERADOS.includes(p)));
+
+  check('Katherine está en REAL_OR_DEMO_PHONES', REAL_OR_DEMO_PHONES.includes('50372608827'));
+  check('Camilo está en ambas categorías (activo + demo)',
+    ACTIVE_SUPABASE_TEST_PHONES.includes('50378627694')
+    && REAL_OR_DEMO_PHONES.includes('50378627694'), true);
+  check('50370007202 es histórico, NO activo',
+    HISTORICAL_OR_RESERVED_PHONES.includes('50370007202')
+    && !ACTIVE_SUPABASE_TEST_PHONES.includes('50370007202'), true);
+  check('77316374 está clasificado como histórico/alias',
+    HISTORICAL_OR_RESERVED_PHONES.includes('77316374'));
+
+  check('las cinco categorías existen y no están vacías',
+    [ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES, HISTORICAL_OR_RESERVED_PHONES,
+     PRIOR_FIXTURE_PHONES, DOC_PLACEHOLDER_PHONES].every((c) => Array.isArray(c) && c.length > 0));
+
+  check('77316374 normaliza igual que 50377316374',
+    normalizePhone('77316374') === normalizePhone('50377316374'));
+  check('la unión normalizada deduplica', FORBIDDEN_NORMALIZED.size < FORBIDDEN_PHONES.length);
+  const dups = FORBIDDEN_PHONES.length - FORBIDDEN_NORMALIZED.size;
+  check(`se deduplicaron ${dups} entradas (Camilo + alias sin 503)`, dups === 2);
+  console.log(`     crudo: ${FORBIDDEN_PHONES.length} · normalizado único: ${FORBIDDEN_NORMALIZED.size}`);
+
+  check('todos los activos están en FORBIDDEN_NORMALIZED',
+    ACTIVE_SUPABASE_TEST_PHONES.every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
+
+  for (const p of SYNTHETIC_PHONES) {
+    check(`candidato ${p} NO está prohibido`, !FORBIDDEN_NORMALIZED.has(normalizePhone(p)));
+  }
+
+  // El OTP fijo no puede aparecer en el código ni en la documentación nueva.
+  const smokeRaw = read('scripts/_smoke-s7_71a.mjs');
+  const docRaw = read('docs/OWNER_S7_71A_APPLY.md');
+  // Token AISLADO, no subcadena: el placeholder de documentación
+  // 503·12345678 contiene esos seis dígitos y no es un OTP.
+  const OTP = String(120000 + 3456);   // no se escribe literal en el repo
+  const otpSuelto = new RegExp(`(?<!\\d)${OTP}(?!\\d)`);
+  check('el smoke NO documenta el OTP fijo', otpSuelto.test(smokeRaw) === false);
+  check('la guía NO documenta el OTP fijo', otpSuelto.test(docRaw) === false);
+  check('las migraciones NO documentan el OTP fijo',
+    otpSuelto.test(read('migrations/s7_71a_audit_appointments_coverage.sql')) === false);
+
+  const pfRaw = between(smokeRaw, 'async function preflight()', 'async function verifyFingerprintBeforeWriting');
+  check('preflight imprime ACTIVE_SUPABASE_TEST_PHONES con su cantidad',
+    /ACTIVE_SUPABASE_TEST_PHONES/.test(pfRaw)
+    && /\$\{ACTIVE_SUPABASE_TEST_PHONES\.length\}/.test(pfRaw), true);
+  check('preflight imprime HISTORICAL_OR_RESERVED_PHONES', /HISTORICAL_OR_RESERVED_PHONES/.test(pfRaw));
+  check('preflight imprime el total normalizado', /FORBIDDEN_NORMALIZED\.size/.test(pfRaw));
+}
+
+// ─── 15. Fingerprint — pruebas de sensibilidad (puras, sin DB) ────────
+{
+  console.log('\n15. Fingerprint — serialización canónica y sensibilidad');
+
+  check('stableStringify ordena claves anidadas',
+    stableStringify({ b: { z: 1, a: 2 }, a: 3 }) === '{"a":3,"b":{"a":2,"z":1}}');
+  check('stableStringify conserva el orden de los arrays',
+    stableStringify({ a: [3, 1, 2] }) === '{"a":[3,1,2]}');
+  check('stableStringify serializa valores anidados profundos',
+    stableStringify({ a: { b: { c: 'x' } } }) === '{"a":{"b":{"c":"x"}}}');
+  check('stableStringify maneja null', stableStringify({ a: null }) === '{"a":null}');
+
+  // Demostración del defecto que se corrigió: el replacer array descarta
+  // silenciosamente las claves de los objetos anidados.
+  const anidado = { top: 1, nested: { inner: 'MARCA_ESTRUCTURAL' } };
+  check('el replacer array DESCARTA claves anidadas (bug corregido)',
+    JSON.stringify(anidado, Object.keys(anidado).sort()).includes('MARCA_ESTRUCTURAL') === false);
+  check('stableStringify SÍ las conserva',
+    stableStringify(anidado).includes('MARCA_ESTRUCTURAL'));
+
+  const base = {
+    projectHost: 'proyecto.supabase.co',
+    migrationSha: 'a'.repeat(64),
+    runId: 'test01',
+    identities: identitiesFor('test01'),
+    specialtyId: 'spec-1', programadaId: 'st-p', confirmadaId: 'st-c',
+    canceladaId: 'st-x', cancelReasonId: 'cr-1',
+  };
+  const m0 = flatManifest(base);
+  const fp0 = fingerprintOf(m0);
+  check('la huella es un sha256 hex', /^[0-9a-f]{64}$/.test(fp0));
+
+  const barajado = {};
+  for (const k of Object.keys(m0).sort().reverse()) barajado[k] = m0[k];
+  check('mismo manifiesto con claves en otro orden → MISMA huella',
+    fingerprintOf(barajado) === fp0);
+
+  check('el manifiesto es completamente plano',
+    Object.values(m0).every((v) => v === null || typeof v !== 'object'));
+
+  const distinta = (mut, desc) =>
+    check(`cambiar ${desc} → huella DISTINTA`,
+      fingerprintOf(flatManifest({ ...base, ...mut })) !== fp0);
+
+  distinta({ projectHost: 'otro.supabase.co' }, 'project_host');
+  distinta({ migrationSha: 'b'.repeat(64) }, 'migration_sha256');
+  distinta({ runId: 'test02' }, 'run_id');
+  distinta({ specialtyId: 'spec-2' }, 'specialty_id');
+  distinta({ programadaId: 'st-p2' }, 'programada_status_id');
+  distinta({ confirmadaId: 'st-c2' }, 'confirmada_status_id');
+  distinta({ canceladaId: 'st-x2' }, 'cancelada_status_id');
+  distinta({ cancelReasonId: 'cr-2' }, 'cancel_reason_id');
+
+  for (let i = 0; i < 3; i++) {
+    const ids = identitiesFor('test01').map((x) => ({ ...x }));
+    ids[i].email = `mutado-${i}@lucycare.test`;
+    check(`cambiar email_${i} → huella DISTINTA`,
+      fingerprintOf(flatManifest({ ...base, identities: ids })) !== fp0);
+  }
+  for (let i = 0; i < 3; i++) {
+    const ids = identitiesFor('test01').map((x) => ({ ...x }));
+    ids[i].phone = `5037000999${i}`;
+    check(`cambiar phone_${i} → huella DISTINTA`,
+      fingerprintOf(flatManifest({ ...base, identities: ids })) !== fp0);
+  }
+
+  const blob = JSON.stringify(m0);
+  for (const [desc, re] of [
+    ['service_role key', /eyJ[A-Za-z0-9_-]{20,}/],
+    ['nombre de variable de servicio', /SERVICE_ROLE/i],
+    ['anon key', /ANON_KEY/i],
+    ['token', /token/i],
+    ['password', /password/i],
+  ]) check(`el manifiesto NO contiene ${desc}`, re.test(blob) === false);
+  check('solo va el hostname, nunca la URL completa',
+    m0.project_host === 'proyecto.supabase.co' && !blob.includes('http'), true);
+
+  // ── Checksum de la migración: determinista y normalizado a LF ──
+  const sha1 = migrationSha256();
+  check('migrationSha256 es determinista entre llamadas', sha1 === migrationSha256());
+  check('migrationSha256 devuelve sha256 hex', /^[0-9a-f]{64}$/.test(sha1));
+  const lf = read('migrations/s7_71a_audit_appointments_coverage.sql').replace(/\r\n/g, '\n');
+  check('el checksum se calcula sobre contenido normalizado a LF', sha1 === sha256hex(lf));
+  const crlf = lf.replace(/\n/g, '\r\n');
+  check('CRLF y LF del mismo archivo dan la MISMA huella',
+    sha256hex(crlf.replace(/\r\n/g, '\n')) === sha1);
+  check('el método de normalización está documentado en el código',
+    /contenido NORMALIZADO A LF, no el binario/.test(read('scripts/_smoke-s7_71a.mjs')));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);

@@ -190,11 +190,64 @@ que ya usa LucyCare, verificados libres en todo el repositorio):
 colisionan — es deliberado: el preflight lo detecta y falla cerrado en vez de
 inventar números nuevos en silencio.
 
-> ⚠️ La **lista canónica de teléfonos prohibidos no se deriva del repositorio**.
-> Los Test Phones vigentes `50378873634`, `50378590126`, `50377507479` y
-> `77316374` **no aparecen en el código** — vienen de *Supabase → Auth → Test
-> Phone Numbers*. **Si agregás o quitás un Test Phone en Supabase, hay que
-> actualizar `FORBIDDEN_PHONES` en el smoke.** Un grep "limpio" no prueba nada.
+### Teléfonos prohibidos — cinco categorías
+
+`FORBIDDEN_PHONES` es la **unión normalizada** de cinco listas separadas.
+**78 entradas crudas → 76 únicas** tras normalizar (se deduplican Camilo, que
+está en dos categorías, y `77316374`, que es la forma sin prefijo de
+`50377316374`).
+
+| Categoría | Cantidad | Qué es |
+|---|---|---|
+| `ACTIVE_SUPABASE_TEST_PHONES` | **11** | Test Phones **activos**, verificados por vos en el panel |
+| `REAL_OR_DEMO_PHONES` | 2 | Katherine (dato real) y Camilo (cuenta demo) |
+| `HISTORICAL_OR_RESERVED_PHONES` | 6 | históricos y reservados — **no** activos |
+| `PRIOR_FIXTURE_PHONES` | 54 | fixtures de smokes previos en `5037000xxxx` |
+| `DOC_PLACEHOLDER_PHONES` | 5 | placeholders de documentación |
+
+**Los 11 activos:**
+
+```
+50378627694  50378056365  50378873634  50378590126  50375000001  50375000099
+50378626108  50377507479  50377316374  50376193396  50370007201
+```
+
+`--preflight` imprime cada categoría por separado con su cantidad, más el total
+crudo, el normalizado y cuántas se dedujeron.
+
+> ⚠️ **La lista activa no se deriva del repositorio.** Seis de los once **no
+> aparecen en el código**: vienen de *Supabase → Auth → Test Phone Numbers*.
+> **Si agregás o quitás un Test Phone en Supabase, hay que actualizar
+> `ACTIVE_SUPABASE_TEST_PHONES` en el smoke.** Un grep "limpio" no prueba nada,
+> y el código no puede detectar el cambio por sí solo.
+>
+> El **OTP fijo** asociado a los Test Phones **no se documenta ni se guarda** en
+> el repositorio. El check verifica su ausencia en el smoke, en la migración y
+> en esta guía.
+
+### Huella del manifiesto
+
+El manifiesto es **completamente plano** —sin objetos anidados— y se serializa
+con `stableStringify`, que ordena recursivamente las claves y conserva el orden
+de los arrays.
+
+> ⚠️ Nota técnica: **no** se usa `JSON.stringify(obj, Object.keys(obj).sort())`.
+> Ese replacer en forma de array filtra por nombre en **todos** los niveles, así
+> que las claves de un objeto anidado que no coincidan con las de primer nivel
+> se descartan en silencio. Con el manifiesto anidado anterior, los ids de
+> estado **quedaban fuera del hash**. Está corregido y cubierto por pruebas.
+
+Campos: `project_host` · `migration_version` · `migration_sha256` · `run_id` ·
+`specialty_id` · `programada_status_id` · `confirmada_status_id` ·
+`cancelada_status_id` · `cancel_reason_id` · `email_0..2` · `phone_0..2`.
+
+**Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
+*hostname* derivado de `SUPABASE_URL`.
+
+**Checksum de la migración:** se calcula sobre el contenido **normalizado a LF**,
+no sobre el binario. En Windows el checkout deja CRLF y en Linux LF; hashear el
+binario daría huellas distintas para el mismo archivo según la máquina. La misma
+función se usa en `--preflight` y en `--run`.
 
 ---
 

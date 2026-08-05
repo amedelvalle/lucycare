@@ -57,6 +57,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { requireEnv } from './_lib/env.mjs';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -93,29 +94,43 @@ SUPABASE_SERVICE_ROLE_KEY en .env.local.
 No se tocó la base de datos.
 `;
 
-if (!WANT_PREFLIGHT && !WANT_RUN) { console.log(HELP); process.exit(0); }
-if (WANT_RUN && !AUTHORIZED) {
-  console.log(`\n⛔ --run sin ASP0_SMOKE_AUTHORIZED=1. No se tocó la base de datos.\n${HELP}`);
-  process.exit(0);
-}
-if (!/^[a-z0-9]{4,12}$/.test(RUN_ID)) {
-  console.log(`\n⛔ Falta ASP0_RUN_ID válido (4-12 caracteres [a-z0-9]).\n${HELP}`);
-  process.exit(0);
-}
-if (WANT_RUN && !/^[0-9a-f]{64}$/.test(EXPECTED_FINGERPRINT)) {
-  console.log(`
+/**
+ * Los guards y la lectura de entorno viven DENTRO de `main()`, no en el
+ * cuerpo del módulo: así este archivo puede importarse sin efectos
+ * secundarios y `check-s7_71a.mjs` prueba la implementación REAL del
+ * fingerprint en vez de una copia.
+ */
+function enforceGuards() {
+  if (!WANT_PREFLIGHT && !WANT_RUN) { console.log(HELP); return false; }
+  if (WANT_RUN && !AUTHORIZED) {
+    console.log(`\n⛔ --run sin ASP0_SMOKE_AUTHORIZED=1. No se tocó la base de datos.\n${HELP}`);
+    return false;
+  }
+  if (!/^[a-z0-9]{4,12}$/.test(RUN_ID)) {
+    console.log(`\n⛔ Falta ASP0_RUN_ID válido (4-12 caracteres [a-z0-9]).\n${HELP}`);
+    return false;
+  }
+  if (WANT_RUN && !/^[0-9a-f]{64}$/.test(EXPECTED_FINGERPRINT)) {
+    console.log(`
 ⛔ --run exige ASP0_PREFLIGHT_FINGERPRINT con la huella SHA-256 emitida por
    --preflight y aprobada por el owner. No se tocó la base de datos.
 ${HELP}`);
-  process.exit(0);
+    return false;
+  }
+  return true;
 }
 
-const URL = requireEnv('SUPABASE_URL');
-const ANON = requireEnv('SUPABASE_ANON_KEY');
-const SERVICE = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+let URL = null, ANON = null, SERVICE = null;
+let admin = null;
+let anonClient = () => { throw new Error('clientes no inicializados'); };
 
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
-const anonClient = () => createClient(URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
+function initClients() {
+  URL = requireEnv('SUPABASE_URL');
+  ANON = requireEnv('SUPABASE_ANON_KEY');
+  SERVICE = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+  admin = createClient(URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
+  anonClient = () => createClient(URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
+}
 
 const MARK = 'S7_71_FIXTURE';
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -144,29 +159,57 @@ const RUN_STARTED_AT = new Date().toISOString();
  * La comparación es NORMALIZADA: se quitan separadores y el prefijo 503, de
  * modo que `77316374`, `+503 7731 6374` y `50377316374` son equivalentes.
  */
-const FORBIDDEN_PHONES = [
-  // ── (1) Dato REAL. Prohibido en toda circunstancia, ni read-only.
-  '50372608827',   // Katherine
-
-  // ── (2) Cuenta demo oficial (docs/CUENTA_DEMO_CAMILO.md).
-  '50378627694',   // Dr. Camilo Carrillo — Test Phone
-
-  // ── (3) Test Phones configurados en Supabase Auth.
-  //        Los cuatro últimos NO aparecen en el repositorio: provienen de la
-  //        configuración vigente del proyecto. Sin ellos la lista estaría
-  //        incompleta aunque el grep diera "limpio".
+/**
+ * (A) TEST PHONES ACTIVOS en Supabase → Auth → Test Phone Numbers.
+ *
+ * Los 11 fueron verificados DIRECTAMENTE por el owner en el panel de
+ * Supabase, no inferidos del repositorio: seis de ellos no aparecen en
+ * ningún archivo del proyecto. Esta es la lista vigente y exacta.
+ *
+ * ⚠️ Si se agrega o quita un Test Phone en Supabase, hay que actualizar
+ *    esta constante: el código no puede detectarlo por sí solo.
+ * ⚠️ El OTP fijo asociado NO se documenta ni se guarda acá.
+ */
+export const ACTIVE_SUPABASE_TEST_PHONES = [
+  '50378627694',   // Dr. Camilo Carrillo — además cuenta demo oficial
   '50378056365',   // admin de plataforma
-  '50375000001',   // paciente test Fase 1
   '50378873634',
   '50378590126',
+  '50375000001',   // paciente test Fase 1
+  '50375000099',
+  '50378626108',
   '50377507479',
-  '77316374',      // sin prefijo 503 — la normalización lo iguala a 50377316374
-
-  // ── (4) Sintéticos de QA nombrados por el owner (cancelación por paciente).
+  '50377316374',   // equivalente normalizado de 77316374
+  '50376193396',
   '50370007201',
-  '50370007202',
+];
 
-  // ── (5) Teléfonos de QA reservados presentes en docs/ y scripts/.
+/**
+ * (B) Datos REALES y cuentas demo. Prohibidos en toda circunstancia.
+ * Camilo aparece también en (A): la unión se deduplica por Set normalizado.
+ */
+export const REAL_OR_DEMO_PHONES = [
+  '50372608827',   // Katherine — dato REAL, ni siquiera read-only
+  '50378627694',   // Camilo — cuenta demo oficial (duplicado deliberado con A)
+];
+
+/**
+ * (C) Históricos y reservados: fueron Test Phones, fixtures previas o
+ * números de QA citados en docs/. NO son Test Phones activos hoy.
+ */
+export const HISTORICAL_OR_RESERVED_PHONES = [
+  '50370007202',   // sintético de QA del eje de cancelación — NO activo
+  '77316374',      // forma sin prefijo de 50377316374 — normaliza al mismo
+  '50377003001',
+  '50370069901', '50370069902',
+  '50399999999',
+];
+
+/**
+ * (D) Fixtures anteriores: números usados por smokes previos dentro del
+ * espacio sintético 5037000xxxx. Barrido read-only del repositorio.
+ */
+export const PRIOR_FIXTURE_PHONES = [
   '50370000000', '50370000051', '50370000052', '50370000555',
   '50370000702', '50370000746', '50370000747', '50370000757',
   '50370000758', '50370000777', '50370000799', '50370003737',
@@ -180,23 +223,33 @@ const FORBIDDEN_PHONES = [
   '50370007199', '50370007203', '50370007204', '50370007205',
   '50370007206', '50370007207', '50370007208', '50370007299',
   '50370007801', '50370007802', '50370009001', '50370009002',
-  '50370009101', '50370009102', '50370069901', '50370069902',
-  '50375000099', '50376193396', '50377003001', '50378626108',
-  '50399999999',
+  '50370009101', '50370009102',
+];
 
-  // ── (6) Placeholders de documentación (no deben usarse como fixture).
+/** (E) Placeholders de documentación. No deben usarse como fixture. */
+export const DOC_PLACEHOLDER_PHONES = [
   '50312345678', '50322601234', '50361234567', '50371234567', '50391234567',
 ];
 
+/** Unión de las cinco categorías, en crudo (con duplicados intencionales). */
+export const FORBIDDEN_PHONES = [
+  ...ACTIVE_SUPABASE_TEST_PHONES,
+  ...REAL_OR_DEMO_PHONES,
+  ...HISTORICAL_OR_RESERVED_PHONES,
+  ...PRIOR_FIXTURE_PHONES,
+  ...DOC_PLACEHOLDER_PHONES,
+];
+
 /** Normaliza a la parte nacional de 8 dígitos: tolera +503, espacios y guiones. */
-const normalizePhone = (p) => {
+export const normalizePhone = (p) => {
   const d = String(p ?? '').replace(/\D/g, '');
   return d.length === 11 && d.startsWith('503') ? d.slice(3) : d;
 };
 
-const FORBIDDEN_NORMALIZED = new Set(FORBIDDEN_PHONES.map(normalizePhone));
+/** Unión NORMALIZADA y deduplicada: es la que gobierna la guarda. */
+export const FORBIDDEN_NORMALIZED = new Set(FORBIDDEN_PHONES.map(normalizePhone));
 
-const assertNotForbidden = (phone, where) => {
+export const assertNotForbidden = (phone, where) => {
   if (FORBIDDEN_NORMALIZED.has(normalizePhone(phone))) {
     throw new Error(
       `ABORTADO: teléfono prohibido en ${where}. Este smoke jamás usa datos reales, ` +
@@ -228,13 +281,15 @@ const assertNotForbidden = (phone, where) => {
  * preflight lo detecta y falla cerrado, en vez de inventar números nuevos
  * en silencio. `ASP0_RUN_ID` distingue las corridas por correo.
  */
-const SYNTHETIC_PHONES = ['50370008800', '50370008801', '50370008802'];
+export const SYNTHETIC_PHONES = ['50370008800', '50370008801', '50370008802'];
 
-const IDENTITIES = ['patient', 'doctora', 'doctorb'].map((tag, i) => ({
+export const identitiesFor = (runId) => ['patient', 'doctora', 'doctorb'].map((tag, i) => ({
   tag,
-  email: `asp0.${tag}.${RUN_ID}@lucycare.test`,
+  email: `asp0.${tag}.${runId}@lucycare.test`,
   phone: assertNotForbidden(SYNTHETIC_PHONES[i], `identidad ${tag}`),
 }));
+
+const IDENTITIES = identitiesFor(RUN_ID);
 
 // ═════════════════════════════════════════════════════════════════════
 // ESTADO Y UTILIDADES
@@ -403,19 +458,45 @@ async function listAllAuthUsers() {
 // ═════════════════════════════════════════════════════════════════════
 
 /** Hostname del proyecto a partir de SUPABASE_URL. NUNCA la clave. */
-const PROJECT_HOST = (() => {
-  try { return new global.URL(URL).hostname; } catch { return null; }
-})();
+const projectHost = () => {
+  try { return new globalThis.URL(URL).hostname; } catch { return null; }
+};
 
-/** SHA-256 del archivo de la migración: ata la huella a ESE s7_71a. */
-const MIGRATION_PATH = 'migrations/s7_71a_audit_appointments_coverage.sql';
-const migrationSha256 = () => {
+/**
+ * SHA-256 del archivo de la migración: ata la huella a ESE s7_71a.
+ *
+ * DETERMINISMO: se hashea el contenido NORMALIZADO A LF, no el binario
+ * exacto. En Windows el checkout de git deja CRLF y en Linux LF; hashear el
+ * binario daría huellas distintas para el mismo archivo según la máquina, y
+ * el owner (que corre --preflight) y el dev podrían estar en sistemas
+ * distintos. La misma función se usa en --preflight y en --run.
+ */
+export const MIGRATION_PATH = 'migrations/s7_71a_audit_appointments_coverage.sql';
+export const migrationSha256 = (path = MIGRATION_PATH) => {
   try {
-    return createHash('sha256').update(readFileSync(MIGRATION_PATH)).digest('hex');
+    const lf = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+    return createHash('sha256').update(lf, 'utf8').digest('hex');
   } catch (e) {
-    throw new Error(`no se pudo leer ${MIGRATION_PATH} para la huella: ${e.message}`);
+    throw new Error(`no se pudo leer ${path} para la huella: ${e.message}`);
   }
 };
+
+/**
+ * Serialización CANÓNICA: ordena recursivamente las claves de todo objeto
+ * anidado y conserva el orden de los arrays.
+ *
+ * ⚠️ NO usar `JSON.stringify(obj, Object.keys(obj).sort())`: el replacer en
+ * forma de array filtra por nombre en TODOS los niveles, así que las claves
+ * de un objeto anidado que no coincidan con las de primer nivel se
+ * DESCARTAN silenciosamente del resultado. Con un manifiesto anidado eso
+ * dejaba los ids de estado fuera del hash.
+ */
+export function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+}
 
 /**
  * Manifiesto read-only de todo lo que determina la corrida: entorno,
@@ -437,29 +518,54 @@ async function buildManifest() {
     .from('cancel_reasons').select('id').order('id').limit(1).maybeSingle();
   if (eR) throw new Error(`manifiesto/cancel_reasons: ${eR.message}`);
 
-  const statusMap = {};
-  for (const n of ['programada', 'confirmada', 'cancelada']) {
-    statusMap[n] = (sts ?? []).find((s) => s.name === n)?.id ?? null;
-  }
+  const statusOf = (n) => (sts ?? []).find((s) => s.name === n)?.id ?? null;
 
-  return {
-    v: 2,
-    project_host: PROJECT_HOST,
-    migration_version: 's7_71a',
-    migration_sha256: migrationSha256(),
-    run_id: RUN_ID,
-    emails: IDENTITIES.map((i) => i.email),
-    phones: IDENTITIES.map((i) => i.phone),
-    specialty_id: spec?.id ?? null,
-    appointment_statuses: statusMap,
-    cancel_reason_id: reason?.id ?? null,
-  };
+  return flatManifest({
+    projectHost: projectHost(),
+    migrationSha: migrationSha256(),
+    runId: RUN_ID,
+    identities: IDENTITIES,
+    specialtyId: spec?.id ?? null,
+    programadaId: statusOf('programada'),
+    confirmadaId: statusOf('confirmada'),
+    canceladaId: statusOf('cancelada'),
+    cancelReasonId: reason?.id ?? null,
+  });
 }
 
-/** SHA-256 sobre el manifiesto canónico (claves ordenadas). */
-function fingerprintOf(manifest) {
-  const canonical = JSON.stringify(manifest, Object.keys(manifest).sort());
-  return createHash('sha256').update(canonical).digest('hex');
+/**
+ * Manifiesto COMPLETAMENTE PLANO. Sin objetos anidados: cada dato que
+ * gobierna la corrida es una clave de primer nivel, así que ninguna puede
+ * quedar fuera del hash por accidente.
+ *
+ * NUNCA incluye SUPABASE_SERVICE_ROLE_KEY, la anon key ni ningún token.
+ */
+export function flatManifest({
+  projectHost: host, migrationSha, runId, identities,
+  specialtyId, programadaId, confirmadaId, canceladaId, cancelReasonId,
+}) {
+  const m = {
+    v: 3,
+    project_host: host,
+    migration_version: 's7_71a',
+    migration_sha256: migrationSha,
+    run_id: runId,
+    specialty_id: specialtyId,
+    programada_status_id: programadaId,
+    confirmada_status_id: confirmadaId,
+    cancelada_status_id: canceladaId,
+    cancel_reason_id: cancelReasonId,
+  };
+  identities.forEach((id, i) => {
+    m[`email_${i}`] = id.email;
+    m[`phone_${i}`] = id.phone;
+  });
+  return m;
+}
+
+/** SHA-256 sobre la serialización canónica del manifiesto. */
+export function fingerprintOf(manifest) {
+  return createHash('sha256').update(stableStringify(manifest), 'utf8').digest('hex');
 }
 
 /**
@@ -533,15 +639,30 @@ async function preflight() {
   console.log('   · los UUID los asigna la DB al crear; no son predecibles.');
   console.log('   ⚠️  requieren AUTORIZACIÓN del owner antes de --run.');
 
-  // ── 2. Lista canónica de teléfonos prohibidos ──
-  console.log(`\n2. Lista canónica de teléfonos prohibidos — ${FORBIDDEN_PHONES.length} entradas`);
-  console.log('   Fuentes combinadas: Supabase Test Phone Numbers · CLAUDE.md ·');
-  console.log('   handoff canónico · docs/ y scripts/. El grep del repo NO basta.');
-  const canon = [...FORBIDDEN_NORMALIZED].sort();
-  console.log(`   normalizados (${canon.length} únicos):`);
-  for (let i = 0; i < canon.length; i += 8) {
-    console.log(`     ${canon.slice(i, i + 8).join('  ')}`);
-  }
+  // ── 2. Lista canónica, por categorías ──
+  console.log('\n2. Teléfonos prohibidos — categorías');
+  console.log('   Fuentes: Supabase → Auth → Test Phone Numbers (verificado por el');
+  console.log('   owner) · CLAUDE.md · handoff canónico · docs/ y scripts/.');
+  console.log('   El grep del repo NO basta: 6 de los activos no están en el código.');
+
+  const cat = (nombre, lista) => {
+    console.log(`\n   ${nombre}: ${lista.length}`);
+    for (let i = 0; i < lista.length; i += 6) {
+      console.log(`     ${lista.slice(i, i + 6).join('  ')}`);
+    }
+  };
+  cat('ACTIVE_SUPABASE_TEST_PHONES', ACTIVE_SUPABASE_TEST_PHONES);
+  cat('HISTORICAL_OR_RESERVED_PHONES', HISTORICAL_OR_RESERVED_PHONES);
+  cat('REAL_OR_DEMO_PHONES', REAL_OR_DEMO_PHONES);
+  cat('PRIOR_FIXTURE_PHONES', PRIOR_FIXTURE_PHONES);
+  cat('DOC_PLACEHOLDER_PHONES', DOC_PLACEHOLDER_PHONES);
+  console.log(`\n   TOTAL crudo: ${FORBIDDEN_PHONES.length}`
+    + ` · TOTAL normalizado único (FORBIDDEN_NORMALIZED): ${FORBIDDEN_NORMALIZED.size}`);
+  console.log(`   deduplicadas por normalización: ${FORBIDDEN_PHONES.length - FORBIDDEN_NORMALIZED.size}`
+    + ' (Camilo, activo y demo · alias sin prefijo 503)\n');
+
+  check(`ACTIVE_SUPABASE_TEST_PHONES son exactamente 11 (${ACTIVE_SUPABASE_TEST_PHONES.length})`,
+    ACTIVE_SUPABASE_TEST_PHONES.length === 11);
   for (const id of IDENTITIES) {
     check(`${id.tag}: no colisiona con ningún prohibido (normalizado)`,
       !FORBIDDEN_NORMALIZED.has(normalizePhone(id.phone)));
@@ -1248,6 +1369,9 @@ async function finalInventory(patientIds, doctorIds) {
 // ENTRYPOINT — todo lo que escribe va en try/finally
 // ═════════════════════════════════════════════════════════════════════
 async function main() {
+  if (!enforceGuards()) { process.exit(0); }
+  initClients();
+
   if (WANT_PREFLIGHT) { await preflight(); return; }
 
   let runError = null;
@@ -1272,4 +1396,8 @@ async function main() {
   process.exit(clean ? 0 : 1);
 }
 
-main();
+// Solo se ejecuta si el archivo se invoca directamente. Importado (por
+// check-s7_71a.mjs, para probar el fingerprint real) no hace nada.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
