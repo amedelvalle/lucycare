@@ -15,9 +15,19 @@
 -- desde el cliente (fire-and-forget), salvo la cancelación del paciente,
 -- que recupera su INSERT server-side.
 --
--- ORDEN IMPORTANTE: primero se restaura la RPC y después se quita el
--- trigger, para que en ningún instante intermedio quede una transacción
--- con doble escritura ni con ninguna.
+-- ATOMICIDAD (lo que realmente garantiza que no haya estados intermedios)
+-- ------------------------------------------------------------------------
+-- La ausencia de un estado observable con doble auditoría —o con ninguna—
+-- la garantiza el `BEGIN` … `COMMIT`, NO el orden de las sentencias. Las
+-- tres operaciones viven en una sola transacción: hasta el COMMIT, el resto
+-- de la base ve el estado previo completo; después, el posterior completo.
+-- NO hay COMMIT intermedio: exactamente un BEGIN y un COMMIT.
+--
+-- El orden interno (restaurar la RPC antes de quitar el trigger) es una
+-- precaución SECUNDARIA, útil solo si alguien ejecutara las sentencias
+-- sueltas fuera de la transacción. Por sí solo NO evitaría la doble
+-- auditoría: entre ambas sentencias, la RPC restaurada y el trigger
+-- coexistirían.
 -- ═══════════════════════════════════════════════════════════════════════
 
 BEGIN;

@@ -167,9 +167,28 @@ migrations/s7_71a_rollback.sql
 ```
 
 Quita el trigger y la función, y restaura `cancel_my_appointment` al cuerpo
-exacto de `s7_70` (incluido su `INSERT` manual). **No borra datos**: las filas
-de auditoría escritas por el trigger se conservan — son legítimas y
-append-only.
+exacto de `s7_70` (incluido su `INSERT` manual).
+
+**Qué garantiza la ausencia de estados intermedios.** No es el orden de las
+sentencias: es el **`BEGIN` … `COMMIT`**. Las tres operaciones viven en una
+sola transacción, así que ninguna sesión concurrente puede observar un estado
+en el que la RPC ya escriba a mano *y* el trigger siga activo (doble
+auditoría), ni uno en el que no escriba ninguno de los dos. Hasta el `COMMIT`,
+el resto de la base ve el estado previo completo; después, el posterior
+completo.
+
+El orden interno —restaurar la RPC antes de quitar el trigger— es una
+precaución **secundaria**, útil solo si alguien ejecutara las sentencias
+sueltas fuera de la transacción. **Por sí solo no evitaría la doble
+auditoría**: entre las dos sentencias la RPC restaurada y el trigger
+coexistirían. La garantía real es la atomicidad.
+
+**No hay `COMMIT` intermedio**: el archivo tiene exactamente un `BEGIN` y un
+`COMMIT`, y `check-s7_71a.mjs` lo verifica (§12 del check).
+
+**No borra datos**: las filas de auditoría escritas por el trigger se
+conservan — son legítimas y append-only. El rollback no contiene ningún
+`DELETE` sobre `audit_log`, y el check también lo verifica.
 
 ---
 
@@ -237,3 +256,156 @@ Conocidas y aceptadas; ninguna es un olvido:
 | **Pérdida de legibilidad** | El cliente enviaba nombres de estado; el trigger registra `status_id` (uuid). Se resuelve al leer, uniendo con `appointment_statuses` |
 
 Los setters faltantes quedan como trabajo explícito de **`s7_72`**.
+
+
+---
+
+## 11. Prueba owner-only — `actor_kind = db_direct`
+
+No es alcanzable desde el smoke: `supabase-js` siempre pasa por PostgREST con
+un JWT, así que `auth.jwt()` nunca es NULL. Ejecutá este bloque en el **SQL
+Editor** (conexión directa, sin JWT).
+
+**Es transaccional y termina en `ROLLBACK`: no persiste nada.** Crea sus
+propias fixtures sintéticas, no toca ninguna fila existente, no usa números de
+teléfono reales ni la cuenta demo, y no modifica grants, policies ni
+configuración.
+
+```sql
+BEGIN;
+
+-- Fixtures sintéticas propias. Nada preexistente se toca.
+WITH spec AS (SELECT id FROM public.specialties LIMIT 1),
+     nuevo_perfil AS (
+       INSERT INTO public.profiles (id, full_name, role)
+       VALUES (gen_random_uuid(), 'S7_71_DBDIRECT Medico', 'doctor')
+       RETURNING id
+     ),
+     nueva_clinica AS (
+       INSERT INTO public.clinics (name, owner_id)
+       SELECT 'S7_71_DBDIRECT Clinica', id FROM nuevo_perfil
+       RETURNING id, owner_id
+     ),
+     nuevo_doctor AS (
+       INSERT INTO public.doctors (clinic_id, profile_id, specialty_id)
+       SELECT c.id, c.owner_id, s.id FROM nueva_clinica c, spec s
+       RETURNING id, clinic_id
+     ),
+     nuevo_paciente AS (
+       INSERT INTO public.patients
+         (clinic_id, full_name, date_of_birth, gender, is_active)
+       SELECT d.clinic_id, 'S7_71_DBDIRECT Paciente', '1990-01-01', 'otro', true
+       FROM nuevo_doctor d
+       RETURNING id, clinic_id
+     )
+INSERT INTO public.appointments
+  (clinic_id, doctor_id, patient_id, status_id, start_time, end_time, source)
+SELECT p.clinic_id, d.id, p.id,
+       (SELECT id FROM public.appointment_statuses WHERE name = 'programada'),
+       now() + interval '30 days',
+       now() + interval '30 days' + interval '30 minutes',
+       'manual'
+FROM nuevo_doctor d, nuevo_paciente p;
+
+-- El INSERT de arriba YA disparó el trigger sin JWT.
+SELECT
+  new_data ->> 'actor_kind'  AS actor_kind,     -- esperado: db_direct
+  new_data ->> 'change_kind' AS change_kind,    -- esperado: appointment_created
+  new_data ->> 'db_executor' AS db_executor,    -- esperado: presente (postgres)
+  user_id::text              AS user_id,        -- esperado: 00000000-...-000000000000
+  action::text               AS action          -- esperado: insert
+FROM public.audit_log
+WHERE table_name = 'appointments'
+ORDER BY id DESC
+LIMIT 1;
+
+ROLLBACK;   -- ⬅️ NADA se persiste: ni fixtures ni auditoría
+```
+
+**Esperado:** `actor_kind = 'db_direct'` · `change_kind = 'appointment_created'`
+· `db_executor` no nulo · `user_id = '00000000-0000-0000-0000-000000000000'` ·
+`action = 'insert'`.
+
+---
+
+## 12. Prueba owner-only — contexto falsificado (`context_rejected`)
+
+Tampoco es alcanzable desde el smoke: fijar `app.audit_appointments_context`
+exige `set_config` server-side, que PostgREST no expone — y eso mismo es parte
+de la defensa. Este bloque comprueba que **una etiqueta que no coincide con la
+transición real se descarta**.
+
+Mismas garantías: transaccional, `ROLLBACK` al final, fixtures propias, sin
+tocar datos existentes, sin números reales, sin cambiar grants ni policies.
+
+```sql
+BEGIN;
+
+-- Fixtures sintéticas propias.
+WITH spec AS (SELECT id FROM public.specialties LIMIT 1),
+     nuevo_perfil AS (
+       INSERT INTO public.profiles (id, full_name, role)
+       VALUES (gen_random_uuid(), 'S7_71_CTX Medico', 'doctor')
+       RETURNING id
+     ),
+     nueva_clinica AS (
+       INSERT INTO public.clinics (name, owner_id)
+       SELECT 'S7_71_CTX Clinica', id FROM nuevo_perfil
+       RETURNING id, owner_id
+     ),
+     nuevo_doctor AS (
+       INSERT INTO public.doctors (clinic_id, profile_id, specialty_id)
+       SELECT c.id, c.owner_id, s.id FROM nueva_clinica c, spec s
+       RETURNING id, clinic_id
+     ),
+     nuevo_paciente AS (
+       INSERT INTO public.patients
+         (clinic_id, full_name, date_of_birth, gender, is_active)
+       SELECT d.clinic_id, 'S7_71_CTX Paciente', '1990-01-01', 'otro', true
+       FROM nuevo_doctor d
+       RETURNING id, clinic_id
+     )
+INSERT INTO public.appointments
+  (clinic_id, doctor_id, patient_id, status_id, start_time, end_time, source, price)
+SELECT p.clinic_id, d.id, p.id,
+       (SELECT id FROM public.appointment_statuses WHERE name = 'programada'),
+       now() + interval '31 days',
+       now() + interval '31 days' + interval '30 minutes',
+       'manual', 10
+FROM nuevo_doctor d, nuevo_paciente p;
+
+-- Etiqueta de cancelación por el paciente…
+SELECT set_config(
+  'app.audit_appointments_context',
+  '{"edited_via":"patient_self_cancel","reason":"no_puedo_asistir"}',
+  true
+);
+
+-- …pero la transición real es un cambio de PRECIO, no una cancelación.
+UPDATE public.appointments
+SET price = 99
+WHERE id = (
+  SELECT id FROM public.appointments
+  WHERE source = 'manual' AND price = 10
+  ORDER BY created_at DESC LIMIT 1
+);
+
+SELECT
+  new_data ->> 'change_kind'      AS change_kind,       -- appointment_update
+  new_data ->> 'edited_via'       AS edited_via,        -- NULL (descartado)
+  new_data ->> 'reason'           AS reason,            -- NULL (descartado)
+  new_data ->> 'context_rejected' AS context_rejected   -- true
+FROM public.audit_log
+WHERE table_name = 'appointments' AND action = 'update'
+ORDER BY id DESC
+LIMIT 1;
+
+ROLLBACK;   -- ⬅️ NADA se persiste
+```
+
+**Esperado:** `change_kind = 'appointment_update'` (la transición real, no la
+etiqueta) · `edited_via` **NULL** · `reason` **NULL** · `context_rejected =
+'true'`.
+
+> Si `edited_via` volviera `'patient_self_cancel'`, la validación contra
+> `OLD`/`NEW` no está funcionando y **el gate de §6 falla**.

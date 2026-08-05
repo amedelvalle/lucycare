@@ -434,7 +434,7 @@ CREATE TRIGGER audit_appointments
 --   (a) se fija `app.audit_appointments_context` ANTES del UPDATE (7.7);
 --   (b) se ELIMINA el INSERT manual en audit_log (7.9 de s7_70).
 --
--- TODO lo demás se conserva ÍNTEGRO: normalización de reason/note, lista
+-- Absolutamente todo lo demás se conserva ÍNTEGRO: normalización de note, lista
 -- cerrada de motivos (P0114), límite de 300 caracteres de la nota (P0115),
 -- bloqueo + pertenencia en la misma sentencia, mensaje genérico (P0111),
 -- idempotencia estricta por fila de evento, elegibilidad (P0112/P0113),
