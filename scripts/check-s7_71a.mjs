@@ -532,19 +532,38 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     ['auth.admin',   new RegExp(`auth\\.admin[^;]*${K}`, 's')],
   ]) check(`nunca se usa en ${desc}`, re.test(smoke) === false);
 
-  check('los teléfonos de fixture salen del rango sintético 50369…',
-    /`50369\$\{runSeed\}00\$\{i\}`/.test(smoke));
+  // ── Los tres sintéticos son FIJOS, no generados por hash ──
+  const TRIPLE = ['50370008800', '50370008801', '50370008802'];
+  check('los tres sintéticos están declarados como constante fija',
+    new RegExp(`const SYNTHETIC_PHONES = \\['${TRIPLE[0]}', '${TRIPLE[1]}', '${TRIPLE[2]}'\\]`).test(smoke));
+  check('están dentro del espacio sintético 5037000xxxx',
+    TRIPLE.every((p) => /^5037000\d{4}$/.test(p)));
+  check('son consecutivos',
+    Number(TRIPLE[1]) === Number(TRIPLE[0]) + 1 && Number(TRIPLE[2]) === Number(TRIPLE[1]) + 1);
+  check('NO se generan por hash (runSeed eliminado)', /runSeed/.test(smoke) === false);
   check('todo teléfono de fixture pasa por la guarda',
-    /assertNotForbidden\(`50369/.test(smoke));
+    /assertNotForbidden\(SYNTHETIC_PHONES\[i\]/.test(smoke));
   check('createUser revalida la guarda antes de escribir',
     /assertNotForbidden\(identity\.phone, `createUser/.test(smoke));
+  check('el preflight exige autorización del owner antes de --run',
+    /requieren AUTORIZACIÓN del owner antes de --run/.test(smoke));
 
-  // ── El prefijo elegido no colisiona con nada del repositorio ──
-  const universo = [read('CLAUDE.md'), read('docs/OWNER_S7_71A_APPLY.md'), smoke].join('\n');
-  check('el prefijo 50369 no aparece en CLAUDE.md',
-    /50369\d{6}/.test(read('CLAUDE.md')) === false);
-  check('el rango 5037000xxxx quedó descartado (poblado por QA previo)',
-    /rango `5037000xxxx` está densamente poblado/.test(smoke));
+  // ── El prefijo 50369 quedó ELIMINADO de todo el PR ──
+  const pr5 = ['migrations/s7_71a_audit_appointments_coverage.sql',
+               'migrations/s7_71a_rollback.sql',
+               'scripts/check-s7_71a.mjs',
+               'scripts/_smoke-s7_71a.mjs',
+               'docs/OWNER_S7_71A_APPLY.md'];
+  for (const f of pr5) {
+    check(`sin rango 50369 en ${f.split('/').pop()}`, /50369\d{6}/.test(read(f)) === false);
+  }
+
+  // ── Los tres no colisionan con nada conocido ──
+  for (const p of TRIPLE) {
+    check(`${p}: ausente de CLAUDE.md`, read('CLAUDE.md').includes(p) === false);
+    check(`${p}: no está en FORBIDDEN_PHONES`,
+      new RegExp(`'${p}'`).test(between(smoke, 'const FORBIDDEN_PHONES = [', '];')) === false);
+  }
 
   // ── FORBIDDEN_PHONES: cobertura y normalización ──
   const fp = between(smoke, 'const FORBIDDEN_PHONES = [', '];');
@@ -561,16 +580,39 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     ['QA 50370069901',                '50370069901'],
   ]) check(`FORBIDDEN_PHONES incluye ${desc}`, fp.includes(num));
 
-  check(`FORBIDDEN_PHONES tiene cobertura amplia (${(fp.match(/'503\d{8}'/g) || []).length})`,
-    (fp.match(/'503\d{8}'/g) || []).length >= 25);
+  // ── Test Phones vigentes que NO están en el repositorio ──
+  // Su presencia demuestra que la lista NO se derivó de un grep.
+  for (const [desc, num] of [
+    ['Test Phone 50378873634', '50378873634'],
+    ['Test Phone 50378590126', '50378590126'],
+    ['Test Phone 50377507479', '50377507479'],
+    ['Test Phone 77316374 (sin 503)', '77316374'],
+  ]) check(`FORBIDDEN_PHONES incluye ${desc}`, fp.includes(num));
+
+  check('la lista declara que el grep NO es fuente suficiente',
+    /El grep es una de\s*\n?\s*\* cuatro fuentes, y por sí solo es INSUFICIENTE/
+      .test(smoke) || /por sí solo es INSUFICIENTE/.test(smoke));
+  check('la lista nombra las cuatro fuentes',
+    /Test Phone Numbers/.test(smoke) && /CLAUDE\.md/.test(smoke)
+    && /handoff canónico/.test(smoke) && /scripts\//.test(smoke), true);
+
+  check(`FORBIDDEN_PHONES tiene cobertura amplia (${(fp.match(/'\d{8,11}'/g) || []).length})`,
+    (fp.match(/'\d{8,11}'/g) || []).length >= 60);
+  check('el preflight imprime la lista canónica NORMALIZADA y su cantidad',
+    /Lista canónica de teléfonos prohibidos — \$\{FORBIDDEN_PHONES\.length\} entradas/.test(smoke)
+    && /normalizados \(\$\{canon\.length\} únicos\)/.test(smoke), true);
   check('existe normalizePhone', /const normalizePhone = /.test(smoke));
   check('la normalización quita el prefijo 503',
     /d\.length === 11 && d\.startsWith\('503'\) \? d\.slice\(3\) : d/.test(smoke));
   check('la normalización quita separadores', /replace\(\/\\D\/g, ''\)/.test(smoke));
   check('la comparación usa el set normalizado',
     /FORBIDDEN_NORMALIZED\.has\(normalizePhone\(phone\)\)/.test(smoke));
-  check('el preflight reporta la lista completa',
-    /Teléfonos prohibidos \(\$\{FORBIDDEN_PHONES\.length\}\)/.test(smoke));
+  check('el preflight reporta la lista canónica y su cantidad',
+    /Lista canónica de teléfonos prohibidos — \$\{FORBIDDEN_PHONES\.length\} entradas/.test(smoke));
+  check('el preflight nombra las cuatro fuentes',
+    /Fuentes combinadas: Supabase Test Phone Numbers · CLAUDE\.md ·/.test(smoke));
+  check('el preflight advierte que el grep no basta',
+    /El grep del repo NO basta/.test(smoke));
   check('el preflight verifica que Katherine esté en la lista',
     /Katherine está en la lista/.test(smoke));
   check('el preflight verifica los Test Phones documentados',
@@ -584,7 +626,6 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
       .test(smoke.replace(/\s+/g, ' ')) || /TODAVÍA NO VALIDADO MEDIANTE/.test(smoke));
   check('el preflight no afirma haber validado el JSON real',
     /contrato validado|JSON validado/i.test(smoke) === false);
-  void universo;
 }
 
 // ─── 12-quater. Sin placeholders ──────────────────────────────────────
@@ -672,27 +713,46 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('las identidades se derivan del RUN_ID (deterministas)',
     /const IDENTITIES = \['patient', 'doctora', 'doctorb'\]\.map/.test(smoke));
   check('las 3 identidades pasan por la guarda',
-    /assertNotForbidden\(`50369\$\{runSeed\}00\$\{i\}`/.test(smoke));
+    /assertNotForbidden\(SYNTHETIC_PHONES\[i\], `identidad \$\{tag\}`\)/.test(smoke));
 
   // ── Inventario EXHAUSTIVO de Auth ──
   const la = between(smoke, 'async function listAllAuthUsers()', 'async function buildManifest');
   check('existe listAllAuthUsers()', la.length > 200);
   check('usa el perPage máximo (1000)', /AUTH_PER_PAGE = 1000/.test(smoke));
   check('recorre desde page = 1', /for \(let page = 1; page <= AUTH_MAX_PAGES; page\+\+\)/.test(la));
-  check('termina al recibir una página menor que perPage',
-    /if \(batch\.length < AUTH_PER_PAGE\) \{ complete = true; break; \}/.test(la));
-  check('registra páginas y usuarios inspeccionados',
-    /pages\+\+/.test(la) && /users\.push\(\.\.\.batch\)/.test(la));
+  check('NO usa batch.length < perPage como prueba de finalización',
+    /if \(batch\.length < AUTH_PER_PAGE\) \{ complete = true/.test(la) === false);
+  check('lee la metadata real: total', /num\(data\?\.total\)/.test(la));
+  check('lee la metadata real: lastPage', /num\(data\?\.lastPage\)/.test(la));
+  check('lee la metadata real: nextPage', /num\(data\?\.nextPage\)/.test(la));
+  check('termina por total alcanzado', /if \(total !== null && byId\.size >= total\)/.test(la));
+  check('termina por lastPage alcanzado', /if \(lastPage !== null && page >= lastPage\)/.test(la));
+  // El comentario que lo explica vive en el encabezado de la función, que
+  // `stripComments` elimina; se busca sobre el texto CRUDO del smoke.
+  check('contempla total múltiplo exacto de perPage (no corta por página llena)',
+    /múltiplo exacto de `perPage`/.test(read('scripts/_smoke-s7_71a.mjs')));
+  check('detecta límite silencioso de perPage',
+    /límite silencioso/.test(la) && /effectivePerPage = batch\.length/.test(la));
+  check('detecta metadata inconsistente (total cambia entre páginas)',
+    /el total anunciado cambió entre páginas/.test(la));
+  check('detecta metadata inconsistente (lastPage cambia)',
+    /lastPage cambió entre páginas/.test(la));
+  check('detecta metadata AUSENTE y falla cerrado',
+    /no devolvió total, lastPage ni nextPage/.test(la));
+  check('detecta discrepancia total vs ids únicos',
+    /discrepancia: la API anunció total=/.test(la));
+  check('registra páginas y usuarios únicos',
+    /pages\+\+/.test(la) && /byId\.set\(u\.id, u\)/.test(la));
   check('detecta páginas repetidas (firma por ids)',
     /seenPages\.has\(sig\)/.test(la) && /paginación rota/.test(la));
-  check('detecta ausencia de avance', /no devolvió usuarios pero se esperaba avance/.test(la));
+  check('detecta ausencia de avance', /no aportó ningún id nuevo \(sin avance\)/.test(la));
   check('impone un tope defensivo de páginas', /AUTH_MAX_PAGES = 200/.test(smoke)
     && /tope defensivo de \$\{AUTH_MAX_PAGES\} páginas/.test(la), true);
   check('aborta si la API devuelve error', /listUsers\(page=\$\{page\}\) falló/.test(la));
-  check('solo `complete: true` por la salida sana', /complete = true/.test(la)
-    && (la.match(/complete = true/g) || []).length === 1, true);
-  check('FALLA CERRADO: sin inventario completo no hay --run',
-    /FALLA CERRADO: no se autoriza --run/.test(smoke));
+  check('la validación final puede revocar complete',
+    /if \(complete && total !== null && byId\.size !== total\)/.test(la));
+  check('FALLA CERRADO: sin inventario completo no hay huella ni --run',
+    /FALLA CERRADO: no se emite huella y no se autoriza --run/.test(smoke));
   check('la colisión se busca por email normalizado',
     /emailSet\.has\(u\.email\.toLowerCase\(\)\)/.test(smoke));
   check('la colisión se busca por teléfono normalizado',
@@ -711,8 +771,20 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('el manifiesto incluye specialty_id', /specialty_id:/.test(bm));
   check('el manifiesto incluye los estados de cita', /appointment_statuses: statusMap/.test(bm));
   check('el manifiesto incluye cancel_reason_id', /cancel_reason_id:/.test(bm));
+  check('el manifiesto incluye el host del proyecto', /project_host: PROJECT_HOST/.test(bm));
+  check('el manifiesto incluye la versión de la migración',
+    /migration_version: 's7_71a'/.test(bm));
+  check('el manifiesto incluye el SHA-256 de la migración',
+    /migration_sha256: migrationSha256\(\)/.test(bm));
+  check('el SHA-256 se calcula sobre el archivo real',
+    /createHash\('sha256'\)\.update\(readFileSync\(MIGRATION_PATH\)\)/.test(smoke));
+  check('el host sale de SUPABASE_URL, nunca la clave',
+    /new global\.URL\(URL\)\.hostname/.test(smoke));
   check('el manifiesto NO incluye claves ni secretos',
     /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
+  check('el manifiesto NO incluye la service_role key',
+    /SUPABASE_SERVICE_ROLE_KEY/.test(bm) === false);
+  check('el manifiesto subió de versión (v: 2)', /v: 2,/.test(bm));
   check('la huella es SHA-256 sobre el manifiesto canónico',
     /createHash\('sha256'\)\.update\(canonical\)\.digest\('hex'\)/.test(smoke));
   check('preflight emite ASP0_PREFLIGHT_FINGERPRINT',

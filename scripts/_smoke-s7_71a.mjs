@@ -32,10 +32,12 @@
  * inventa ni cambia identidades ni catálogos en silencio.
  *
  * ── REGLAS DE DATOS (vinculantes) ──────────────────────────────────────
- *   • Fixtures SINTÉTICAS marcadas `S7_71_FIXTURE`, en el prefijo `50369`,
- *     que NO aparece en ningún documento ni script del repositorio.
- *   • FORBIDDEN_PHONES cubre Katherine, la cuenta demo, TODOS los Test
- *     Phones documentados y los teléfonos de QA reservados del repo. Solo
+ *   • Fixtures SINTÉTICAS marcadas `S7_71_FIXTURE`, con TRES teléfonos
+ *     FIJOS y consecutivos dentro del espacio `5037000xxxx` que ya usa
+ *     LucyCare, elegidos por barrido read-only del rango completo.
+ *   • FORBIDDEN_PHONES es una lista CANÓNICA que combina la configuración
+ *     vigente de Supabase Test Phone Numbers, CLAUDE.md, el handoff y el
+ *     repositorio — el grep por sí solo NO basta. Solo
  *     actúan como GUARDA que aborta: nunca como fixture, destino, fallback
  *     ni argumento de Auth, tabla o RPC. La comparación es NORMALIZADA
  *     (con y sin prefijo 503).
@@ -54,6 +56,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { requireEnv } from './_lib/env.mjs';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -123,39 +126,65 @@ const RUN_STARTED_AT = new Date().toISOString();
 // ═════════════════════════════════════════════════════════════════════
 
 /**
- * Ninguno de estos puede llegar a una fixture, destino, fallback ni a una
- * llamada de Auth, tabla o RPC. La comparación es NORMALIZADA: se quita el
- * prefijo 503 y todo separador, así que `7862 7694`, `+503 78627694` y
- * `50378627694` colisionan por igual.
+ * LISTA CANÓNICA. Ninguno de estos puede llegar a una fixture, destino,
+ * fallback ni a una llamada de Auth, tabla o RPC.
  *
- * Fuentes: CLAUDE.md (tabla de Test Phones y prohibiciones),
- * docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md y los teléfonos de QA
- * reservados que ya aparecen en docs/ y scripts/.
+ * ⚠️ La lista NO se deriva de un grep del repositorio. El grep es una de
+ * cuatro fuentes, y por sí solo es INSUFICIENTE: los Test Phones vigentes
+ * de la sección "Test Phone Numbers" de Supabase Auth NO aparecen en el
+ * código (comprobado: 50378873634, 50378590126, 50377507479 y 77316374 dan
+ * cero coincidencias en CLAUDE.md, docs/, scripts/ y src/).
+ *
+ * Fuentes combinadas:
+ *   1. Configuración vigente de Supabase → Auth → Test Phone Numbers.
+ *   2. CLAUDE.md (tabla de Test Phones y prohibiciones vigentes).
+ *   3. docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md (handoff canónico).
+ *   4. docs/ y scripts/ (teléfonos de QA reservados en fixtures previas).
+ *
+ * La comparación es NORMALIZADA: se quitan separadores y el prefijo 503, de
+ * modo que `77316374`, `+503 7731 6374` y `50377316374` son equivalentes.
  */
 const FORBIDDEN_PHONES = [
-  // ── Dato REAL. Prohibido en toda circunstancia, ni siquiera read-only.
+  // ── (1) Dato REAL. Prohibido en toda circunstancia, ni read-only.
   '50372608827',   // Katherine
 
-  // ── Cuenta demo oficial (docs/CUENTA_DEMO_CAMILO.md).
+  // ── (2) Cuenta demo oficial (docs/CUENTA_DEMO_CAMILO.md).
   '50378627694',   // Dr. Camilo Carrillo — Test Phone
 
-  // ── Test Phones configurados en Supabase (CLAUDE.md §Test Phones).
+  // ── (3) Test Phones configurados en Supabase Auth.
+  //        Los cuatro últimos NO aparecen en el repositorio: provienen de la
+  //        configuración vigente del proyecto. Sin ellos la lista estaría
+  //        incompleta aunque el grep diera "limpio".
   '50378056365',   // admin de plataforma
   '50375000001',   // paciente test Fase 1
+  '50378873634',
+  '50378590126',
+  '50377507479',
+  '77316374',      // sin prefijo 503 — la normalización lo iguala a 50377316374
 
-  // ── Sintéticos de QA nombrados por el owner (cancelación por paciente).
+  // ── (4) Sintéticos de QA nombrados por el owner (cancelación por paciente).
   '50370007201',
   '50370007202',
 
-  // ── Teléfonos de QA reservados que ya viven en docs/ y scripts/.
-  '50370006502', '50370006601', '50370006602',
-  '50370007102', '50370007203', '50370007204', '50370007205',
+  // ── (5) Teléfonos de QA reservados presentes en docs/ y scripts/.
+  '50370000000', '50370000051', '50370000052', '50370000555',
+  '50370000702', '50370000746', '50370000747', '50370000757',
+  '50370000758', '50370000777', '50370000799', '50370003737',
+  '50370005301', '50370005302', '50370005303', '50370005304',
+  '50370005353', '50370005454', '50370005551', '50370005552',
+  '50370005757', '50370006301', '50370006302', '50370006303',
+  '50370006304', '50370006401', '50370006402', '50370006403',
+  '50370006405', '50370006497', '50370006498', '50370006499',
+  '50370006501', '50370006502', '50370006601', '50370006602',
+  '50370007102', '50370007103', '50370007104', '50370007105',
+  '50370007199', '50370007203', '50370007204', '50370007205',
   '50370007206', '50370007207', '50370007208', '50370007299',
-  '50370009001', '50370009002', '50370069901', '50370069902',
-  '50370000000', '50375000099', '50376193396', '50377003001',
-  '50378626108', '50399999999',
+  '50370007801', '50370007802', '50370009001', '50370009002',
+  '50370009101', '50370009102', '50370069901', '50370069902',
+  '50375000099', '50376193396', '50377003001', '50378626108',
+  '50399999999',
 
-  // ── Placeholders de documentación (no deben usarse como fixture).
+  // ── (6) Placeholders de documentación (no deben usarse como fixture).
   '50312345678', '50322601234', '50361234567', '50371234567', '50391234567',
 ];
 
@@ -181,22 +210,30 @@ const assertNotForbidden = (phone, where) => {
 // IDENTIDADES SINTÉTICAS — deterministas a partir de ASP0_RUN_ID
 // ═════════════════════════════════════════════════════════════════════
 
-/** Hash determinista y estable de ASP0_RUN_ID → 3 dígitos. */
-const runSeed = (() => {
-  let h = 0;
-  for (const c of RUN_ID) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return h % 900 + 100;            // 100..999
-})();
-
 /**
- * Prefijo `50369`: NO aparece en CLAUDE.md, docs/, scripts/ ni src/. El
- * rango `5037000xxxx` está densamente poblado por QA previo y se descartó
- * a propósito.  Formato: 503 · 69 · seed(3) · 00 · índice = 11 dígitos.
+ * TRES NÚMEROS FIJOS, dentro del espacio sintético que ya usa LucyCare
+ * (`5037000xxxx`). NO se generan por hash: un hash sobre todo el rango
+ * podría caer sobre cualquiera de los 56 números ya ocupados.
+ *
+ * Elegidos por barrido read-only del rango completo (10 000 posiciones)
+ * contra CLAUDE.md, docs/, scripts/, src/ y migrations/, buscando el primer
+ * bloque de TRES CONSECUTIVOS libres a partir de 8800 —lejos de todos los
+ * clústeres en uso (0xxx, 53xx-57xx, 63xx-66xx, 71xx-72xx, 78xx, 90xx-91xx)—.
+ *
+ * Verificado: 0 ocurrencias de cada uno en todo el repositorio, y ninguno
+ * está en FORBIDDEN_PHONES. El preflight los revalida contra Auth y tablas
+ * antes de emitir la huella.
+ *
+ * ⚠️ Al ser FIJOS, dos corridas simultáneas colisionan. Es deliberado: el
+ * preflight lo detecta y falla cerrado, en vez de inventar números nuevos
+ * en silencio. `ASP0_RUN_ID` distingue las corridas por correo.
  */
+const SYNTHETIC_PHONES = ['50370008800', '50370008801', '50370008802'];
+
 const IDENTITIES = ['patient', 'doctora', 'doctorb'].map((tag, i) => ({
   tag,
   email: `asp0.${tag}.${RUN_ID}@lucycare.test`,
-  phone: assertNotForbidden(`50369${runSeed}00${i}`, `identidad ${tag}`),
+  phone: assertNotForbidden(SYNTHETIC_PHONES[i], `identidad ${tag}`),
 }));
 
 // ═════════════════════════════════════════════════════════════════════
@@ -246,17 +283,30 @@ const AUTH_PER_PAGE = 1000;   // máximo admitido por GoTrue
 const AUTH_MAX_PAGES = 200;   // tope defensivo: 200 000 usuarios
 
 /**
- * Recorre TODA la lista de usuarios de Auth por la Admin API. Falla CERRADO:
- * cualquier error, página repetida, falta de avance o tope alcanzado deja
- * `complete: false`, y con eso --run no puede continuar.
+ * Recorre TODA la lista de usuarios de Auth por la Admin API y DEMUESTRA que
+ * el recorrido terminó. Falla CERRADO ante cualquier duda.
+ *
+ * `batch.length < perPage` NO se usa como prueba de finalización: con un
+ * `total` múltiplo exacto de `perPage` la última página viene llena y esa
+ * heurística cortaría antes de tiempo o no cortaría nunca. La prueba sale de
+ * la METADATA real (`total`, `lastPage`, `nextPage`), y si la metadata no
+ * está o es inconsistente, el inventario se declara INCOMPLETO.
+ *
+ * Detecta: límite silencioso de perPage · metadata ausente o inconsistente ·
+ * páginas repetidas · ausencia de avance · discrepancia entre el total
+ * anunciado y los ids únicos · exceso del tope defensivo.
  *
  * `profiles` y el resto de tablas son comprobaciones ADICIONALES, nunca un
  * sustituto de este inventario. Nunca se consulta `auth.users` por SQL.
  */
 async function listAllAuthUsers() {
-  const users = [];
+  const byId = new Map();
   const seenPages = new Set();
+  const notes = [];
   let pages = 0, complete = false, reason = null;
+  let total = null, lastPage = null, effectivePerPage = null;
+
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
   for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: AUTH_PER_PAGE });
@@ -265,7 +315,38 @@ async function listAllAuthUsers() {
     const batch = data?.users ?? [];
     pages++;
 
-    // Página repetida: firma por los ids devueltos.
+    // ── Metadata real de esta respuesta ──
+    const mTotal = num(data?.total);
+    const mLast = num(data?.lastPage);
+    const mNext = num(data?.nextPage);
+
+    if (mTotal !== null) {
+      if (total !== null && total !== mTotal) {
+        reason = `el total anunciado cambió entre páginas (${total} → ${mTotal})`;
+        break;
+      }
+      total = mTotal;
+    }
+    if (mLast !== null) {
+      if (lastPage !== null && lastPage !== mLast) {
+        reason = `lastPage cambió entre páginas (${lastPage} → ${mLast})`;
+        break;
+      }
+      lastPage = mLast;
+    }
+
+    // ── Límite silencioso de perPage ──
+    if (page === 1 && batch.length > 0 && batch.length < AUTH_PER_PAGE) {
+      const hayMas = (mNext !== null && mNext > 1)
+        || (mLast !== null && mLast > 1)
+        || (mTotal !== null && mTotal > batch.length);
+      if (hayMas) {
+        effectivePerPage = batch.length;
+        notes.push(`perPage solicitado ${AUTH_PER_PAGE}, servido ${effectivePerPage} (límite silencioso)`);
+      }
+    }
+
+    // ── Página repetida ──
     const sig = createHash('sha256').update(batch.map((u) => u.id).join(',')).digest('hex');
     if (batch.length > 0 && seenPages.has(sig)) {
       reason = `la página ${page} repite el contenido de una anterior (paginación rota)`;
@@ -273,28 +354,75 @@ async function listAllAuthUsers() {
     }
     seenPages.add(sig);
 
-    users.push(...batch);
+    // ── Ausencia de avance: página no vacía sin ids nuevos ──
+    const antes = byId.size;
+    for (const u of batch) byId.set(u.id, u);
+    if (batch.length > 0 && byId.size === antes) {
+      reason = `la página ${page} no aportó ningún id nuevo (sin avance)`;
+      break;
+    }
 
-    // Página incompleta → fin del listado, y es la ÚNICA salida sana.
-    if (batch.length < AUTH_PER_PAGE) { complete = true; break; }
+    // ── ¿Terminó? SOLO se decide con metadata ──
+    if (total !== null && byId.size >= total) { complete = true; break; }
+    if (lastPage !== null && page >= lastPage) { complete = true; break; }
+    if (mNext !== null && mNext === 0) { complete = true; break; }
 
-    // Sin avance: página llena que no aporta ids nuevos.
-    if (batch.length === 0) { reason = `la página ${page} no devolvió usuarios pero se esperaba avance`; break; }
+    // Página vacía: fin del listado, pero solo vale si hay metadata que lo
+    // respalde; si no, se marca como no demostrable más abajo.
+    if (batch.length === 0) {
+      if (total !== null || lastPage !== null) { complete = true; }
+      else { reason = 'la lista terminó pero la API no devolvió metadata (total/lastPage/nextPage): no se puede demostrar el final'; }
+      break;
+    }
 
-    if (page === AUTH_MAX_PAGES) reason = `tope defensivo de ${AUTH_MAX_PAGES} páginas alcanzado sin llegar al final`;
+    if (page === AUTH_MAX_PAGES) {
+      reason = `tope defensivo de ${AUTH_MAX_PAGES} páginas alcanzado sin llegar al final`;
+    }
   }
 
-  return { users, pages, complete, reason, perPage: AUTH_PER_PAGE };
+  // ── Validación final: el total anunciado debe cuadrar con los ids únicos ──
+  if (complete && total !== null && byId.size !== total) {
+    complete = false;
+    reason = `discrepancia: la API anunció total=${total} pero se recogieron ${byId.size} ids únicos`;
+  }
+
+  // ── Sin metadata alguna no hay demostración posible ──
+  if (complete && total === null && lastPage === null) {
+    complete = false;
+    reason = 'la API no devolvió total, lastPage ni nextPage: el inventario no es demostrablemente completo';
+  }
+
+  return {
+    users: [...byId.values()], unique: byId.size, pages, complete, reason,
+    perPage: AUTH_PER_PAGE, effectivePerPage, total, lastPage, notes,
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════
 // MANIFIESTO Y HUELLA
 // ═════════════════════════════════════════════════════════════════════
 
+/** Hostname del proyecto a partir de SUPABASE_URL. NUNCA la clave. */
+const PROJECT_HOST = (() => {
+  try { return new global.URL(URL).hostname; } catch { return null; }
+})();
+
+/** SHA-256 del archivo de la migración: ata la huella a ESE s7_71a. */
+const MIGRATION_PATH = 'migrations/s7_71a_audit_appointments_coverage.sql';
+const migrationSha256 = () => {
+  try {
+    return createHash('sha256').update(readFileSync(MIGRATION_PATH)).digest('hex');
+  } catch (e) {
+    throw new Error(`no se pudo leer ${MIGRATION_PATH} para la huella: ${e.message}`);
+  }
+};
+
 /**
- * Manifiesto read-only de todo lo que determina la corrida: identidades y
- * los IDs de catálogo que se van a usar. NO incluye claves, tokens ni
- * secretos — solo identificadores públicos del catálogo.
+ * Manifiesto read-only de todo lo que determina la corrida: entorno,
+ * versión de la migración, identidades y los IDs de catálogo.
+ *
+ * NUNCA incluye SUPABASE_SERVICE_ROLE_KEY, la anon key ni ningún token: solo
+ * el hostname del proyecto e identificadores públicos de catálogo.
  */
 async function buildManifest() {
   const { data: spec, error: eSpec } = await admin
@@ -315,7 +443,10 @@ async function buildManifest() {
   }
 
   return {
-    v: 1,
+    v: 2,
+    project_host: PROJECT_HOST,
+    migration_version: 's7_71a',
+    migration_sha256: migrationSha256(),
     run_id: RUN_ID,
     emails: IDENTITIES.map((i) => i.email),
     phones: IDENTITIES.map((i) => i.phone),
@@ -344,13 +475,17 @@ async function verifyNoCollisions({ verbose }) {
   // ── Auth: inventario EXHAUSTIVO ──
   const auth = await listAllAuthUsers();
   if (verbose) {
-    console.log(`   páginas recorridas: ${auth.pages} · perPage: ${auth.perPage} · usuarios: ${auth.users.length}`);
+    console.log(`   páginas recorridas: ${auth.pages} · perPage solicitado: ${auth.perPage}`
+      + (auth.effectivePerPage ? ` · servido: ${auth.effectivePerPage}` : ''));
+    console.log(`   metadata → total: ${auth.total ?? 'ausente'} · lastPage: ${auth.lastPage ?? 'ausente'}`);
+    console.log(`   ids únicos recogidos: ${auth.unique}`);
+    auth.notes.forEach((n) => console.log(`   ⚠️  ${n}`));
   }
   check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
   if (!auth.complete) {
     console.log(`      ⛔ ${auth.reason}`);
-    console.log('      La paginación no pudo demostrar el final del listado.');
-    console.log('      FALLA CERRADO: no se autoriza --run.');
+    console.log('      La API no permitió DEMOSTRAR que el inventario está completo.');
+    console.log('      FALLA CERRADO: no se emite huella y no se autoriza --run.');
   }
 
   const authHits = [];
@@ -392,12 +527,21 @@ async function preflight() {
     console.log(`   · ${id.tag.padEnd(8)} email=${id.email}   phone=${id.phone}`);
   }
   console.log(`   · prefijo de nombres: "${MARK} …"`);
-  console.log('   · prefijo telefónico 50369: no aparece en CLAUDE.md, docs/, scripts/ ni src/.');
+  console.log('   · los tres teléfonos son FIJOS y consecutivos, dentro del espacio');
+  console.log('     sintético 5037000xxxx que ya usa LucyCare. No se generan por hash.');
+  console.log('   · 0 ocurrencias de cada uno en CLAUDE.md, docs/, scripts/, src/ y migrations/.');
   console.log('   · los UUID los asigna la DB al crear; no son predecibles.');
+  console.log('   ⚠️  requieren AUTORIZACIÓN del owner antes de --run.');
 
-  // ── 2. Teléfonos prohibidos ──
-  console.log(`\n2. Teléfonos prohibidos (${FORBIDDEN_PHONES.length}) — guarda, nunca fixture`);
-  console.log(`   ${FORBIDDEN_PHONES.join(' ')}`);
+  // ── 2. Lista canónica de teléfonos prohibidos ──
+  console.log(`\n2. Lista canónica de teléfonos prohibidos — ${FORBIDDEN_PHONES.length} entradas`);
+  console.log('   Fuentes combinadas: Supabase Test Phone Numbers · CLAUDE.md ·');
+  console.log('   handoff canónico · docs/ y scripts/. El grep del repo NO basta.');
+  const canon = [...FORBIDDEN_NORMALIZED].sort();
+  console.log(`   normalizados (${canon.length} únicos):`);
+  for (let i = 0; i < canon.length; i += 8) {
+    console.log(`     ${canon.slice(i, i + 8).join('  ')}`);
+  }
   for (const id of IDENTITIES) {
     check(`${id.tag}: no colisiona con ningún prohibido (normalizado)`,
       !FORBIDDEN_NORMALIZED.has(normalizePhone(id.phone)));
@@ -409,6 +553,12 @@ async function preflight() {
     ['50378056365', '50375000001'].every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
   check('los sintéticos 50370007201/2 están en la lista',
     ['50370007201', '50370007202'].every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
+  check('los Test Phones que NO están en el repo también están en la lista',
+    ['50378873634', '50378590126', '50377507479', '77316374']
+      .every((p) => FORBIDDEN_NORMALIZED.has(normalizePhone(p))));
+  check('77316374 y 50377316374 son equivalentes tras normalizar',
+    normalizePhone('77316374') === normalizePhone('50377316374')
+    && FORBIDDEN_NORMALIZED.has(normalizePhone('50377316374')), true);
   check('la comparación tolera el formato sin 503',
     FORBIDDEN_NORMALIZED.has(normalizePhone('78627694')));
 

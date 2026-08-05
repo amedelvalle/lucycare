@@ -139,9 +139,62 @@ node scripts/check-s7_71a.mjs
 Verificación **estructural**: sin red, sin Supabase, sin `service_role`, sin
 datos. Debe dar **0 fallos**.
 
-El smoke de comportamiento (`scripts/_smoke-s7_71a.mjs`) **no se autoejecuta**:
-tiene doble guard (`--run` + `ASP0_SMOKE_AUTHORIZED=1`) y **requiere
-autorización puntual tuya**, porque escribe fixtures con `service_role`.
+El smoke de comportamiento (`scripts/_smoke-s7_71a.mjs`) **no se autoejecuta** y
+tiene **tres modos**. El flujo obliga a que autorices las identidades antes de
+que se escriba nada:
+
+**Paso 1 — preflight (read-only, no escribe ni llama ninguna RPC):**
+
+```bash
+ASP0_RUN_ID=<id> node scripts/_smoke-s7_71a.mjs --preflight
+```
+
+`<id>`: 4–12 caracteres `[a-z0-9]`. Imprime:
+
+- las **tres identidades exactas** que usaría `--run`;
+- la **lista canónica normalizada** de teléfonos prohibidos y su cantidad;
+- el **inventario exhaustivo de Auth** (páginas, `perPage` solicitado vs
+  servido, `total`, `lastPage`, ids únicos) y si es **demostrablemente completo**;
+- el **manifiesto** de la corrida;
+- y, solo si todo pasa, la huella:
+
+```
+ASP0_PREFLIGHT_FINGERPRINT=<sha256>
+```
+
+Si hay colisión, metadata ausente o inconsistente, o el inventario no es
+demostrablemente completo, **no emite huella** y `--run` queda bloqueado.
+
+**Paso 2 — revisá y autorizá** las tres identidades y el manifiesto.
+
+**Paso 3 — corrida (escribe):**
+
+```bash
+ASP0_RUN_ID=<id> ASP0_SMOKE_AUTHORIZED=1 \
+ASP0_PREFLIGHT_FINGERPRINT=<sha256> \
+  node scripts/_smoke-s7_71a.mjs --run
+```
+
+Antes de la primera escritura reconstruye el manifiesto, compara la huella y
+**repite** las comprobaciones de colisión. Aborta si cambió el proyecto, la
+migración, una identidad o un catálogo.
+
+**Teléfonos sintéticos** (fijos, consecutivos, dentro del espacio `5037000xxxx`
+que ya usa LucyCare, verificados libres en todo el repositorio):
+
+```
+50370008800   50370008801   50370008802
+```
+
+**No los uses para nada más.** Al ser fijos, dos corridas simultáneas
+colisionan — es deliberado: el preflight lo detecta y falla cerrado en vez de
+inventar números nuevos en silencio.
+
+> ⚠️ La **lista canónica de teléfonos prohibidos no se deriva del repositorio**.
+> Los Test Phones vigentes `50378873634`, `50378590126`, `50377507479` y
+> `77316374` **no aparecen en el código** — vienen de *Supabase → Auth → Test
+> Phone Numbers*. **Si agregás o quitás un Test Phone en Supabase, hay que
+> actualizar `FORBIDDEN_PHONES` en el smoke.** Un grep "limpio" no prueba nada.
 
 ---
 
@@ -154,6 +207,8 @@ autorización puntual tuya**, porque escribe fixtures con `service_role`.
 - [ ] 4.2 — `SECURITY DEFINER`, `search_path` fijado, EXECUTE revocado
 - [ ] 4.3 — `cancel_my_appointment` sin `INSERT` manual, con contexto, validaciones intactas
 - [ ] 4.4 — privilegios de `audit_log` **sin cambios**
+- [ ] `--preflight` con inventario de Auth **demostrablemente completo** y huella emitida
+- [ ] Identidades sintéticas del preflight **autorizadas por vos**
 - [ ] Smoke autorizado: **una sola fila** por cancelación
 - [ ] Smoke autorizado: `notes` e `internal_notes` **ausentes** de la auditoría
 - [ ] Smoke autorizado: **cero residuos** de fixtures
