@@ -418,22 +418,40 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   const doc = read('docs/OWNER_S7_71A_APPLY.md');
 
   const blkDbDirect = between(doc, '## 11. Prueba owner-only', '## 12. Prueba owner-only');
-  const blkCtx      = between(doc, '## 12. Prueba owner-only', null);
+  const blkCtx      = between(doc, '## 12. Prueba owner-only', '## 13. Prueba owner-only');
+  const blkSign     = between(doc, '## 13. Prueba owner-only', null);
 
   check('existe la sección 11 (db_direct)', blkDbDirect.length > 200);
   check('existe la sección 12 (context_rejected)', blkCtx.length > 200);
+  check('existe la sección 13 (firma de consulta)', blkSign.length > 200);
 
-  for (const [nombre, blk] of [['11 db_direct', blkDbDirect], ['12 context_rejected', blkCtx]]) {
+  for (const [nombre, blk] of [['11 db_direct', blkDbDirect],
+                               ['12 context_rejected', blkCtx],
+                               ['13 firma', blkSign]]) {
     check(`§${nombre}: es transaccional (BEGIN)`, /^BEGIN;/m.test(blk));
     check(`§${nombre}: termina en ROLLBACK (no persiste)`, /^ROLLBACK;/m.test(blk));
     check(`§${nombre}: SIN COMMIT`, /^COMMIT;/m.test(blk) === false);
-    check(`§${nombre}: usa fixtures sintéticas propias`, /S7_71_(DBDIRECT|CTX)/.test(blk));
+    check(`§${nombre}: usa fixtures sintéticas propias`, /S7_71_(DBDIRECT|CTX|SIGN)/.test(blk));
     check(`§${nombre}: NO modifica grants ni policies`,
       /GRANT |REVOKE |CREATE POLICY|DROP POLICY|ALTER TABLE/.test(blk) === false);
     check(`§${nombre}: NO borra datos`, /DELETE FROM|TRUNCATE/.test(blk) === false);
     check(`§${nombre}: sin teléfonos prohibidos`,
-      /50372608827|50378627694|50378056365/.test(blk) === false);
+      /50372608827|50378627694|50378056365|50375000001/.test(blk) === false);
   }
+
+  // §13 — firma de consulta: debe documentar la verificación de
+  // reversibilidad y declarar que la corrida productiva NO la cubre.
+  check('§13 documenta que s7_28 no bloquea DELETE', /s7_28.*DELETE|DELETE.*s7_28/s.test(blkSign));
+  check('§13 lista las tablas dependientes de la firma',
+    /consultation_amendments/.test(blkSign) && /consultation_diagnoses/.test(blkSign));
+  check('§13 prueba la cascada de sync_appointment_on_sign',
+    /sync_appointment_on_sign/.test(blkSign));
+  check('§13 espera estado atendida', /atendida/.test(blkSign));
+  check('§13 espera change_kind = status_change', /status_change/.test(blkSign));
+  check('§13 verifica el filtro de notes/internal_notes',
+    /filtro_notes/.test(blkSign) && /filtro_internas/.test(blkSign));
+  check('§13 declara que la corrida productiva NO cubre la firma',
+    /corrida productiva del smoke NO cubre la firma/i.test(blkSign.replace(/\s+/g, ' ')));
 
   // Expectativas explícitas de cada bloque.
   check('§11 espera actor_kind = db_direct', /db_direct/.test(blkDbDirect));
@@ -477,9 +495,18 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   const smoke = read('scripts/_smoke-s7_71a.mjs');
   const K = '50372608827';
 
-  check('el número solo aparece dentro de FORBIDDEN_PHONES',
-    (smoke.match(new RegExp(K, 'g')) || []).length === 1
-    && /FORBIDDEN_PHONES = \[[^\]]*'50372608827'/.test(smoke));
+  // El número puede aparecer más de una vez, pero SIEMPRE con forma de
+  // guarda: dentro de FORBIDDEN_PHONES o dentro de una aserción negada
+  // (`!id.phone.includes('…')`). Nunca en una escritura.
+  const aparicionesK = (smoke.match(new RegExp(K, 'g')) || []).length;
+  check(`el número aparece pocas veces y todas como guarda (${aparicionesK})`,
+    aparicionesK <= 3);
+  check('está declarado en FORBIDDEN_PHONES',
+    /FORBIDDEN_PHONES = \[[^\]]*'50372608827'/.test(smoke));
+  check('toda otra aparición es una aserción negada',
+    smoke.split('\n')
+      .filter((l) => l.includes(K) && !l.includes('FORBIDDEN_PHONES'))
+      .every((l) => /!\s*\w+(\.\w+)*\.includes\(/.test(l) || /^\s*\*/.test(l)));
 
   check('existe la guarda assertNotForbidden', /function assertNotForbidden|const assertNotForbidden/.test(smoke));
   check('la guarda ABORTA con excepción', /throw new Error\(`ABORTADO: teléfono prohibido/.test(smoke));
@@ -496,10 +523,12 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     ['auth.admin',   new RegExp(`auth\\.admin[^;]*${K}`, 's')],
   ]) check(`nunca se usa en ${desc}`, re.test(smoke) === false);
 
-  check('los teléfonos de fixture salen del rango sintético 5037000xxxx',
-    /`5037000\$\{String\(seq\)\.padStart\(4, '0'\)\}`/.test(smoke));
+  check('los teléfonos de fixture salen del rango sintético 5037000…',
+    /`5037000\$\{runSeed\}\$\{i\}`/.test(smoke));
   check('todo teléfono de fixture pasa por la guarda',
     /assertNotForbidden\(`5037000/.test(smoke));
+  check('createUser revalida la guarda antes de escribir',
+    /assertNotForbidden\(identity\.phone, `createUser/.test(smoke));
 }
 
 // ─── 12-quater. Sin placeholders ──────────────────────────────────────
@@ -531,6 +560,96 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('cleanup verifica CERO residuos', /CERO residuos/.test(smoke));
   check('el smoke conserva el doble guard',
     /--run/.test(smoke) && /ASP0_SMOKE_AUTHORIZED === '1'/.test(smoke), true);
+}
+
+// ─── 12-quinquies. Seguridad operativa del smoke ──────────────────────
+{
+  console.log('\n12-quinquies. Seguridad operativa del smoke');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+
+  // ── Modo --preflight read-only ──
+  check('existe el modo --preflight', /WANT_PREFLIGHT = ARGV\.includes\('--preflight'\)/.test(smoke));
+  check('preflight() está definida', /async function preflight\(\)/.test(smoke));
+  const pf = between(smoke, 'async function preflight()', 'async function createUser');
+  check('preflight NO crea usuarios', /auth\.admin\.createUser/.test(pf) === false);
+  check('preflight NO genera links', /generateLink/.test(pf) === false);
+  check('preflight NO inserta', /\.insert\(/.test(pf) === false);
+  check('preflight NO actualiza', /\.update\(/.test(pf) === false);
+  check('preflight NO borra', /\.delete\(/.test(pf) === false);
+  // Se busca la LLAMADA (`.rpc('…')`), no la mención en el texto del
+  // contrato que el preflight imprime.
+  check('preflight NO llama ninguna RPC', /\.rpc\(/.test(pf) === false);
+  check('preflight reporta las identidades exactas', /Identidades sintéticas propuestas/.test(pf));
+  check('preflight verifica Auth con Admin API read-only', /auth\.admin\.listUsers/.test(pf));
+  check('preflight comprueba profiles/patients/clinics/services',
+    /profiles · email/.test(pf) && /patients · marca/.test(pf));
+  check('preflight comprueba booking_intents y grants',
+    /booking_intents/.test(pf) && /auth_creation_grants/.test(pf));
+  check('preflight descarta Katherine', /≠ Katherine/.test(pf));
+  check('preflight descarta Camilo (demo)', /≠ Camilo/.test(pf));
+  check('preflight descarta Test Phones reservados', /Test Phone reservado/.test(pf));
+  check('preflight verifica cancel_reasons', /cancel_reasons disponible/.test(pf));
+  check('preflight documenta el contrato de las RPC de booking',
+    /register_booking_intent\(p_doctor_id/.test(pf) && /create_booking_with_intent\(p_intent_id/.test(pf));
+  check('preflight aborta con exit ≠ 0 si hay colisión',
+    /process\.exit\(fail === 0 \? 0 : 1\)/.test(pf));
+
+  // ── Identidades deterministas ──
+  check('ASP0_RUN_ID es obligatorio', /ASP0_RUN_ID/.test(smoke)
+    && /\^\[a-z0-9\]\{4,12\}\$/.test(smoke), true);
+  check('las identidades se derivan del RUN_ID (deterministas)',
+    /const IDENTITIES = \['patient', 'doctora', 'doctorb'\]\.map/.test(smoke));
+  check('las 3 identidades pasan por la guarda',
+    /assertNotForbidden\(`5037000\$\{runSeed\}\$\{i\}`/.test(smoke));
+
+  // ── try/finally global ──
+  check('la corrida va en try/finally', /try \{\s*await run\(\);/.test(smoke));
+  check('el finally ejecuta el cleanup', /\} finally \{[\s\S]{0,400}await cleanup\(\)/.test(smoke));
+  check('el cleanup acumula errores sin interrumpir',
+    /cleanupErrors\.push/.test(smoke));
+  check('el cleanup del cleanup también está protegido',
+    /cleanupErrors\.push\(`cleanup abortó/.test(smoke));
+  check('el proceso falla si queda cualquier residuo',
+    /const clean = fail === 0 && cleanupErrors\.length === 0 && !runError/.test(smoke));
+
+  // ── Ciclo de vida de Auth ──
+  check('los user_id se registran al crearlos', /ids\.users\.push\(data\.user\.id\)/.test(smoke));
+  check('los usuarios se borran con la Admin API',
+    /admin\.auth\.admin\.deleteUser\(uid\)/.test(smoke));
+  check('NUNCA se toca auth.users por SQL',
+    /from\(['"]auth\.users['"]\)|DELETE FROM auth\.users/.test(smoke) === false);
+  check('se verifica la ausencia con getUserById',
+    /admin\.auth\.admin\.getUserById\(uid\)/.test(smoke));
+  check('los usuarios que sobrevivan cuentan como residuo',
+    /residuals \+= authLeft/.test(smoke));
+  for (const t of ['profiles', 'patients', 'doctors', 'clinic_members',
+                   'appointments', 'booking_intents', 'auth_creation_grants']) {
+    check(`el inventario final cubre ${t}`, new RegExp(`'${t}'`).test(smoke));
+  }
+
+  // ── audit_log: allowlist obligatoria ──
+  const ca = between(smoke, 'async function cleanupAuditLog()', 'async function finalInventory');
+  check('el borrado de audit_log usa allowlist explícita', /\.in\('record_id', allow\)/.test(ca));
+  check('created_at es condición ADICIONAL, no suficiente',
+    /\.in\('record_id', allow\)[\s\S]{0,200}\.gte\('created_at', RUN_STARTED_AT\)/.test(ca));
+  check('reporta cantidad y record_id previstos antes de borrar',
+    /audit_log previsto: \$\{filas\.length\}/.test(ca));
+  check('aborta si aparece un record_id fuera de la allowlist',
+    /const fuera = distintos\.filter/.test(ca) && /ABORTADO: record_id fuera de la allowlist/.test(ca));
+  check('no borra nada cuando aborta',
+    /console\.error\(`  ⛔ ABORTADO[\s\S]{0,80}return;/.test(ca));
+  check('verifica cero filas sintéticas después',
+    /audit_log \(sintético\)/.test(smoke));
+  check('ningún DELETE de audit_log solo por fecha',
+    /audit_log'\)\.delete\(\)\s*\.gte\('created_at'/.test(smoke) === false);
+
+  // ── Firma de consulta: opt-in, no productiva ──
+  check('la firma es opt-in con --include-sign', /INCLUDE_SIGN = ARGV\.includes\('--include-sign'\)/.test(smoke));
+  check('por defecto NO se ejecuta la firma', /if \(INCLUDE_SIGN\) \{/.test(smoke));
+  check('el smoke declara que sin la bandera NO cuenta como cobertura',
+    /NO cuenta como cobertura de firma/.test(smoke));
+  check('el cleanup borra las dependencias de la consulta',
+    /consultation_amendments/.test(smoke) && /consultation_diagnoses/.test(smoke));
 }
 
 // ─── 13. Higiene ──────────────────────────────────────────────────────

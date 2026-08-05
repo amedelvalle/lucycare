@@ -409,3 +409,110 @@ etiqueta) · `edited_via` **NULL** · `reason` **NULL** · `context_rejected =
 
 > Si `edited_via` volviera `'patient_self_cancel'`, la validación contra
 > `OLD`/`NEW` no está funcionando y **el gate de §6 falla**.
+
+---
+
+## 13. Prueba owner-only — firma de consulta (`sync_appointment_on_sign`)
+
+La firma de una consulta es **irreversible en el sentido de producto**: crea
+evidencia clínica que no debería borrarse. Por eso esta ruta **no se ejecuta en
+la corrida productiva del smoke** (queda tras `--include-sign`, solo para local
+o staging) y se prueba acá dentro de una única transacción con `ROLLBACK`.
+
+**Reversibilidad verificada por lectura de código (read-only):**
+
+| Comprobación | Resultado |
+|---|---|
+| ¿`s7_28` bloquea el `DELETE` de consultas firmadas? | **No.** Restringe `UPDATE` vía policies (`consultations_update`, `prescriptions_update`, `consultation_diagnoses_update`, `cfh_update`) y los `INSERT` asociados. No hay policy de `DELETE`. |
+| ¿Hay trigger que impida limpiarlas? | **No.** El único trigger sobre `consultations` es `trg_sync_appointment_on_sign` (`s6_02:91`), `AFTER UPDATE OF status`, que no bloquea nada. |
+| ¿`service_role` puede borrarlas? | **Sí.** `rolbypassrls = true` (medido en el preflight de la secuencia). |
+| Tablas dependientes que genera la firma | `consultation_amendments`, `prescriptions`, `consultation_diagnoses`, `consultation_family_history`. El cleanup del smoke las borra antes que la consulta. |
+| Precedente en el repo | `_smoke-s7_58:310-318` ya borra una consulta firmada con `service_role`, en ese mismo orden. |
+
+Es decir: **sí sería técnicamente reversible**. Aun así se elige el `ROLLBACK`,
+porque no dejar rastro es preferible a borrarlo después.
+
+Mismas garantías que §11 y §12: transaccional, `ROLLBACK` final, fixtures
+sintéticas propias, sin tocar datos existentes, sin números reales, sin
+modificar grants, policies ni configuración.
+
+```sql
+BEGIN;
+
+-- Fixtures sintéticas propias.
+WITH spec AS (SELECT id FROM public.specialties LIMIT 1),
+     nuevo_perfil AS (
+       INSERT INTO public.profiles (id, full_name, role)
+       VALUES (gen_random_uuid(), 'S7_71_SIGN Medico', 'doctor')
+       RETURNING id
+     ),
+     nueva_clinica AS (
+       INSERT INTO public.clinics (name, owner_id)
+       SELECT 'S7_71_SIGN Clinica', id FROM nuevo_perfil
+       RETURNING id, owner_id
+     ),
+     nuevo_doctor AS (
+       INSERT INTO public.doctors (clinic_id, profile_id, specialty_id)
+       SELECT c.id, c.owner_id, s.id FROM nueva_clinica c, spec s
+       RETURNING id, clinic_id, profile_id
+     ),
+     nuevo_paciente AS (
+       INSERT INTO public.patients
+         (clinic_id, full_name, date_of_birth, gender, is_active)
+       SELECT d.clinic_id, 'S7_71_SIGN Paciente', '1990-01-01', 'otro', true
+       FROM nuevo_doctor d
+       RETURNING id, clinic_id
+     ),
+     nueva_cita AS (
+       INSERT INTO public.appointments
+         (clinic_id, doctor_id, patient_id, status_id, start_time, end_time, source)
+       SELECT p.clinic_id, d.id, p.id,
+              (SELECT id FROM public.appointment_statuses WHERE name = 'confirmada'),
+              now() + interval '32 days',
+              now() + interval '32 days' + interval '30 minutes',
+              'manual'
+       FROM nuevo_doctor d, nuevo_paciente p
+       RETURNING id, clinic_id, doctor_id, patient_id
+     )
+INSERT INTO public.consultations
+  (appointment_id, clinic_id, doctor_id, patient_id, status, started_at, chief_complaint)
+SELECT a.id, a.clinic_id, a.doctor_id, a.patient_id, 'draft', now(), 'S7_71_SIGN'
+FROM nueva_cita a;
+
+-- FIRMA: dispara trg_sync_appointment_on_sign (s6_02), que actualiza
+-- appointments.status_id → 'atendida' en cascada, y esa cascada dispara
+-- audit_appointments (s7_71a).
+UPDATE public.consultations
+SET status = 'signed', signed_at = now()
+WHERE chief_complaint = 'S7_71_SIGN' AND status = 'draft';
+
+-- Verificación: la cita quedó 'atendida' y la cascada dejó auditoría.
+SELECT
+  (SELECT s.name FROM public.appointment_statuses s
+    WHERE s.id = a.status_id)              AS estado_cita,      -- atendida
+  al.action::text                          AS action,           -- update
+  al.new_data ->> 'change_kind'            AS change_kind,      -- status_change
+  al.new_data ->> 'actor_kind'             AS actor_kind,       -- db_direct
+  al.new_data ->> 'edited_via'             AS edited_via,       -- NULL
+  (al.new_data ? 'notes')                  AS filtro_notes,     -- false
+  (al.new_data ? 'internal_notes')         AS filtro_internas   -- false
+FROM public.appointments a
+JOIN public.consultations c ON c.appointment_id = a.id
+LEFT JOIN LATERAL (
+  SELECT * FROM public.audit_log
+  WHERE table_name = 'appointments' AND record_id = a.id
+  ORDER BY id DESC LIMIT 1
+) al ON true
+WHERE c.chief_complaint = 'S7_71_SIGN';
+
+ROLLBACK;   -- ⬅️ NADA se persiste: ni consulta firmada, ni cita, ni auditoría
+```
+
+**Esperado:** `estado_cita = 'atendida'` · `action = 'update'` ·
+`change_kind = 'status_change'` · `actor_kind = 'db_direct'` (se ejecuta desde
+el SQL Editor, sin JWT) · `edited_via` **NULL** — no se inventa la etiqueta
+`consultation_signed`, cuyo setter queda para `s7_72` · `filtro_notes` y
+`filtro_internas` **false**.
+
+> **La corrida productiva del smoke NO cubre la firma.** Si querés cubrirla ahí,
+> hay que correrlo con `--include-sign` en local o staging, nunca en producción.
