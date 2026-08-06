@@ -772,6 +772,29 @@ export function resolveAuthState({ auth, attestation }) {
  * Una colisión —en Auth o en tablas— o un catálogo faltante BLOQUEAN la
  * emisión de la huella AUNQUE la atestación sea válida.
  */
+/**
+ * Veredicto de colisiones. PURA y exportada.
+ *
+ * Separa EXPLÍCITAMENTE las tres condiciones. No existe ningún bypass del
+ * tipo `allowIncomplete || auth.complete`: un inventario incompleto solo es
+ * aceptable si la atestación del owner es VÁLIDA, y aun así una colisión
+ * real —en Auth o en tablas— hace `ok = false`.
+ *
+ * `ownerAttestationValid` es un parámetro para poder probar esta función en
+ * aislamiento, pero en producción SOLO puede venir de `evaluateAttestation`,
+ * que exige las tres variables de entorno y el hash de las seis identidades.
+ * `verifyNoCollisions` lo deriva internamente: no lo acepta de su llamador.
+ */
+export function collisionVerdict({ authComplete, ownerAttestationValid, authHits, tableHits }) {
+  const auth_inventory_acceptable = authComplete === true || ownerAttestationValid === true;
+  const no_auth_collisions = authHits === 0;
+  const no_table_collisions = tableHits === 0;
+  return {
+    ok: auth_inventory_acceptable && no_auth_collisions && no_table_collisions,
+    auth_inventory_acceptable, no_auth_collisions, no_table_collisions,
+  };
+}
+
 export function preflightVerdict({ authProceed, noCollisions, catalogsOk }) {
   const blockers = [];
   if (!authProceed) blockers.push('inventario de Auth incompleto sin atestación válida');
@@ -791,7 +814,7 @@ function repoHead() {
  * Comprobaciones de colisión, read-only. Las ejecuta --preflight y las
  * REPITE --run antes de la primera escritura.
  */
-async function verifyNoCollisions({ verbose, auth: authPrevio, allowIncomplete = false }) {
+async function verifyNoCollisions({ verbose, auth: authPrevio }) {
   const emails = IDENTITIES.map((i) => i.email);
   const phones = IDENTITIES.map((i) => i.phone);
   const emailSet = new Set(emails.map((e) => e.toLowerCase()));
@@ -805,16 +828,12 @@ async function verifyNoCollisions({ verbose, auth: authPrevio, allowIncomplete =
     console.log(`   metadata → total: ${auth.total ?? 'ausente'} · lastPage: ${auth.lastPage ?? 'ausente'}`);
     console.log(`   ids únicos recogidos: ${auth.unique}`);
   }
-  // Con `allowIncomplete` el llamador ya evaluó la atestación y decidió
-  // continuar; la búsqueda de colisiones se hace igual sobre lo recuperado.
-  if (!allowIncomplete) {
-    check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
-    if (!auth.complete) {
-      authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
-      console.log('      FALLA CERRADO: no se emite huella y no se autoriza --run.');
-      return false;
-    }
-  }
+  // La aceptabilidad del inventario se DERIVA acá, nunca se recibe: el
+  // llamador no puede inyectar un booleano libre.
+  const ownerAttestationValid = evaluateAttestation({
+    attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
+    runId: RUN_ID, identities: IDENTITIES,
+  }).valid;
 
   const authHits = [];
   for (const u of auth.users) {
@@ -833,13 +852,35 @@ async function verifyNoCollisions({ verbose, auth: authPrevio, allowIncomplete =
     ['clinics · marca',  admin.from('clinics').select('id', { count: 'exact', head: true }).like('name', like)],
     ['services · marca', admin.from('services').select('id', { count: 'exact', head: true }).like('name', like)],
   ];
+  let tableHits = 0;
   for (const [label, q] of probes) {
     const { count, error } = await q;
-    if (error) ko(`${label}: no consultable (${error.message})`);
-    else check(`${label}: 0 filas previas (${count ?? 0})`, (count ?? 0) === 0);
+    if (error) {
+      // Una sonda no consultable cuenta como colisión potencial: no se puede
+      // afirmar que esté libre.
+      ko(`${label}: no consultable (${error.message})`);
+      tableHits += 1;
+    } else {
+      const n = count ?? 0;
+      check(`${label}: 0 filas previas (${n})`, n === 0);
+      tableHits += n;
+    }
   }
 
-  return auth.complete && authHits.length === 0;
+  // ── Decisión EXPLÍCITA, sin bypass ──
+  const v = collisionVerdict({
+    authComplete: auth.complete,
+    ownerAttestationValid,
+    authHits: authHits.length,
+    tableHits,
+  });
+  if (verbose || !v.ok) {
+    console.log(`   veredicto de colisiones:`
+      + ` inventario_aceptable=${v.auth_inventory_acceptable}`
+      + ` · sin_colisiones_auth=${v.no_auth_collisions}`
+      + ` · sin_colisiones_tablas=${v.no_table_collisions}`);
+  }
+  return v.ok;
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -993,7 +1034,7 @@ async function preflight() {
   console.log('\n4. Colisiones');
   console.log(`   (búsqueda sobre los ${auth.unique} usuarios recuperados por listUsers`
     + `${auth.complete ? '' : ', inventario incompleto'})`);
-  const sinColisiones = await verifyNoCollisions({ verbose: true, auth, allowIncomplete: true });
+  const sinColisiones = await verifyNoCollisions({ verbose: true, auth });
   console.log('   ℹ️  profiles y el resto de tablas son comprobaciones ADICIONALES:');
   console.log('       no sustituyen el inventario de Auth, que debe estar COMPLETO.');
 
@@ -1047,9 +1088,22 @@ async function preflight() {
   const verdict = preflightVerdict({
     authProceed: authRes.proceed, noCollisions: sinColisiones, catalogsOk,
   });
+  // Cada gate bloqueante se CONTABILIZA como fallo: la salida no puede
+  // volver a decir "0 fallos" y a la vez bloquear la corrida.
+  verdict.blockers.forEach((b) => ko(`GATE BLOQUEANTE — ${b}`));
+
   const usable = verdict.emitFingerprint && fail === 0;
+
+  console.log('\n8. Veredicto');
+  console.log(`   inventario Auth completo     : ${authRes.authState.authInventoryComplete}`);
+  console.log(`   modo de verificación         : ${authRes.authState.authVerificationMode}`);
+  console.log(`   atestación del owner válida  : ${attestation.valid}`);
+  console.log(`   colisiones reales            : ${sinColisiones ? 'ninguna' : 'SÍ (ver arriba)'}`);
+  console.log(`   catálogos completos          : ${catalogsOk}`);
+  console.log(`   gates bloqueantes            : ${verdict.blockers.length === 0 ? 'ninguno' : verdict.blockers.join(' · ')}`);
+  console.log(`   VEREDICTO FINAL              : ${usable ? 'APTO — se emite huella' : 'BLOQUEADO'}`);
+
   console.log(`\n${usable ? '✅' : '❌'} preflight: ${pass} OK, ${fail} fallos`);
-  verdict.blockers.forEach((b) => console.log(`   ⛔ ${b}`));
   if (usable) {
     console.log('\n   Nada se escribió. Autorizá estas identidades y pasá la huella a --run:\n');
     console.log(`ASP0_PREFLIGHT_FINGERPRINT=${fp}\n`);
@@ -1098,7 +1152,7 @@ async function verifyFingerprintBeforeWriting() {
 
   // Colisiones SIEMPRE, aunque haya atestación: sobre lo recuperado y sobre
   // las tablas. Cualquier colisión aborta.
-  const sinColisiones = await verifyNoCollisions({ verbose: false, auth, allowIncomplete: true });
+  const sinColisiones = await verifyNoCollisions({ verbose: false, auth });
   if (!sinColisiones) {
     throw new Error('ABORTADO antes de escribir: colisión detectada.');
   }

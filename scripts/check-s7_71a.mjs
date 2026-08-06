@@ -23,7 +23,7 @@ import {
   stableStringify, fingerprintOf, flatManifest, identitiesFor,
   normalizePhone, migrationSha256, catalogChecks, authFailureReport,
   OWNER_ATTESTATION, identitiesFingerprint, evaluateAttestation,
-  resolveAuthState, preflightVerdict, smokeSha256, fileSha256, SMOKE_PATH,
+  resolveAuthState, preflightVerdict, collisionVerdict, smokeSha256, fileSha256, SMOKE_PATH,
   ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES,
   HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
   DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
@@ -742,7 +742,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('la validación final puede revocar complete',
     /if \(complete && total !== null && byId\.size !== total\)/.test(la));
   check('FALLA CERRADO: sin inventario completo no hay huella ni --run',
-    /FALLA CERRADO: no se emite huella y no se autoriza --run/.test(smoke));
+    /FALLA CERRADO: no se leen catálogos, no se construye manifiesto/.test(smoke));
   check('la colisión se busca por email normalizado',
     /emailSet\.has\(u\.email\.toLowerCase\(\)\)/.test(smoke));
   check('la colisión se busca por teléfono normalizado',
@@ -799,7 +799,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('--run aborta si la huella no coincide',
     /ABORTADO antes de escribir: la huella del manifiesto no coincide/.test(smoke));
   check('--run repite las comprobaciones de colisión',
-    /await verifyNoCollisions\(\{ verbose: false, auth, allowIncomplete: true \}\)/.test(smoke));
+    /await verifyNoCollisions\(\{ verbose: false, auth \}\)/.test(smoke));
   check('--run aborta si aparece colisión',
     /ABORTADO antes de escribir: colisión detectada/.test(smoke));
   check('el smoke no escribe archivos', /writeFileSync|appendFileSync/.test(smoke) === false);
@@ -1264,7 +1264,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     && /ASP0_OWNER_AUTH_ATTESTED_DATE \|\|/.test(codigo)
     && /ASP0_OWNER_AUTH_ATTESTED_RUN_ID \|\|/.test(codigo), true);
   check('las colisiones se comprueban igual con atestación',
-    /allowIncomplete: true/.test(codigo));
+    /const v = collisionVerdict\(\{/.test(codigo));
   check('los catálogos se validan igual con atestación',
     /catalogChecks\(manifest\)/.test(codigo));
   check('--run exige la misma atestación',
@@ -1464,6 +1464,97 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /smokeSha: smokeSha256\(\)/.test(codigo));
   check('el HEAD de git NO entra en el manifiesto',
     /head|repoHead/.test(between(codigo, 'export function flatManifest(', 'export function fingerprintOf')) === false);
+}
+
+// ─── 22. El EMPALME: collisionVerdict, la función que decidía mal ────
+//
+// Las tres veces que un preflight falló con todo en verde, la causa fue un
+// empalme entre piezas correctas, no una pieza incorrecta. `preflightVerdict`
+// estaba cubierto; `verifyNoCollisions` no, y su `return` seguía exigiendo
+// `auth.complete`. Esta sección cubre la decisión de colisiones.
+{
+  console.log('\n22. Empalme de colisiones (collisionVerdict, lógica real)');
+
+  const V = collisionVerdict;
+
+  // ── Los siete casos mínimos ──
+  const casos = [
+    ['Auth incompleto + sin atestación + 0 colisiones',
+      { authComplete: false, ownerAttestationValid: false, authHits: 0, tableHits: 0 }, false],
+    ['Auth incompleto + atestación inválida',
+      { authComplete: false, ownerAttestationValid: false, authHits: 0, tableHits: 0 }, false],
+    ['Auth incompleto + atestación válida + 0 colisiones',
+      { authComplete: false, ownerAttestationValid: true, authHits: 0, tableHits: 0 }, true],
+    ['Auth incompleto + atestación válida + colisión en Auth',
+      { authComplete: false, ownerAttestationValid: true, authHits: 1, tableHits: 0 }, false],
+    ['Auth incompleto + atestación válida + colisión en tablas',
+      { authComplete: false, ownerAttestationValid: true, authHits: 0, tableHits: 1 }, false],
+    ['Auth completo + 0 colisiones + sin atestación',
+      { authComplete: true, ownerAttestationValid: false, authHits: 0, tableHits: 0 }, true],
+    ['Auth completo + colisión',
+      { authComplete: true, ownerAttestationValid: false, authHits: 1, tableHits: 0 }, false],
+  ];
+  for (const [desc, entrada, esperado] of casos) {
+    check(`${desc} → ${esperado}`, V(entrada).ok === esperado);
+  }
+
+  // ── Las tres condiciones se reportan por separado ──
+  {
+    const r = V({ authComplete: false, ownerAttestationValid: true, authHits: 0, tableHits: 2 });
+    check('reporta auth_inventory_acceptable', r.auth_inventory_acceptable === true);
+    check('reporta no_auth_collisions', r.no_auth_collisions === true);
+    check('reporta no_table_collisions', r.no_table_collisions === false);
+    check('una colisión en tablas basta para bloquear', r.ok === false);
+  }
+  {
+    const r = V({ authComplete: false, ownerAttestationValid: false, authHits: 0, tableHits: 0 });
+    check('sin atestación, el inventario NO es aceptable',
+      r.auth_inventory_acceptable === false);
+  }
+
+  // ── Regresión exacta del bug: incompleto + atestado + cero colisiones ──
+  check('REGRESIÓN: incompleto con atestación válida y 0 colisiones NO bloquea',
+    V({ authComplete: false, ownerAttestationValid: true, authHits: 0, tableHits: 0 }).ok === true);
+
+  // ── Solo `true` estricto cuenta como aceptable ──
+  for (const v of [1, 'true', 'sí', {}, []]) {
+    check(`ownerAttestationValid=${JSON.stringify(v)} NO se acepta como válido`,
+      V({ authComplete: false, ownerAttestationValid: v, authHits: 0, tableHits: 0 }).ok === false);
+  }
+
+  // ── Estructura: sin bypass y con la atestación DERIVADA internamente ──
+  const codigo = read('scripts/_smoke-s7_71a.mjs').split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const vnc = between(codigo, 'async function verifyNoCollisions(', '\n}');
+
+  check('verifyNoCollisions ya NO acepta allowIncomplete',
+    /allowIncomplete/.test(vnc) === false);
+  check('verifyNoCollisions ya NO retorna auth.complete && …',
+    /return auth\.complete && authHits/.test(vnc) === false);
+  check('deriva la atestación internamente con evaluateAttestation',
+    /const ownerAttestationValid = evaluateAttestation\(\{/.test(vnc));
+  check('la atestación NO llega como parámetro del llamador',
+    /async function verifyNoCollisions\(\{ verbose, auth: authPrevio \}\)/.test(codigo));
+  check('la atestación interna usa las tres variables de entorno',
+    /attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID/.test(vnc));
+  check('el retorno pasa por collisionVerdict', /return v\.ok;/.test(vnc)
+    && /const v = collisionVerdict\(\{/.test(vnc), true);
+  check('las tres condiciones son explícitas en la función pura',
+    /auth_inventory_acceptable = authComplete === true \|\| ownerAttestationValid === true/.test(codigo)
+    && /no_auth_collisions = authHits === 0/.test(codigo)
+    && /no_table_collisions = tableHits === 0/.test(codigo), true);
+  check('una sonda no consultable cuenta como colisión potencial',
+    /tableHits \+= 1;/.test(vnc));
+  check('las filas encontradas suman a tableHits', /tableHits \+= n;/.test(vnc));
+
+  // ── Salida coherente: un gate bloqueante se contabiliza como fallo ──
+  check('los gates bloqueantes se contabilizan con ko()',
+    /verdict\.blockers\.forEach\(\(b\) => ko\(`GATE BLOQUEANTE/.test(codigo));
+  check('la salida distingue inventario, atestación, colisiones y veredicto',
+    /inventario Auth completo/.test(codigo) && /atestación del owner válida/.test(codigo)
+    && /colisiones reales/.test(codigo) && /VEREDICTO FINAL/.test(codigo), true);
+  check('el símbolo final refleja el veredicto, no solo el contador',
+    /\$\{usable \? '✅' : '❌'\} preflight/.test(codigo));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
