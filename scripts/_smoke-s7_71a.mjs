@@ -71,6 +71,9 @@ const INCLUDE_SIGN = ARGV.includes('--include-sign');
 const AUTHORIZED = process.env.ASP0_SMOKE_AUTHORIZED === '1';
 const RUN_ID = (process.env.ASP0_RUN_ID || '').trim();
 const EXPECTED_FINGERPRINT = (process.env.ASP0_PREFLIGHT_FINGERPRINT || '').trim();
+const ATT_FLAG = (process.env.ASP0_OWNER_AUTH_ATTESTED || '').trim();
+const ATT_DATE = (process.env.ASP0_OWNER_AUTH_ATTESTED_DATE || '').trim();
+const ATT_RUN_ID = (process.env.ASP0_OWNER_AUTH_ATTESTED_RUN_ID || '').trim();
 
 const HELP = `
 _smoke-s7_71a — modos disponibles
@@ -543,7 +546,7 @@ export function stableStringify(value) {
  * NUNCA incluye SUPABASE_SERVICE_ROLE_KEY, la anon key ni ningún token: solo
  * el hostname del proyecto e identificadores públicos de catálogo.
  */
-async function buildManifest() {
+async function buildManifest(authState = {}) {
   const { data: spec, error: eSpec } = await admin
     .from('specialties').select('id').order('id').limit(1).maybeSingle();
   if (eSpec) throw new Error(`manifiesto/specialties: ${eSpec.message}`);
@@ -568,6 +571,7 @@ async function buildManifest() {
     confirmadaId: statusOf('confirmada'),
     canceladaId: statusOf('cancelada'),
     cancelReasonId: reason?.id ?? null,
+    ...authState,
   });
 }
 
@@ -581,9 +585,15 @@ async function buildManifest() {
 export function flatManifest({
   projectHost: host, migrationSha, runId, identities,
   specialtyId, programadaId, confirmadaId, canceladaId, cancelReasonId,
+  // Estado del inventario de Auth y de la atestación. Forman parte del
+  // fingerprint: si el modo de verificación cambia, la huella cambia.
+  authInventoryComplete = null, authVerificationMode = null,
+  authUsersInspected = null, authTotalAnnounced = null, authFailedPage = null,
+  ownerAttestedNoCollisions = null, ownerAttestedDate = null,
+  ownerAttestedIdentitiesSha256 = null,
 }) {
   const m = {
-    v: 3,
+    v: 4,
     project_host: host,
     migration_version: 's7_71a',
     migration_sha256: migrationSha,
@@ -593,6 +603,14 @@ export function flatManifest({
     confirmada_status_id: confirmadaId,
     cancelada_status_id: canceladaId,
     cancel_reason_id: cancelReasonId,
+    auth_inventory_complete: authInventoryComplete,
+    auth_verification_mode: authVerificationMode,
+    auth_users_inspected: authUsersInspected,
+    auth_total_announced: authTotalAnnounced,
+    auth_failed_page: authFailedPage,
+    owner_attested_no_collisions: ownerAttestedNoCollisions,
+    owner_attested_date: ownerAttestedDate,
+    owner_attested_identities_sha256: ownerAttestedIdentitiesSha256,
   };
   identities.forEach((id, i) => {
     m[`email_${i}`] = id.email;
@@ -629,6 +647,68 @@ export function catalogChecks(manifest) {
   ];
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ATESTACIÓN MANUAL DEL OWNER — excepción acotada al fail-closed
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * El comportamiento por DEFECTO sigue siendo fail-closed: si el inventario
+ * de Auth no es demostrablemente completo, el preflight aborta.
+ *
+ * Esta excepción existe porque `auth.admin.listUsers` falla en `page=3` con
+ * `perPage=50` en este proyecto, y sin ese tramo no se puede DEMOSTRAR por
+ * API que las identidades candidatas estén libres. El owner verificó a mano
+ * en Authentication → Users la ausencia exacta de las seis, y esa
+ * atestación se registra como evidencia explícita y trazable.
+ *
+ * NO relaja nada más: la búsqueda de colisiones sobre los usuarios que SÍ se
+ * recuperaron, las lecturas de tablas, los catálogos y la validación de
+ * checksum/proyecto/identidades siguen corriendo, y cualquier colisión
+ * aborta aunque haya atestación.
+ *
+ * La atestación está ATADA a un conjunto exacto de identidades: el hash
+ * canónico se recalcula en cada corrida y debe coincidir. Cambiar un correo,
+ * un teléfono o el RUN_ID la invalida.
+ */
+export const OWNER_ATTESTATION = {
+  run_id: 's771a0805a',
+  date: '2026-08-06',
+  // sha256 de stableStringify({emails:[...minúsculas], phones:[...normalizados]})
+  identities_sha256: '1d597f006b4ffc971c402a21b2f95c1d46356e439926728cd6c5d7a150f1ed1f',
+};
+
+/** Hash canónico del conjunto EXACTO de identidades (orden significativo). */
+export function identitiesFingerprint(identities) {
+  return createHash('sha256').update(stableStringify({
+    emails: identities.map((i) => i.email.toLowerCase()),
+    phones: identities.map((i) => normalizePhone(i.phone)),
+  }), 'utf8').digest('hex');
+}
+
+/**
+ * Evalúa la atestación. Devuelve `{ valid, sha, reasons }`. Exige las TRES
+ * variables simultáneamente, con valores exactos, y que el hash de las
+ * identidades vigentes coincida con el atestado.
+ */
+export function evaluateAttestation({ attested, date, attestedRunId, runId, identities }) {
+  const sha = identitiesFingerprint(identities);
+  const reasons = [];
+  if (attested !== '1') reasons.push('falta ASP0_OWNER_AUTH_ATTESTED=1');
+  if (date !== OWNER_ATTESTATION.date) {
+    reasons.push(`ASP0_OWNER_AUTH_ATTESTED_DATE debe ser ${OWNER_ATTESTATION.date}`);
+  }
+  if (attestedRunId !== OWNER_ATTESTATION.run_id) {
+    reasons.push(`ASP0_OWNER_AUTH_ATTESTED_RUN_ID debe ser ${OWNER_ATTESTATION.run_id}`);
+  }
+  if (attestedRunId !== runId) {
+    reasons.push('la atestación es de otro RUN_ID: no puede reutilizarse');
+  }
+  if (sha !== OWNER_ATTESTATION.identities_sha256) {
+    reasons.push('las identidades NO son las atestadas por el owner (hash distinto)');
+  }
+  return { valid: reasons.length === 0, sha, reasons };
+}
+
 /** HEAD del repositorio, para el encabezado del preflight. Solo lectura. */
 function repoHead() {
   try {
@@ -640,7 +720,7 @@ function repoHead() {
  * Comprobaciones de colisión, read-only. Las ejecuta --preflight y las
  * REPITE --run antes de la primera escritura.
  */
-async function verifyNoCollisions({ verbose, auth: authPrevio }) {
+async function verifyNoCollisions({ verbose, auth: authPrevio, allowIncomplete = false }) {
   const emails = IDENTITIES.map((i) => i.email);
   const phones = IDENTITIES.map((i) => i.phone);
   const emailSet = new Set(emails.map((e) => e.toLowerCase()));
@@ -654,11 +734,15 @@ async function verifyNoCollisions({ verbose, auth: authPrevio }) {
     console.log(`   metadata → total: ${auth.total ?? 'ausente'} · lastPage: ${auth.lastPage ?? 'ausente'}`);
     console.log(`   ids únicos recogidos: ${auth.unique}`);
   }
-  check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
-  if (!auth.complete) {
-    authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
-    console.log('      FALLA CERRADO: no se emite huella y no se autoriza --run.');
-    return false;
+  // Con `allowIncomplete` el llamador ya evaluó la atestación y decidió
+  // continuar; la búsqueda de colisiones se hace igual sobre lo recuperado.
+  if (!allowIncomplete) {
+    check(`inventario de Auth COMPLETO (${auth.complete ? 'sí' : 'NO'})`, auth.complete);
+    if (!auth.complete) {
+      authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
+      console.log('      FALLA CERRADO: no se emite huella y no se autoriza --run.');
+      return false;
+    }
   }
 
   const authHits = [];
@@ -776,26 +860,87 @@ async function preflight() {
   console.log(`   ids únicos recogidos: ${auth.unique}`);
   auth.notes.forEach((n) => console.log(`   ⚠️  ${n}`));
 
+  // Estado de Auth que viajará en el manifiesto y, por tanto, en la huella.
+  let authState = {
+    authInventoryComplete: true,
+    authVerificationMode: 'listusers_exhaustive',
+    authUsersInspected: auth.unique,
+    authTotalAnnounced: auth.total,
+    authFailedPage: null,
+    ownerAttestedNoCollisions: null,
+    ownerAttestedDate: null,
+    ownerAttestedIdentitiesSha256: null,
+  };
+
   if (!auth.complete) {
-    ko('inventario de Auth COMPLETO (NO)');
-    console.log('\n   ⛔ DIAGNÓSTICO DEL FALLO (solo cifras, sin datos de usuario):');
+    // NO se contabiliza como fallo acá: el desenlace lo decide la atestación.
+    // Sin atestación válida se sale con exit 1 (fail-closed); con atestación
+    // válida el hecho queda registrado en el manifiesto —y por tanto en la
+    // huella— como auth_inventory_complete = false.
+    console.log('\n   ⛔ inventario de Auth INCOMPLETO');
+    console.log('   DIAGNÓSTICO DEL FALLO (solo cifras, sin datos de usuario):');
     authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
+
+    // ── Excepción: atestación manual del owner ──
+    const att = evaluateAttestation({
+      attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
+      runId: RUN_ID, identities: IDENTITIES,
+    });
+
+    if (!att.valid) {
+      console.log([
+        '',
+        '   La Admin API no permitió DEMOSTRAR que el inventario está completo,',
+        '   y NO hay atestación manual válida del owner:',
+        ...att.reasons.map((r) => `      · ${r}`),
+        '',
+        '   FALLA CERRADO: no se leen catálogos, no se construye manifiesto, no',
+        '   se calcula huella y --run queda bloqueado.',
+        '   La tabla profiles NO se usa como sustituto de Auth.',
+        '',
+      ].join('\n'));
+      console.log(`❌ preflight: ${pass} OK, ${fail} fallos — ABORTADO en el inventario de Auth\n`);
+      process.exit(1);
+    }
+
     console.log([
       '',
-      '   La Admin API no permitió DEMOSTRAR que el inventario está completo.',
-      '   FALLA CERRADO: no se leen catálogos, no se construye manifiesto, no',
-      '   se calcula huella y --run queda bloqueado.',
-      '   La tabla profiles NO se usa como sustituto de Auth.',
+      '   ⚠️  EXCEPCIÓN: atestación manual del owner ACEPTADA.',
+      `      fecha de atestación          : ${OWNER_ATTESTATION.date}`,
+      `      RUN_ID atestado              : ${OWNER_ATTESTATION.run_id}`,
+      `      sha256 de las 6 identidades  : ${att.sha}`,
+      '      alcance: EXCLUSIVAMENTE esas 3 direcciones y 3 teléfonos.',
+      '',
+      '      El inventario de Auth SIGUE marcado como INCOMPLETO. La',
+      '      atestación no lo sustituye: registra que el owner verificó a mano',
+      '      en Authentication → Users la ausencia exacta de las seis.',
+      '      Todo lo demás se sigue comprobando, y cualquier colisión aborta.',
       '',
     ].join('\n'));
-    console.log(`❌ preflight: ${pass} OK, ${fail} fallos — ABORTADO en el inventario de Auth\n`);
-    process.exit(1);
+
+    authState = {
+      authInventoryComplete: false,
+      authVerificationMode: 'owner_manual_exact_search',
+      authUsersInspected: auth.unique,
+      authTotalAnnounced: auth.total,
+      authFailedPage: auth.failedPage,
+      ownerAttestedNoCollisions: true,
+      ownerAttestedDate: OWNER_ATTESTATION.date,
+      ownerAttestedIdentitiesSha256: att.sha,
+    };
+    ok('atestación manual del owner válida y atada a estas identidades');
+  } else {
+    ok(`inventario de Auth COMPLETO (${auth.unique} usuarios únicos)`);
   }
-  ok(`inventario de Auth COMPLETO (${auth.unique} usuarios únicos)`);
 
   // ── 4. Colisiones ──
+  //    Se ejecutan SIEMPRE, haya atestación o no: sobre los usuarios que sí
+  //    se recuperaron y sobre las tablas de negocio. Cualquier colisión
+  //    aborta, aunque la atestación sea válida.
   console.log('\n4. Colisiones');
-  const sinColisiones = await verifyNoCollisions({ verbose: true, auth });
+  console.log(`   (búsqueda sobre los ${auth.unique} usuarios recuperados por listUsers`
+    + `${auth.complete ? '' : ', inventario incompleto'})`);
+  const sinColisiones = await verifyNoCollisions({ verbose: true, auth, allowIncomplete: true });
   console.log('   ℹ️  profiles y el resto de tablas son comprobaciones ADICIONALES:');
   console.log('       no sustituyen el inventario de Auth, que debe estar COMPLETO.');
 
@@ -807,7 +952,7 @@ async function preflight() {
 
   // ── 5. Catálogos — sobre el manifiesto PLANO ──
   console.log('\n5. Catálogos requeridos');
-  const manifest = await buildManifest();
+  const manifest = await buildManifest(authState);
   for (const [desc, okCat] of catalogChecks(manifest)) check(desc, okCat);
   if (!manifest.cancel_reason_id) {
     console.log('      ⚠️  sin motivos: el caso 5.6/5.7 fallaría en --run.');
@@ -860,7 +1005,38 @@ async function preflight() {
 async function verifyFingerprintBeforeWriting() {
   console.log('\n0. Verificación previa a la primera escritura (read-only)');
 
-  const manifest = await buildManifest();
+  // El inventario de Auth se rehace. Si sigue incompleto, --run exige la
+  // MISMA atestación que el preflight: no basta con la huella.
+  const auth = await listAllAuthUsers();
+  let authState;
+  if (auth.complete) {
+    authState = {
+      authInventoryComplete: true, authVerificationMode: 'listusers_exhaustive',
+      authUsersInspected: auth.unique, authTotalAnnounced: auth.total,
+      authFailedPage: null, ownerAttestedNoCollisions: null,
+      ownerAttestedDate: null, ownerAttestedIdentitiesSha256: null,
+    };
+    ok(`inventario de Auth completo (${auth.unique} usuarios)`);
+  } else {
+    const att = evaluateAttestation({
+      attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
+      runId: RUN_ID, identities: IDENTITIES,
+    });
+    if (!att.valid) {
+      authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
+      att.reasons.forEach((r) => console.log(`      · ${r}`));
+      throw new Error('ABORTADO antes de escribir: inventario de Auth incompleto y sin atestación válida del owner.');
+    }
+    authState = {
+      authInventoryComplete: false, authVerificationMode: 'owner_manual_exact_search',
+      authUsersInspected: auth.unique, authTotalAnnounced: auth.total,
+      authFailedPage: auth.failedPage, ownerAttestedNoCollisions: true,
+      ownerAttestedDate: OWNER_ATTESTATION.date, ownerAttestedIdentitiesSha256: att.sha,
+    };
+    ok('atestación manual del owner válida (inventario de Auth incompleto)');
+  }
+
+  const manifest = await buildManifest(authState);
   const fp = fingerprintOf(manifest);
 
   check('la huella coincide con la aprobada por el owner', fp === EXPECTED_FINGERPRINT);
@@ -871,9 +1047,11 @@ async function verifyFingerprintBeforeWriting() {
     throw new Error('ABORTADO antes de escribir: la huella del manifiesto no coincide.');
   }
 
-  const sinColisiones = await verifyNoCollisions({ verbose: false });
+  // Colisiones SIEMPRE, aunque haya atestación: sobre lo recuperado y sobre
+  // las tablas. Cualquier colisión aborta.
+  const sinColisiones = await verifyNoCollisions({ verbose: false, auth, allowIncomplete: true });
   if (!sinColisiones) {
-    throw new Error('ABORTADO antes de escribir: inventario de Auth incompleto o colisión detectada.');
+    throw new Error('ABORTADO antes de escribir: colisión detectada.');
   }
   ok('comprobaciones de colisión repetidas y superadas');
   return manifest;

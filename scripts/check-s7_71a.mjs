@@ -22,6 +22,7 @@ const sha256hex = (x) => createHash('sha256').update(x, 'utf8').digest('hex');
 import {
   stableStringify, fingerprintOf, flatManifest, identitiesFor,
   normalizePhone, migrationSha256, catalogChecks, authFailureReport,
+  OWNER_ATTESTATION, identitiesFingerprint, evaluateAttestation,
   ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES,
   HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
   DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
@@ -775,7 +776,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /new globalThis\.URL\(URL\)\.hostname/.test(smoke));
   check('el manifiesto NO incluye claves ni secretos',
     /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
-  check('el manifiesto subió de versión (v: 3)', /v: 3,/.test(bm));
+  check('el manifiesto subió de versión (v: 4)', /v: 4,/.test(bm));
   check('advierte contra el replacer array de JSON.stringify',
     /NO usar `JSON\.stringify\(obj, Object\.keys\(obj\)\.sort\(\)\)`/.test(smoke));
   check('la huella es SHA-256 sobre la serialización canónica',
@@ -792,13 +793,14 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('la huella se verifica ANTES de la primera escritura',
     /async function verifyFingerprintBeforeWriting\(\)/.test(smoke)
     && smoke.indexOf('await verifyFingerprintBeforeWriting()') < smoke.indexOf('await buildFixtures(manifest)'), true);
-  check('--run reconstruye el manifiesto', /const manifest = await buildManifest\(\);[\s\S]{0,120}fingerprintOf\(manifest\)/.test(smoke));
+  check('--run reconstruye el manifiesto',
+    /const manifest = await buildManifest\(authState\);[\s\S]{0,120}fingerprintOf\(manifest\)/.test(smoke));
   check('--run aborta si la huella no coincide',
     /ABORTADO antes de escribir: la huella del manifiesto no coincide/.test(smoke));
   check('--run repite las comprobaciones de colisión',
-    /await verifyNoCollisions\(\{ verbose: false \}\)/.test(smoke));
+    /await verifyNoCollisions\(\{ verbose: false, auth, allowIncomplete: true \}\)/.test(smoke));
   check('--run aborta si aparece colisión',
-    /ABORTADO antes de escribir: inventario de Auth incompleto o colisión/.test(smoke));
+    /ABORTADO antes de escribir: colisión detectada/.test(smoke));
   check('el smoke no escribe archivos', /writeFileSync|appendFileSync/.test(smoke) === false);
 
   // ── try/finally global ──
@@ -1099,11 +1101,11 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   const pfCode = between(codigo, 'async function preflight()', 'async function verifyFingerprintBeforeWriting');
 
   check('el inventario se resuelve ANTES de los catálogos',
-    pfCode.indexOf('await listAllAuthUsers()') < pfCode.indexOf('await buildManifest()'));
-  check('si no está completo, sale con exit 1',
-    /if \(!auth\.complete\) \{[\s\S]*?process\.exit\(1\);/.test(pfCode));
+    pfCode.indexOf('await listAllAuthUsers()') < pfCode.indexOf('await buildManifest(authState)'));
+  check('sin atestación válida, sale con exit 1',
+    /if \(!att\.valid\) \{[\s\S]*?process\.exit\(1\);/.test(pfCode));
   check('el corte ocurre antes de construir el manifiesto',
-    pfCode.indexOf('process.exit(1)') < pfCode.indexOf('await buildManifest()'));
+    pfCode.indexOf('process.exit(1)') < pfCode.indexOf('await buildManifest(authState)'));
   check('imprime el diagnóstico estructurado', /authFailureReport\(auth\)/.test(pfCode));
   check('NO usa profiles como sustituto',
     /La tabla profiles NO se usa como sustituto de Auth/.test(smokeRaw));
@@ -1149,6 +1151,135 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('NO imprime la URL completa',
     /console\.log\([^)]*\bURL\b[^)]*\)/.test(pfCode) === false);
   check('repoHead no lanza si git falla', /catch \{ return '\(no disponible\)'; \}/.test(codigo));
+}
+
+// ─── 19. Atestación manual del owner (excepción acotada) ─────────────
+{
+  console.log('\n19. Atestación manual del owner');
+
+  const IDS = identitiesFor('s771a0805a');
+  const base = {
+    attested: '1', date: '2026-08-06',
+    attestedRunId: 's771a0805a', runId: 's771a0805a', identities: IDS,
+  };
+
+  // ── Constantes atadas al conjunto exacto ──
+  check('la atestación fija el RUN_ID autorizado', OWNER_ATTESTATION.run_id === 's771a0805a');
+  check('la atestación fija la fecha de verificación', OWNER_ATTESTATION.date === '2026-08-06');
+  check('el sha de identidades es sha256 hex',
+    /^[0-9a-f]{64}$/.test(OWNER_ATTESTATION.identities_sha256));
+  check('el sha corresponde a las 6 identidades reales',
+    identitiesFingerprint(IDS) === OWNER_ATTESTATION.identities_sha256);
+
+  // ── Caso válido ──
+  const okAtt = evaluateAttestation(base);
+  check('con las tres variables exactas, la atestación es VÁLIDA', okAtt.valid === true);
+  check('devuelve el sha de las identidades', okAtt.sha === OWNER_ATTESTATION.identities_sha256);
+
+  // ── Cada variable es obligatoria ──
+  for (const [desc, mut] of [
+    ['sin ASP0_OWNER_AUTH_ATTESTED',          { attested: '' }],
+    ['con ASP0_OWNER_AUTH_ATTESTED=0',        { attested: '0' }],
+    ['sin fecha',                             { date: '' }],
+    ['con fecha distinta',                    { date: '2026-08-07' }],
+    ['sin RUN_ID atestado',                   { attestedRunId: '' }],
+    ['con RUN_ID atestado distinto',          { attestedRunId: 'otrorun01' }],
+  ]) check(`${desc} → atestación INVÁLIDA`, evaluateAttestation({ ...base, ...mut }).valid === false);
+
+  // ── No se puede reutilizar con otro RUN_ID ──
+  const otroRun = evaluateAttestation({
+    ...base, runId: 'otrorun01', identities: identitiesFor('otrorun01'),
+  });
+  check('no se puede reutilizar con otro RUN_ID', otroRun.valid === false);
+  check('el motivo señala identidades y RUN_ID',
+    otroRun.reasons.some((r) => /otro RUN_ID/.test(r))
+    && otroRun.reasons.some((r) => /identidades NO son las atestadas/.test(r)), true);
+
+  // ── No se pueden cambiar las identidades ──
+  for (let i = 0; i < 3; i++) {
+    const mail = IDS.map((x) => ({ ...x }));
+    mail[i].email = `otro-${i}@lucycare.test`;
+    check(`cambiar email_${i} → atestación INVÁLIDA`,
+      evaluateAttestation({ ...base, identities: mail }).valid === false);
+
+    const tel = IDS.map((x) => ({ ...x }));
+    tel[i].phone = `5037000999${i}`;
+    check(`cambiar phone_${i} → atestación INVÁLIDA`,
+      evaluateAttestation({ ...base, identities: tel }).valid === false);
+  }
+
+  // ── Manifiesto: campos de Auth y sensibilidad de la huella ──
+  const manBase = {
+    projectHost: 'p.supabase.co', migrationSha: 'a'.repeat(64), runId: 's771a0805a',
+    identities: IDS, specialtyId: 's', programadaId: 'p', confirmadaId: 'c',
+    canceladaId: 'x', cancelReasonId: 'r',
+    authInventoryComplete: false, authVerificationMode: 'owner_manual_exact_search',
+    authUsersInspected: 100, authTotalAnnounced: 139, authFailedPage: 3,
+    ownerAttestedNoCollisions: true, ownerAttestedDate: '2026-08-06',
+    ownerAttestedIdentitiesSha256: OWNER_ATTESTATION.identities_sha256,
+  };
+  const man = flatManifest(manBase);
+  const fpBase = fingerprintOf(man);
+
+  for (const k of ['auth_inventory_complete', 'auth_verification_mode',
+                   'auth_users_inspected', 'auth_total_announced', 'auth_failed_page',
+                   'owner_attested_no_collisions', 'owner_attested_date',
+                   'owner_attested_identities_sha256']) {
+    check(`el manifiesto incluye ${k}`, Object.prototype.hasOwnProperty.call(man, k));
+  }
+  check('el manifiesto sigue siendo plano',
+    Object.values(man).every((v) => v === null || typeof v !== 'object'));
+  check('auth_inventory_complete = false bajo atestación',
+    man.auth_inventory_complete === false);
+  check('auth_verification_mode = owner_manual_exact_search',
+    man.auth_verification_mode === 'owner_manual_exact_search');
+
+  for (const [desc, mut] of [
+    ['auth_inventory_complete',         { authInventoryComplete: true }],
+    ['auth_verification_mode',          { authVerificationMode: 'listusers_exhaustive' }],
+    ['auth_users_inspected',            { authUsersInspected: 139 }],
+    ['auth_total_announced',            { authTotalAnnounced: 140 }],
+    ['auth_failed_page',                { authFailedPage: 4 }],
+    ['owner_attested_no_collisions',    { ownerAttestedNoCollisions: null }],
+    ['owner_attested_date',             { ownerAttestedDate: '2026-08-07' }],
+    ['owner_attested_identities_sha256', { ownerAttestedIdentitiesSha256: 'b'.repeat(64) }],
+  ]) check(`cambiar ${desc} → huella DISTINTA`,
+    fingerprintOf(flatManifest({ ...manBase, ...mut })) !== fpBase);
+
+  check('el manifiesto subió a v: 4', man.v === 4);
+  const blob = JSON.stringify(man);
+  check('el manifiesto sigue sin secretos',
+    /eyJ[A-Za-z0-9_-]{20,}|SERVICE_ROLE|ANON_KEY|token|password/i.test(blob) === false);
+
+  // ── Estructura del código ──
+  const codigo = read('scripts/_smoke-s7_71a.mjs').split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  check('el default sigue siendo fail-closed (sin atestación, exit 1)',
+    /if \(!att\.valid\) \{[\s\S]*?process\.exit\(1\);/.test(codigo));
+  check('las tres variables se leen del entorno',
+    /ASP0_OWNER_AUTH_ATTESTED \|\|/.test(codigo)
+    && /ASP0_OWNER_AUTH_ATTESTED_DATE \|\|/.test(codigo)
+    && /ASP0_OWNER_AUTH_ATTESTED_RUN_ID \|\|/.test(codigo), true);
+  check('las colisiones se comprueban igual con atestación',
+    /allowIncomplete: true/.test(codigo));
+  check('los catálogos se validan igual con atestación',
+    /catalogChecks\(manifest\)/.test(codigo));
+  check('--run exige la misma atestación',
+    /ABORTADO antes de escribir: inventario de Auth incompleto y sin atestación válida/.test(codigo));
+  check('una colisión aborta aunque haya atestación',
+    /ABORTADO antes de escribir: colisión detectada/.test(codigo));
+  check('el preflight declara el alcance exacto de la excepción',
+    /EXCLUSIVAMENTE esas 3 direcciones y 3 teléfonos/.test(read('scripts/_smoke-s7_71a.mjs')));
+  check('el preflight aclara que la atestación NO sustituye el inventario',
+    /atestación no lo sustituye/.test(read('scripts/_smoke-s7_71a.mjs').replace(/\s+/g, ' ')));
+  check('el preflight marca el inventario como INCOMPLETO aun con atestación',
+    /El inventario de Auth SIGUE marcado como INCOMPLETO/.test(read('scripts/_smoke-s7_71a.mjs').replace(/\s+/g, ' ')));
+  // Con atestación válida la huella DEBE emitirse: el inventario incompleto
+  // se registra en el manifiesto, no se contabiliza como fallo del preflight.
+  check('el inventario incompleto no se contabiliza como fallo antes de la atestación',
+    /ko\('inventario de Auth COMPLETO \(NO\)'\)/.test(codigo) === false);
+  check('el hecho queda registrado en el manifiesto, no en el contador',
+    /auth_inventory_complete = false/.test(read('scripts/_smoke-s7_71a.mjs')));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
