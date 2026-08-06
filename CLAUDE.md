@@ -4,9 +4,9 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-03) — post PR #311. SIN frente funcional abierto.**
-> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md`
-> (leer PRIMERO).** Ese handoff es autocontenido y reemplaza al `2026-07-30`, que
+> 🔴 **ESTADO VIGENTE (2026-08-06) — post PR #314. FRENTE ABIERTO: AUDIT-SEC-P0.**
+> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md`
+> (leer PRIMERO).** Ese handoff es autocontenido y reemplaza al `2026-08-03`, que
 > pasa a **histórico** junto con los anteriores. El detalle por PR de los frentes ya
 > cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
@@ -98,7 +98,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — el **handoff vigente** declarado en el bloque de estado del inicio de este archivo (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual ejecutada y sus límites, Turnstile ACTIVO en producción y configurado en Preview, **AUDIT-SEC-P0 como siguiente frente no iniciado**, TWILIO-P0 pausado, backlog vigente, objetivo comercial e INSTRUCCIÓN 0).
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — el **handoff vigente** declarado en el bloque de estado del inicio de este archivo (estado post-#314: **AUDIT-SEC-P0 en curso**, `s7_71a` aplicada y verificada, vulnerabilidad de `audit_log` todavía abierta, `s7_71b` bloqueada, smoke fallido con sus correcciones pendientes, médico QA persistente provisionado y reclamado, checklist bloqueante de despublicación e INSTRUCCIÓN 0).
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` — **histórico** (estado post-#308: eje Auth cerrado #304/#305/#306, `s7_69` aplicada y validada, **§M = cierre de PILOTO-P0**). Su texto histórico dice "CAPTCHA desactivado" en algunas secciones: **está obsoleto**, manda el handoff `2026-08-03`.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-14.md` — **histórico** (estado post-#277: **eje clínico F1–F6 CERRADO** (#272–#277) + `s7_58` aplicada + limpieza manual de `vitals` vacías; **regla vinculante de `amend_consultation`** (presencia de clave); pendientes vivos (F7, F8); reglas operativas; aprendizajes de método; prompt de arranque).
