@@ -11,6 +11,12 @@
 > ⚠️ **La vulnerabilidad de `audit_log` SIGUE ABIERTA en producción.** `s7_71a`
 > construyó la cobertura previa; el cierre es `s7_71b`, que **todavía está
 > bloqueada**.
+>
+> 🔄 **Actualizado el 2026-08-06 (segunda revisión).** §7 quedó **completado**
+> por el owner y verificado read-only; la corrección del smoke (§8) está
+> **implementada** en la rama `claude/audit-sec-p0-s7-71a-smoke-fix`. El
+> `smoke_sha256` cambió, así que **el fingerprint anterior está invalidado** y
+> hace falta un `--preflight` nuevo (§3, §10).
 
 ---
 
@@ -110,10 +116,16 @@ lanzado `RAISE EXCEPTION 's7_71a PRE: …'` si faltara algo).
 **Checksums vigentes** (normalizados a LF, mismo criterio en todos lados):
 
 ```
-migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0
-smoke_sha256     = 8ad15087b829860ce593b97d30143771043f99f2f5365fec6da0894d7b764771
-rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = a2d306448507437f74dd1747ebc86d62ba26f33e67075b3df9dc85fa09fabb66   ← NUEVO
+                   (anterior: 8ad15087b829860ce593b97d30143771043f99f2f5365fec6da0894d7b764771)
 ```
+
+> Que `migration_sha256` y `rollback_sha256` no se muevan es la prueba de que
+> el PR correctivo **no tocó** la migración aplicada ni su rollback.
+> `smoke_sha256` sí cambió —es el propósito del PR— y por eso **el fingerprint
+> anterior queda invalidado**: hay que emitir uno nuevo con `--preflight`.
 
 > ⚠️ **PROHIBIDO ejecutar el rollback.** `s7_71a` permanece aplicada. El
 > rollback se movió fuera de `migrations/` justamente porque ordenaba
@@ -200,11 +212,15 @@ La cancelación del paciente **no** se duplica.
 - [x] §4.2 — `SECURITY DEFINER`, `search_path`, EXECUTE revocado
 - [x] §4.3 — `cancel_my_appointment` correcta
 - [x] §4.4 — `audit_log` sin cambios
+- [x] Instrumento corregido (§8) — `check-s7_71a.mjs` en **791 OK, 0 fallos**
+- [ ] **Nuevo `--preflight`** con la huella v6 (el anterior quedó invalidado)
 - [ ] **Smoke: exactamente una fila por `cancel_my_appointment`**
 - [ ] **Smoke: `notes` e `internal_notes` ausentes de la auditoría**
 - [ ] **Smoke: cero residuos de fixtures**
 
-**Faltan solo los tres del smoke.** Ver §5.
+**Faltan los tres del smoke**, que ahora sí son alcanzables: la sección 2 ya no
+puede fallar por `P009C` porque usa al médico QA publicado y operativo. Ver §5
+y §8.
 
 ---
 
@@ -396,8 +412,14 @@ clinics               : 8b24611d-6b7d-4f2c-bbf5-ec53f5c4bded
 doctors               : ac0ba772-4263-4fb2-a146-dd90033d8c76
 doctor_credentials    : 30d3d2ab-83d5-45b8-9fdf-fb6d285e07b5
 clinic_members        : (clinic_id de arriba)
-+ los dos services QA cuando el owner los cree
+services (consulta)   : 3682d9fd-3d7e-4b03-bd10-d52fb1b75baa
+services (control)    : 38f8f112-49ed-4052-8c9a-517f82503b30
 ```
+
+> El smoke corregido construye esta denylist **resolviéndola**, no copiándola:
+> `buildPermanentIds()` la deriva de la resolución por atributos estables, y
+> `assertNotPermanent()` **lanza** antes de cada borrado y de cada
+> `deleteUser`. La lista de arriba es la referencia humana, no la fuente.
 
 ⚠️ **`profiles_id_fkey` es `ON DELETE CASCADE`**: borrar el `auth.user` QA
 arrastraría el profile y, en cascada, probablemente clínica y médico. El
@@ -408,31 +430,67 @@ desechable, nunca paciente de corrida, nunca en cleanup.
 
 ---
 
-## 7. Estado administrativo PENDIENTE (owner, desde LucyAdmin)
+## 7. Estado administrativo — ✅ COMPLETADO (2026-08-06)
 
-Al momento de escribir este handoff, **verificado read-only**:
+El owner ejecutó los tres pasos desde LucyAdmin. **Verificado read-only** con
+`service_role` el 2026-08-06 (dos corridas: la primera detectó `is_first_visit`
+incorrecto en el servicio de consulta; el owner lo corrigió y la segunda dio
+17/17).
 
-- [ ] **Crear los dos servicios** con `admin_create_service`:
-  - `QA — No reservar (consulta)` — 30 min, precio 0, `first_visit = true`
-  - `QA — No reservar (control)` — 30 min, precio 0, `first_visit = false`
-- [ ] **Activar operativo**: `admin_set_doctor_operational(true)`
-- [ ] **Publicar**: `admin_set_doctor_published(true)` → asigna el **slug** y lo
-      **congela** (`trg_set_doctor_slug`)
+- [x] **Dos servicios creados** con `admin_create_service`
+- [x] **Operativo**: `admin_set_doctor_operational(true)`
+- [x] **Publicado**: `admin_set_doctor_published(true)` → slug asignado y
+      **congelado** por `trg_set_doctor_slug`
 
-**Invariantes que deben sobrevivir a esos tres pasos:**
+| Servicio | `service_id` | Duración | Precio | Activo | `is_first_visit` |
+|---|---|---|---|---|---|
+| `QA — No reservar (consulta)` | `3682d9fd-3d7e-4b03-bd10-d52fb1b75baa` | 30 | 0 | sí | **`true`** |
+| `QA — No reservar (control)` | `38f8f112-49ed-4052-8c9a-517f82503b30` | 30 | 0 | sí | `false` |
 
-- `booking_enabled = false`
-- `availability_rules = 0`
-- **no modificar `profiles.email`**
+**Estado verificado del médico QA:**
 
-Las tres RPCs están gateadas por `is_admin()`. Con `service_role` `auth.uid()`
-es NULL y **fallan**: por eso las ejecuta el owner desde la UI.
+```
+profiles.role       = doctor
+lucy_status         = claimed
+is_published        = true
+is_operational      = true
+booking_enabled     = false      ← invariante sostenido
+slug                = qa-lucycare-perfil-medico-de-prueba
+availability_rules  = 0
+appointments        = 0
+booking_intents     = 0
+patients (clínica y profile QA) = 0
+profiles.email      = null       ← no se modificó
+```
+
+**Visibilidad pública confirmada** (cliente anon + página real): el slug
+resuelve, el perfil aparece en el directorio, anon lee `booking_enabled=false`,
+la pill dice «Sin agenda en línea» y **no hay widget de reserva** — en su lugar
+el bloque informativo con *Llamar · WhatsApp · Lista de espera*.
+
+> Las tres RPCs están gateadas por `is_admin()`. Con `service_role`
+> `auth.uid()` es NULL y **fallan**: por eso las ejecutó el owner desde la UI.
+> Verificado en el código: `admin_set_doctor_published` (redefinida en
+> `s7_57:290`, gate `can_manage_directory()`) toca **solo** `is_published`;
+> `admin_set_doctor_operational` **solo** `is_operational`; `admin_create_service`
+> **solo** `services`. Ninguna toca `booking_enabled`, que además **no tiene
+> RPC admin**: desde LucyAdmin es inalcanzable.
+
+**Dos consecuencias registradas para el checklist de §9:**
+
+1. El teléfono `50370008803` quedó **públicamente visible** en el perfil, con
+   botones activos de *Llamar* y *WhatsApp*.
+2. El perfil ya es **elegible para el `sitemap.xml`** (publicado + con slug es
+   exactamente el criterio de `middleware.ts:104`). Fecha de publicación:
+   **2026-08-06**.
 
 ---
 
-## 8. Diseño de la corrección futura del smoke
+## 8. Corrección del smoke — ✅ IMPLEMENTADA
 
-No implementado. Decisiones cerradas:
+Implementada en la rama `claude/audit-sec-p0-s7-71a-smoke-fix`. La descripción
+operativa completa está en `docs/OWNER_S7_71A_APPLY.md` §5-bis. Decisiones que
+la gobernaron (todas cumplidas):
 
 **Resolución del médico QA por identificadores estables** — email, teléfono,
 `full_name`, `metadata.fixture` y los nombres exactos de clínica y servicios.
@@ -472,6 +530,26 @@ conteos desconocidos.** El `finally` intenta todas las limpiezas; el exit es
 **≠ 0** ante residuos, conteo desconocido, tabla no consultable, error de
 borrado, usuario Auth no eliminado, **restore fallido** o actividad externa.
 
+**Añadido al implementarla, no previsto en el diseño original:**
+
+- La restauración de `booking_enabled` corre en el **`finally` local** de la
+  sección de reserva, no solo en el cleanup global. Con el médico QA
+  **publicado en producción**, dejar la reserva abierta durante el resto de la
+  corrida es una ventana real de exposición; ahora dura segundos y el cleanup
+  la re-verifica.
+- El baseline comprueba también **`availability_overrides = 0`**: un override
+  de bloqueo haría fallar la reserva por `P0098` y el diagnóstico apuntaría al
+  trigger en vez de al instrumento.
+- El teléfono QA entra en `FORBIDDEN_PHONES` (categoría propia
+  `QA_PERSISTENT_PHONES`) para que **nunca** pueda convertirse en fixture
+  desechable.
+- **Defecto encontrado en el propio check:** varios tramos se aislaban con
+  `between(codigo, …, '\n}\n')`. Los archivos están en **CRLF**, así que ese
+  delimitador no casa nunca y `between` devolvía el resto del archivo: una
+  aserción negativa sobre ese tramo pasaba mientras miraba código ajeno. Los
+  tramos se cierran ahora por el nombre de la función siguiente, y se exige que
+  no estén vacíos.
+
 > ⚠️ **`auth.admin.listUsers` falla en `page=3` con `perPage=50`**
 > (`Database error finding users`), tras dos páginas sanas y con metadata
 > coherente (`total=139`, `lastPage=3`). **Lo único demostrado es eso**: no está
@@ -505,26 +583,36 @@ excluir el perfil de sitemap, JSON-LD e indexación **sin despublicarlo**.
 
 ## 10. Próximo paso exacto
 
-### Primero — OWNER, desde LucyAdmin
+### ✅ Hecho — OWNER, desde LucyAdmin
 
-Completar §7: dos servicios, activar operativo, publicar. Después verificar
-slug, aparición en directorio y acceso al panel médico.
+§7 completado y verificado: dos servicios, operativo, publicado, slug
+congelado, invariantes sostenidos.
 
-### Después — DEV, con autorización explícita
+### ✅ Hecho — DEV: PR correctivo del smoke
 
-1. Preparar el **PR correctivo del smoke** (§8). Archivos previstos:
-   `scripts/_smoke-s7_71a.mjs`, `scripts/check-s7_71a.mjs`,
-   `docs/OWNER_S7_71A_APPLY.md`.
-2. Nuevo `--preflight` (invalidará el fingerprint anterior; requerirá atestación
-   manual del owner).
-3. Nueva corrida del smoke.
-4. Cerrar los tres gates de §4.4.
-5. **Solo entonces**, diseñar `s7_71b`.
+Rama `claude/audit-sec-p0-s7-71a-smoke-fix` sobre `a2aa77a`. Alcance exacto:
+`scripts/_smoke-s7_71a.mjs`, `scripts/check-s7_71a.mjs`,
+`docs/OWNER_S7_71A_APPLY.md` y este handoff. **No** toca la migración, el
+rollback, `src/`, tipos ni configuración.
+
+Las seis correcciones —resolución del médico QA por atributos estables,
+reserva contra el médico QA con snapshot y restauración, denylist de objetos
+permanentes, `booking_intents` sin `created_by`, inventario fail-closed y
+cobertura del check— están descritas en `docs/OWNER_S7_71A_APPLY.md` §5-bis.
+
+### Siguiente — con autorización explícita del owner
+
+1. Nuevo `--preflight`. **Invalida el fingerprint anterior** (cambió
+   `smoke_sha256` y el manifiesto subió a **v6** con los cinco UUID del médico
+   QA), así que vuelve a requerir la **atestación manual** del owner para las
+   tres identidades sintéticas `8800–8802`.
+2. Nueva corrida `--run`.
+3. Cerrar los tres gates de §4.4.
+4. **Solo entonces**, diseñar `s7_71b`.
 
 ### Autorizaciones pendientes
 
-- Abrir rama y PR para la corrección del smoke
-- Ejecutar `--preflight` (con atestación)
+- Mergear el PR correctivo del smoke
 - Ejecutar `--run`
 - Abrir `s7_71b`
 - Documentar en `CLAUDE.md` el checklist bloqueante de §9

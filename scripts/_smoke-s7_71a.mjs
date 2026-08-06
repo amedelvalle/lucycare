@@ -47,6 +47,25 @@
  *   • El borrado de `audit_log` usa ALLOWLIST explícita de los UUID de la
  *     corrida; `created_at` es condición ADICIONAL, nunca suficiente.
  *   • Verificación final de CERO residuos; si queda alguno, exit ≠ 0.
+ *   • Un conteo que NO se pudo ejecutar es un FALLO, jamás un cero. No existe
+ *     ningún `-1` que pueda leerse como "sin residuos".
+ *
+ * ── MÉDICO QA PERSISTENTE ──────────────────────────────────────────────
+ *   La sección de `create_booking_with_intent` NO usa un médico desechable:
+ *   usa el médico QA PERMANENTE, publicado y operativo, que el owner
+ *   provisionó por las vías del producto. Un médico recién creado nace con
+ *   los tres booleanos en `false` y `validate_booking_slot` (s7_66:105) lo
+ *   rechaza — ese fue el fallo de la corrida del 2026-08-06.
+ *
+ *   · Se RESUELVE por identificadores ESTABLES (teléfono, correo, nombre
+ *     exacto, `user_metadata.fixture`, nombre de clínica y nombres de los dos
+ *     servicios). Sus UUID NUNCA son la fuente de identidad: son el
+ *     RESULTADO, entran al manifiesto y quedan atados al fingerprint.
+ *   · Es PERMANENTE: entra en DENYLIST y no puede ser borrado por el cleanup
+ *     ni por `deleteUser` bajo ninguna circunstancia.
+ *   · Lo único que la corrida modifica de él es `booking_enabled` (con
+ *     snapshot y restauración en el `finally`) y UNA `availability_rule`
+ *     temporal, borrada solo por su `ruleId` allowlisted.
  *
  * ── QUÉ **NO** SE PRUEBA ACÁ (y dónde sí) ──────────────────────────────
  *   · Explotación del agujero de `audit_log`: solo local/staging.
@@ -235,13 +254,25 @@ export const DOC_PLACEHOLDER_PHONES = [
   '50312345678', '50322601234', '50361234567', '50371234567', '50391234567',
 ];
 
-/** Unión de las cinco categorías, en crudo (con duplicados intencionales). */
+/**
+ * (F) Identidad PERSISTENTE del médico QA. Es un Test Phone permanente y
+ * reservado: el smoke lo LEE para resolver al médico, pero jamás puede
+ * usarlo como fixture desechable, paciente de corrida ni destino de
+ * `createUser`/`deleteUser`. Por eso vive en la lista de prohibidos: la
+ * guarda `assertNotForbidden` solo se aplica a los teléfonos que la corrida
+ * va a CREAR, así que incluirlo acá impide que se convierta en uno sin
+ * impedir su resolución read-only.
+ */
+export const QA_PERSISTENT_PHONES = ['50370008803'];
+
+/** Unión de las seis categorías, en crudo (con duplicados intencionales). */
 export const FORBIDDEN_PHONES = [
   ...ACTIVE_SUPABASE_TEST_PHONES,
   ...REAL_OR_DEMO_PHONES,
   ...HISTORICAL_OR_RESERVED_PHONES,
   ...PRIOR_FIXTURE_PHONES,
   ...DOC_PLACEHOLDER_PHONES,
+  ...QA_PERSISTENT_PHONES,
 ];
 
 /** Normaliza a la parte nacional de 8 dígitos: tolera +503, espacios y guiones. */
@@ -296,6 +327,266 @@ export const identitiesFor = (runId) => ['patient', 'doctora', 'doctorb'].map((t
 const IDENTITIES = identitiesFor(RUN_ID);
 
 // ═════════════════════════════════════════════════════════════════════
+// MÉDICO QA PERSISTENTE — identificadores ESTABLES, nunca UUID
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Fuente de identidad del médico QA. Deliberadamente NO contiene ni un solo
+ * UUID: los UUID son el RESULTADO de la resolución, no su entrada.
+ *
+ * Motivo: un UUID hardcodeado no prueba nada sobre QUIÉN es esa fila. Si
+ * alguien recreara el médico QA, el UUID viejo apuntaría a la nada —o, peor,
+ * a otra fila— y el smoke escribiría sobre un médico equivocado. Resolviendo
+ * por atributos estables y EXIGIENDO unicidad en cada eslabón, un cambio de
+ * identidad se manifiesta como fallo de resolución, no como escritura ciega.
+ */
+export const QA_DOCTOR = {
+  phone: '50370008803',
+  email: 'asp0.qa.doctor@lucycare.test',
+  fullName: 'QA LucyCare — Perfil médico de prueba',
+  metadataFixture: 'S7_71_QA_DOCTOR',
+  clinicName: 'QA LucyCare — Clínica de prueba',
+  serviceFirstVisit: 'QA — No reservar (consulta)',
+  serviceFollowUp: 'QA — No reservar (control)',
+};
+
+/** Los dos nombres de servicio, en el orden en que se declaran arriba. */
+export const QA_SERVICE_NAMES = [QA_DOCTOR.serviceFirstVisit, QA_DOCTOR.serviceFollowUp];
+
+/**
+ * Baseline EXIGIDO al médico QA antes de tocar nada. PURA y exportada: es la
+ * misma lógica que corre el preflight, y `check-s7_71a.mjs` la ejercita con
+ * entradas sintéticas.
+ *
+ * `availability_overrides` NO está en la lista que fijó el owner, pero se
+ * comprueba igual: un override de bloqueo haría fallar la reserva por P0098
+ * y el diagnóstico apuntaría al trigger en vez de al instrumento.
+ *
+ * Devuelve pares [descripción, ok]. Nunca lanza: un campo ausente es `false`.
+ */
+export function qaBaselineChecks(qa) {
+  const q = qa ?? {};
+  const s = Array.isArray(q.services) ? q.services : [];
+  const first = s.find((x) => x?.name === QA_DOCTOR.serviceFirstVisit);
+  const follow = s.find((x) => x?.name === QA_DOCTOR.serviceFollowUp);
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return [
+    ["profiles.role = 'doctor'", q.role === 'doctor'],
+    ['profiles.full_name exacto', q.fullName === QA_DOCTOR.fullName],
+    ['auth: email exacto', String(q.authEmail ?? '').toLowerCase() === QA_DOCTOR.email],
+    ['auth: teléfono exacto', normalizePhone(q.authPhone) === normalizePhone(QA_DOCTOR.phone)],
+    ['auth: user_metadata.fixture exacta', q.authFixture === QA_DOCTOR.metadataFixture],
+    ['clínica con el nombre exacto', q.clinicName === QA_DOCTOR.clinicName],
+    ["lucy_status = 'claimed'", q.lucyStatus === 'claimed'],
+    ['is_published = true', q.isPublished === true],
+    ['is_operational = true', q.isOperational === true],
+    ['booking_enabled = false (estado base)', q.bookingEnabled === false],
+    ['exactamente 2 servicios', s.length === 2],
+    ['servicio de primera vez presente y activo', !!first && first.isActive === true],
+    ['servicio de primera vez con is_first_visit = true', first?.isFirstVisit === true],
+    ['servicio de control presente y activo', !!follow && follow.isActive === true],
+    ['servicio de control con is_first_visit = false', follow?.isFirstVisit === false],
+    ['availability_rules = 0', num(q.availabilityRules) === 0],
+    ['appointments = 0', num(q.appointments) === 0],
+    ['booking_intents = 0', num(q.bookingIntents) === 0],
+    ['availability_overrides = 0', num(q.availabilityOverrides) === 0],
+  ];
+}
+
+/**
+ * Los UUID resueltos, en el orden canónico de la cadena. Entran al manifiesto
+ * y por tanto al fingerprint: si mañana el médico QA es otro, `--run` aborta.
+ */
+export function qaManifestIds(qa) {
+  const q = qa ?? {};
+  return {
+    qaProfileId: q.profileId ?? null,
+    qaDoctorId: q.doctorId ?? null,
+    qaClinicId: q.clinicId ?? null,
+    qaServiceFirstVisitId: q.serviceFirstVisitId ?? null,
+    qaServiceFollowUpId: q.serviceFollowUpId ?? null,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// DENYLIST DE OBJETOS PERMANENTES
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Se construye tras la resolución: contiene los UUID del médico QA, su
+ * profile/auth.user, su clínica y sus dos servicios. Ninguno puede aparecer
+ * jamás en un DELETE ni en `deleteUser`.
+ *
+ * ⚠️ `profiles_id_fkey` es ON DELETE CASCADE: borrar el auth.user del médico
+ * QA arrastraría el profile y, en cascada, clínica y médico. Por eso la
+ * guarda es una ASERCIÓN QUE LANZA, no un filtro silencioso: si algún día una
+ * lista de borrado contiene un id permanente, la corrida se detiene y lo
+ * reporta en vez de "limpiarlo" sin que nadie se entere.
+ */
+let PERMANENT_IDS = new Set();
+
+export const buildPermanentIds = (qa) =>
+  new Set(Object.values(qaManifestIds(qa)).filter(Boolean));
+
+/** ¿Alguno de estos ids es permanente? PURA y exportada. */
+export function permanentHits(candidates, denylist) {
+  const set = denylist instanceof Set ? denylist : new Set(denylist ?? []);
+  return (Array.isArray(candidates) ? candidates : [candidates]).filter((c) => c && set.has(c));
+}
+
+/** Aserción que LANZA. Se llama antes de cada borrado y de cada deleteUser. */
+export function assertNotPermanent(candidates, where, denylist = PERMANENT_IDS) {
+  const hits = permanentHits(candidates, denylist);
+  if (hits.length > 0) {
+    throw new Error(
+      `ABORTADO: ${where} intentó operar sobre ${hits.length} objeto(s) PERMANENTE(S) `
+      + `del médico QA (${hits.join(', ')}). Estos objetos nunca entran en cleanup.`
+    );
+  }
+  return candidates;
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// HORARIO LOCAL DE EL SALVADOR — un único literal, sin viaje por UTC
+// ═════════════════════════════════════════════════════════════════════
+
+export const SV_TIMEZONE = 'America/El_Salvador';
+
+/**
+ * Fecha de HOY en El Salvador, como 'YYYY-MM-DD'.
+ *
+ * Se usa `Intl` para LEER el calendario local, no para convertir el horario
+ * de la cita. La diferencia importa: el bug anterior era
+ * `toISOString().replace('Z','')`, que toma un instante UTC y lo hace pasar
+ * por hora local — con UTC-6 eso desplaza el slot seis horas y puede cambiar
+ * el día, el day_of_week y la fase de la grilla a la vez.
+ */
+export function svTodayLocal(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SV_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+}
+
+/**
+ * Aritmética de CALENDARIO sobre 'YYYY-MM-DD'. `Date.UTC` acá no es una
+ * conversión de zona horaria: es la forma exacta de sumar días a una fecha
+ * sin hora. Nunca toca el literal del slot.
+ */
+export function addDaysLocal(dateStr, days) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  const p = (n) => String(n).padStart(2, '0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+}
+
+/** day_of_week de una fecha local. 0 = domingo, igual que EXTRACT(DOW) en s7_66:132. */
+export function dowLocal(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * Construye el slot ENTERO a partir de UN SOLO literal local.
+ *
+ * `p_start_local`, `day_of_week`, `start_time` y `end_time` se derivan todos
+ * de `${date}T${hour}:${minute}:00`. No hay ningún instante UTC intermedio
+ * del que puedan divergir.
+ *
+ * La regla temporal cubre una ventana MÁS ANCHA que la cita (por defecto dos
+ * horas) para satisfacer a la vez las tres condiciones de s7_66:
+ * contención completa (`end_time >= v_end_time`), resolución de
+ * `slot_duration_min` y alineación de fase — con la cita en el primer slot,
+ * `(v_time - start_time) mod slot = 0` es exactamente 0.
+ *
+ * PURA: `check-s7_71a.mjs` la ejercita sin DB.
+ */
+export function buildLocalSlot({
+  today, daysAhead = 3, hour = 10, minute = 0, slotMinutes = 30, windowHours = 2,
+} = {}) {
+  const p = (n) => String(n).padStart(2, '0');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today ?? ''))) {
+    throw new Error(`buildLocalSlot: fecha local inválida (${today})`);
+  }
+  if (!Number.isInteger(daysAhead) || daysAhead < 1) {
+    throw new Error('buildLocalSlot: daysAhead debe ser un entero ≥ 1 (nunca hoy ni el pasado)');
+  }
+  if (hour < 8 || hour + windowHours > 20) {
+    // Franja diurna holgada: ni madrugada, ni cerca de medianoche. Con esto
+    // la ventana de la regla no puede cruzar el cambio de día, que rompería
+    // la comparación `end_time >= v_end_time` (un `time` no lleva fecha).
+    throw new Error('buildLocalSlot: la ventana debe quedar dentro de la franja diurna');
+  }
+  const date = addDaysLocal(today, daysAhead);
+  const startTime = `${p(hour)}:${p(minute)}:00`;
+  const endMinutes = hour * 60 + minute + windowHours * 60;
+  const ruleEnd = `${p(Math.floor(endMinutes / 60))}:${p(endMinutes % 60)}:00`;
+  const apptEndMin = hour * 60 + minute + slotMinutes;
+  return {
+    date,
+    startLocal: `${date}T${startTime.slice(0, 8)}`,
+    dayOfWeek: dowLocal(date),
+    startTime,
+    endTime: ruleEnd,
+    slotMinutes,
+    appointmentEndTime: `${p(Math.floor(apptEndMin / 60))}:${p(apptEndMin % 60)}:00`,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CONTEOS FAIL-CLOSED — un error JAMÁS es un cero
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Normaliza el resultado de un conteo. El defecto que esto corrige es
+ * concreto: el inventario anterior devolvía `-1` ante un error y el
+ * acumulador hacía `if (n > 0) residuals += n`, así que un `-1` no sumaba
+ * nada y la corrida imprimía «CERO residuos» sobre una tabla que ni siquiera
+ * pudo consultar.
+ *
+ * PURA y exportada.
+ */
+export function countResult({ count, error }) {
+  if (error) return { status: 'ERROR', count: null, error: String(error.message ?? error) };
+  if (typeof count !== 'number' || !Number.isFinite(count)) {
+    return { status: 'ERROR', count: null, error: 'la API no devolvió un conteo numérico' };
+  }
+  return { status: 'OK', count, error: null };
+}
+
+/**
+ * Resume el inventario. `residuals` solo suma conteos OK; cualquier ERROR
+ * entra en `unknown`, y la corrida NO puede declarar cero residuos mientras
+ * `unknown` no esté vacío. PURA y exportada.
+ */
+export function summarizeInventory(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const unknown = list.filter((r) => r?.result?.status !== 'OK').map((r) => r.label);
+  const residuals = list
+    .filter((r) => r?.result?.status === 'OK')
+    .reduce((acc, r) => acc + (r.result.count > 0 ? r.result.count : 0), 0);
+  return {
+    residuals,
+    unknown,
+    canDeclareZero: unknown.length === 0 && residuals === 0,
+    exitClean: unknown.length === 0 && residuals === 0,
+  };
+}
+
+/**
+ * Separa la actividad del médico QA entre la que creó ESTA corrida
+ * (allowlist explícita de UUID) y la EXTERNA.
+ *
+ * La externa podría ser una reserva real sobre un perfil que hoy está
+ * publicado en producción: se REPORTA y hace fallar la corrida, y NUNCA se
+ * borra. PURA y exportada.
+ */
+export function partitionExternal(found, allow) {
+  const set = new Set((allow ?? []).filter(Boolean));
+  const ids = (found ?? []).map((r) => (typeof r === 'string' ? r : r?.id)).filter(Boolean);
+  return { mine: ids.filter((i) => set.has(i)), external: ids.filter((i) => !set.has(i)) };
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // ESTADO Y UTILIDADES
 // ═════════════════════════════════════════════════════════════════════
 let pass = 0, fail = 0;
@@ -308,7 +599,21 @@ const ids = {
   doctorId: null, doctorId2: null,
   patientId: null, patientId2: null, extraPatients: [],
   serviceIds: [], ruleIds: [], apptIds: [], consultIds: [], eventApptIds: [],
+  /** Intents creados por ESTA corrida, por id exacto. Nunca por created_by. */
+  intentIds: [],
+  /** Reglas temporales creadas SOBRE el médico QA permanente. */
+  qaRuleIds: [],
 };
+
+/** Médico QA resuelto (Change 1). Se llena en buildManifest/resolveQaDoctor. */
+let QA = null;
+
+/**
+ * Snapshot del estado mutable del médico QA. `taken` distingue "no se tocó"
+ * de "se tocó y hay que restaurar": sin esa bandera, restaurar `false` por
+ * defecto sería indistinguible de no haber hecho nada.
+ */
+const qaSnapshot = { taken: false, bookingEnabled: null, restored: null };
 
 const SMOKE_TABLES = [
   'appointments', 'patients', 'profiles', 'clinics', 'clinic_members',
@@ -316,11 +621,17 @@ const SMOKE_TABLES = [
   'appointment_patient_cancellations',
 ];
 
-/** ALLOWLIST: conjunto EXACTO de UUID creados por esta corrida. */
+/**
+ * ALLOWLIST: conjunto EXACTO de UUID creados por esta corrida.
+ *
+ * Incluye `qaRuleIds` —la regla temporal creada sobre el médico QA— porque
+ * también es nuestra. NUNCA incluye los objetos permanentes del médico QA.
+ */
 const allowlist = () => [
   ...ids.users, ids.clinicId, ids.doctorId, ids.doctorId2,
   ids.patientId, ids.patientId2, ...ids.extraPatients,
-  ...ids.serviceIds, ...ids.ruleIds, ...ids.apptIds, ...ids.consultIds,
+  ...ids.serviceIds, ...ids.ruleIds, ...ids.qaRuleIds,
+  ...ids.apptIds, ...ids.consultIds,
 ].filter(Boolean);
 
 async function auditRows(apptId) {
@@ -554,6 +865,115 @@ export function stableStringify(value) {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// RESOLUCIÓN DEL MÉDICO QA — READ-ONLY, cadena única obligatoria
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Resuelve el médico QA persistente por identificadores ESTABLES y exige
+ * EXACTAMENTE UNA cadena:
+ *
+ *     auth.user → profile → doctor → clinic → 2 services
+ *
+ * Cada eslabón exige unicidad. Cero filas y dos filas son el MISMO fallo: en
+ * ambos casos no se puede afirmar sobre qué fila se va a operar, y la
+ * corrida se detiene antes de escribir nada.
+ *
+ * Estrictamente read-only: `select` + `auth.admin.getUserById`. Ninguna
+ * escritura, ninguna RPC. La llama tanto `--preflight` como `--run`.
+ */
+async function resolveQaDoctor() {
+  const one = (label, rows) => {
+    const list = rows ?? [];
+    if (list.length !== 1) {
+      throw new Error(
+        `ABORTADO: resolución del médico QA — ${label} devolvió ${list.length} filas, `
+        + 'se exige exactamente 1. No se opera sobre una identidad ambigua.'
+      );
+    }
+    return list[0];
+  };
+
+  // ── 1. profile por TELÉFONO (identificador estable, nunca UUID) ──
+  const { data: profs, error: eProf } = await admin
+    .from('profiles').select('id, role, full_name, email, phone')
+    .eq('phone', QA_DOCTOR.phone);
+  if (eProf) throw new Error(`resolución QA/profiles: ${eProf.message}`);
+  const profile = one(`profiles.phone = ${QA_DOCTOR.phone}`, profs);
+
+  // ── 2. auth.user por la Admin API, para el correo y la metadata ──
+  //    getUserById sobre el id RESUELTO: nunca listUsers, nunca SQL.
+  const { data: authRes, error: eAuth } = await admin.auth.admin.getUserById(profile.id);
+  if (eAuth) throw new Error(`resolución QA/getUserById: ${eAuth.message}`);
+  const authUser = authRes?.user;
+  if (!authUser?.id) throw new Error('ABORTADO: el auth.user del médico QA no existe');
+
+  // ── 3. doctor por profile_id ──
+  const { data: docs, error: eDoc } = await admin
+    .from('doctors')
+    .select('id, clinic_id, profile_id, lucy_status, is_published, is_operational, booking_enabled, slug')
+    .eq('profile_id', profile.id);
+  if (eDoc) throw new Error(`resolución QA/doctors: ${eDoc.message}`);
+  const doctor = one('doctors.profile_id', docs);
+
+  // ── 4. clínica del médico ──
+  const { data: clinics, error: eClinic } = await admin
+    .from('clinics').select('id, name').eq('id', doctor.clinic_id);
+  if (eClinic) throw new Error(`resolución QA/clinics: ${eClinic.message}`);
+  const clinic = one('clinics.id', clinics);
+
+  // ── 5. los DOS servicios, por nombre exacto ──
+  const { data: svcs, error: eSvc } = await admin
+    .from('services').select('id, name, duration_minutes, price, is_first_visit, is_active')
+    .eq('doctor_id', doctor.id).in('name', QA_SERVICE_NAMES);
+  if (eSvc) throw new Error(`resolución QA/services: ${eSvc.message}`);
+  const services = (svcs ?? []).map((s) => ({
+    id: s.id, name: s.name, durationMinutes: s.duration_minutes,
+    price: s.price, isFirstVisit: s.is_first_visit, isActive: s.is_active,
+  }));
+
+  // ── 6. contadores del baseline (fail-closed: un error NO es un cero) ──
+  const countFor = async (table, column, value) =>
+    countResult(await admin.from(table).select('id', { count: 'exact', head: true }).eq(column, value));
+
+  const cRules = await countFor('availability_rules', 'doctor_id', doctor.id);
+  const cAppts = await countFor('appointments', 'doctor_id', doctor.id);
+  const cIntents = await countFor('booking_intents', 'doctor_id', doctor.id);
+  const cOverrides = await countFor('availability_overrides', 'doctor_id', doctor.id);
+
+  const first = services.find((s) => s.name === QA_DOCTOR.serviceFirstVisit);
+  const follow = services.find((s) => s.name === QA_DOCTOR.serviceFollowUp);
+
+  return {
+    profileId: profile.id,
+    doctorId: doctor.id,
+    clinicId: clinic.id,
+    serviceFirstVisitId: first?.id ?? null,
+    serviceFollowUpId: follow?.id ?? null,
+    role: profile.role,
+    fullName: profile.full_name,
+    profileEmail: profile.email,
+    authEmail: authUser.email ?? null,
+    authPhone: authUser.phone ?? null,
+    authFixture: authUser.user_metadata?.fixture ?? null,
+    clinicName: clinic.name,
+    lucyStatus: doctor.lucy_status,
+    isPublished: doctor.is_published,
+    isOperational: doctor.is_operational,
+    bookingEnabled: doctor.booking_enabled,
+    slug: doctor.slug,
+    services,
+    availabilityRules: cRules.status === 'OK' ? cRules.count : null,
+    appointments: cAppts.status === 'OK' ? cAppts.count : null,
+    bookingIntents: cIntents.status === 'OK' ? cIntents.count : null,
+    availabilityOverrides: cOverrides.status === 'OK' ? cOverrides.count : null,
+    countErrors: [
+      ['availability_rules', cRules], ['appointments', cAppts],
+      ['booking_intents', cIntents], ['availability_overrides', cOverrides],
+    ].filter(([, r]) => r.status !== 'OK').map(([t, r]) => `${t}: ${r.error}`),
+  };
+}
+
 /**
  * Manifiesto read-only de todo lo que determina la corrida: entorno,
  * versión de la migración, identidades y los IDs de catálogo.
@@ -576,6 +996,13 @@ async function buildManifest(authState = {}) {
 
   const statusOf = (n) => (sts ?? []).find((s) => s.name === n)?.id ?? null;
 
+  // El médico QA se resuelve ACÁ, no se recibe: así el manifiesto —y por
+  // tanto la huella— queda atado a la identidad realmente encontrada. Los
+  // UUID entran como RESULTADO de la resolución por atributos estables.
+  const qa = await resolveQaDoctor();
+  QA = qa;
+  PERMANENT_IDS = buildPermanentIds(qa);
+
   return flatManifest({
     projectHost: projectHost(),
     migrationSha: migrationSha256(),
@@ -587,6 +1014,7 @@ async function buildManifest(authState = {}) {
     confirmadaId: statusOf('confirmada'),
     canceladaId: statusOf('cancelada'),
     cancelReasonId: reason?.id ?? null,
+    ...qaManifestIds(qa),
     ...authState,
   });
 }
@@ -601,6 +1029,12 @@ async function buildManifest(authState = {}) {
 export function flatManifest({
   projectHost: host, migrationSha, smokeSha, runId, identities,
   specialtyId, programadaId, confirmadaId, canceladaId, cancelReasonId,
+  // UUID RESUELTOS del médico QA persistente. No son fuente de identidad:
+  // son el resultado de resolverlo por atributos estables. Al entrar acá
+  // quedan atados a la huella, así que si mañana el médico QA fuera otro,
+  // --run abortaría en vez de escribir sobre una identidad distinta.
+  qaProfileId = null, qaDoctorId = null, qaClinicId = null,
+  qaServiceFirstVisitId = null, qaServiceFollowUpId = null,
   // Estado del inventario de Auth y de la atestación. Forman parte del
   // fingerprint: si el modo de verificación cambia, la huella cambia.
   authInventoryComplete = null, authVerificationMode = null,
@@ -609,7 +1043,7 @@ export function flatManifest({
   ownerAttestedIdentitiesSha256 = null,
 }) {
   const m = {
-    v: 5,
+    v: 6,
     project_host: host,
     migration_version: 's7_71a',
     migration_sha256: migrationSha,
@@ -620,6 +1054,11 @@ export function flatManifest({
     confirmada_status_id: confirmadaId,
     cancelada_status_id: canceladaId,
     cancel_reason_id: cancelReasonId,
+    qa_profile_id: qaProfileId,
+    qa_doctor_id: qaDoctorId,
+    qa_clinic_id: qaClinicId,
+    qa_service_first_visit_id: qaServiceFirstVisitId,
+    qa_service_follow_up_id: qaServiceFollowUpId,
     auth_inventory_complete: authInventoryComplete,
     auth_verification_mode: authVerificationMode,
     auth_users_inspected: authUsersInspected,
@@ -795,11 +1234,15 @@ export function collisionVerdict({ authComplete, ownerAttestationValid, authHits
   };
 }
 
-export function preflightVerdict({ authProceed, noCollisions, catalogsOk }) {
+export function preflightVerdict({ authProceed, noCollisions, catalogsOk, qaBaselineOk = true }) {
   const blockers = [];
   if (!authProceed) blockers.push('inventario de Auth incompleto sin atestación válida');
   if (!noCollisions) blockers.push('colisión detectada');
   if (!catalogsOk) blockers.push('catálogo requerido faltante');
+  // El baseline del médico QA es BLOQUEANTE: sin él, la sección de booking
+  // no puede correr y la corrida volvería a fallar por P009C como el
+  // 2026-08-06. `true` por defecto para no alterar los casos que no lo pasan.
+  if (!qaBaselineOk) blockers.push('baseline del médico QA persistente incumplido');
   return { emitFingerprint: blockers.length === 0, exitCode: blockers.length === 0 ? 0 : 1, blockers };
 }
 
@@ -1054,6 +1497,46 @@ async function preflight() {
     console.log('      ⚠️  sin motivos: el caso 5.6/5.7 fallaría en --run.');
   }
 
+  // ── 5-bis. Médico QA persistente ──
+  //    `buildManifest` ya lo resolvió (por eso QA está poblado). Acá se
+  //    reporta la cadena y se verifica el baseline. Es un GATE BLOQUEANTE.
+  console.log('\n5-bis. Médico QA persistente (resuelto por atributos estables)');
+  console.log('   Resolución exigida: auth.user → profile → doctor → clinic → 2 services.');
+  console.log('   Entradas (NUNCA UUID):');
+  console.log(`     teléfono          : ${QA_DOCTOR.phone}`);
+  console.log(`     correo            : ${QA_DOCTOR.email}`);
+  console.log(`     full_name         : ${QA_DOCTOR.fullName}`);
+  console.log(`     metadata.fixture  : ${QA_DOCTOR.metadataFixture}`);
+  console.log(`     clínica           : ${QA_DOCTOR.clinicName}`);
+  console.log(`     servicios         : ${QA_SERVICE_NAMES.join(' · ')}`);
+  console.log('   UUID RESUELTOS (resultado, entran al manifiesto y a la huella):');
+  console.log(`     profile           : ${QA.profileId}`);
+  console.log(`     doctor            : ${QA.doctorId}`);
+  console.log(`     clinic            : ${QA.clinicId}`);
+  console.log(`     service 1ª vez    : ${QA.serviceFirstVisitId}`);
+  console.log(`     service control   : ${QA.serviceFollowUpId}`);
+  console.log(`     slug              : ${QA.slug ?? '(sin slug)'}`);
+
+  QA.countErrors.forEach((e) => ko(`conteo del baseline QA no verificable — ${e}`));
+
+  const qaRes = qaBaselineChecks(QA);
+  for (const [desc, okQa] of qaRes) check(`QA · ${desc}`, okQa);
+  const qaBaselineOk = qaRes.every(([, c]) => c === true) && QA.countErrors.length === 0;
+
+  // La identidad QA es ESPERADA, no una colisión: la búsqueda de colisiones
+  // solo mira las tres identidades sintéticas de la corrida (8800-8802). Se
+  // deja constancia explícita para que nadie lo interprete al revés.
+  check('QA · el teléfono QA NO está entre las identidades sintéticas de la corrida',
+    IDENTITIES.every((i) => normalizePhone(i.phone) !== normalizePhone(QA_DOCTOR.phone)));
+  check('QA · el correo QA NO está entre las identidades sintéticas de la corrida',
+    IDENTITIES.every((i) => i.email.toLowerCase() !== QA_DOCTOR.email));
+  check('QA · el teléfono QA está protegido como reservado (nunca fixture)',
+    FORBIDDEN_NORMALIZED.has(normalizePhone(QA_DOCTOR.phone)));
+  check('QA · la denylist de objetos permanentes tiene los 5 UUID',
+    PERMANENT_IDS.size === 5);
+  console.log('   ℹ️  la identidad QA es PERSISTENTE y ESPERADA: encontrarla NO es una');
+  console.log('       colisión. Las colisiones se buscan solo para las 3 sintéticas.');
+
   // ── 5. Contrato de las RPC de booking ──
   console.log('\n5. Contrato de las RPC de booking');
   console.log(`
@@ -1086,7 +1569,7 @@ async function preflight() {
   // Veredicto por la función PURA: una colisión o un catálogo faltante
   // bloquean la huella aunque la atestación sea válida.
   const verdict = preflightVerdict({
-    authProceed: authRes.proceed, noCollisions: sinColisiones, catalogsOk,
+    authProceed: authRes.proceed, noCollisions: sinColisiones, catalogsOk, qaBaselineOk,
   });
   // Cada gate bloqueante se CONTABILIZA como fallo: la salida no puede
   // volver a decir "0 fallos" y a la vez bloquear la corrida.
@@ -1100,6 +1583,7 @@ async function preflight() {
   console.log(`   atestación del owner válida  : ${attestation.valid}`);
   console.log(`   colisiones reales            : ${sinColisiones ? 'ninguna' : 'SÍ (ver arriba)'}`);
   console.log(`   catálogos completos          : ${catalogsOk}`);
+  console.log(`   baseline del médico QA       : ${qaBaselineOk}`);
   console.log(`   gates bloqueantes            : ${verdict.blockers.length === 0 ? 'ninguno' : verdict.blockers.join(' · ')}`);
   console.log(`   VEREDICTO FINAL              : ${usable ? 'APTO — se emite huella' : 'BLOQUEADO'}`);
 
@@ -1157,6 +1641,44 @@ async function verifyFingerprintBeforeWriting() {
     throw new Error('ABORTADO antes de escribir: colisión detectada.');
   }
   ok('comprobaciones de colisión repetidas y superadas');
+
+  // ── Médico QA: re-resolución y baseline, otra vez, antes de escribir ──
+  //    `buildManifest` acaba de resolverlo por atributos estables. Si hoy
+  //    resolviera a UUID distintos, el manifiesto sería otro y la huella ya
+  //    habría fallado arriba: esa es la aserción de identidad. Acá se agrega
+  //    lo que la huella NO puede ver, porque es estado mutable.
+  if (!QA) throw new Error('ABORTADO antes de escribir: el médico QA no quedó resuelto.');
+  const qaIds = qaManifestIds(QA);
+  const desalineados = Object.entries(qaIds)
+    .filter(([k, v]) => manifest[
+      { qaProfileId: 'qa_profile_id', qaDoctorId: 'qa_doctor_id', qaClinicId: 'qa_clinic_id',
+        qaServiceFirstVisitId: 'qa_service_first_visit_id',
+        qaServiceFollowUpId: 'qa_service_follow_up_id' }[k]
+    ] !== v);
+  check('los UUID del médico QA coinciden con el manifiesto aprobado', desalineados.length === 0);
+  if (desalineados.length > 0) {
+    throw new Error('ABORTADO antes de escribir: el médico QA resuelve a UUID distintos de los aprobados.');
+  }
+
+  QA.countErrors.forEach((e) => ko(`conteo del baseline QA no verificable — ${e}`));
+  const qaRes = qaBaselineChecks(QA);
+  const qaFallos = qaRes.filter(([, c]) => c !== true).map(([d]) => d);
+  check(`baseline del médico QA intacto (${qaFallos.length} desviaciones)`, qaFallos.length === 0);
+  qaFallos.forEach((d) => console.log(`      · ${d}`));
+  if (qaFallos.length > 0 || QA.countErrors.length > 0) {
+    throw new Error('ABORTADO antes de escribir: el baseline del médico QA no se cumple.');
+  }
+
+  // Estado base corrupto u otra corrida en curso: si booking_enabled YA es
+  // true, alguien más lo activó. Abortar es obligatorio — restaurarlo al
+  // final lo dejaría en un estado que este proceso no fijó.
+  if (QA.bookingEnabled !== false) {
+    throw new Error(
+      'ABORTADO antes de escribir: booking_enabled del médico QA ya es true. '
+      + 'Estado base corrupto u otra corrida en curso.'
+    );
+  }
+  ok('médico QA resuelto, baseline intacto y booking_enabled = false');
   return manifest;
 }
 
@@ -1293,33 +1815,167 @@ async function insertAppointment(fx, overrides = {}) {
   return data;
 }
 
-async function bookViaIntent(fx) {
-  const { start } = nextSlot();
-  const startLocal = start.toISOString().replace('Z', '').split('.')[0];
+/**
+ * Activa temporalmente la reserva del médico QA. Devuelve el valor previo.
+ * ÚNICA escritura permitida sobre una fila permanente, y solo de esta
+ * columna: la fila NUNCA se borra ni se altera en ningún otro campo.
+ */
+async function setQaBookingEnabled(value) {
+  const { data, error } = await admin.from('doctors')
+    .update({ booking_enabled: value }).eq('id', QA.doctorId).select('id, booking_enabled');
+  if (error) throw new Error(`booking_enabled(${value}): ${error.message}`);
+  if (data?.length !== 1) throw new Error(`booking_enabled(${value}): afectó ${data?.length} filas, se esperaba 1`);
+  return data[0].booking_enabled;
+}
 
-  const { data: intent, error: eIntent } = await fx.cPatient.rpc('register_booking_intent', {
-    p_doctor_id: fx.doctorId, p_service_id: fx.serviceId,
-    p_start_local: startLocal,
-    p_phone: assertNotForbidden(fx.uPatient.phone, 'register_booking_intent'),
-  });
-  if (eIntent) throw new Error(`register_booking_intent: ${eIntent.message}`);
-  const intentId = intent?.intent_id ?? intent?.id ?? intent?.booking_intent_id;
-  if (!intentId) throw new Error(`register_booking_intent: contrato inesperado — claves: ${Object.keys(intent ?? {}).join(', ')}`);
-
-  const { data: booking, error: eBook } = await fx.cPatient.rpc('create_booking_with_intent', {
-    p_intent_id: intentId, p_patient_name: `${MARK} Paciente Uno`, p_notes: null,
-  });
-  if (eBook) throw new Error(`create_booking_with_intent: ${eBook.message}`);
-  const appointmentId = booking?.appointment_id ?? booking?.id;
-  if (!appointmentId) throw new Error(`create_booking_with_intent: contrato inesperado — claves: ${Object.keys(booking ?? {}).join(', ')}`);
-  ids.apptIds.push(appointmentId);
-
-  const { data: appt } = await admin.from('appointments')
-    .select('patient_id').eq('id', appointmentId).maybeSingle();
-  if (appt?.patient_id && ![ids.patientId, ids.patientId2].includes(appt.patient_id)) {
-    ids.extraPatients.push(appt.patient_id);
+/**
+ * Restaura el estado mutable del médico QA. Idempotente y segura de llamar
+ * más de una vez: si no se tomó snapshot, no hay nada que restaurar.
+ *
+ * Corre ANTES del resto del cleanup (§8 del handoff): dejar a un médico
+ * PUBLICADO en producción con la reserva abierta mientras se borran fixtures
+ * es exactamente el riesgo que hay que cerrar primero.
+ */
+async function restoreQaState() {
+  if (!qaSnapshot.taken || !QA) { console.log('  ↩️  médico QA: sin cambios que restaurar'); return; }
+  try {
+    const now = await setQaBookingEnabled(qaSnapshot.bookingEnabled);
+    qaSnapshot.restored = now === qaSnapshot.bookingEnabled;
+    if (!qaSnapshot.restored) {
+      cleanupErrors.push(`restore de booking_enabled: quedó ${now}, se esperaba ${qaSnapshot.bookingEnabled}`);
+    }
+    console.log(`  ↩️  médico QA: booking_enabled restaurado a ${qaSnapshot.bookingEnabled}`);
+  } catch (e) {
+    qaSnapshot.restored = false;
+    cleanupErrors.push(`restore de booking_enabled: ${e.message}`);
+    console.error(`  ⚠️  restore de booking_enabled: ${e.message}`);
   }
-  return { appointmentId, profileId: fx.uPatient.id };
+}
+
+/** Borra las reglas temporales SOLO por su ruleId allowlisted. */
+async function deleteQaTempRules() {
+  if (ids.qaRuleIds.length === 0) return;
+  for (const ruleId of ids.qaRuleIds) {
+    // Nunca `.eq('doctor_id', …)`: eso borraría cualquier regla del médico QA,
+    // incluida una que no hubiéramos creado nosotros.
+    const { error } = await admin.from('availability_rules').delete().eq('id', ruleId);
+    if (error) {
+      cleanupErrors.push(`regla temporal ${ruleId}: ${error.message}`);
+      console.error(`  ⚠️  regla temporal ${ruleId}: ${error.message}`);
+    } else {
+      console.log(`  🧹 regla temporal ${ruleId.slice(0, 8)}… (por ruleId, nunca por doctor_id)`);
+    }
+  }
+}
+
+/**
+ * Reserva REAL contra el médico QA persistente.
+ *
+ * El médico QA está publicado, operativo y con dos servicios activos, así que
+ * `validate_booking_slot` puede pasar. Un médico recién creado no puede: nace
+ * con los tres booleanos en `false` y la RPC lo rechaza con P009C — el fallo
+ * exacto de la corrida del 2026-08-06.
+ *
+ * Todo el estado que toca se restaura en el `finally` local, y el cleanup
+ * global lo vuelve a verificar.
+ */
+async function bookViaIntent(fx) {
+  // ── 1. Estado base: booking_enabled DEBE seguir en false ──
+  const { data: pre, error: ePre } = await admin.from('doctors')
+    .select('booking_enabled').eq('id', QA.doctorId).maybeSingle();
+  if (ePre) throw new Error(`releer booking_enabled: ${ePre.message}`);
+  if (pre?.booking_enabled !== false) {
+    throw new Error('ABORTADO: booking_enabled del médico QA no es false al entrar a la sección 2.');
+  }
+
+  // ── 2. Snapshot ──
+  qaSnapshot.bookingEnabled = pre.booking_enabled;
+  qaSnapshot.taken = true;
+
+  // ── Horario: UN solo literal local de El Salvador ──
+  const slot = buildLocalSlot({ today: svTodayLocal(), daysAhead: 3, hour: 10, slotMinutes: 30 });
+  console.log(`   slot local (El Salvador): ${slot.startLocal} · dow=${slot.dayOfWeek}`
+    + ` · regla ${slot.startTime}–${slot.endTime} · slot_duration_min=${slot.slotMinutes}`);
+
+  try {
+    // ── 3-4. UNA sola regla temporal, con su ruleId exacto ──
+    const { data: rule, error: eRule } = await admin.from('availability_rules').insert({
+      clinic_id: QA.clinicId, doctor_id: QA.doctorId,
+      day_of_week: slot.dayOfWeek,
+      start_time: slot.startTime, end_time: slot.endTime,
+      // ── 5. slot_duration_min EXPLÍCITO: no se confía en el DEFAULT ──
+      slot_duration_min: slot.slotMinutes,
+      is_active: true,
+    }).select('id').single();
+    if (eRule) throw new Error(`availability_rule temporal: ${eRule.message}`);
+    ids.qaRuleIds.push(rule.id);
+
+    // ── 6. Activar la reserva ──
+    await setQaBookingEnabled(true);
+
+    // ── 7-8. Intent ──
+    const { data: intent, error: eIntent } = await fx.cPatient.rpc('register_booking_intent', {
+      p_doctor_id: QA.doctorId, p_service_id: QA.serviceFirstVisitId,
+      p_start_local: slot.startLocal,
+      p_phone: assertNotForbidden(fx.uPatient.phone, 'register_booking_intent'),
+    });
+    if (eIntent) throw new Error(`register_booking_intent: ${eIntent.message}`);
+    const intentId = intent?.intent_id ?? intent?.id ?? intent?.booking_intent_id;
+    if (!intentId) {
+      throw new Error(`register_booking_intent: contrato inesperado — claves: ${Object.keys(intent ?? {}).join(', ')}`);
+    }
+    ids.intentIds.push(intentId);
+
+    // ── 9-10. Cita ──
+    const { data: booking, error: eBook } = await fx.cPatient.rpc('create_booking_with_intent', {
+      p_intent_id: intentId, p_patient_name: `${MARK} Paciente Uno`, p_notes: null,
+    });
+    if (eBook) throw new Error(`create_booking_with_intent: ${eBook.message}`);
+    const appointmentId = booking?.appointment_id ?? booking?.id;
+    if (!appointmentId) {
+      throw new Error(`create_booking_with_intent: contrato inesperado — claves: ${Object.keys(booking ?? {}).join(', ')}`);
+    }
+    ids.apptIds.push(appointmentId);
+
+    // La reserva crea/vincula una ficha en la clínica QA: se registra para
+    // borrarla. Nunca se borra una ficha que no haya salido de acá.
+    const { data: appt } = await admin.from('appointments')
+      .select('patient_id').eq('id', appointmentId).maybeSingle();
+    if (appt?.patient_id && ![ids.patientId, ids.patientId2].includes(appt.patient_id)) {
+      ids.extraPatients.push(appt.patient_id);
+    }
+    return { appointmentId, intentId, ruleId: rule.id, profileId: fx.uPatient.id };
+  } finally {
+    // ── 11-12. Restaurar y borrar la regla, pase lo que pase. La ventana en
+    //    que un médico PUBLICADO en producción acepta reservas se cierra acá
+    //    mismo, no al final de la corrida; el cleanup global lo re-verifica.
+    await restoreQaState();
+    await deleteQaTempRules();
+  }
+}
+
+/**
+ * ── 13. Verificación posterior: booking_enabled vuelve a false y no queda
+ * ninguna regla temporal. Se ejecuta en el inventario final.
+ */
+async function verifyQaRestored() {
+  if (!QA) return { ok: true, detail: 'médico QA no resuelto' };
+  const { data, error } = await admin.from('doctors')
+    .select('booking_enabled').eq('id', QA.doctorId).maybeSingle();
+  if (error) return { ok: false, detail: `no se pudo releer booking_enabled: ${error.message}` };
+  const bookingOk = data?.booking_enabled === false;
+
+  const reglas = countResult(await admin.from('availability_rules')
+    .select('id', { count: 'exact', head: true }).eq('doctor_id', QA.doctorId));
+  const reglasOk = reglas.status === 'OK' && reglas.count === 0;
+
+  return {
+    ok: bookingOk && reglasOk,
+    bookingEnabled: data?.booking_enabled ?? null,
+    rules: reglas,
+    detail: `booking_enabled=${data?.booking_enabled} · availability_rules=`
+      + (reglas.status === 'OK' ? reglas.count : `ERROR (${reglas.error})`),
+  };
 }
 
 async function cancelAsPatient(fx) {
@@ -1399,6 +2055,8 @@ async function run() {
 
   // ─── 2. create_booking_with_intent ─────────────────────────────────
   console.log('\n2. Reserva por create_booking_with_intent (cobertura NUEVA)');
+  console.log('   Médico: el QA PERSISTENTE (publicado + operativo). Un médico recién');
+  console.log('   creado nace con los tres booleanos en false y P009C rechaza la reserva.');
   {
     const r = await bookViaIntent(fx);
     const rows = await auditRows(r.appointmentId);
@@ -1408,6 +2066,12 @@ async function run() {
     check('2.4 source literal registrado', typeof rows[0]?.new_data?.source === 'string');
     check('2.5 actor_kind = user', rows[0]?.new_data?.actor_kind === 'user');
     check('2.6 user_id = el paciente (no el centinela)', rows[0]?.user_id === r.profileId);
+    check('2.7 la cita quedó en el médico QA', rows[0]?.new_data?.doctor_id === QA.doctorId);
+    check('2.8 se capturó el intent_id exacto', ids.intentIds.includes(r.intentId));
+    check('2.9 se capturó el ruleId exacto de la regla temporal', ids.qaRuleIds.includes(r.ruleId));
+    // El restore ya corrió en el `finally` de bookViaIntent: la ventana en que
+    // el médico QA aceptaba reservas se cerró antes de seguir.
+    check('2.10 booking_enabled restaurado inmediatamente', qaSnapshot.restored === true);
   }
 
   // ─── 3. Cambio de estado ───────────────────────────────────────────
@@ -1612,6 +2276,26 @@ async function cleanup() {
   const patientIds = [ids.patientId, ids.patientId2, ...ids.extraPatients].filter(Boolean);
   const doctorIds = [ids.doctorId, ids.doctorId2].filter(Boolean);
 
+  // ── PRIMERO: restaurar el estado del médico QA ──
+  //    Antes que cualquier borrado. Si el cleanup fallara a mitad, lo que no
+  //    puede quedar abierto es la reserva de un médico publicado en producción.
+  //    Idempotente: si bookViaIntent ya restauró, esto no encuentra nada que hacer.
+  await restoreQaState();
+  await deleteQaTempRules();
+
+  // ── DENYLIST: ninguna lista de borrado puede tocar un objeto permanente ──
+  //    La aserción LANZA. No filtra en silencio: si un id permanente llegara a
+  //    una lista de borrado, eso es un defecto del instrumento y hay que verlo.
+  assertNotPermanent(ids.users, 'cleanup/users');
+  assertNotPermanent(patientIds, 'cleanup/patients');
+  assertNotPermanent(doctorIds, 'cleanup/doctors');
+  assertNotPermanent(ids.serviceIds, 'cleanup/services');
+  assertNotPermanent(ids.ruleIds, 'cleanup/availability_rules');
+  assertNotPermanent([ids.clinicId].filter(Boolean), 'cleanup/clinics');
+  assertNotPermanent(ids.apptIds, 'cleanup/appointments');
+  assertNotPermanent(ids.intentIds, 'cleanup/booking_intents');
+  console.log(`  🛡️  denylist verificada: ${PERMANENT_IDS.size} objeto(s) permanente(s) intocables`);
+
   if (has(ids.consultIds)) {
     for (const t of ['consultation_amendments', 'prescriptions',
                      'consultation_diagnoses', 'consultation_family_history']) {
@@ -1626,8 +2310,14 @@ async function cleanup() {
   }
   if (has(ids.apptIds)) await del('citas', admin.from('appointments').delete().in('id', ids.apptIds));
 
+  // `booking_intents` NO tiene columna `created_by` — el smoke anterior la
+  // usaba y por eso el conteo fallaba en silencio. Se borra por el id EXACTO
+  // capturado en la corrida, nunca por doctor_id ni por teléfono.
+  if (has(ids.intentIds)) {
+    await del('booking_intents (por id allowlisted)',
+      admin.from('booking_intents').delete().in('id', ids.intentIds));
+  }
   if (has(ids.users)) {
-    await del('booking_intents', admin.from('booking_intents').delete().in('created_by', ids.users));
     await del('auth_creation_grants', admin.from('auth_creation_grants').delete().in('issued_by', ids.users));
   }
 
@@ -1646,6 +2336,10 @@ async function cleanup() {
   if (has(ids.users)) await del('perfiles', admin.from('profiles').delete().in('id', ids.users));
   for (const uid of ids.users) {
     try {
+      // Última guarda antes de la operación IRREVERSIBLE. `profiles_id_fkey`
+      // es ON DELETE CASCADE: borrar el auth.user del médico QA arrastraría
+      // profile, clínica y médico. Se comprueba uno por uno, no en bloque.
+      assertNotPermanent([uid], 'cleanup/deleteUser');
       const { error } = await admin.auth.admin.deleteUser(uid);
       if (error) { cleanupErrors.push(`auth.user ${uid}: ${error.message}`); console.error(`  ⚠️  auth.user ${uid}: ${error.message}`); }
       else console.log(`  🧹 auth.user ${uid.slice(0, 8)}… (Admin API, nunca SQL)`);
@@ -1697,17 +2391,22 @@ async function cleanupAuditLog() {
   else console.log(`  🧹 audit_log: ${filas.length} fila(s) sintéticas`);
 }
 
-/** Inventario final. Falla el proceso si queda CUALQUIER residuo. */
+/**
+ * Inventario final FAIL-CLOSED.
+ *
+ * Regla que sustituye al `-1`: un conteo que no se pudo ejecutar es
+ * DESCONOCIDO, no cero. Un desconocido impide declarar «cero residuos»,
+ * fuerza exit ≠ 0 y se imprime con su motivo. El `finally` intenta todas las
+ * lecturas igualmente: que una tabla no se pueda consultar no cancela el
+ * resto del inventario.
+ */
 async function finalInventory(patientIds, doctorIds) {
-  console.log('\n  Inventario final — verificación de CERO residuos');
-  let residuals = 0;
+  console.log('\n  Inventario final — verificación de CERO residuos (fail-closed)');
 
   const countIn = async (table, col, list) => {
-    if (!list.length) return 0;
-    const { count, error } = await admin.from(table)
-      .select('*', { count: 'exact', head: true }).in(col, list);
-    if (error) { cleanupErrors.push(`contar ${table}: ${error.message}`); return -1; }
-    return count ?? 0;
+    if (!list.length) return { status: 'OK', count: 0, error: null };
+    return countResult(await admin.from(table)
+      .select('*', { count: 'exact', head: true }).in(col, list));
   };
 
   const filas = [
@@ -1717,39 +2416,116 @@ async function finalInventory(patientIds, doctorIds) {
     ['patients', 'id', patientIds],
     ['services', 'id', ids.serviceIds],
     ['availability_rules', 'id', ids.ruleIds],
+    ['availability_rules (temporales QA)', 'id', ids.qaRuleIds],
     ['doctors', 'id', doctorIds],
     ['clinic_members', 'profile_id', ids.users],
     ['clinics', 'id', [ids.clinicId].filter(Boolean)],
-    ['booking_intents', 'created_by', ids.users],
+    ['booking_intents', 'id', ids.intentIds],
     ['auth_creation_grants', 'issued_by', ids.users],
     ['profiles', 'id', ids.users],
   ];
-  for (const [table, col, list] of filas) {
-    const n = await countIn(table, col, list);
-    if (n > 0) residuals += n;
-    console.log(`    · ${String(table).padEnd(36)} ${n}`);
+
+  const rows = [];
+  for (const [label, col, list] of filas) {
+    const table = label.split(' ')[0];
+    const result = await countIn(table, col, list);
+    rows.push({ label, result });
+    console.log(`    · ${String(label).padEnd(36)} `
+      + (result.status === 'OK' ? result.count : `DESCONOCIDO (${result.error})`));
   }
 
   const allow = allowlist();
   if (allow.length) {
-    const { count, error } = await admin.from('audit_log')
+    const r = countResult(await admin.from('audit_log')
       .select('id', { count: 'exact', head: true })
-      .in('record_id', allow).in('table_name', SMOKE_TABLES).gte('created_at', RUN_STARTED_AT);
-    if (error) cleanupErrors.push(`contar audit_log: ${error.message}`);
-    else { residuals += count ?? 0; console.log(`    · ${'audit_log (sintético)'.padEnd(36)} ${count ?? 0}`); }
+      .in('record_id', allow).in('table_name', SMOKE_TABLES).gte('created_at', RUN_STARTED_AT));
+    rows.push({ label: 'audit_log (sintético)', result: r });
+    console.log(`    · ${'audit_log (sintético)'.padEnd(36)} `
+      + (r.status === 'OK' ? r.count : `DESCONOCIDO (${r.error})`));
   }
 
+  // ── auth.users: un getUserById que falla tampoco es "ya no está" ──
   let authLeft = 0;
+  const authUnknown = [];
   for (const uid of ids.users) {
     const { data, error } = await admin.auth.admin.getUserById(uid);
-    if (!error && data?.user?.id) { authLeft++; console.log(`    · auth.user ${uid} → ⚠️ TODAVÍA EXISTE`); }
+    if (error) {
+      // Solo "no encontrado" prueba la eliminación. Cualquier otro error deja
+      // el estado sin determinar y NO puede contarse como éxito.
+      if (/not.?found/i.test(error.message ?? '')) continue;
+      authUnknown.push(`auth.user ${uid}: ${error.message}`);
+      continue;
+    }
+    if (data?.user?.id) { authLeft++; console.log(`    · auth.user ${uid} → ⚠️ TODAVÍA EXISTE`); }
   }
-  residuals += authLeft;
-  console.log(`    · ${'auth.users (getUserById)'.padEnd(36)} ${authLeft}`);
+  rows.push({ label: 'auth.users (getUserById)', result: authUnknown.length > 0
+    ? { status: 'ERROR', count: null, error: authUnknown.join(' · ') }
+    : { status: 'OK', count: authLeft, error: null } });
+  console.log(`    · ${'auth.users (getUserById)'.padEnd(36)} `
+    + (authUnknown.length > 0 ? `DESCONOCIDO (${authUnknown.length})` : authLeft));
 
-  check(`13.1 CERO residuos (${residuals})`, residuals === 0);
+  // ── Actividad EXTERNA sobre el médico QA ──
+  //    El médico QA está publicado en producción: una cita o un intent que no
+  //    salió de esta corrida puede ser una reserva REAL. Se reporta, hace
+  //    fallar la corrida y NUNCA se borra.
+  const externos = await detectExternalQaActivity();
+  externos.reports.forEach((r) => console.log(`    · ${r}`));
+
+  const resumen = summarizeInventory(rows);
+  resumen.unknown.forEach((u) => cleanupErrors.push(`conteo DESCONOCIDO: ${u}`));
+
+  // ── Restauración del médico QA ──
+  const restored = await verifyQaRestored();
+  console.log(`    · ${'médico QA restaurado'.padEnd(36)} ${restored.detail}`);
+
+  // «CERO residuos» solo puede afirmarse con TODOS los conteos conocidos.
+  if (resumen.unknown.length > 0) {
+    ko(`13.1 NO se puede declarar cero residuos: ${resumen.unknown.length} conteo(s) DESCONOCIDO(s)`);
+    resumen.unknown.forEach((u) => console.log(`      · ${u}`));
+  } else {
+    check(`13.1 CERO residuos (${resumen.residuals})`, resumen.residuals === 0);
+  }
   check(`13.2 el cleanup no acumuló errores (${cleanupErrors.length})`, cleanupErrors.length === 0);
+  check('13.3 booking_enabled del médico QA restaurado y 0 reglas temporales', restored.ok === true);
+  check(`13.4 sin actividad externa sobre el médico QA (${externos.total})`, externos.total === 0);
   cleanupErrors.forEach((e) => console.log(`      · ${e}`));
+}
+
+/**
+ * Detecta citas e intents del médico QA que NO salieron de esta corrida.
+ *
+ * `doctor_id` y `RUN_STARTED_AT` son DEFENSAS ADICIONALES para acotar la
+ * ventana de búsqueda, nunca criterio suficiente para borrar: lo único que
+ * autoriza un borrado es la allowlist de UUID exactos. Lo externo se reporta
+ * y hace fallar; jamás se toca.
+ */
+async function detectExternalQaActivity() {
+  const reports = [];
+  let total = 0;
+  if (!QA) return { total: 0, reports: ['médico QA no resuelto: sin verificación de actividad externa'] };
+
+  const sondas = [
+    ['appointments', ids.apptIds],
+    ['booking_intents', ids.intentIds],
+  ];
+  for (const [table, allow] of sondas) {
+    const { data, error } = await admin.from(table).select('id')
+      .eq('doctor_id', QA.doctorId).gte('created_at', RUN_STARTED_AT);
+    if (error) {
+      total += 1;   // no verificable = fallo, nunca "cero"
+      cleanupErrors.push(`actividad externa en ${table}: no verificable (${error.message})`);
+      reports.push(`${table}: NO VERIFICABLE (${error.message})`);
+      continue;
+    }
+    const { external } = partitionExternal(data ?? [], allow);
+    total += external.length;
+    reports.push(`${table}: ${external.length} fila(s) externa(s)`
+      + (external.length ? ` → ${external.join(', ')} — NO se borran` : ''));
+  }
+  if (total > 0) {
+    reports.push('⛔ actividad externa sobre un médico PUBLICADO: podría ser una reserva real.');
+  }
+  return { total, reports };
 }
 
 // ═════════════════════════════════════════════════════════════════════
