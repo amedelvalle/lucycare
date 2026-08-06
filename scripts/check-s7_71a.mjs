@@ -57,7 +57,11 @@ const stripComments = (s) => s.replace(/--[^\n]*/g, '');
 console.log('\ncheck-s7_71a — cobertura server-side de appointments\n');
 
 const sqlRaw = read('migrations/s7_71a_audit_appointments_coverage.sql');
-const rbRaw  = read('migrations/s7_71a_rollback.sql');
+// El rollback vive FUERA de migrations/ a propósito: dentro del namespace de
+// migraciones aplicables podría tomarse por pendiente y revertir la cobertura
+// justo después de aplicarla (ordena inmediatamente tras su forward).
+const ROLLBACK_PATH = 'docs/rollbacks/s7_71a_rollback.sql';
+const rbRaw  = read(ROLLBACK_PATH);
 const sql    = stripComments(sqlRaw);
 const rb     = stripComments(rbRaw);
 
@@ -564,7 +568,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
 
   // ── El prefijo 50369 quedó ELIMINADO de todo el PR ──
   const pr5 = ['migrations/s7_71a_audit_appointments_coverage.sql',
-               'migrations/s7_71a_rollback.sql',
+               ROLLBACK_PATH,
                'scripts/check-s7_71a.mjs',
                'scripts/_smoke-s7_71a.mjs',
                'docs/OWNER_S7_71A_APPLY.md'];

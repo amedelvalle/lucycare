@@ -342,8 +342,22 @@ checksums, proyecto e identidades.
 ## 7. Rollback
 
 ```
-migrations/s7_71a_rollback.sql
+docs/rollbacks/s7_71a_rollback.sql
 ```
+
+> ⚠️ **Vive FUERA de `migrations/` a propósito.** Dentro de ese directorio
+> ordenaba inmediatamente después de su forward
+> (`s7_71a_audit_appointments_coverage.sql` → `s7_71a_rollback.sql`) y cumplía
+> el mismo patrón de nombre `s7_*`, así que cualquiera que aplicara "las
+> pendientes en orden" —o una automatización futura que filtrara por ese
+> patrón— habría ejecutado la cobertura y acto seguido la habría deshecho, sin
+> error visible: ambas terminan en `COMMIT`. **Este archivo no debe aplicarse
+> nunca en secuencia; solo a mano y a propósito.**
+>
+> Nota: el encabezado de la migración forward todavía lo referencia por su
+> ruta anterior (`migrations/s7_71a_rollback.sql`). Es un comentario obsoleto
+> y **deliberado**: corregirlo cambiaría el `migration_sha256` e invalidaría
+> el fingerprint ya aprobado. La ruta correcta es la de arriba.
 
 Quita el trigger y la función, y restaura `cancel_my_appointment` al cuerpo
 exacto de `s7_70` (incluido su `INSERT` manual).
