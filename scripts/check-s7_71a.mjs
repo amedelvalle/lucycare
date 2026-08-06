@@ -28,6 +28,11 @@ import {
   HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
   DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
   SYNTHETIC_PHONES,
+  // ── Médico QA persistente, horario local, denylist y fail-closed ──
+  QA_DOCTOR, QA_SERVICE_NAMES, QA_PERSISTENT_PHONES,
+  qaBaselineChecks, qaManifestIds, buildPermanentIds, permanentHits, assertNotPermanent,
+  SV_TIMEZONE, svTodayLocal, addDaysLocal, dowLocal, buildLocalSlot,
+  countResult, summarizeInventory, partitionExternal,
 } from './_smoke-s7_71a.mjs';
 
 let pass = 0, fail = 0;
@@ -779,9 +784,13 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /readFileSync\(path, 'utf8'\)\.replace\(\/\\r\\n\/g, '\\n'\)/.test(smoke));
   check('el host sale de SUPABASE_URL, nunca la clave',
     /new globalThis\.URL\(URL\)\.hostname/.test(smoke));
+  // Patrones de SECRETO, no palabras sueltas: `qa_service_first_visit_id` es
+  // un id de catálogo perfectamente público y contiene "service". La garantía
+  // dura sobre el contenido real vive en §15, que inspecciona un manifiesto
+  // construido, no el texto fuente.
   check('el manifiesto NO incluye claves ni secretos',
-    /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
-  check('el manifiesto subió de versión (v: 5)', /v: 5,/.test(bm));
+    /SERVICE_ROLE|ANON_KEY|SUPABASE_KEY|\btoken\b|password|secret/i.test(bm) === false);
+  check('el manifiesto subió de versión (v: 6)', /v: 6,/.test(bm));
   check('advierte contra el replacer array de JSON.stringify',
     /NO usar `JSON\.stringify\(obj, Object\.keys\(obj\)\.sort\(\)\)`/.test(smoke));
   check('la huella es SHA-256 sobre la serialización canónica',
@@ -827,7 +836,11 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('se verifica la ausencia con getUserById',
     /admin\.auth\.admin\.getUserById\(uid\)/.test(smoke));
   check('los usuarios que sobrevivan cuentan como residuo',
-    /residuals \+= authLeft/.test(smoke));
+    /rows\.push\(\{ label: 'auth\.users \(getUserById\)', result: authUnknown\.length > 0/.test(smoke)
+    && /count: authLeft/.test(smoke), true);
+  check('un getUserById que falla NO cuenta como usuario eliminado',
+    /if \(\/not\.\?found\/i\.test\(error\.message \?\? ''\)\) continue;/.test(smoke)
+    && /authUnknown\.push/.test(smoke), true);
   for (const t of ['profiles', 'patients', 'doctors', 'clinic_members',
                    'appointments', 'booking_intents', 'auth_creation_grants']) {
     check(`el inventario final cubre ${t}`, new RegExp(`'${t}'`).test(smoke));
@@ -1253,7 +1266,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   ]) check(`cambiar ${desc} → huella DISTINTA`,
     fingerprintOf(flatManifest({ ...manBase, ...mut })) !== fpBase);
 
-  check('el manifiesto subió a v: 5', man.v === 5);
+  check('el manifiesto subió a v: 6', man.v === 6);
   const blob = JSON.stringify(man);
   check('el manifiesto sigue sin secretos',
     /eyJ[A-Za-z0-9_-]{20,}|SERVICE_ROLE|ANON_KEY|token|password/i.test(blob) === false);
@@ -1444,7 +1457,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     Object.prototype.hasOwnProperty.call(m, 'smoke_sha256'));
   check('el manifiesto conserva migration_sha256',
     Object.prototype.hasOwnProperty.call(m, 'migration_sha256'));
-  check('el manifiesto subió a v: 5', m.v === 5);
+  check('el manifiesto subió a v: 6', m.v === 6);
   check('cambiar smoke_sha256 → huella DISTINTA',
     fingerprintOf(flatManifest({ ...base, smokeSha: 'c'.repeat(64) })) !== fp0);
   check('cambiar migration_sha256 → huella DISTINTA',
@@ -1559,6 +1572,476 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     && /colisiones reales/.test(codigo) && /VEREDICTO FINAL/.test(codigo), true);
   check('el símbolo final refleja el veredicto, no solo el contador',
     /\$\{usable \? '✅' : '❌'\} preflight/.test(codigo));
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CORRECCIÓN DEL SMOKE (2026-08-06) — secciones 23 a 27
+//
+// La corrida del 2026-08-06 falló en la sección 2 con
+// «register_booking_intent: Ese horario no está disponible». No era un
+// defecto de s7_71a: era del INSTRUMENTO. Las fixtures creaban médicos con
+// los tres booleanos en false y `validate_booking_slot` los rechaza (P009C).
+// Estas cinco secciones cubren las seis correcciones acordadas.
+// ═════════════════════════════════════════════════════════════════════
+
+// ─── 23. Médico QA: resolución única y baseline ───────────────────────
+{
+  console.log('\n23. Médico QA persistente — resolución y baseline');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  // ── La fuente de identidad NO puede ser un UUID ──
+  const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  const SENTINEL = '00000000-0000-0000-0000-000000000000';
+  const uuidsEnCodigo = (codigo.match(UUID_RE) || []).filter((u) => u.toLowerCase() !== SENTINEL);
+  check(`el smoke NO hardcodea ningún UUID (${uuidsEnCodigo.length})`, uuidsEnCodigo.length === 0);
+  if (uuidsEnCodigo.length) console.log(`      · ${[...new Set(uuidsEnCodigo)].join(', ')}`);
+  check('el centinela de user_id sigue siendo la única excepción',
+    codigo.includes(SENTINEL));
+  check('QA_DOCTOR no contiene ningún UUID',
+    Object.values(QA_DOCTOR).every((v) => !new RegExp(UUID_RE.source, 'i').test(String(v))));
+
+  // ── Identificadores estables exigidos por el owner ──
+  check('resuelve por teléfono', QA_DOCTOR.phone === '50370008803');
+  check('resuelve por correo exacto', QA_DOCTOR.email === 'asp0.qa.doctor@lucycare.test');
+  check('resuelve por full_name exacto',
+    QA_DOCTOR.fullName === 'QA LucyCare — Perfil médico de prueba');
+  check('resuelve por metadata.fixture', QA_DOCTOR.metadataFixture === 'S7_71_QA_DOCTOR');
+  check('resuelve por nombre exacto de clínica',
+    QA_DOCTOR.clinicName === 'QA LucyCare — Clínica de prueba');
+  check('resuelve por los dos nombres de servicio',
+    QA_SERVICE_NAMES.length === 2
+    && QA_SERVICE_NAMES[0] === 'QA — No reservar (consulta)'
+    && QA_SERVICE_NAMES[1] === 'QA — No reservar (control)', true);
+
+  // ── La cadena completa, eslabón por eslabón ──
+  // Fin de tramo por el NOMBRE de la función siguiente, no por '\n}\n': los
+  // archivos del repo están en CRLF y '}' va seguido de '\r\n', así que ese
+  // delimitador no casa nunca y `between` devolvería el resto del archivo —
+  // una aserción que parece pasar mientras mira código que no es el suyo.
+  const rq = between(codigo, 'async function resolveQaDoctor()', 'async function buildManifest(');
+  check('resolveQaDoctor() existe', /async function resolveQaDoctor\(\)/.test(codigo));
+  // Un tramo VACÍO haría pasar por verdadera cualquier aserción negativa
+  // sobre él. Se exige que tenga cuerpo antes de afirmar nada.
+  check('el tramo de resolveQaDoctor no está vacío', rq.length > 500);
+  check('exige exactamente UNA fila por eslabón',
+    /devolvió \$\{list\.length\} filas, /.test(smoke) && /list\.length !== 1/.test(rq), true);
+  check('eslabón profile por teléfono', /\.eq\('phone', QA_DOCTOR\.phone\)/.test(rq));
+  check('eslabón auth.user por getUserById del id resuelto',
+    /admin\.auth\.admin\.getUserById\(profile\.id\)/.test(rq));
+  check('eslabón doctor por profile_id', /\.eq\('profile_id', profile\.id\)/.test(rq));
+  check('eslabón clinic por el clinic_id del médico', /\.eq\('id', doctor\.clinic_id\)/.test(rq));
+  check('eslabón services por los dos nombres exactos',
+    /\.in\('name', QA_SERVICE_NAMES\)/.test(rq));
+  check('la resolución es READ-ONLY (sin insert/update/delete/rpc)',
+    /\.insert\(|\.update\(\s*\{|\.delete\(|\.rpc\(/.test(rq) === false);
+
+  // ── getUserById verifica email, teléfono y metadata ──
+  const bl = qaBaselineChecks({});
+  const etiquetas = bl.map(([d]) => d);
+  check('el baseline verifica el email de auth', etiquetas.includes('auth: email exacto'));
+  check('el baseline verifica el teléfono de auth', etiquetas.includes('auth: teléfono exacto'));
+  check('el baseline verifica user_metadata.fixture',
+    etiquetas.includes('auth: user_metadata.fixture exacta'));
+
+  // ── Baseline: publicado + operativo, PERO booking desactivado ──
+  const qaOk = {
+    role: 'doctor', fullName: QA_DOCTOR.fullName,
+    authEmail: QA_DOCTOR.email, authPhone: QA_DOCTOR.phone,
+    authFixture: QA_DOCTOR.metadataFixture, clinicName: QA_DOCTOR.clinicName,
+    lucyStatus: 'claimed', isPublished: true, isOperational: true, bookingEnabled: false,
+    services: [
+      { name: QA_SERVICE_NAMES[0], isFirstVisit: true, isActive: true },
+      { name: QA_SERVICE_NAMES[1], isFirstVisit: false, isActive: true },
+    ],
+    availabilityRules: 0, appointments: 0, bookingIntents: 0, availabilityOverrides: 0,
+  };
+  const todos = (qa) => qaBaselineChecks(qa).every(([, c]) => c === true);
+  check('baseline correcto → pasa entero', todos(qaOk));
+
+  for (const [desc, mut] of [
+    ['role distinto de doctor', { role: 'patient' }],
+    ['full_name alterado', { fullName: 'Otro nombre' }],
+    ['email de auth distinto', { authEmail: 'otro@lucycare.test' }],
+    ['teléfono de auth distinto', { authPhone: '50370008899' }],
+    ['metadata.fixture distinta', { authFixture: 'OTRA' }],
+    ['clínica con otro nombre', { clinicName: 'Otra clínica' }],
+    ['lucy_status distinto', { lucyStatus: 'verified' }],
+    ['is_published = false', { isPublished: false }],
+    ['is_operational = false', { isOperational: false }],
+    ['booking_enabled = true', { bookingEnabled: true }],
+    ['availability_rules > 0', { availabilityRules: 1 }],
+    ['appointments > 0', { appointments: 1 }],
+    ['booking_intents > 0', { bookingIntents: 1 }],
+    ['availability_overrides > 0', { availabilityOverrides: 1 }],
+  ]) check(`baseline rechaza: ${desc}`, todos({ ...qaOk, ...mut }) === false);
+
+  // Un conteo NULO (no verificable) tampoco puede pasar por cero.
+  for (const campo of ['availabilityRules', 'appointments', 'bookingIntents', 'availabilityOverrides']) {
+    check(`baseline rechaza ${campo} desconocido (null)`,
+      todos({ ...qaOk, [campo]: null }) === false);
+  }
+
+  // ── Exactamente dos servicios, con las dos ramas de first_visit ──
+  check('baseline rechaza un solo servicio',
+    todos({ ...qaOk, services: [qaOk.services[0]] }) === false);
+  check('baseline rechaza tres servicios',
+    todos({ ...qaOk, services: [...qaOk.services, { name: 'X', isFirstVisit: false, isActive: true }] }) === false);
+  check('baseline rechaza consulta con is_first_visit = false',
+    todos({ ...qaOk, services: [{ ...qaOk.services[0], isFirstVisit: false }, qaOk.services[1]] }) === false);
+  check('baseline rechaza control con is_first_visit = true',
+    todos({ ...qaOk, services: [qaOk.services[0], { ...qaOk.services[1], isFirtVisit: true, isFirstVisit: true }] }) === false);
+  check('baseline rechaza un servicio inactivo',
+    todos({ ...qaOk, services: [{ ...qaOk.services[0], isActive: false }, qaOk.services[1]] }) === false);
+  check('qaBaselineChecks nunca lanza con entrada vacía',
+    Array.isArray(qaBaselineChecks(undefined)) && qaBaselineChecks(undefined).every(([, c]) => c === false), true);
+
+  // ── El baseline es BLOQUEANTE del preflight ──
+  check('un baseline QA incumplido bloquea la huella',
+    preflightVerdict({ authProceed: true, noCollisions: true, catalogsOk: true, qaBaselineOk: false })
+      .emitFingerprint === false);
+  check('el bloqueo se nombra explícitamente',
+    preflightVerdict({ authProceed: true, noCollisions: true, catalogsOk: true, qaBaselineOk: false })
+      .blockers.some((b) => /baseline del médico QA/.test(b)));
+  check('sin el parámetro, el veredicto no cambia (retrocompatible)',
+    preflightVerdict({ authProceed: true, noCollisions: true, catalogsOk: true }).emitFingerprint === true);
+  check('el preflight pasa qaBaselineOk al veredicto',
+    /preflightVerdict\(\{[\s\S]{0,160}qaBaselineOk,/.test(codigo));
+
+  // ── El teléfono QA es identidad PERSISTENTE, no colisión ni fixture ──
+  check('el teléfono QA está en su propia categoría',
+    QA_PERSISTENT_PHONES.length === 1 && QA_PERSISTENT_PHONES[0] === QA_DOCTOR.phone, true);
+  check('el teléfono QA está protegido contra uso como fixture',
+    FORBIDDEN_NORMALIZED.has(normalizePhone(QA_DOCTOR.phone)));
+  check('el teléfono QA NO es una de las 3 identidades sintéticas',
+    SYNTHETIC_PHONES.every((p) => normalizePhone(p) !== normalizePhone(QA_DOCTOR.phone)));
+  check('el preflight declara que encontrar al QA no es colisión',
+    /la identidad QA es PERSISTENTE y ESPERADA: encontrarla NO es una/.test(smoke));
+}
+
+// ─── 24. Horario local de El Salvador — un solo literal ───────────────
+{
+  console.log('\n24. Horario local (sin conversión UTC insegura)');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  // ── El patrón exacto que causaba el desfase ya no existe ──
+  check('NO queda toISOString().replace(\'Z\',\'\')',
+    /toISOString\(\)\.replace\('Z'/.test(codigo) === false);
+  check('p_start_local NO se deriva de un instante UTC',
+    /p_start_local: startLocal/.test(codigo) === false);
+  check('p_start_local sale del literal local construido',
+    /p_start_local: slot\.startLocal/.test(codigo));
+  check('la zona horaria es la de El Salvador', SV_TIMEZONE === 'America/El_Salvador');
+
+  // ── Aritmética de calendario, pura ──
+  check('addDaysLocal suma días', addDaysLocal('2026-08-06', 3) === '2026-08-09');
+  check('addDaysLocal cruza fin de mes', addDaysLocal('2026-08-30', 3) === '2026-09-02');
+  check('addDaysLocal cruza fin de año', addDaysLocal('2026-12-30', 3) === '2027-01-02');
+  check('addDaysLocal respeta el año bisiesto', addDaysLocal('2028-02-27', 3) === '2028-03-01');
+  check('dowLocal: 0 = domingo (igual que EXTRACT(DOW))', dowLocal('2026-08-09') === 0);
+  check('dowLocal: lunes = 1', dowLocal('2026-08-10') === 1);
+  check('dowLocal: sábado = 6', dowLocal('2026-08-08') === 6);
+  check('svTodayLocal devuelve YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(svTodayLocal()));
+
+  // ── El slot completo sale de UN literal ──
+  const s = buildLocalSlot({ today: '2026-08-06', daysAhead: 3, hour: 10, slotMinutes: 30 });
+  check('la fecha del slot es hoy + daysAhead', s.date === '2026-08-09');
+  check('el literal local no lleva zona ni Z', s.startLocal === '2026-08-09T10:00:00');
+  check('el literal tiene la forma YYYY-MM-DDTHH:mm:ss',
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s.startLocal));
+  check('day_of_week se deriva del MISMO literal', s.dayOfWeek === dowLocal(s.date));
+  check('start_time se deriva del MISMO literal', s.startLocal.endsWith(s.startTime));
+  check('slot_duration_min es 30 explícito', s.slotMinutes === 30);
+  check('el fin de la CITA es start + 30', s.appointmentEndTime === '10:30:00');
+  check('la ventana de la regla cubre el fin de la cita',
+    s.endTime > s.appointmentEndTime);
+  check('la regla arranca en la hora de la cita → fase 0 (alineado)',
+    s.startTime === '10:00:00');
+
+  // ── Guardas: nada de pasado, madrugada ni cruce de medianoche ──
+  for (const [desc, args] of [
+    ['daysAhead = 0 (hoy)', { today: '2026-08-06', daysAhead: 0 }],
+    ['daysAhead negativo', { today: '2026-08-06', daysAhead: -1 }],
+    ['fecha inválida', { today: 'ayer', daysAhead: 3 }],
+    ['hora de madrugada', { today: '2026-08-06', daysAhead: 3, hour: 3 }],
+    ['ventana que cruzaría medianoche', { today: '2026-08-06', daysAhead: 3, hour: 23 }],
+  ]) {
+    let lanzo = false;
+    try { buildLocalSlot(args); } catch { lanzo = true; }
+    check(`buildLocalSlot rechaza ${desc}`, lanzo);
+  }
+
+  // Ninguna hora válida puede producir una ventana que cruce el día.
+  for (let h = 8; h + 2 <= 20; h++) {
+    const x = buildLocalSlot({ today: '2026-08-06', daysAhead: 3, hour: h });
+    if (x.endTime <= x.startTime) check(`hora ${h}: la ventana no cruza medianoche`, false);
+  }
+  check('toda hora aceptada produce una ventana dentro del mismo día', true);
+
+  // ── La regla temporal se crea con lo que dice el slot ──
+  const bvi = between(codigo, 'async function bookViaIntent(fx)', 'async function verifyQaRestored');
+  check('el tramo de bookViaIntent no está vacío', bvi.length > 500);
+  check('la regla usa day_of_week del slot', /day_of_week: slot\.dayOfWeek/.test(bvi));
+  check('la regla usa start_time y end_time del slot',
+    /start_time: slot\.startTime, end_time: slot\.endTime/.test(bvi));
+  check('slot_duration_min se fija EXPLÍCITAMENTE',
+    /slot_duration_min: slot\.slotMinutes/.test(bvi));
+  check('se crea UNA sola regla temporal',
+    (bvi.match(/from\('availability_rules'\)\.insert\(/g) || []).length, 1);
+}
+
+// ─── 25. Denylist de objetos permanentes ──────────────────────────────
+{
+  console.log('\n25. Denylist de objetos permanentes del médico QA');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  const qa = {
+    profileId: 'p-1', doctorId: 'd-1', clinicId: 'c-1',
+    serviceFirstVisitId: 's-1', serviceFollowUpId: 's-2',
+  };
+  const deny = buildPermanentIds(qa);
+
+  check('la denylist tiene los 5 objetos permanentes', deny.size === 5);
+  for (const [k, v] of Object.entries(qaManifestIds(qa))) {
+    check(`la denylist protege ${k}`, deny.has(v));
+  }
+  check('permanentHits detecta un id permanente',
+    permanentHits(['x', 'd-1'], deny).length === 1);
+  check('permanentHits ignora los ids de la corrida',
+    permanentHits(['x', 'y'], deny).length === 0);
+  check('permanentHits tolera null y undefined',
+    permanentHits([null, undefined, 'x'], deny).length === 0);
+
+  for (const [desc, lista] of [
+    ['el profile/auth.user', ['p-1']],
+    ['el médico', ['d-1']],
+    ['la clínica', ['c-1']],
+    ['un servicio', ['s-2']],
+    ['una lista mixta', ['ok-1', 'c-1']],
+  ]) {
+    let lanzo = false;
+    try { assertNotPermanent(lista, 'test', deny); } catch { lanzo = true; }
+    check(`assertNotPermanent LANZA si la lista incluye ${desc}`, lanzo);
+  }
+  check('assertNotPermanent deja pasar una lista limpia',
+    assertNotPermanent(['a', 'b'], 'test', deny).length === 2);
+  check('la aserción LANZA, no filtra en silencio',
+    /throw new Error\(\s*`ABORTADO: \$\{where\} intentó operar sobre/.test(smoke));
+
+  // ── Todas las superficies de borrado están guardadas ──
+  const cl = between(codigo, 'async function cleanup()', 'async function cleanupAuditLog');
+  check('el tramo de cleanup no está vacío', cl.length > 500);
+  for (const sup of ['cleanup/users', 'cleanup/patients', 'cleanup/doctors',
+                     'cleanup/services', 'cleanup/availability_rules', 'cleanup/clinics',
+                     'cleanup/appointments', 'cleanup/booking_intents']) {
+    check(`guarda declarada para ${sup}`, cl.includes(`'${sup}'`));
+  }
+  check('deleteUser tiene su propia guarda, uno por uno',
+    /assertNotPermanent\(\[uid\], 'cleanup\/deleteUser'\)/.test(codigo));
+  check('la guarda de deleteUser va ANTES de la llamada',
+    codigo.indexOf("assertNotPermanent([uid], 'cleanup/deleteUser')")
+      < codigo.indexOf('admin.auth.admin.deleteUser(uid)'), true);
+  check('la denylist se construye desde la resolución, no de una constante',
+    /PERMANENT_IDS = buildPermanentIds\(qa\)/.test(codigo));
+  check('se documenta el CASCADE de profiles_id_fkey',
+    /profiles_id_fkey` es ON DELETE CASCADE/.test(smoke));
+
+  // ── Lo ÚNICO mutable del médico QA ──
+  check('solo se modifica booking_enabled',
+    /\.update\(\{ booking_enabled: value \}\)\.eq\('id', QA\.doctorId\)/.test(codigo));
+  check('el UPDATE al médico QA afecta exactamente 1 fila o falla',
+    /afectó \$\{data\?\.length\} filas, se esperaba 1/.test(smoke));
+  check('la regla temporal se borra por ruleId, NUNCA por doctor_id',
+    /\.from\('availability_rules'\)\.delete\(\)\.eq\('id', ruleId\)/.test(codigo));
+  check('no existe ningún delete de reglas por doctor_id del QA',
+    /from\('availability_rules'\)\.delete\(\)[\s\S]{0,60}QA\.doctorId/.test(codigo) === false);
+
+  // ── El restore corre primero y pase lo que pase ──
+  check('bookViaIntent restaura en su propio finally',
+    /\} finally \{[\s\S]{0,400}await restoreQaState\(\);[\s\S]{0,80}await deleteQaTempRules\(\);/.test(codigo));
+  check('el cleanup restaura ANTES de cualquier borrado',
+    cl.indexOf('await restoreQaState()') < cl.indexOf('.delete('), true);
+  check('el cleanup corre desde el finally global',
+    /\} finally \{[\s\S]{0,400}await cleanup\(\)/.test(codigo));
+  check('restoreQaState es idempotente (sin snapshot no hace nada)',
+    /if \(!qaSnapshot\.taken \|\| !QA\) \{/.test(codigo));
+  check('el restore fallido se registra como error de cleanup',
+    /cleanupErrors\.push\(`restore de booking_enabled/.test(codigo));
+  check('se verifica que quedó restaurado y con 0 reglas',
+    /async function verifyQaRestored\(\)/.test(codigo)
+    && /13\.3 booking_enabled del médico QA restaurado y 0 reglas temporales/.test(codigo), true);
+  check('--run aborta si booking_enabled ya venía en true',
+    /booking_enabled del médico QA ya es true/.test(smoke));
+  check('la sección 2 revalida el estado base antes de tocar nada',
+    /no es false al entrar a la sección 2/.test(smoke));
+}
+
+// ─── 26. Fail-closed: conteos, intents y actividad externa ────────────
+{
+  console.log('\n26. Inventario fail-closed, booking_intents y actividad externa');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  // ── countResult: un error JAMÁS es un cero ──
+  check('conteo válido → OK', countResult({ count: 3, error: null }).status === 'OK');
+  check('conteo cero → OK con 0',
+    countResult({ count: 0, error: null }).status === 'OK'
+    && countResult({ count: 0, error: null }).count === 0, true);
+  check('error → ERROR, nunca 0', countResult({ count: null, error: { message: 'x' } }).status === 'ERROR');
+  check('error → count queda en null, no en 0',
+    countResult({ count: null, error: { message: 'x' } }).count === null);
+  check('count no numérico → ERROR', countResult({ count: undefined, error: null }).status === 'ERROR');
+  check('count NaN → ERROR', countResult({ count: NaN, error: null }).status === 'ERROR');
+  check('NUNCA se devuelve -1', countResult({ count: null, error: { message: 'x' } }).count !== -1);
+  check('el smoke ya no usa -1 como conteo', /return -1;/.test(codigo) === false);
+  check('el acumulador ya no ignora los negativos',
+    /if \(n > 0\) residuals \+= n/.test(codigo) === false);
+
+  // ── summarizeInventory: un desconocido impide declarar cero ──
+  const fila = (label, status, count = null) => ({ label, result: { status, count } });
+  {
+    const r = summarizeInventory([fila('a', 'OK', 0), fila('b', 'OK', 0)]);
+    check('todo en cero y conocido → se puede declarar cero',
+      r.canDeclareZero === true && r.residuals === 0 && r.exitClean === true, true);
+  }
+  {
+    const r = summarizeInventory([fila('a', 'OK', 0), fila('b', 'ERROR')]);
+    check('un conteo desconocido → NO se puede declarar cero', r.canDeclareZero === false);
+    check('un conteo desconocido → exit sucio', r.exitClean === false);
+    check('el desconocido se nombra', r.unknown.includes('b'));
+    check('un desconocido NO suma como residuo', r.residuals === 0);
+  }
+  {
+    const r = summarizeInventory([fila('a', 'OK', 2)]);
+    check('residuos reales → NO se puede declarar cero', r.canDeclareZero === false);
+    check('residuos reales se cuentan', r.residuals === 2);
+  }
+  {
+    const r = summarizeInventory([fila('a', 'ERROR'), fila('b', 'ERROR')]);
+    check('varios desconocidos se listan todos', r.unknown.length === 2);
+  }
+  check('summarizeInventory tolera entrada vacía',
+    summarizeInventory([]).canDeclareZero === true && summarizeInventory(undefined).residuals === 0, true);
+
+  check('el inventario NO imprime cero residuos con conteos desconocidos',
+    /NO se puede declarar cero residuos: \$\{resumen\.unknown\.length\}/.test(smoke));
+  check('los desconocidos entran en cleanupErrors → exit ≠ 0',
+    /resumen\.unknown\.forEach\(\(u\) => cleanupErrors\.push\(`conteo DESCONOCIDO/.test(codigo));
+  check('el finally sigue intentando el resto del inventario',
+    /for \(const \[label, col, list\] of filas\)/.test(codigo));
+  check('el proceso falla si hay errores de cleanup',
+    /const clean = fail === 0 && cleanupErrors\.length === 0 && !runError/.test(codigo));
+
+  // ── booking_intents: sin created_by, con allowlist de id ──
+  check('NO queda ninguna referencia a created_by',
+    /created_by/.test(codigo) === false);
+  check('el intent_id exacto se captura', /ids\.intentIds\.push\(intentId\)/.test(codigo));
+  check('el borrado de intents va por id allowlisted',
+    /from\('booking_intents'\)\.delete\(\)\.in\('id', ids\.intentIds\)/.test(codigo));
+  check('el inventario cuenta intents por id, no por created_by',
+    /\['booking_intents', 'id', ids\.intentIds\]/.test(codigo));
+  check('la corrida verifica que se capturó el intentId',
+    /2\.8 se capturó el intent_id exacto/.test(smoke));
+
+  // ── Actividad externa: se reporta, hace fallar y NO se borra ──
+  {
+    const p = partitionExternal([{ id: 'a' }, { id: 'z' }], ['a']);
+    check('partitionExternal separa lo propio', p.mine.length === 1 && p.mine[0] === 'a', true);
+    check('partitionExternal detecta lo externo', p.external.length === 1 && p.external[0] === 'z', true);
+  }
+  check('partitionExternal acepta ids sueltos',
+    partitionExternal(['a', 'z'], ['a']).external[0] === 'z');
+  check('sin allowlist, TODO es externo',
+    partitionExternal([{ id: 'a' }], []).external.length === 1);
+  check('allowlist vacía no vuelve propio a nadie',
+    partitionExternal([{ id: 'a' }], [null, undefined]).mine.length === 0);
+
+  const dx = between(codigo, 'async function detectExternalQaActivity()', 'async function main()');
+  check('detectExternalQaActivity() existe y su tramo no está vacío', dx.length > 300);
+  check('la detección NO borra nada', /\.delete\(/.test(dx) === false);
+  check('lo externo se reporta explícitamente', /NO se borran/.test(smoke));
+  check('doctor_id y RUN_STARTED_AT son solo defensas de ventana',
+    /\.eq\('doctor_id', QA\.doctorId\)\.gte\('created_at', RUN_STARTED_AT\)/.test(dx));
+  check('la allowlist de UUID es lo único que autoriza el borrado',
+    /nunca criterio suficiente para borrar/.test(smoke)
+    && /DEFENSAS ADICIONALES/.test(smoke), true);
+  check('una sonda no verificable cuenta como fallo, no como cero',
+    /total \+= 1;\s+\/\/ no verificable/.test(smoke));
+  check('la actividad externa hace fallar la corrida',
+    /13\.4 sin actividad externa sobre el médico QA/.test(smoke));
+  check('se advierte que podría ser una reserva real',
+    /podría ser una reserva real/.test(smoke));
+}
+
+// ─── 27. El médico QA dentro del manifiesto y la huella ───────────────
+{
+  console.log('\n27. UUID resueltos dentro del manifiesto y del fingerprint');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  const base = {
+    projectHost: 'p.supabase.co', migrationSha: 'a'.repeat(64), smokeSha: 'b'.repeat(64),
+    runId: 's771a0805a', identities: identitiesFor('s771a0805a'), specialtyId: 's',
+    programadaId: 'p', confirmadaId: 'c', canceladaId: 'x', cancelReasonId: 'r',
+    qaProfileId: 'qp', qaDoctorId: 'qd', qaClinicId: 'qc',
+    qaServiceFirstVisitId: 'qs1', qaServiceFollowUpId: 'qs2',
+  };
+  const m = flatManifest(base);
+  const fp0 = fingerprintOf(m);
+
+  for (const k of ['qa_profile_id', 'qa_doctor_id', 'qa_clinic_id',
+                   'qa_service_first_visit_id', 'qa_service_follow_up_id']) {
+    check(`el manifiesto incluye ${k}`, Object.prototype.hasOwnProperty.call(m, k));
+  }
+  check('el manifiesto sigue siendo completamente plano',
+    Object.values(m).every((v) => v === null || typeof v !== 'object'));
+
+  for (const [campo, valor] of [
+    ['qaProfileId', 'otro'], ['qaDoctorId', 'otro'], ['qaClinicId', 'otro'],
+    ['qaServiceFirstVisitId', 'otro'], ['qaServiceFollowUpId', 'otro'],
+  ]) {
+    check(`cambiar ${campo} → huella DISTINTA`,
+      fingerprintOf(flatManifest({ ...base, [campo]: valor })) !== fp0);
+  }
+  check('sin los ids del QA la huella también cambia',
+    fingerprintOf(flatManifest({
+      ...base, qaProfileId: null, qaDoctorId: null, qaClinicId: null,
+      qaServiceFirstVisitId: null, qaServiceFollowUpId: null,
+    })) !== fp0);
+
+  check('buildManifest resuelve al médico QA, no lo recibe',
+    /const qa = await resolveQaDoctor\(\);/.test(codigo));
+  check('los ids resueltos entran al manifiesto', /\.\.\.qaManifestIds\(qa\)/.test(codigo));
+  check('--run re-resuelve y compara con el manifiesto aprobado',
+    /los UUID del médico QA coinciden con el manifiesto aprobado/.test(smoke));
+  check('--run aborta si el QA resuelve a otros UUID',
+    /el médico QA resuelve a UUID distintos de los aprobados/.test(smoke));
+  check('--run revalida el baseline antes de escribir',
+    /el baseline del médico QA no se cumple/.test(smoke));
+
+  // ── El camino read-only sigue siendo read-only con la resolución dentro ──
+  const roPath = [
+    between(codigo, 'async function preflight()', 'async function verifyFingerprintBeforeWriting'),
+    between(codigo, 'async function listAllAuthUsers()', 'export function authFailureReport'),
+    // ⚠️ La firma es `buildManifest(authState = {})`: buscar
+    // 'async function buildManifest()' devolvía cadena VACÍA y esta parte del
+    // camino read-only quedaba sin verificar.
+    between(codigo, 'async function buildManifest(', 'export function flatManifest'),
+    between(codigo, 'async function resolveQaDoctor()', 'async function buildManifest('),
+    between(codigo, 'async function verifyNoCollisions(', 'async function preflight()'),
+  ];
+  check('los cinco tramos read-only son no vacíos', roPath.every((t) => t.length > 100));
+  const ro = roPath.join('\n');
+  check('el camino read-only NO inserta', /\.insert\(/.test(ro) === false);
+  check('el camino read-only NO actualiza', /\.update\(\s*\{/.test(ro) === false);
+  check('el camino read-only NO borra', /\.delete\(/.test(ro) === false);
+  check('el camino read-only NO llama RPC', /\.rpc\(/.test(ro) === false);
+  check('el camino read-only NO crea ni borra usuarios',
+    /createUser|deleteUser|generateLink/.test(ro) === false);
+  check('el camino read-only SÍ resuelve al médico QA',
+    /getUserById\(profile\.id\)/.test(ro));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);

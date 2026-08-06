@@ -190,10 +190,10 @@ que ya usa LucyCare, verificados libres en todo el repositorio):
 colisionan — es deliberado: el preflight lo detecta y falla cerrado en vez de
 inventar números nuevos en silencio.
 
-### Teléfonos prohibidos — cinco categorías
+### Teléfonos prohibidos — seis categorías
 
-`FORBIDDEN_PHONES` es la **unión normalizada** de cinco listas separadas.
-**78 entradas crudas → 76 únicas** tras normalizar (se deduplican Camilo, que
+`FORBIDDEN_PHONES` es la **unión normalizada** de seis listas separadas.
+**79 entradas crudas → 77 únicas** tras normalizar (se deduplican Camilo, que
 está en dos categorías, y `77316374`, que es la forma sin prefijo de
 `50377316374`).
 
@@ -204,6 +204,12 @@ está en dos categorías, y `77316374`, que es la forma sin prefijo de
 | `HISTORICAL_OR_RESERVED_PHONES` | 6 | históricos y reservados — **no** activos |
 | `PRIOR_FIXTURE_PHONES` | 54 | fixtures de smokes previos en `5037000xxxx` |
 | `DOC_PLACEHOLDER_PHONES` | 5 | placeholders de documentación |
+| `QA_PERSISTENT_PHONES` | **1** | `50370008803` — el médico QA **permanente** |
+
+> La categoría `QA_PERSISTENT_PHONES` no impide **leer** al médico QA: la
+> guarda `assertNotForbidden` solo se aplica a los teléfonos que la corrida va
+> a **crear**. Lo que impide es que ese número acabe convertido en una fixture
+> desechable y, con ella, en candidato a `deleteUser`.
 
 **Los 11 activos:**
 
@@ -237,9 +243,144 @@ de los arrays.
 > se descartan en silencio. Con el manifiesto anidado anterior, los ids de
 > estado **quedaban fuera del hash**. Está corregido y cubierto por pruebas.
 
-Campos: `project_host` · `migration_version` · `migration_sha256` · `run_id` ·
-`specialty_id` · `programada_status_id` · `confirmada_status_id` ·
-`cancelada_status_id` · `cancel_reason_id` · `email_0..2` · `phone_0..2`.
+Campos (manifiesto **v6**): `project_host` · `migration_version` ·
+`migration_sha256` · `smoke_sha256` · `run_id` · `specialty_id` ·
+`programada_status_id` · `confirmada_status_id` · `cancelada_status_id` ·
+`cancel_reason_id` · **`qa_profile_id`** · **`qa_doctor_id`** ·
+**`qa_clinic_id`** · **`qa_service_first_visit_id`** ·
+**`qa_service_follow_up_id`** · `email_0..2` · `phone_0..2` · estado del
+inventario de Auth y de la atestación.
+
+---
+
+## 5-bis. Arquitectura corregida del smoke (post corrida fallida del 2026-08-06)
+
+La única corrida ejecutada falló en la **sección 2** con
+`register_booking_intent: Ese horario no está disponible`. **No era un defecto
+de `s7_71a`**: era del instrumento. Las fixtures creaban médicos con los
+defaults conservadores (`is_published`, `booking_enabled` e `is_operational`
+los tres en `false`) y `validate_booking_slot` (`s7_66:105`) los rechaza con
+`P009C`. El código de producción se comportó correctamente.
+
+Estas son las seis correcciones.
+
+### 1. El médico QA persistente se RESUELVE, no se hardcodea
+
+La sección de reserva usa el **médico QA permanente** —publicado, operativo y
+con dos servicios activos—, que es el único capaz de pasar
+`validate_booking_slot`.
+
+Se resuelve exigiendo **exactamente una cadena**:
+
+```
+auth.user → profile → doctor → clinic → 2 services
+```
+
+Las entradas son **identificadores estables**, nunca UUID: teléfono
+`50370008803`, correo `asp0.qa.doctor@lucycare.test`, `full_name` exacto,
+`user_metadata.fixture = S7_71_QA_DOCTOR`, nombre exacto de la clínica y los
+dos nombres de servicio. `getUserById(profile.id)` verifica correo, teléfono y
+metadata contra la Admin API.
+
+Cada eslabón exige **una sola fila**: cero y dos son el mismo fallo, porque en
+ambos casos no se puede afirmar sobre qué fila se opera.
+
+> El check verifica que **no exista ningún literal UUID** en el smoke, con la
+> única excepción del centinela `00000000-…` de `user_id`.
+
+**Baseline exigido antes de tocar nada** (bloqueante del preflight):
+`role='doctor'` · `lucy_status='claimed'` · `is_published=true` ·
+`is_operational=true` · **`booking_enabled=false`** · exactamente 2 servicios
+con las ramas `is_first_visit` true/false · `availability_rules=0` ·
+`appointments=0` · `booking_intents=0` · `availability_overrides=0`.
+
+Los UUID **resueltos** entran al manifiesto y por tanto al fingerprint: si
+mañana el médico QA fuera otro, `--run` aborta antes de escribir.
+
+> La identidad QA es **persistente y esperada**: encontrarla **no** es una
+> colisión. Las colisiones se siguen buscando solo para las tres identidades
+> sintéticas `8800–8802`.
+
+### 2. Secuencia de la reserva
+
+1. releer `booking_enabled` y **abortar si ya es `true`** (estado base corrupto
+   u otra corrida en curso);
+2. snapshot;
+3. crear **una sola** `availability_rule` temporal;
+4. capturar su `ruleId` exacto;
+5. `slot_duration_min = 30` **explícito** (no se confía en el DEFAULT);
+6. activar `booking_enabled`;
+7. `register_booking_intent` → capturar `intentId`;
+8. `create_booking_with_intent` → capturar `appointmentId`;
+9. **restaurar y borrar la regla en el `finally` local**, no al final de la
+   corrida: la ventana en que un médico **publicado en producción** acepta
+   reservas dura segundos, no toda la corrida. El cleanup global lo repite y
+   lo verifica;
+10. verificar `booking_enabled=false` y **cero** reglas del médico QA.
+
+**Horario:** un **único literal local** `YYYY-MM-DDTHH:mm:ss`. De ese mismo
+literal salen `p_start_local`, `day_of_week`, `start_time` y `end_time`.
+Prohibido `toISOString().replace('Z','')`: toma un instante UTC y lo hace pasar
+por hora local, y con UTC-6 eso desplaza el slot seis horas, pudiendo cambiar
+día, `day_of_week` y fase de la grilla a la vez. El slot es **+3 días, 10:00**,
+con la regla cubriendo 10:00–12:00 (fase 0, alineada, sin cruce de medianoche).
+
+### 3. Denylist de objetos permanentes
+
+El `auth.user`, el profile, el médico, la clínica y los **dos servicios** del
+médico QA están en denylist. `assertNotPermanent` **lanza** —no filtra en
+silencio— antes de cada borrado y antes de cada `deleteUser`, uno por uno.
+
+> ⚠️ `profiles_id_fkey` es **ON DELETE CASCADE**: borrar el `auth.user` QA
+> arrastraría profile y, en cascada, clínica y médico.
+
+Lo **único** que la corrida puede modificar del médico QA es
+`doctors.booking_enabled` y su `availability_rule` allowlisted. La regla se
+borra **por `ruleId`**, jamás por `doctor_id`.
+
+### 4. `booking_intents`
+
+`created_by` **no existe** en esa tabla — el smoke anterior la usaba y por eso
+el conteo fallaba. Ahora se captura el `intentId` exacto y se borra por
+**allowlist de id**. `doctor_id`, `phone_e164` y `RUN_STARTED_AT` son
+**defensas adicionales** para acotar la ventana de búsqueda, nunca criterio
+suficiente para borrar.
+
+**Actividad externa:** cualquier cita o intent del médico QA creado durante la
+ventana y **fuera de la allowlist** se reporta y hace fallar la corrida, y
+**nunca se borra** — sobre un perfil publicado en producción podría ser una
+reserva real.
+
+### 5. Inventario fail-closed
+
+El inventario anterior devolvía `-1` ante un error y el acumulador hacía
+`if (n > 0) residuals += n`: un `-1` no sumaba nada y la corrida imprimía
+**«CERO residuos»** sobre una tabla que ni siquiera pudo consultar.
+
+Ahora cada lectura produce `{ status: 'OK', count }` o
+`{ status: 'ERROR', error }`. Un conteo desconocido:
+
+- se **reporta** con su motivo;
+- **impide** declarar cero residuos;
+- fuerza **exit ≠ 0**;
+- **no** interrumpe el resto del `finally`.
+
+Un `getUserById` que falla tampoco prueba que el usuario se haya eliminado:
+solo «not found» cuenta como eliminación.
+
+### 6. Cobertura del check
+
+`check-s7_71a.mjs` ejercita las funciones **puras reales** importadas del
+smoke —`qaBaselineChecks`, `buildLocalSlot`, `assertNotPermanent`,
+`countResult`, `summarizeInventory`, `partitionExternal`— con entradas
+mutadas, además de las aserciones estructurales. **0 fallos** es el gate.
+
+> Defecto encontrado al escribirlo: varios tramos se aislaban con
+> `between(codigo, …, '\n}\n')`. Los archivos del repo están en **CRLF**, así
+> que ese delimitador no casa nunca y `between` devolvía **el resto del
+> archivo** — una aserción negativa sobre ese tramo parecía pasar mientras
+> miraba código ajeno. Los tramos ahora se cierran por el **nombre de la
+> función siguiente** y se exige que **no estén vacíos**.
 
 **Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
 *hostname* derivado de `SUPABASE_URL`.
