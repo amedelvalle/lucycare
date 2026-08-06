@@ -688,8 +688,25 @@ limpiados con autorización puntual y **cero residuos verificado**.
 
 Rama `claude/audit-sec-p0-s7-71a-cleanup-fix` sobre `bb36364`. Corrige el orden
 de borrado y la captura de `auth_creation_grants`
-(`docs/OWNER_S7_71A_APPLY.md` §5-ter). Cambia `smoke_sha256` → **el fingerprint
-v6 queda invalidado** y hace falta uno nuevo.
+(`docs/OWNER_S7_71A_APPLY.md` §5-ter).
+
+**Checksums vigentes en esa rama:**
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = 565848cff5762e40502cab72c092e417b628669294a85a3b10fe2725771197b8   ← NUEVO
+                   (anterior: a2d306448507437f74dd1747ebc86d62ba26f33e67075b3df9dc85fa09fabb66)
+```
+
+**Preflight nuevo** (read-only, autorizado, 2026-08-06): **54 OK, 0 fallos,
+exit 0, VEREDICTO APTO**. Misma atestación manual, limitada a `8800–8802`; el
+médico QA `8803` se resolvió como identidad **persistente esperada**, no como
+colisión. Baseline QA **19/19**. La huella v6 anterior queda **invalidada**:
+
+```
+ASP0_PREFLIGHT_FINGERPRINT=33c71f583d46d429ce0669df9e916f4728ede98dfb5ce99086ba01ce9cf44988
+```
 
 ### Siguiente — con autorización explícita del owner
 
