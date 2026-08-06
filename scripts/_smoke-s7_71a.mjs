@@ -57,7 +57,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { requireEnv } from './_lib/env.mjs';
 
@@ -513,7 +513,9 @@ const projectHost = () => {
  * distintos. La misma función se usa en --preflight y en --run.
  */
 export const MIGRATION_PATH = 'migrations/s7_71a_audit_appointments_coverage.sql';
-export const migrationSha256 = (path = MIGRATION_PATH) => {
+
+/** Checksum determinista de un archivo, normalizado a LF. */
+export const fileSha256 = (path) => {
   try {
     const lf = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
     return createHash('sha256').update(lf, 'utf8').digest('hex');
@@ -521,6 +523,19 @@ export const migrationSha256 = (path = MIGRATION_PATH) => {
     throw new Error(`no se pudo leer ${path} para la huella: ${e.message}`);
   }
 };
+
+export const migrationSha256 = (path = MIGRATION_PATH) => fileSha256(path);
+
+/**
+ * Checksum de ESTE archivo. El manifiesto protegía la migración pero no el
+ * código del smoke: una corrección de flujo podía cambiar el comportamiento
+ * sin mover la huella. Con esto, cualquier edición del smoke la invalida.
+ *
+ * La ruta sale de `import.meta.url`, no de un literal relativo: así no
+ * depende del directorio desde el que se invoque.
+ */
+export const SMOKE_PATH = fileURLToPath(import.meta.url);
+export const smokeSha256 = (path = SMOKE_PATH) => fileSha256(path);
 
 /**
  * Serialización CANÓNICA: ordena recursivamente las claves de todo objeto
@@ -564,6 +579,7 @@ async function buildManifest(authState = {}) {
   return flatManifest({
     projectHost: projectHost(),
     migrationSha: migrationSha256(),
+    smokeSha: smokeSha256(),
     runId: RUN_ID,
     identities: IDENTITIES,
     specialtyId: spec?.id ?? null,
@@ -583,7 +599,7 @@ async function buildManifest(authState = {}) {
  * NUNCA incluye SUPABASE_SERVICE_ROLE_KEY, la anon key ni ningún token.
  */
 export function flatManifest({
-  projectHost: host, migrationSha, runId, identities,
+  projectHost: host, migrationSha, smokeSha, runId, identities,
   specialtyId, programadaId, confirmadaId, canceladaId, cancelReasonId,
   // Estado del inventario de Auth y de la atestación. Forman parte del
   // fingerprint: si el modo de verificación cambia, la huella cambia.
@@ -593,10 +609,11 @@ export function flatManifest({
   ownerAttestedIdentitiesSha256 = null,
 }) {
   const m = {
-    v: 4,
+    v: 5,
     project_host: host,
     migration_version: 's7_71a',
     migration_sha256: migrationSha,
+    smoke_sha256: smokeSha,
     run_id: runId,
     specialty_id: specialtyId,
     programada_status_id: programadaId,
@@ -707,6 +724,60 @@ export function evaluateAttestation({ attested, date, attestedRunId, runId, iden
     reasons.push('las identidades NO son las atestadas por el owner (hash distinto)');
   }
   return { valid: reasons.length === 0, sha, reasons };
+}
+
+/**
+ * Decide si se puede continuar tras el inventario de Auth, y con qué modo.
+ * PURA y exportada: es la lógica exacta que usan `preflight()` y `--run`, y
+ * `check-s7_71a.mjs` la ejercita con entradas sintéticas (casos A–E).
+ */
+export function resolveAuthState({ auth, attestation }) {
+  const comun = {
+    authUsersInspected: auth.unique ?? null,
+    authTotalAnnounced: auth.total ?? null,
+  };
+  if (auth.complete) {
+    return {
+      proceed: true, mode: 'listusers_exhaustive', reasons: [],
+      authState: {
+        ...comun,
+        authInventoryComplete: true,
+        authVerificationMode: 'listusers_exhaustive',
+        authFailedPage: null,
+        ownerAttestedNoCollisions: null,
+        ownerAttestedDate: null,
+        ownerAttestedIdentitiesSha256: null,
+      },
+    };
+  }
+  if (!attestation?.valid) {
+    return { proceed: false, mode: null, reasons: attestation?.reasons ?? ['sin atestación'], authState: null };
+  }
+  return {
+    proceed: true, mode: 'owner_manual_exact_search', reasons: [],
+    authState: {
+      ...comun,
+      authInventoryComplete: false,
+      authVerificationMode: 'owner_manual_exact_search',
+      authFailedPage: auth.failedPage ?? null,
+      ownerAttestedNoCollisions: true,
+      ownerAttestedDate: OWNER_ATTESTATION.date,
+      ownerAttestedIdentitiesSha256: attestation.sha,
+    },
+  };
+}
+
+/**
+ * Veredicto final del preflight. PURA y exportada.
+ * Una colisión —en Auth o en tablas— o un catálogo faltante BLOQUEAN la
+ * emisión de la huella AUNQUE la atestación sea válida.
+ */
+export function preflightVerdict({ authProceed, noCollisions, catalogsOk }) {
+  const blockers = [];
+  if (!authProceed) blockers.push('inventario de Auth incompleto sin atestación válida');
+  if (!noCollisions) blockers.push('colisión detectada');
+  if (!catalogsOk) blockers.push('catálogo requerido faltante');
+  return { emitFingerprint: blockers.length === 0, exitCode: blockers.length === 0 ? 0 : 1, blockers };
 }
 
 /** HEAD del repositorio, para el encabezado del preflight. Solo lectura. */
@@ -860,17 +931,12 @@ async function preflight() {
   console.log(`   ids únicos recogidos: ${auth.unique}`);
   auth.notes.forEach((n) => console.log(`   ⚠️  ${n}`));
 
-  // Estado de Auth que viajará en el manifiesto y, por tanto, en la huella.
-  let authState = {
-    authInventoryComplete: true,
-    authVerificationMode: 'listusers_exhaustive',
-    authUsersInspected: auth.unique,
-    authTotalAnnounced: auth.total,
-    authFailedPage: null,
-    ownerAttestedNoCollisions: null,
-    ownerAttestedDate: null,
-    ownerAttestedIdentitiesSha256: null,
-  };
+  const attestation = evaluateAttestation({
+    attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
+    runId: RUN_ID, identities: IDENTITIES,
+  });
+  const authRes = resolveAuthState({ auth, attestation });
+  const authState = authRes.authState;
 
   if (!auth.complete) {
     // NO se contabiliza como fallo acá: el desenlace lo decide la atestación.
@@ -882,12 +948,9 @@ async function preflight() {
     authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
 
     // ── Excepción: atestación manual del owner ──
-    const att = evaluateAttestation({
-      attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
-      runId: RUN_ID, identities: IDENTITIES,
-    });
+    const att = attestation;
 
-    if (!att.valid) {
+    if (!authRes.proceed) {
       console.log([
         '',
         '   La Admin API no permitió DEMOSTRAR que el inventario está completo,',
@@ -918,16 +981,6 @@ async function preflight() {
       '',
     ].join('\n'));
 
-    authState = {
-      authInventoryComplete: false,
-      authVerificationMode: 'owner_manual_exact_search',
-      authUsersInspected: auth.unique,
-      authTotalAnnounced: auth.total,
-      authFailedPage: auth.failedPage,
-      ownerAttestedNoCollisions: true,
-      ownerAttestedDate: OWNER_ATTESTATION.date,
-      ownerAttestedIdentitiesSha256: att.sha,
-    };
     ok('atestación manual del owner válida y atada a estas identidades');
   } else {
     ok(`inventario de Auth COMPLETO (${auth.unique} usuarios únicos)`);
@@ -953,7 +1006,9 @@ async function preflight() {
   // ── 5. Catálogos — sobre el manifiesto PLANO ──
   console.log('\n5. Catálogos requeridos');
   const manifest = await buildManifest(authState);
-  for (const [desc, okCat] of catalogChecks(manifest)) check(desc, okCat);
+  const catRes = catalogChecks(manifest);
+  for (const [desc, okCat] of catRes) check(desc, okCat);
+  const catalogsOk = catRes.every(([, c]) => c === true);
   if (!manifest.cancel_reason_id) {
     console.log('      ⚠️  sin motivos: el caso 5.6/5.7 fallaría en --run.');
   }
@@ -987,8 +1042,14 @@ async function preflight() {
   console.log('\n7. Manifiesto de la corrida (sin claves ni secretos)');
   console.log(JSON.stringify(manifest, null, 2).split('\n').map((l) => `   ${l}`).join('\n'));
 
-  const usable = fail === 0 && sinColisiones;
-  console.log(`\n${fail === 0 ? '✅' : '❌'} preflight: ${pass} OK, ${fail} fallos`);
+  // Veredicto por la función PURA: una colisión o un catálogo faltante
+  // bloquean la huella aunque la atestación sea válida.
+  const verdict = preflightVerdict({
+    authProceed: authRes.proceed, noCollisions: sinColisiones, catalogsOk,
+  });
+  const usable = verdict.emitFingerprint && fail === 0;
+  console.log(`\n${usable ? '✅' : '❌'} preflight: ${pass} OK, ${fail} fallos`);
+  verdict.blockers.forEach((b) => console.log(`   ⛔ ${b}`));
   if (usable) {
     console.log('\n   Nada se escribió. Autorizá estas identidades y pasá la huella a --run:\n');
     console.log(`ASP0_PREFLIGHT_FINGERPRINT=${fp}\n`);
@@ -1008,33 +1069,21 @@ async function verifyFingerprintBeforeWriting() {
   // El inventario de Auth se rehace. Si sigue incompleto, --run exige la
   // MISMA atestación que el preflight: no basta con la huella.
   const auth = await listAllAuthUsers();
-  let authState;
-  if (auth.complete) {
-    authState = {
-      authInventoryComplete: true, authVerificationMode: 'listusers_exhaustive',
-      authUsersInspected: auth.unique, authTotalAnnounced: auth.total,
-      authFailedPage: null, ownerAttestedNoCollisions: null,
-      ownerAttestedDate: null, ownerAttestedIdentitiesSha256: null,
-    };
-    ok(`inventario de Auth completo (${auth.unique} usuarios)`);
-  } else {
-    const att = evaluateAttestation({
-      attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
-      runId: RUN_ID, identities: IDENTITIES,
-    });
-    if (!att.valid) {
-      authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
-      att.reasons.forEach((r) => console.log(`      · ${r}`));
-      throw new Error('ABORTADO antes de escribir: inventario de Auth incompleto y sin atestación válida del owner.');
-    }
-    authState = {
-      authInventoryComplete: false, authVerificationMode: 'owner_manual_exact_search',
-      authUsersInspected: auth.unique, authTotalAnnounced: auth.total,
-      authFailedPage: auth.failedPage, ownerAttestedNoCollisions: true,
-      ownerAttestedDate: OWNER_ATTESTATION.date, ownerAttestedIdentitiesSha256: att.sha,
-    };
-    ok('atestación manual del owner válida (inventario de Auth incompleto)');
+  const attestation = evaluateAttestation({
+    attested: ATT_FLAG, date: ATT_DATE, attestedRunId: ATT_RUN_ID,
+    runId: RUN_ID, identities: IDENTITIES,
+  });
+  const authRes = resolveAuthState({ auth, attestation });
+
+  if (!authRes.proceed) {
+    authFailureReport(auth).forEach((l) => console.log(`      ${l}`));
+    authRes.reasons.forEach((r) => console.log(`      · ${r}`));
+    throw new Error('ABORTADO antes de escribir: inventario de Auth incompleto y sin atestación válida del owner.');
   }
+  const authState = authRes.authState;
+  ok(authRes.mode === 'listusers_exhaustive'
+    ? `inventario de Auth completo (${auth.unique} usuarios)`
+    : 'atestación manual del owner válida (inventario de Auth incompleto)');
 
   const manifest = await buildManifest(authState);
   const fp = fingerprintOf(manifest);

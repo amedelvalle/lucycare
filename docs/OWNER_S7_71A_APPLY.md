@@ -244,10 +244,81 @@ Campos: `project_host` · `migration_version` · `migration_sha256` · `run_id` 
 **Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
 *hostname* derivado de `SUPABASE_URL`.
 
-**Checksum de la migración:** se calcula sobre el contenido **normalizado a LF**,
-no sobre el binario. En Windows el checkout deja CRLF y en Linux LF; hashear el
-binario daría huellas distintas para el mismo archivo según la máquina. La misma
-función se usa en `--preflight` y en `--run`.
+**Dos checksums, no uno.** El manifiesto lleva `migration_sha256` **y**
+`smoke_sha256`:
+
+| Campo | Cubre |
+|---|---|
+| `migration_sha256` | `migrations/s7_71a_audit_appointments_coverage.sql` |
+| `smoke_sha256` | `scripts/_smoke-s7_71a.mjs` — el propio script |
+
+Ambos se calculan sobre el contenido **normalizado a LF**, no sobre el binario:
+en Windows el checkout deja CRLF y en Linux LF, y hashear el binario daría
+huellas distintas para el mismo archivo según la máquina. Los dos usan la misma
+función, y se recalculan desde el archivo real en `--preflight` y en `--run`.
+
+> El `smoke_sha256` existe porque la huella protegía la migración pero **no el
+> código que la ejercita**: una corrección del flujo podía cambiar el
+> comportamiento sin mover la huella. Ahora **cualquier edición del smoke la
+> invalida**.
+
+**El HEAD de git se imprime pero NO entra en la huella**: un squash-merge cambia
+el SHA aunque el contenido sea idéntico. La vinculación funcional son los dos
+checksums.
+
+### Atestación manual del owner — excepción controlada
+
+`auth.admin.listUsers` falla en `page=3` con `perPage=50` en este proyecto
+(`Database error finding users`), tras dos páginas sanas y con metadata
+coherente: `total=139`, `lastPage=3`. Sin ese tramo **no se puede demostrar por
+API** que las identidades candidatas estén libres.
+
+El comportamiento **por defecto sigue siendo fail-closed**: sin inventario
+demostrable, el preflight aborta con exit 1 y no emite huella.
+
+La excepción exige las **tres variables simultáneamente**, con valores exactos:
+
+```bash
+ASP0_OWNER_AUTH_ATTESTED=1
+ASP0_OWNER_AUTH_ATTESTED_DATE=2026-08-06
+ASP0_OWNER_AUTH_ATTESTED_RUN_ID=s771a0805a
+```
+
+**Alcance estricto.** Solo aplica al `RUN_ID` `s771a0805a` y a las seis
+identidades autorizadas. El hash canónico de esas seis se recalcula en cada
+corrida y debe coincidir con el atestado: cambiar un correo, un teléfono o el
+`RUN_ID` **invalida la atestación**. No se puede reutilizar.
+
+**No equivale a un inventario completo.** El manifiesto lo registra tal cual:
+
+```
+auth_inventory_complete       = false
+auth_verification_mode        = owner_manual_exact_search
+auth_users_inspected          = 100
+auth_total_announced          = 139
+auth_failed_page              = 3
+owner_attested_no_collisions  = true
+owner_attested_date           = 2026-08-06
+owner_attested_identities_sha256 = <sha256 de las seis>
+```
+
+Los ocho campos **forman parte de la huella**: si el modo de verificación
+cambia, la huella cambia.
+
+**Cualquier colisión real prevalece sobre la atestación.** Con atestación válida
+se siguen ejecutando —y cualquier fallo aborta igual— la búsqueda de colisiones
+sobre los usuarios que sí se recuperaron, las lecturas en `profiles`,
+`patients`, `clinics`, `services`, `doctors`, `clinic_members`, `appointments`,
+`booking_intents` y `auth_creation_grants`, la validación de catálogos y la de
+checksums, proyecto e identidades.
+
+`--run` exige **la misma atestación** además del fingerprint aprobado.
+
+> La atestación registra que el owner verificó a mano en *Authentication →
+> Users* la ausencia exacta de las seis identidades el **2026-08-06**. Es
+> evidencia humana trazable, no una demostración por API. Queda anotada en el
+> manifiesto para que cualquiera que lea la huella sepa bajo qué régimen se
+> aprobó la corrida.
 
 ---
 

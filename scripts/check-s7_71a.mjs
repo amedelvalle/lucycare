@@ -23,6 +23,7 @@ import {
   stableStringify, fingerprintOf, flatManifest, identitiesFor,
   normalizePhone, migrationSha256, catalogChecks, authFailureReport,
   OWNER_ATTESTATION, identitiesFingerprint, evaluateAttestation,
+  resolveAuthState, preflightVerdict, smokeSha256, fileSha256, SMOKE_PATH,
   ACTIVE_SUPABASE_TEST_PHONES, REAL_OR_DEMO_PHONES,
   HISTORICAL_OR_RESERVED_PHONES, PRIOR_FIXTURE_PHONES,
   DOC_PLACEHOLDER_PHONES, FORBIDDEN_PHONES, FORBIDDEN_NORMALIZED,
@@ -776,7 +777,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /new globalThis\.URL\(URL\)\.hostname/.test(smoke));
   check('el manifiesto NO incluye claves ni secretos',
     /SERVICE|ANON|KEY|token|password/i.test(bm) === false);
-  check('el manifiesto subió de versión (v: 4)', /v: 4,/.test(bm));
+  check('el manifiesto subió de versión (v: 5)', /v: 5,/.test(bm));
   check('advierte contra el replacer array de JSON.stringify',
     /NO usar `JSON\.stringify\(obj, Object\.keys\(obj\)\.sort\(\)\)`/.test(smoke));
   check('la huella es SHA-256 sobre la serialización canónica',
@@ -1090,7 +1091,9 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /statusProgramada: manifest\.programada_status_id/.test(codigo)
     && /statusConfirmada: manifest\.confirmada_status_id/.test(codigo), true);
   check('el preflight usa catalogChecks()',
-    /for \(const \[desc, okCat\] of catalogChecks\(manifest\)\) check\(desc, okCat\)/.test(codigo));
+    /const catRes = catalogChecks\(manifest\)/.test(codigo));
+  check('el preflight deriva catalogsOk del resultado real',
+    /const catalogsOk = catRes\.every\(\(\[, c\]\) => c === true\)/.test(codigo));
 }
 
 // ─── 17. Fallo inmediato del inventario de Auth ──────────────────────
@@ -1103,7 +1106,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('el inventario se resuelve ANTES de los catálogos',
     pfCode.indexOf('await listAllAuthUsers()') < pfCode.indexOf('await buildManifest(authState)'));
   check('sin atestación válida, sale con exit 1',
-    /if \(!att\.valid\) \{[\s\S]*?process\.exit\(1\);/.test(pfCode));
+    /if \(!authRes\.proceed\) \{[\s\S]*?process\.exit\(1\);/.test(pfCode));
   check('el corte ocurre antes de construir el manifiesto',
     pfCode.indexOf('process.exit(1)') < pfCode.indexOf('await buildManifest(authState)'));
   check('imprime el diagnóstico estructurado', /authFailureReport\(auth\)/.test(pfCode));
@@ -1246,7 +1249,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   ]) check(`cambiar ${desc} → huella DISTINTA`,
     fingerprintOf(flatManifest({ ...manBase, ...mut })) !== fpBase);
 
-  check('el manifiesto subió a v: 4', man.v === 4);
+  check('el manifiesto subió a v: 5', man.v === 5);
   const blob = JSON.stringify(man);
   check('el manifiesto sigue sin secretos',
     /eyJ[A-Za-z0-9_-]{20,}|SERVICE_ROLE|ANON_KEY|token|password/i.test(blob) === false);
@@ -1255,7 +1258,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   const codigo = read('scripts/_smoke-s7_71a.mjs').split('\n')
     .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
   check('el default sigue siendo fail-closed (sin atestación, exit 1)',
-    /if \(!att\.valid\) \{[\s\S]*?process\.exit\(1\);/.test(codigo));
+    /if \(!authRes\.proceed\) \{[\s\S]*?process\.exit\(1\);/.test(codigo));
   check('las tres variables se leen del entorno',
     /ASP0_OWNER_AUTH_ATTESTED \|\|/.test(codigo)
     && /ASP0_OWNER_AUTH_ATTESTED_DATE \|\|/.test(codigo)
@@ -1280,6 +1283,187 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /ko\('inventario de Auth COMPLETO \(NO\)'\)/.test(codigo) === false);
   check('el hecho queda registrado en el manifiesto, no en el contador',
     /auth_inventory_complete = false/.test(read('scripts/_smoke-s7_71a.mjs')));
+}
+
+// ─── 20. Flujo de atestación — casos A–H sobre la lógica REAL ────────
+{
+  console.log('\n20. Flujo de atestación (casos A–H, lógica real, sin DB)');
+
+  const IDS = identitiesFor('s771a0805a');
+  const attOk = evaluateAttestation({
+    attested: '1', date: '2026-08-06',
+    attestedRunId: 's771a0805a', runId: 's771a0805a', identities: IDS,
+  });
+  const attCon = (mut) => evaluateAttestation({
+    attested: '1', date: '2026-08-06',
+    attestedRunId: 's771a0805a', runId: 's771a0805a', identities: IDS, ...mut,
+  });
+
+  const authIncompleto = { complete: false, unique: 100, total: 139, failedPage: 3 };
+  const authCompleto = { complete: true, unique: 139, total: 139, failedPage: null };
+
+  const manFrom = (authState) => flatManifest({
+    projectHost: 'p.supabase.co', migrationSha: 'a'.repeat(64), smokeSha: 'b'.repeat(64),
+    runId: 's771a0805a', identities: IDS, specialtyId: 's',
+    programadaId: 'p', confirmadaId: 'c', canceladaId: 'x', cancelReasonId: 'r',
+    ...authState,
+  });
+
+  // ── A. Auth incompleto SIN atestación ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attCon({ attested: '' }) });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    check('A · sin atestación: NO continúa', r.proceed === false);
+    check('A · sin atestación: no hay authState (no hay manifiesto aprobado)', r.authState === null);
+    check('A · sin atestación: NO emite fingerprint', v.emitFingerprint === false);
+    check('A · sin atestación: exit 1', v.exitCode === 1);
+    check('A · el motivo lo explica', r.reasons.some((x) => /ASP0_OWNER_AUTH_ATTESTED=1/.test(x)));
+  }
+
+  // ── B. Fecha incorrecta ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attCon({ date: '2026-08-07' }) });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    check('B · fecha incorrecta: NO continúa', r.proceed === false);
+    check('B · fecha incorrecta: exit 1', v.exitCode === 1);
+    check('B · el motivo menciona la fecha', r.reasons.some((x) => /DATE debe ser 2026-08-06/.test(x)));
+  }
+
+  // ── C. RUN_ID incorrecto ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attCon({ attestedRunId: 'otro12345' }) });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    check('C · RUN_ID incorrecto: NO continúa', r.proceed === false);
+    check('C · RUN_ID incorrecto: exit 1', v.exitCode === 1);
+    check('C · el motivo menciona el RUN_ID', r.reasons.some((x) => /RUN_ID/.test(x)));
+  }
+
+  // ── D. Hash de identidades incorrecto ──
+  {
+    const otras = IDS.map((x, i) => ({ ...x, email: `intruso-${i}@lucycare.test` }));
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attCon({ identities: otras }) });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    check('D · identidades distintas: NO continúa', r.proceed === false);
+    check('D · identidades distintas: exit 1', v.exitCode === 1);
+    check('D · el motivo señala el hash',
+      r.reasons.some((x) => /identidades NO son las atestadas/.test(x)));
+  }
+
+  // ── E. Atestación VÁLIDA ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attOk });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    const m = manFrom(r.authState);
+    check('E · atestación válida: continúa', r.proceed === true);
+    check('E · modo owner_manual_exact_search', r.mode === 'owner_manual_exact_search');
+    check('E · auth_inventory_complete = false', m.auth_inventory_complete === false);
+    check('E · auth_verification_mode correcto',
+      m.auth_verification_mode === 'owner_manual_exact_search');
+    check('E · owner_attested_no_collisions = true', m.owner_attested_no_collisions === true);
+    check('E · registra los 100 de 139 y la página 3',
+      m.auth_users_inspected === 100 && m.auth_total_announced === 139
+      && m.auth_failed_page === 3, true);
+    check('E · registra la fecha de atestación', m.owner_attested_date === '2026-08-06');
+    check('E · registra el sha de identidades',
+      m.owner_attested_identities_sha256 === OWNER_ATTESTATION.identities_sha256);
+    check('E · EMITE fingerprint', v.emitFingerprint === true);
+    check('E · exit 0', v.exitCode === 0);
+  }
+
+  // ── F. Colisión entre los 100 recuperados, con atestación válida ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attOk });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: false, catalogsOk: true });
+    check('F · colisión en Auth: ABORTA pese a atestación válida', v.emitFingerprint === false);
+    check('F · exit 1', v.exitCode === 1);
+    check('F · el bloqueo se nombra', v.blockers.some((b) => /colisión detectada/.test(b)));
+  }
+
+  // ── G. Colisión en tablas, con atestación válida ──
+  //     `verifyNoCollisions` devuelve un único booleano para Auth y tablas,
+  //     así que este caso entra por la misma puerta que F: lo relevante es
+  //     que la atestación NO lo neutraliza.
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attOk });
+    const v = preflightVerdict({ authProceed: true, noCollisions: false, catalogsOk: true });
+    check('G · colisión en tablas: ABORTA pese a atestación válida', v.emitFingerprint === false);
+    check('G · exit 1', v.exitCode === 1);
+    check('G · la atestación seguía siendo válida', r.proceed === true);
+  }
+
+  // ── H. Auth COMPLETO sin atestación ──
+  {
+    const r = resolveAuthState({ auth: authCompleto, attestation: attCon({ attested: '' }) });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: true });
+    const m = manFrom(r.authState);
+    check('H · Auth completo sin atestación: continúa', r.proceed === true);
+    check('H · modo listusers_exhaustive', r.mode === 'listusers_exhaustive');
+    check('H · auth_inventory_complete = true', m.auth_inventory_complete === true);
+    check('H · sin campos de atestación',
+      m.owner_attested_no_collisions === null && m.owner_attested_date === null
+      && m.owner_attested_identities_sha256 === null, true);
+    check('H · EMITE fingerprint', v.emitFingerprint === true);
+    check('H · exit 0', v.exitCode === 0);
+  }
+
+  // ── Un catálogo faltante también bloquea ──
+  {
+    const r = resolveAuthState({ auth: authIncompleto, attestation: attOk });
+    const v = preflightVerdict({ authProceed: r.proceed, noCollisions: true, catalogsOk: false });
+    check('catálogo faltante: NO emite fingerprint', v.emitFingerprint === false);
+    check('catálogo faltante: el bloqueo se nombra',
+      v.blockers.some((b) => /catálogo requerido faltante/.test(b)));
+  }
+
+  // ── El modo de verificación cambia la huella ──
+  {
+    const inc = manFrom(resolveAuthState({ auth: authIncompleto, attestation: attOk }).authState);
+    const com = manFrom(resolveAuthState({ auth: authCompleto, attestation: attOk }).authState);
+    check('modos distintos → huellas distintas', fingerprintOf(inc) !== fingerprintOf(com));
+  }
+}
+
+// ─── 21. smoke_sha256 — la huella cubre el propio script ─────────────
+{
+  console.log('\n21. smoke_sha256 (la huella cubre el código del smoke)');
+
+  const IDS = identitiesFor('s771a0805a');
+  const base = {
+    projectHost: 'p.supabase.co', migrationSha: 'a'.repeat(64), smokeSha: 'b'.repeat(64),
+    runId: 's771a0805a', identities: IDS, specialtyId: 's',
+    programadaId: 'p', confirmadaId: 'c', canceladaId: 'x', cancelReasonId: 'r',
+  };
+  const m = flatManifest(base);
+  const fp0 = fingerprintOf(m);
+
+  check('el manifiesto incluye smoke_sha256',
+    Object.prototype.hasOwnProperty.call(m, 'smoke_sha256'));
+  check('el manifiesto conserva migration_sha256',
+    Object.prototype.hasOwnProperty.call(m, 'migration_sha256'));
+  check('el manifiesto subió a v: 5', m.v === 5);
+  check('cambiar smoke_sha256 → huella DISTINTA',
+    fingerprintOf(flatManifest({ ...base, smokeSha: 'c'.repeat(64) })) !== fp0);
+  check('cambiar migration_sha256 → huella DISTINTA',
+    fingerprintOf(flatManifest({ ...base, migrationSha: 'c'.repeat(64) })) !== fp0);
+
+  // El checksum real se calcula desde el archivo, con el mismo criterio LF.
+  const real = smokeSha256();
+  check('smokeSha256 devuelve sha256 hex', /^[0-9a-f]{64}$/.test(real));
+  check('smokeSha256 es determinista', real === smokeSha256());
+  const lf = read('scripts/_smoke-s7_71a.mjs').replace(/\r\n/g, '\n');
+  check('usa el MISMO criterio LF que la migración', real === sha256hex(lf));
+  check('migración y smoke usan la misma función', real === fileSha256(SMOKE_PATH));
+  check('el checksum del smoke ≠ el de la migración', real !== migrationSha256());
+
+  // Estructura: se recalcula desde el archivo real, no desde una constante.
+  const codigo = read('scripts/_smoke-s7_71a.mjs').split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  check('la ruta sale de import.meta.url, no de un literal',
+    /export const SMOKE_PATH = fileURLToPath\(import\.meta\.url\)/.test(codigo));
+  check('buildManifest recalcula el smoke desde el archivo',
+    /smokeSha: smokeSha256\(\)/.test(codigo));
+  check('el HEAD de git NO entra en el manifiesto',
+    /head|repoHead/.test(between(codigo, 'export function flatManifest(', 'export function fingerprintOf')) === false);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
