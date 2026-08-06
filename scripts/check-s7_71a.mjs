@@ -2044,5 +2044,155 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /getUserById\(profile\.id\)/.test(ro));
 }
 
+// ─── 28. Orden de borrado del cleanup (corrida del 2026-08-06) ────────
+//
+// La corrida dejó SEIS residuos en producción. Las diez secciones de
+// auditoría pasaron; el fallo fue del cleanup, por dos defectos:
+//
+//   1. ORDEN INVERSO a la cadena de FKs. Funcionaba por accidente: al borrar
+//      los médicos sintéticos, sus citas se iban por CASCADA y el DELETE
+//      explícito de `appointments` nunca tenía que funcionar. El médico QA no
+//      se borra jamás, así que su cita sobrevivió y bloqueó en dominó a
+//      intents, servicios, pacientes, perfiles y usuarios de Auth.
+//   2. `auth_creation_grants.issued_by` es TEXTO (`'register_booking_intent'`),
+//      no un uuid: el borrado por `issued_by` afectaba 0 filas y el inventario
+//      contaba con el mismo criterio, así que el grant era INVISIBLE.
+{
+  console.log('\n28. Orden de borrado y captura de grants');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const cl = between(codigo, 'async function cleanup()', 'async function cleanupAuditLog');
+  const fi = between(codigo, 'async function finalInventory(', 'async function detectExternalQaActivity');
+  check('el tramo de cleanup no está vacío', cl.length > 500);
+  check('el tramo del inventario no está vacío', fi.length > 500);
+
+  // ── issued_by ELIMINADO como criterio ──
+  check('el cleanup NO borra grants por issued_by',
+    /auth_creation_grants'\)\.delete\(\)[\s\S]{0,80}issued_by/.test(codigo) === false);
+  check('el inventario NO cuenta grants por issued_by',
+    /\['auth_creation_grants', 'issued_by'/.test(codigo) === false);
+  check('no queda ningún uso de issued_by como criterio',
+    /issued_by', ids\.users/.test(codigo) === false);
+  check('se documenta por qué issued_by no sirve (es texto)',
+    /issued_by` es TEXTO/.test(smoke));
+
+  // ── booking_intent_id como criterio de captura ──
+  check('los grants se capturan por booking_intent_id',
+    /from\('auth_creation_grants'\)\.select\('id'\)\.eq\('booking_intent_id', intentId\)/.test(codigo));
+  check('los grantId capturados se guardan en su allowlist',
+    /ids\.grantIds\.push\(\.\.\.\(grants \?\? \[\]\)\.map\(\(g\) => g\.id\)\)/.test(codigo));
+  check('existe la lista grantIds', /grantIds: \[\]/.test(codigo));
+  check('el borrado de grants va por id allowlisted',
+    /from\('auth_creation_grants'\)\.delete\(\)\.in\('id', ids\.grantIds\)/.test(codigo));
+  check('la corrida verifica que se capturaron los grants',
+    /2\.11 grants capturados por booking_intent_id/.test(smoke));
+  check('una captura fallida impide declarar limpieza',
+    /grantsCaptureFailed/.test(codigo)
+    && /auth_creation_grants \(captura fallida\)/.test(codigo), true);
+  check('la captura fallida entra como ERROR en el inventario',
+    /label: 'auth_creation_grants \(captura fallida\)',\s*\n?\s*result: \{ status: 'ERROR'/.test(codigo.replace(/\r/g, '')));
+
+  // ── ORDEN: cada dependencia antes que aquello de lo que depende ──
+  const pos = (re) => {
+    const m = cl.match(re);
+    return m ? cl.indexOf(m[0]) : -1;
+  };
+  const pGrant = pos(/from\('auth_creation_grants'\)\.delete\(\)/);
+  const pIntent = pos(/from\('booking_intents'\)\.delete\(\)/);
+  const pAppt = pos(/from\('appointments'\)\.delete\(\)/);
+  const pPatient = pos(/from\('patients'\)\.delete\(\)/);
+  const pService = pos(/from\('services'\)\.delete\(\)/);
+  const pRule = pos(/from\('availability_rules'\)\.delete\(\)\.in\('id', ids\.ruleIds\)/);
+  const pDoctor = pos(/from\('doctors'\)\.delete\(\)/);
+  const pProfile = pos(/from\('profiles'\)\.delete\(\)/);
+  const pUser = cl.indexOf('deleteUser');
+  const pCanc = pos(/from\('appointment_patient_cancellations'\)\.delete\(\)/);
+
+  for (const [label, p] of [['grants', pGrant], ['intents', pIntent], ['citas', pAppt],
+                            ['pacientes', pPatient], ['servicios', pService], ['reglas', pRule],
+                            ['médicos', pDoctor], ['perfiles', pProfile], ['cancelaciones', pCanc]]) {
+    check(`el cleanup borra ${label}`, p >= 0);
+  }
+  check('dependencias de la cita ANTES que la cita', pCanc < pAppt && pCanc >= 0, true);
+  check('grant ANTES que intent (FK booking_intent_id)', pGrant < pIntent && pGrant >= 0, true);
+  check('intent ANTES que appointment (FK consumed_appointment_id)', pIntent < pAppt && pIntent >= 0, true);
+  check('appointment ANTES que patient (FK patient_id)', pAppt < pPatient && pAppt >= 0, true);
+  check('appointment ANTES que service (FK service_id)', pAppt < pService && pAppt >= 0, true);
+  check('patient ANTES que profile (FK profile_id)', pPatient < pProfile && pPatient >= 0, true);
+  check('profile ANTES que auth.user', pProfile < pUser && pProfile >= 0, true);
+  check('appointment ANTES que doctor (no se depende de la cascada)', pAppt < pDoctor && pAppt >= 0, true);
+
+  // ── No depender de cascadas ──
+  check('se declara la prohibición de depender de cascadas',
+    /no depender de ninguna cascada/i.test(smoke));
+  check('se documenta que el orden anterior funcionaba por accidente',
+    /funcionaba por accidente/.test(smoke));
+  check('las citas se borran por id exacto, nunca por doctor_id',
+    /from\('appointments'\)\.delete\(\)\.in\('id', ids\.apptIds\)/.test(codigo)
+    && /from\('appointments'\)\.delete\(\)[\s\S]{0,40}doctor_id/.test(codigo) === false, true);
+  check('servicios y reglas se borran por id exacto, no por doctor_id',
+    /from\('services'\)\.delete\(\)\.in\('id', ids\.serviceIds\)/.test(codigo)
+    && /from\('availability_rules'\)\.delete\(\)\.in\('id', ids\.ruleIds\)/.test(codigo), true);
+  check('las membresías se borran por id exacto, no por clinic_id',
+    /from\('clinic_members'\)\.delete\(\)\.in\('id', ids\.memberIds\)/.test(codigo)
+    && /from\('clinic_members'\)\.delete\(\)\.eq\('clinic_id'/.test(codigo) === false, true);
+  check('los memberId se capturan al crear la membresía',
+    /ids\.memberIds\.push\(data\.id\)/.test(codigo));
+
+  // ── DELETE parcial: se reporta el número de filas ──
+  check('cada DELETE reporta cuántas filas borró',
+    /typeof promise\?\.select === 'function' \? promise\.select\('id'\) : promise/.test(codigo));
+  check('el número de filas se imprime junto al borrado',
+    /\$\{Array\.isArray\(data\) \? ` \(\$\{data\.length\} fila\/s\)` : ''\}/.test(codigo));
+  check('un error de FK entra en cleanupErrors',
+    /cleanupErrors\.push\(`\$\{label\}: \$\{error\.message\}`\)/.test(codigo));
+  check('el finally sigue con el resto del cleanup pese al error',
+    /catch \(e\) \{\s*cleanupErrors\.push\(`\$\{label\}/.test(codigo.replace(/\r/g, '')));
+
+  // ── Inventario final por IDs exactos ──
+  for (const [desc, re] of [
+    ['appointmentIds', /\['appointments', 'id', ids\.apptIds\]/],
+    ['patientIds', /\['patients', 'id', patientIds\]/],
+    ['grantIds', /\['auth_creation_grants', 'id', ids\.grantIds\]/],
+    ['intentIds', /\['booking_intents', 'id', ids\.intentIds\]/],
+    ['profileIds', /\['profiles', 'id', ids\.users\]/],
+    ['memberIds', /\['clinic_members', 'id', ids\.memberIds\]/],
+    ['ruleIds', /\['availability_rules', 'id', ids\.ruleIds\]/],
+    ['serviceIds', /\['services', 'id', ids\.serviceIds\]/],
+  ]) check(`el inventario cuenta ${desc} por id exacto`, re.test(fi));
+  check('el inventario cubre authUserIds por getUserById',
+    /admin\.auth\.admin\.getUserById\(uid\)/.test(fi));
+  check('sonda de RELACIÓN: grants por booking_intent_id',
+    /\['auth_creation_grants \(por booking_intent_id\)', 'booking_intent_id', ids\.intentIds\]/.test(fi));
+
+  // ── Un grant residual impide declarar limpieza (lógica REAL) ──
+  {
+    const fila = (label, status, count = null) => ({ label, result: { status, count } });
+    const conGrant = summarizeInventory([
+      fila('appointments', 'OK', 0), fila('auth_creation_grants', 'OK', 1),
+    ]);
+    check('un grant residual impide declarar cero', conGrant.canDeclareZero === false);
+    check('un grant residual fuerza exit sucio', conGrant.exitClean === false);
+    check('un grant residual se cuenta como residuo', conGrant.residuals === 1);
+
+    const grantDesconocido = summarizeInventory([
+      fila('appointments', 'OK', 0), fila('auth_creation_grants (captura fallida)', 'ERROR'),
+    ]);
+    check('una captura de grants desconocida impide declarar cero',
+      grantDesconocido.canDeclareZero === false);
+    check('la captura desconocida se nombra',
+      grantDesconocido.unknown.includes('auth_creation_grants (captura fallida)'));
+  }
+
+  // ── Nada externo se borra: todo criterio es una allowlist de ids ──
+  const deletes = cl.match(/\.delete\(\)[^\n]*/g) || [];
+  check(`todos los DELETE del cleanup son por allowlist de ids (${deletes.length})`,
+    deletes.every((d) => /\.in\('id',|\.eq\('id',|\.in\('appointment_id',|\.in\('consultation_id',/.test(d)));
+  check('ningún DELETE del cleanup usa doctor_id, clinic_id ni profile_id',
+    deletes.some((d) => /\.eq\('doctor_id'|\.in\('doctor_id'|\.eq\('clinic_id'|\.in\('profile_id'/.test(d)) === false);
+  check('la denylist cubre también grants y membresías',
+    cl.includes("'cleanup/auth_creation_grants'") && cl.includes("'cleanup/clinic_members'"), true);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
 process.exit(fail === 0 ? 0 : 1);

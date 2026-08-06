@@ -382,6 +382,81 @@ mutadas, además de las aserciones estructurales. **0 fallos** es el gate.
 > miraba código ajeno. Los tramos ahora se cierran por el **nombre de la
 > función siguiente** y se exige que **no estén vacíos**.
 
+---
+
+## 5-ter. Orden de borrado del cleanup (corrección posterior a la corrida)
+
+La corrida del 2026-08-06 **pasó las diez secciones de auditoría** (73 OK,
+incluida la sección 2 y el gate de `cancel_my_appointment`) pero **falló el
+cleanup** y dejó **seis residuos** en producción, borrados después con una
+limpieza controlada. Dos defectos, ambos del instrumento.
+
+### Defecto 1 — el orden era el inverso a la cadena de FKs
+
+```
+auth_creation_grants.booking_intent_id   → booking_intents
+booking_intents.consumed_appointment_id  → appointments
+appointments.patient_id → patients   ·   appointments.service_id → services
+patients.profile_id → profiles       ·   profiles.id → auth.users
+```
+
+El cleanup borraba de atrás hacia adelante y **funcionaba por accidente**: al
+borrar los médicos sintéticos, sus citas se iban por **cascada** y el `DELETE`
+explícito de `appointments` nunca tenía que funcionar de verdad.
+
+El médico QA **no se borra jamás**, así que su cita no tuvo cascada que la
+arrastrara: sobrevivió y bloqueó en dominó al intent, al servicio, a la ficha
+de paciente, al profile y al `auth.user`.
+
+**Regla vinculante ahora:** no depender de **ninguna** cascada. Cada
+dependencia se borra explícitamente, **por id exacto**, antes que aquello de lo
+que depende. Orden fijado y verificado por el check:
+
+```
+1. appointment_patient_cancellations (y dependencias de consulta)
+2. auth_creation_grants      ← por grantId
+3. booking_intents           ← por intentId
+4. appointments              ← por appointmentId
+5. patients                  ← por patientId
+6. availability_rules · services  ← por id
+7. doctors · clinic_members · clinics
+8. profiles · auth.users (Admin API)
+```
+
+### Defecto 2 — `auth_creation_grants.issued_by` no es un uuid
+
+Es **texto**, y guarda el nombre de la RPC que lo emitió
+(`'register_booking_intent'`). El cleanup borraba `.in('issued_by', ids.users)`:
+**cero filas**, reportado como éxito. Y el inventario contaba con el mismo
+criterio, devolviendo `0`. El grant sobrevivía **siendo invisible**.
+
+Es exactamente el mismo defecto que `booking_intents.created_by`, en una
+columna distinta. Ahora los grants se capturan por **`booking_intent_id`** justo
+después de crear el intent, se borran por **`grantId` allowlisted**, y el
+inventario los cuenta **dos veces**: por id exacto y por relación
+(`booking_intent_id ∈ intentIds`), de modo que un grant que existiera sin haber
+sido capturado igual aparece.
+
+Si la captura de grants falla, el inventario registra
+`auth_creation_grants (captura fallida)` como **DESCONOCIDO** y la corrida no
+puede declarar limpieza.
+
+### Otras garantías añadidas
+
+- Cada `DELETE` reporta **cuántas filas borró** (`.select('id')` sobre el
+  builder): un borrado parcial deja de ser indistinguible de uno completo.
+- **Todos** los criterios de borrado del cleanup son allowlists de ids
+  exactos. Ya no queda ninguno por `doctor_id`, `clinic_id` ni `profile_id`, y
+  el check lo verifica sobre el texto real.
+- El inventario final cuenta por `grantIds`, `intentIds`, `appointmentIds`,
+  `patientIds`, `profileIds`, `memberIds`, `ruleIds`, `serviceIds` y
+  `authUserIds`.
+
+> **A/B del instrumento:** el check corrido contra el smoke anterior —el que
+> dejó los residuos— produce **27 fallos**, entre ellos «grant ANTES que
+> intent» e «intent ANTES que appointment». No es acoplamiento: es
+> discriminación real del defecto.
+
 **Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
 *hostname* derivado de `SUPABASE_URL`.
 
