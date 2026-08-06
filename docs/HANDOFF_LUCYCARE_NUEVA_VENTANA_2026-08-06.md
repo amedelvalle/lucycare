@@ -212,19 +212,75 @@ La cancelación del paciente **no** se duplica.
 - [x] §4.2 — `SECURITY DEFINER`, `search_path`, EXECUTE revocado
 - [x] §4.3 — `cancel_my_appointment` correcta
 - [x] §4.4 — `audit_log` sin cambios
-- [x] Instrumento corregido (§8) — `check-s7_71a.mjs` en **791 OK, 0 fallos**
-- [ ] **Nuevo `--preflight`** con la huella v6 (el anterior quedó invalidado)
-- [ ] **Smoke: exactamente una fila por `cancel_my_appointment`**
-- [ ] **Smoke: `notes` e `internal_notes` ausentes de la auditoría**
-- [ ] **Smoke: cero residuos de fixtures**
+- [x] Instrumento corregido (§8) — `check-s7_71a.mjs` en **849 OK, 0 fallos**
+- [x] `--preflight` v6 emitido y aceptado
+- [x] **Smoke: exactamente una fila por `cancel_my_appointment`** — §5-bis, 6.1
+- [x] **Smoke: `notes` e `internal_notes` ausentes de la auditoría** — 1.8, 1.9, 6.8
+- [ ] **Smoke: cero residuos de fixtures** — 🔴 la corrida dejó 6 residuos
+      (limpiados a mano). Requiere el PR correctivo del cleanup y una corrida
+      nueva que termine con el inventario en cero **por sí misma**
 
-**Faltan los tres del smoke**, que ahora sí son alcanzables: la sección 2 ya no
-puede fallar por `P009C` porque usa al médico QA publicado y operativo. Ver §5
-y §8.
+**Dos de los tres gates quedan cerrados.** El tercero exige repetir la corrida
+con el cleanup corregido. Ver §5-bis y `docs/OWNER_S7_71A_APPLY.md` §5-ter.
 
 ---
 
-## 5. Smoke de `s7_71a` — corrida ejecutada y FALLIDA
+## 5-bis. Segunda corrida (2026-08-06T20:41:59Z) — auditoría ✅, cleanup 🔴
+
+Ejecutada sobre `HEAD bb36364` con la huella v6, autorizada y única.
+
+```
+inicio    : 2026-08-06T20:41:59.685Z
+final     : 2026-08-06T20:42:35.522Z   (36 s)
+exit code : 1
+resultado : 73 OK, 2 fallos (ambos del cleanup), 6 errores de cleanup
+```
+
+**Las diez secciones funcionales pasaron enteras**, incluida la sección 2, que
+en la corrida anterior ni siquiera arrancaba:
+
+| § | Sección | Resultado |
+|---|---|---|
+| 0 / 0-bis | verificación previa + fixtures | ✅ |
+| 1 | walk-in | ✅ 9/9 |
+| **2** | **`create_booking_with_intent`** | ✅ **10/10** |
+| 3–5 | estado · reprogramación · doctor/servicio/precio/motivo | ✅ 19/19 |
+| **6** | **`cancel_my_appointment`** | ✅ **8/8** |
+| 7 | merge/unmerge | ✅ 7/7 |
+| 8 | firma | ⏭️ excluida |
+| 9 / 10 | update irrelevante · `service_role` | ✅ 4/4 |
+| 11-12 | `db_direct` · contexto rechazado | ⏭️ owner-only |
+
+Datos clave: la cita se creó en `2026-08-09T10:00:00-06:00`, **exactamente** el
+literal local construido — sin el desfase de seis horas del bug anterior.
+`booking_enabled` hizo `false → true → false` y la regla temporal se borró por
+su `ruleId`. Actividad externa: **cero**.
+
+### Los seis residuos y su limpieza
+
+El cleanup falló por orden inverso a la cadena de FKs y por
+`auth_creation_grants.issued_by` (ver `docs/OWNER_S7_71A_APPLY.md` §5-ter).
+Residuos:
+
+```
+appointment         0483cf7a-57ef-4623-87c0-5d7c2608b9f3
+booking_intent      86e631c6-1723-422c-a119-a6c369022613
+patient             d11a7a22-e90b-408c-9424-df22a345c8fb
+profile/auth.user   8ec65dc8-ebc5-48f5-9c21-8d5f163c0fcf
+auth_creation_grant cea64c6d-6dd5-4298-ab31-f7e9e01e999b   ← invisible al inventario
+```
+
+**Limpieza controlada ejecutada el 2026-08-06T20:49:02Z** con autorización
+puntual del owner: verificación read-only de toda la cadena (21 comprobaciones)
+→ puerta → borrado en orden, cada `DELETE` afectando **exactamente 1 fila** →
+`deleteUser` por Admin API → el profile desapareció por cascada. **Cero
+residuos verificado**, `audit_log` no se tocó (ya estaba en cero) y el médico QA
+quedó intacto: publicado, operativo, `booking_enabled=false`, 0 reglas, 0 citas,
+0 intents, 0 pacientes y sus dos servicios sin cambios.
+
+---
+
+## 5. Smoke de `s7_71a` — primera corrida, FALLIDA
 
 **Una sola corrida, autorizada, en producción.**
 
@@ -623,17 +679,46 @@ ASP0_PREFLIGHT_FINGERPRINT=b064680380bff7eff3db6b3c215f9b6748416ca27524837d7282d
   para esas seis identidades; el manifiesto lo registra como
   `auth_inventory_complete: false`.
 
+### ✅ Hecho — DEV: corrida del smoke y limpieza de sus residuos
+
+Ver §5-bis: auditoría **73 OK**, dos de los tres gates cerrados, seis residuos
+limpiados con autorización puntual y **cero residuos verificado**.
+
+### ⏳ En curso — DEV: PR correctivo del CLEANUP
+
+Rama `claude/audit-sec-p0-s7-71a-cleanup-fix` sobre `bb36364`. Corrige el orden
+de borrado y la captura de `auth_creation_grants`
+(`docs/OWNER_S7_71A_APPLY.md` §5-ter).
+
+**Checksums vigentes en esa rama:**
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = 565848cff5762e40502cab72c092e417b628669294a85a3b10fe2725771197b8   ← NUEVO
+                   (anterior: a2d306448507437f74dd1747ebc86d62ba26f33e67075b3df9dc85fa09fabb66)
+```
+
+**Preflight nuevo** (read-only, autorizado, 2026-08-06): **54 OK, 0 fallos,
+exit 0, VEREDICTO APTO**. Misma atestación manual, limitada a `8800–8802`; el
+médico QA `8803` se resolvió como identidad **persistente esperada**, no como
+colisión. Baseline QA **19/19**. La huella v6 anterior queda **invalidada**:
+
+```
+ASP0_PREFLIGHT_FINGERPRINT=33c71f583d46d429ce0669df9e916f4728ede98dfb5ce99086ba01ce9cf44988
+```
+
 ### Siguiente — con autorización explícita del owner
 
-1. Mergear el PR correctivo.
-2. Corrida `--run` con la huella de arriba.
-3. Cerrar los tres gates de §4.4.
+1. Mergear el PR correctivo del cleanup.
+2. Corrida `--run` nueva con la huella nueva.
+3. Cerrar el gate que falta: **cero residuos por sí misma**.
 4. **Solo entonces**, diseñar `s7_71b`.
 
 ### Autorizaciones pendientes
 
-- Mergear el PR correctivo del smoke
-- Ejecutar `--run`
+- Mergear el PR correctivo del cleanup
+- Ejecutar `--run` de nuevo
 - Abrir `s7_71b`
 - Documentar en `CLAUDE.md` el checklist bloqueante de §9
 

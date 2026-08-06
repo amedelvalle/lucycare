@@ -601,9 +601,29 @@ const ids = {
   serviceIds: [], ruleIds: [], apptIds: [], consultIds: [], eventApptIds: [],
   /** Intents creados por ESTA corrida, por id exacto. Nunca por created_by. */
   intentIds: [],
+  /**
+   * Grants creados por ESTA corrida, capturados por `booking_intent_id`.
+   *
+   * ⚠️ `auth_creation_grants.issued_by` es TEXTO — guarda el nombre de la RPC
+   * que lo emitió (`'register_booking_intent'`), no un uuid de usuario. El
+   * cleanup anterior borraba `.in('issued_by', ids.users)`: 0 filas, reportado
+   * como éxito, y el inventario contaba con el mismo criterio equivocado, así
+   * que el grant sobrevivía siendo invisible. Es el mismo defecto que
+   * `booking_intents.created_by`, en otra columna.
+   */
+  grantIds: [],
+  /** Membresías creadas, por id exacto. */
+  memberIds: [],
   /** Reglas temporales creadas SOBRE el médico QA permanente. */
   qaRuleIds: [],
 };
+
+/**
+ * Marca que la captura de grants no se pudo verificar. Un grant que existe
+ * pero no se capturó bloquea el borrado del intent por FK, así que la
+ * corrida NO puede declarar limpieza sin haberlo podido leer.
+ */
+let grantsCaptureFailed = false;
 
 /** Médico QA resuelto (Change 1). Se llena en buildManifest/resolveQaDoctor. */
 let QA = null;
@@ -632,6 +652,7 @@ const allowlist = () => [
   ids.patientId, ids.patientId2, ...ids.extraPatients,
   ...ids.serviceIds, ...ids.ruleIds, ...ids.qaRuleIds,
   ...ids.apptIds, ...ids.consultIds,
+  ...ids.intentIds, ...ids.grantIds, ...ids.memberIds,
 ].filter(Boolean);
 
 async function auditRows(apptId) {
@@ -1744,9 +1765,12 @@ async function buildFixtures(manifest) {
   ids.clinicId = clinic.id;
 
   for (const u of [uDoctorA, uDoctorB]) {
-    const { error } = await admin.from('clinic_members')
-      .insert({ clinic_id: ids.clinicId, profile_id: u.id, role: 'owner', is_active: true });
+    // Se captura el id: el cleanup borra por id exacto, no por clinic_id.
+    const { data, error } = await admin.from('clinic_members')
+      .insert({ clinic_id: ids.clinicId, profile_id: u.id, role: 'owner', is_active: true })
+      .select('id').single();
     if (error) throw new Error(`clinic_member(${u.tag}): ${error.message}`);
+    ids.memberIds.push(data.id);
   }
 
   for (const [u, key] of [[uDoctorA, 'doctorId'], [uDoctorB, 'doctorId2']]) {
@@ -1926,6 +1950,23 @@ async function bookViaIntent(fx) {
     }
     ids.intentIds.push(intentId);
 
+    // ── Grants del intent, por `booking_intent_id` (NUNCA por `issued_by`) ──
+    //    `register_booking_intent` emite un `auth_creation_grant` que apunta
+    //    al intent. Su FK bloquea el borrado del intent, así que hay que
+    //    capturarlo ACÁ, mientras se sabe a qué intent pertenece.
+    const { data: grants, error: eGrants } = await admin
+      .from('auth_creation_grants').select('id').eq('booking_intent_id', intentId);
+    if (eGrants) {
+      // Fail-closed sin destruir la cobertura del resto de la corrida: se
+      // registra el error y el inventario se negará a declarar limpieza.
+      grantsCaptureFailed = true;
+      cleanupErrors.push(`captura de auth_creation_grants: ${eGrants.message}`);
+      console.error(`   ⚠️  no se pudieron capturar los grants del intent: ${eGrants.message}`);
+    } else {
+      ids.grantIds.push(...(grants ?? []).map((g) => g.id));
+      console.log(`   grants capturados por booking_intent_id: ${grants?.length ?? 0}`);
+    }
+
     // ── 9-10. Cita ──
     const { data: booking, error: eBook } = await fx.cPatient.rpc('create_booking_with_intent', {
       p_intent_id: intentId, p_patient_name: `${MARK} Paciente Uno`, p_notes: null,
@@ -2072,6 +2113,11 @@ async function run() {
     // El restore ya corrió en el `finally` de bookViaIntent: la ventana en que
     // el médico QA aceptaba reservas se cerró antes de seguir.
     check('2.10 booking_enabled restaurado inmediatamente', qaSnapshot.restored === true);
+    // El grant que emite register_booking_intent bloquea por FK el borrado del
+    // intent. Capturarlo por booking_intent_id es lo que hace posible el
+    // cleanup; sin él, la corrida anterior dejó residuos en producción.
+    check('2.11 grants capturados por booking_intent_id (no por issued_by)',
+      grantsCaptureFailed === false && ids.grantIds.length >= 1);
   }
 
   // ─── 3. Cambio de estado ───────────────────────────────────────────
@@ -2261,11 +2307,21 @@ const cleanupErrors = [];
 async function cleanup() {
   console.log('\n13. Cleanup (se ejecuta aunque la corrida haya fallado)');
 
+  /**
+   * Ejecuta un DELETE y REPORTA cuántas filas borró.
+   *
+   * `.select('id')` sobre el builder devuelve las filas eliminadas: sin eso,
+   * un borrado que no afecta a nadie —o que afecta a menos de las esperadas—
+   * es indistinguible de uno completo. Un error de FK entra en
+   * `cleanupErrors` y el proceso sale con exit ≠ 0; el `finally` sigue con el
+   * resto del cleanup igualmente.
+   */
   const del = async (label, promise) => {
     try {
-      const { error } = await promise;
+      const q = typeof promise?.select === 'function' ? promise.select('id') : promise;
+      const { data, error } = await q;
       if (error) { cleanupErrors.push(`${label}: ${error.message}`); console.error(`  ⚠️  ${label}: ${error.message}`); }
-      else console.log(`  🧹 ${label}`);
+      else console.log(`  🧹 ${label}${Array.isArray(data) ? ` (${data.length} fila/s)` : ''}`);
     } catch (e) {
       cleanupErrors.push(`${label}: ${e.message}`);
       console.error(`  ⚠️  ${label}: ${e.message}`);
@@ -2294,6 +2350,8 @@ async function cleanup() {
   assertNotPermanent([ids.clinicId].filter(Boolean), 'cleanup/clinics');
   assertNotPermanent(ids.apptIds, 'cleanup/appointments');
   assertNotPermanent(ids.intentIds, 'cleanup/booking_intents');
+  assertNotPermanent(ids.grantIds, 'cleanup/auth_creation_grants');
+  assertNotPermanent(ids.memberIds, 'cleanup/clinic_members');
   console.log(`  🛡️  denylist verificada: ${PERMANENT_IDS.size} objeto(s) permanente(s) intocables`);
 
   if (has(ids.consultIds)) {
@@ -2304,32 +2362,53 @@ async function cleanup() {
     await del('consultas', admin.from('consultations').delete().in('id', ids.consultIds));
   }
 
+  // ── ORDEN DE BORRADO — impuesto por la cadena real de claves foráneas ──
+  //
+  //   auth_creation_grants.booking_intent_id → booking_intents
+  //   booking_intents.consumed_appointment_id → appointments
+  //   appointments.patient_id → patients · appointments.service_id → services
+  //   patients.profile_id → profiles · profiles.id → auth.users
+  //
+  // El orden anterior era el INVERSO y funcionaba por accidente: al borrar los
+  // médicos sintéticos, sus citas se iban por CASCADA y el DELETE explícito de
+  // `appointments` nunca tenía que funcionar. Con el médico QA —que no se borra
+  // jamás— esa cascada no existe, su cita sobrevivía y bloqueaba en dominó a
+  // intents, servicios, pacientes, perfiles y usuarios de Auth.
+  //
+  // Regla vinculante: **no depender de ninguna cascada**. Cada dependencia se
+  // borra explícitamente, por id exacto, antes que aquello de lo que depende.
+
   if (has(ids.eventApptIds)) {
     await del('eventos de cancelación',
       admin.from('appointment_patient_cancellations').delete().in('appointment_id', ids.eventApptIds));
   }
-  if (has(ids.apptIds)) await del('citas', admin.from('appointments').delete().in('id', ids.apptIds));
-
-  // `booking_intents` NO tiene columna `created_by` — el smoke anterior la
-  // usaba y por eso el conteo fallaba en silencio. Se borra por el id EXACTO
-  // capturado en la corrida, nunca por doctor_id ni por teléfono.
+  // 1. Grants — por su id exacto, capturado vía `booking_intent_id`.
+  if (has(ids.grantIds)) {
+    await del('auth_creation_grants (por id allowlisted)',
+      admin.from('auth_creation_grants').delete().in('id', ids.grantIds));
+  }
+  // 2. Intents — `booking_intents` NO tiene `created_by`: por id exacto.
   if (has(ids.intentIds)) {
     await del('booking_intents (por id allowlisted)',
       admin.from('booking_intents').delete().in('id', ids.intentIds));
   }
-  if (has(ids.users)) {
-    await del('auth_creation_grants', admin.from('auth_creation_grants').delete().in('issued_by', ids.users));
-  }
-
-  if (has(doctorIds)) {
-    await del('reglas de disponibilidad', admin.from('availability_rules').delete().in('doctor_id', doctorIds));
-    await del('servicios', admin.from('services').delete().in('doctor_id', doctorIds));
-  }
-
+  // 3. Citas — explícitas, nunca por cascada del médico.
+  if (has(ids.apptIds)) await del('citas', admin.from('appointments').delete().in('id', ids.apptIds));
+  // 4. Fichas de paciente.
   if (has(patientIds)) await del('pacientes', admin.from('patients').delete().in('id', patientIds));
+  // 5. Servicios y reglas — ya sin citas que los referencien. Por id exacto.
+  if (has(ids.ruleIds)) {
+    await del('reglas de disponibilidad', admin.from('availability_rules').delete().in('id', ids.ruleIds));
+  }
+  if (has(ids.serviceIds)) {
+    await del('servicios', admin.from('services').delete().in('id', ids.serviceIds));
+  }
+  // 6. Médicos, membresías y clínica.
   if (has(doctorIds)) await del('médicos', admin.from('doctors').delete().in('id', doctorIds));
+  if (has(ids.memberIds)) {
+    await del('membresías', admin.from('clinic_members').delete().in('id', ids.memberIds));
+  }
   if (ids.clinicId) {
-    await del('membresías', admin.from('clinic_members').delete().eq('clinic_id', ids.clinicId));
     await del('clínicas', admin.from('clinics').delete().eq('id', ids.clinicId));
   }
 
@@ -2418,10 +2497,14 @@ async function finalInventory(patientIds, doctorIds) {
     ['availability_rules', 'id', ids.ruleIds],
     ['availability_rules (temporales QA)', 'id', ids.qaRuleIds],
     ['doctors', 'id', doctorIds],
-    ['clinic_members', 'profile_id', ids.users],
+    ['clinic_members', 'id', ids.memberIds],
     ['clinics', 'id', [ids.clinicId].filter(Boolean)],
     ['booking_intents', 'id', ids.intentIds],
-    ['auth_creation_grants', 'issued_by', ids.users],
+    ['auth_creation_grants', 'id', ids.grantIds],
+    // Sonda de RELACIÓN: caza un grant que exista pero no se haya capturado.
+    // Si sobreviviera, su FK habría bloqueado el borrado del intent, así que
+    // el intent también seguiría ahí y esta sonda lo encuentra igual.
+    ['auth_creation_grants (por booking_intent_id)', 'booking_intent_id', ids.intentIds],
     ['profiles', 'id', ids.users],
   ];
 
@@ -2432,6 +2515,14 @@ async function finalInventory(patientIds, doctorIds) {
     rows.push({ label, result });
     console.log(`    · ${String(label).padEnd(36)} `
       + (result.status === 'OK' ? result.count : `DESCONOCIDO (${result.error})`));
+  }
+
+  // Si la captura de grants falló, la limpieza NO puede declararse verificada:
+  // no se sabe qué grants existen ni, por tanto, si alguno sobrevive.
+  if (grantsCaptureFailed) {
+    rows.push({ label: 'auth_creation_grants (captura fallida)',
+      result: { status: 'ERROR', count: null, error: 'no se pudieron capturar los grants del intent' } });
+    console.log(`    · ${'auth_creation_grants (captura)'.padEnd(36)} DESCONOCIDO`);
   }
 
   const allow = allowlist();
