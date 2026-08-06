@@ -600,13 +600,33 @@ reserva contra el médico QA con snapshot y restauración, denylist de objetos
 permanentes, `booking_intents` sin `created_by`, inventario fail-closed y
 cobertura del check— están descritas en `docs/OWNER_S7_71A_APPLY.md` §5-bis.
 
+### ✅ Hecho — DEV: nuevo `--preflight` (read-only, autorizado)
+
+Ejecutado el **2026-08-06** sobre `HEAD ad3c67a`, con la atestación manual
+vigente del owner (`s771a0805a` / `2026-08-06`) aplicada **solo** a las tres
+identidades sintéticas `8800–8802`. Resultado: **54 OK, 0 fallos · exit 0 ·
+VEREDICTO APTO**. Nada se escribió.
+
+```
+ASP0_PREFLIGHT_FINGERPRINT=b064680380bff7eff3db6b3c215f9b6748416ca27524837d7282d9dbbf5361bb
+```
+
+- Manifiesto **v6**, con los cinco UUID del médico QA **resueltos** por
+  atributos estables (no hardcodeados) y el `slug` confirmado.
+- Baseline del médico QA: **19/19**, incluido `booking_enabled = false`.
+- Colisiones: **ninguna**, ni en Auth ni en tablas. La identidad QA se
+  reconoció como **persistente y esperada**, no como colisión.
+- Inventario de Auth: **sigue incompleto** — `listUsers(page=3)` falla con
+  `Database error finding users` tras dos páginas sanas (`total=140`,
+  `lastPage=3`, 100 ids recogidos). El total subió de 139 a 140 por el propio
+  `auth.user` del médico QA. La atestación del owner cubre el hueco **solo**
+  para esas seis identidades; el manifiesto lo registra como
+  `auth_inventory_complete: false`.
+
 ### Siguiente — con autorización explícita del owner
 
-1. Nuevo `--preflight`. **Invalida el fingerprint anterior** (cambió
-   `smoke_sha256` y el manifiesto subió a **v6** con los cinco UUID del médico
-   QA), así que vuelve a requerir la **atestación manual** del owner para las
-   tres identidades sintéticas `8800–8802`.
-2. Nueva corrida `--run`.
+1. Mergear el PR correctivo.
+2. Corrida `--run` con la huella de arriba.
 3. Cerrar los tres gates de §4.4.
 4. **Solo entonces**, diseñar `s7_71b`.
 
