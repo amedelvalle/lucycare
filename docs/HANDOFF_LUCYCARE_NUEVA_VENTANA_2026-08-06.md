@@ -1,0 +1,596 @@
+# HANDOFF LucyCare — nueva ventana (2026-08-06, frente AUDIT-SEC-P0 en curso)
+
+> **PUNTO DE ENTRADA VIGENTE.** Autocontenido: no asume que la ventana nueva
+> conozca ninguna conversación anterior. Reemplaza a
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md`, que pasa a **histórico**
+> junto con los anteriores. El detalle por PR de frentes cerrados vive en
+> `docs/HISTORIAL_FRENTES.md`.
+>
+> ⚠️ **HAY UN FRENTE ABIERTO: AUDIT-SEC-P0.** No abrir ningún otro.
+>
+> ⚠️ **La vulnerabilidad de `audit_log` SIGUE ABIERTA en producción.** `s7_71a`
+> construyó la cobertura previa; el cierre es `s7_71b`, que **todavía está
+> bloqueada**.
+
+---
+
+## 1. Reglas operativas VINCULANTES
+
+- **Un solo frente funcional a la vez.** Hoy: AUDIT-SEC-P0.
+- **El owner decide; el developer ejecuta instrucciones cerradas.**
+- **No abrir rama, PR ni frente nuevo sin autorización explícita del owner.**
+- **No mergear** salvo autorización explícita y vigente.
+- **No ejecutar SQL. No aplicar migraciones.** El owner aplica el SQL en el
+  SQL Editor de Supabase; el dev corre los `check`/`smoke`.
+- **`service_role` requiere autorización puntual, limitada y explícita, INCLUSO
+  read-only.** Nunca para escribir sin autorización específica.
+- **`auth.users`: JAMÁS por SQL.** Toda operación va por la **Supabase Admin
+  API** (`auth.admin.createUser`, `deleteUser`, `generateLink`).
+- **No modificar** Supabase, Auth Hooks, Vercel, Cloudflare, Turnstile, Twilio,
+  Resend ni producción sin autorización expresa.
+- **No compartir, imprimir, registrar ni guardar** secretos, tokens,
+  contraseñas, OTP, captcha tokens, service keys ni enlaces de autenticación.
+- **JAMÁS Katherine (`50372608827`)**, ni siquiera en read-only.
+- **Camilo (`50378627694`) solo como demo controlado**: no modificar su
+  identidad ni su configuración permanente.
+- **El médico QA persistente está PROTEGIDO** (§6). Nunca entra en cleanup.
+- **TWILIO-P0 BLOQUEADO.** No configurar Twilio.
+- **`s7_71b` BLOQUEADA.** No abrirla hasta cerrar los gates de §4.
+- **No usar datos reales para QA.**
+- **Todo copy nuevo en tuteo**, no voseo.
+- **No afirmar que una prueba fue ejecutada si solo se revisó código.**
+- **No inventar** HEAD, estado de PR, deployment, resultados ni configuración.
+- **PR que toca DB → migración + `check-s7_NN.mjs` + `_smoke-s7_NN.mjs`.**
+- **Validar el instrumento, no solo el fix:** correr la misma medición contra el
+  código anterior (A/B) para comprobar que el bug se reproduce.
+- **Cierre estándar tras cada merge:** HEAD, PRs, migraciones,
+  `main==origin/main`, `git status` vacío, rama borrada local+remoto, 0 PRs
+  abiertos, sin residuos.
+
+---
+
+## 2. Estado exacto del repositorio
+
+| Ítem | Valor |
+|---|---|
+| Repo local | `C:\Users\admic\lucycare` |
+| Remoto | `github.com/amedelvalle/lucycare` |
+| Dominio productivo | `https://lucycare.app` |
+| **HEAD de `main`** | `d11dbbe2352216c9722ab7d6a3d199ff054c5d43` |
+| Subject del HEAD | `chore(seguridad): sacar el rollback de s7_71a del namespace de migraciones (#314)` |
+| `main == origin/main` | **sí** |
+| Árbol | limpio |
+| **PRs abiertos** | **0** |
+
+**Últimos PRs mergeados:**
+
+| PR | Qué hizo |
+|---|---|
+| **#314** | sacó `s7_71a_rollback.sql` de `migrations/` → `docs/rollbacks/` |
+| **#313** | `s7_71a` — cobertura server-side de auditoría de `appointments` |
+| #312 | docs de continuidad post #311 |
+| #311 | cancelación por el paciente — frontend (`s7_70`) |
+| #310 | cancelación por el paciente — backend (`s7_70`) |
+
+**Identidad de git vigente:**
+
+| Ámbito | `user.name` | `user.email` |
+|---|---|---|
+| Local (este repo) | `amedelvalle` | `lucycare.digital@gmail.com` |
+| Global (`~/.gitconfig`) | `amedelvalle` | `240200944+amedelvalle@users.noreply.github.com` |
+
+Verificar el subject con `git show -s --format=%s HEAD` antes de push o merge.
+**Nunca** usar here-strings de PowerShell (`@'...'@`) dentro de Bash.
+
+---
+
+## 3. Estado de migraciones
+
+**Versionadas y aplicadas hasta `s7_71a`.**
+
+| Archivo | Estado |
+|---|---|
+| `migrations/s7_71a_audit_appointments_coverage.sql` | **APLICADA** en producción |
+| `docs/rollbacks/s7_71a_rollback.sql` | versionada, **NO aplicar** |
+
+**Resultado de la aplicación:** `Success. No rows returned` — salida esperada:
+la migración termina en `COMMIT` y no hace `SELECT` final. Confirma que la
+transacción commiteó y que el bloque `DO $pre$` de preflight pasó (habría
+lanzado `RAISE EXCEPTION 's7_71a PRE: …'` si faltara algo).
+
+**Verificaciones SQL §4.1–§4.4 — las cuatro APROBADAS por el owner:**
+
+| # | Verificado |
+|---|---|
+| 4.1 | trigger `audit_appointments` existe, `habilitado`, `AFTER INSERT OR UPDATE … FOR EACH ROW`, **sin DELETE** |
+| 4.2 | `audit_appointments_fn` es `SECURITY DEFINER`, `search_path = pg_catalog, public, pg_temp`, owner `postgres`, `execute_acl = {postgres=X/postgres}` — EXECUTE revocado para `anon`, `authenticated` y `service_role` |
+| 4.3 | `cancel_my_appointment` **sin** `INSERT` manual en `audit_log`, **con** `app.audit_appointments_context`, validaciones intactas, ACL conservada |
+| 4.4 | `audit_log` **sin cambios**: ACL `{postgres=arwdDxtm, anon=arwdDxtm, authenticated=arwdDxtm, service_role=arwdDxtm}` y `policies = 1` |
+
+**Checksums vigentes** (normalizados a LF, mismo criterio en todos lados):
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0
+smoke_sha256     = 8ad15087b829860ce593b97d30143771043f99f2f5365fec6da0894d7b764771
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e
+```
+
+> ⚠️ **PROHIBIDO ejecutar el rollback.** `s7_71a` permanece aplicada. El
+> rollback se movió fuera de `migrations/` justamente porque ordenaba
+> inmediatamente después de su forward y cualquiera que aplicara «las
+> pendientes en orden» habría deshecho la cobertura sin error visible.
+>
+> El encabezado del forward (línea 58) todavía dice
+> `-- REVERSIÓN: migrations/s7_71a_rollback.sql`. Es un comentario **obsoleto y
+> deliberado**: corregirlo cambiaría `migration_sha256` e invalidaría el
+> fingerprint aprobado. La ruta correcta es `docs/rollbacks/`.
+
+---
+
+## 4. AUDIT-SEC-P0 — el frente abierto
+
+### 4.1 Diagnóstico original de `audit_log` (Fase 0, read-only)
+
+`audit_log` **admite INSERT arbitrario** por `public` / `anon` / `authenticated`:
+
+| Elemento | Estado medido |
+|---|---|
+| Policy | `audit_log_insert_only` — PERMISSIVE, `roles={public}`, `INSERT`, **`WITH CHECK true`**. Es la **única** policy |
+| ACL de tabla | `anon` y `authenticated` con `arwdDxtm` (**ALL**) |
+| ACL de `audit_log_id_seq` | `anon` y `authenticated` con `rwU` → incluye **`setval()`** |
+| `user_id` | `uuid NOT NULL` **sin FK** → suplantable |
+| `created_at` | `DEFAULT now()` pero **escribible** → antedatable |
+| `clinic_id` / `metadata` | **no existen** en esta tabla |
+
+Efectivo hoy: `SELECT`, `UPDATE` y `DELETE` bloqueados por **ausencia de
+policy**; `INSERT` **abierto**. `TRUNCATE` no está sujeto a RLS y sigue
+concedido, aunque no es alcanzable vía PostgREST.
+
+**Severidad ALTA:** cualquiera con la clave `anon` —que es pública, viaja en el
+bundle— puede insertar filas de auditoría arbitrarias, atribuidas a cualquier
+uuid y fechadas a voluntad, en el registro de un sistema clínico. No es fuga de
+datos: es pérdida de **integridad y no-repudio**.
+
+**Hallazgo adicional:** `_admin_log_doctor_change(uuid,text,jsonb,jsonb)` es
+`SECURITY DEFINER` **sin gate interno** y con `EXECUTE` para `PUBLIC`. Un
+`authenticated` cualquiera puede fabricar auditoría de `doctors`.
+
+### 4.2 Qué resolvió `s7_71a`
+
+Creó la **cobertura server-side de `appointments`, que no existía**. Antes, los
+tres eventos de agenda se auditaban **solo desde el cliente**
+(`appointments.service.ts:342` y `:500`, `walkIn.service.ts:252`), y esas
+llamadas son *fire-and-forget* (`auditLog.service.ts:29-32` hace `console.warn`
+y no relanza). Revocar el INSERT sin sustituirlas habría borrado esa auditoría
+**en silencio**.
+
+Contenido aplicado: función `audit_appointments_fn()` + `REVOKE EXECUTE` +
+trigger `audit_appointments` + `CREATE OR REPLACE cancel_my_appointment` (que
+elimina su `INSERT` manual y fija un contexto transaccional validado).
+
+**Estado transitorio actual:** hay **doble auditoría** en cambio de estado,
+edición y walk-in (trigger + cliente). Es lo previsto, redundante y no dañino.
+La cancelación del paciente **no** se duplica.
+
+### 4.3 Qué debe cerrar `s7_71b` — **BLOQUEADA**
+
+- `REVOKE ALL ON public.audit_log FROM PUBLIC, anon, authenticated`
+- `REVOKE` de los privilegios de `audit_log_id_seq` para esos roles
+- `DROP POLICY audit_log_insert_only` — **sin crear ninguna policy permisiva nueva**
+- `service_role` con **solo** `SELECT, INSERT, DELETE` sobre la tabla y **solo
+  `USAGE`** sobre la secuencia (sin `UPDATE`, sin `TRUNCATE`).
+  **`DELETE` es obligatorio**: la limpieza de fixtures de todos los smokes depende de él
+- `REVOKE EXECUTE` de `_admin_log_doctor_change` para `PUBLIC`, `anon`,
+  `authenticated` **y `service_role`** (verificado: **no tiene llamadores
+  directos** en `src/` ni `scripts/`; sus 4 llamadores son RPCs `SECURITY
+  DEFINER` con owner `postgres`)
+- `ALTER TABLE audit_log ADD COLUMN integrity_epoch text` **SIN DEFAULT**, y
+  **solo después** `SET DEFAULT 's7_71'`.
+  ⚠️ En PostgreSQL 11+, un `ADD COLUMN … DEFAULT 'x'` **rellena
+  retroactivamente** las filas existentes y marcaría el legado como íntegro
+- Eliminar `src/services/auditLog.service.ts` y sus 3 llamadas
+- **Orden obligatorio: DB → validación → frontend**
+
+### 4.4 Gates pendientes ANTES de abrir `s7_71b`
+
+- [x] `check-s7_71a.mjs` → 599 OK, 0 fallos
+- [x] `--preflight` con huella emitida
+- [x] Identidades sintéticas autorizadas
+- [x] §4.1 — trigger existe y habilitado
+- [x] §4.2 — `SECURITY DEFINER`, `search_path`, EXECUTE revocado
+- [x] §4.3 — `cancel_my_appointment` correcta
+- [x] §4.4 — `audit_log` sin cambios
+- [ ] **Smoke: exactamente una fila por `cancel_my_appointment`**
+- [ ] **Smoke: `notes` e `internal_notes` ausentes de la auditoría**
+- [ ] **Smoke: cero residuos de fixtures**
+
+**Faltan solo los tres del smoke.** Ver §5.
+
+---
+
+## 5. Smoke de `s7_71a` — corrida ejecutada y FALLIDA
+
+**Una sola corrida, autorizada, en producción.**
+
+```
+inicio    : 2026-08-06T15:33:14Z
+final     : 2026-08-06T15:33:33Z   (19 s)
+exit code : 1
+resultado : 21 OK, 2 fallos, 2 errores de cleanup
+```
+
+### Secciones
+
+| § | Sección | Resultado |
+|---|---|---|
+| 0 | Verificación previa (huella + colisiones) | ✅ 9/9 |
+| 0-bis | Fixtures sintéticas | ✅ |
+| **1** | **Creación manual (walk-in)** | ✅ **9/9** |
+| **2** | **`create_booking_with_intent`** | 🔴 **FALLÓ** |
+| 3–7, 9, 10 | estado, reprogramación, doctor/servicio/precio/motivo, `cancel_my_appointment`, merge/unmerge, update irrelevante, `service_role` | ⏸️ **no alcanzadas** |
+| 8 | Firma de consulta | ⏸️ excluida por diseño |
+
+**Lo único demostrado del trigger es la sección 1**, y pasó completa: 1 fila
+exacta, `action=insert`, `change_kind=appointment_created`, `source` literal
+`manual`, `old_data` nulo, `actor_kind=service_role`, `db_executor` presente, y
+**ni la nota libre ni la interna aparecen en la auditoría**.
+
+### Causa exacta del fallo
+
+```
+register_booking_intent: Ese horario no está disponible. Elegí otro.
+```
+
+`validate_booking_slot` (`s7_66:105`) exige
+`is_published AND booking_enabled AND is_operational`. Las fixtures creaban
+médicos con los **defaults conservadores** (los tres `false`). **Defecto del
+instrumento, no de `s7_71a`**: el código de producción rechazó correctamente una
+reserva sobre un médico no operativo.
+
+`validate_booking_slot` exige **nueve** condiciones, no tres:
+1. los tres booleanos (`P009C`) · 2. servicio activo del mismo médico (`P009D`) ·
+3. no en el pasado (`P009E`) · 4. **una sola** grilla de disponibilidad
+(`P0099`) · 5. `slot_duration_min` resoluble (`P0097`) · 6. la regla cubre
+inicio **y** fin · 7. el horario encaja en la **fase** de la grilla · 8. no
+bloqueado · 9. sin cita solapada (`P009B`).
+Y `create_booking_with_intent` añade: `auth.uid()` no nulo (`28000`) y teléfono
+válido en la sesión (`P0095`).
+
+### Dos defectos más del instrumento
+
+1. **`booking_intents.created_by` no existe.** Columnas reales: `clinic_id`,
+   `consumed_appointment_id`, `consumed_at`, `created_at`, `doctor_id`,
+   `end_at`, `expires_at`, `id`, `phone_e164`, `service_id`, `start_at`.
+2. **El inventario interpretaba un error de conteo como cero.** Imprimió
+   `booking_intents  -1` y aun así declaró `CERO residuos (0)`, porque el código
+   hace `if (n > 0) residuals += n`. Declaró limpia una tabla que no pudo
+   verificar.
+
+### Cleanup y residuos — **cero, confirmado**
+
+El `finally` completó todos los intentos: citas, `auth_creation_grants`, reglas,
+servicios, pacientes, médicos, membresías, clínicas, perfiles y **3 `auth.users`
+eliminados por Admin API** (`getUserById` → 0 encontrados).
+
+`audit_log`: 5 filas sobre 3 `record_id`, **todos dentro de la allowlist** → sin
+abort, sin tocar auditoría legítima.
+
+Verificación read-only posterior para cerrar el hueco de `booking_intents`:
+`0` con los teléfonos sintéticos, `0` creados desde el inicio de la corrida,
+`0` en `auth_creation_grants`. **Cero residuos verificado, no inferido.**
+
+### Correcciones obligatorias antes de repetirlo
+
+Ver §8. **Cualquier cambio en `_smoke-s7_71a.mjs` invalida `smoke_sha256` y el
+fingerprint, y obliga a repetir el preflight** — que a su vez volverá a requerir
+la atestación manual del owner (§8, nota sobre `listUsers`).
+
+---
+
+## 6. Médico QA persistente
+
+### 6.1 Decisión del owner
+
+El owner **autorizó expresamente** conservar un médico sintético **publicado en
+producción durante la etapa de QA**, para probar directorio, búsqueda, página
+pública, sitemap, metadata, booking, agenda, panel médico, cancelaciones y
+auditoría. **Debe despublicarse obligatoriamente antes del lanzamiento
+comercial** (§9).
+
+Se descartó ocultarlo con `specialty_id = NULL` porque el perfil debe servir
+para probar también directorio, sitemap y metadata.
+
+### 6.2 Identidad sintética
+
+| Campo | Valor |
+|---|---|
+| Email | `asp0.qa.doctor@lucycare.test` |
+| Teléfono | `50370008803` — **Test Phone permanente confirmado** |
+| `user_metadata.fixture` | `S7_71_QA_DOCTOR` |
+| Nombre | `QA LucyCare — Perfil médico de prueba` |
+| Clínica | `QA LucyCare — Clínica de prueba` |
+| Dirección | `Entorno de prueba — No es una ubicación física` |
+| Especialidad | `9d206032-784d-458e-901f-e30bba7d180d` — Medicina General |
+| Departamento / Municipio | `LI` / `LI-21` — La Libertad / Santa Tecla |
+| Licencia sintética | `QA-S771-0806` (tipo `JVPM`) |
+| Consentimiento / TOS | `v1.0` / `v1.0` |
+
+> El **OTP del Test Phone NO se documenta** en el repositorio, por regla
+> vigente. Está en la configuración de Supabase Auth.
+
+### 6.3 IDs definitivos
+
+| Objeto | UUID |
+|---|---|
+| `auth.users` = `profiles` | `b5865737-1c7b-4fd1-bd70-b9e5befd87ed` |
+| `doctor_affiliation_requests` | `4cc25c0b-7fed-4a0d-9e53-8ff3ab6ef0a9` |
+| `doctors` | `ac0ba772-4263-4fb2-a146-dd90033d8c76` |
+| `clinics` | `8b24611d-6b7d-4f2c-bbf5-ec53f5c4bded` |
+| `doctor_credentials` (JVPM) | `30d3d2ab-83d5-45b8-9fdf-fb6d285e07b5` |
+
+### 6.4 Cómo se provisionó (opción A — vías del producto)
+
+Sin mecanismo nuevo, sin `UPDATE` directo de `role`, sin impersonación por SQL:
+
+1. **Dev** — `auth.admin.createUser` (Admin API) con `email_confirm` y
+   `phone_confirm` → `handle_new_user` creó `profiles` con
+   `id = auth.users.id`, `role='patient'`, `full_name=''`, `phone` correcto y
+   **`email = null`** (la función ignora `user_metadata` y no copia el correo).
+2. **Dev** — `submit_affiliation_request` como `anon` → lead `pending`.
+3. **Owner (LucyAdmin)** — aprobó el lead, corrió `admin_affiliation_preflight`
+   (clasificó `reuse_patient`) y `admin_approve_and_create_doctor` con
+   `confirm_reuse`, que completó `full_name` (**solo porque estaba vacío**) y
+   creó clínica + `clinic_members` owner + doctor `listed_only`, más la
+   credencial JVPM.
+4. **Dev** — sesión del usuario QA por `generateLink` + `verifyOtp` (**sin SMS
+   ni correo**) y `claim_doctor_profile`.
+
+### 6.5 Estado ANTES del claim
+
+```
+profiles.role   = patient
+doctors         : lucy_status=listed_only · is_published=false ·
+                  is_operational=false · booking_enabled=false ·
+                  slug=null · tos_accepted_at=null · tos_version=null
+clinic_members  : owner, is_active=true
+services=0 · availability_rules=0 · appointments=0
+```
+
+### 6.6 Resultado EXACTO después del claim — **verificado**
+
+```
+inicio : 2026-08-06T16:57:31Z
+final  : 2026-08-06T16:57:51Z
+respuesta: {"success":true,"doctor_id":"ac0ba772-…","lucy_status":"claimed"}
+```
+
+| Comprobación | Resultado |
+|---|---|
+| `profiles.role` | ✅ **`doctor`** |
+| `doctors.profile_id` | ✅ `b5865737-…` sin cambios |
+| `lucy_status` | ✅ `claimed` |
+| `tos_accepted_at` | ✅ `2026-08-06T10:57:33.435179-06:00` |
+| `tos_version` | ✅ `v1.0` |
+| `clinic_members` owner activo | ✅ |
+| `is_published` / `is_operational` / `booking_enabled` | ✅ `false` / `false` / `false` |
+| `services` / `availability_rules` / `appointments` | ✅ 0 / 0 / 0 |
+| `patients` vinculados al profile QA | ✅ 0 |
+| `slug` | `null` — lo asignará el trigger al publicar |
+| `profiles.email` | `null` — **no se modificó** |
+
+El claim entró por el **camino directo** (`doctor.profile_id == auth.uid()`), no
+por la rama de migración de perfiles legacy. **El bloqueante de
+`profiles.role` quedó resuelto por la vía del producto.** El médico QA ya puede
+entrar al panel (`useClinicContext` exige `role === 'doctor'`).
+
+> El claim es de **un solo uso**: un segundo intento falla con «Este perfil ya
+> fue reclamado». No reintentar.
+
+### 6.7 Objetos permanentes protegidos — DENYLIST
+
+**Nunca borrar, nunca incluir en cleanup:**
+
+```
+auth.users / profiles : b5865737-1c7b-4fd1-bd70-b9e5befd87ed
+clinics               : 8b24611d-6b7d-4f2c-bbf5-ec53f5c4bded
+doctors               : ac0ba772-4263-4fb2-a146-dd90033d8c76
+doctor_credentials    : 30d3d2ab-83d5-45b8-9fdf-fb6d285e07b5
+clinic_members        : (clinic_id de arriba)
++ los dos services QA cuando el owner los cree
+```
+
+⚠️ **`profiles_id_fkey` es `ON DELETE CASCADE`**: borrar el `auth.user` QA
+arrastraría el profile y, en cascada, probablemente clínica y médico. El
+`deleteUser` sobre ese UUID debe estar **prohibido por aserción explícita**.
+
+El teléfono `50370008803` queda **reservado** a esta identidad: nunca fixture
+desechable, nunca paciente de corrida, nunca en cleanup.
+
+---
+
+## 7. Estado administrativo PENDIENTE (owner, desde LucyAdmin)
+
+Al momento de escribir este handoff, **verificado read-only**:
+
+- [ ] **Crear los dos servicios** con `admin_create_service`:
+  - `QA — No reservar (consulta)` — 30 min, precio 0, `first_visit = true`
+  - `QA — No reservar (control)` — 30 min, precio 0, `first_visit = false`
+- [ ] **Activar operativo**: `admin_set_doctor_operational(true)`
+- [ ] **Publicar**: `admin_set_doctor_published(true)` → asigna el **slug** y lo
+      **congela** (`trg_set_doctor_slug`)
+
+**Invariantes que deben sobrevivir a esos tres pasos:**
+
+- `booking_enabled = false`
+- `availability_rules = 0`
+- **no modificar `profiles.email`**
+
+Las tres RPCs están gateadas por `is_admin()`. Con `service_role` `auth.uid()`
+es NULL y **fallan**: por eso las ejecuta el owner desde la UI.
+
+---
+
+## 8. Diseño de la corrección futura del smoke
+
+No implementado. Decisiones cerradas:
+
+**Resolución del médico QA por identificadores estables** — email, teléfono,
+`full_name`, `metadata.fixture` y los nombres exactos de clínica y servicios.
+**No hardcodear UUIDs.** El `--preflight` los resuelve y **exige unicidad**.
+
+**UUIDs resueltos → manifiesto y fingerprint.** `--run` los vuelve a resolver y
+**aborta** si difieren del fingerprint aprobado.
+
+**Secuencia de la corrida:**
+1. releer `booking_enabled`; **abortar si ya es `true`** (estado base corrupto u
+   otra corrida en curso)
+2. snapshot
+3. crear **una única** `availability_rule` temporal para el slot exacto, con
+   `slot_duration_min = 30` **explícito** (`integer NOT NULL DEFAULT 30`)
+4. activar `booking_enabled`
+5. `register_booking_intent` → capturar `intent_id`
+6. `create_booking_with_intent` → capturar `appointment_id`
+7. **restaurar el snapshot en el `finally`, ANTES del cleanup**
+8. borrar la regla temporal **por `ruleId` allowlisted**
+9. confirmar restore y cleanup
+
+**Horario local:** prohibido `toISOString().replace('Z','')`. Construir un único
+literal `YYYY-MM-DDTHH:mm:ss` y derivar de **ese mismo literal** `p_start_local`,
+`day_of_week`, `start_time` y `end_time`. Sin conversión intermedia a UTC.
+
+**`booking_intents`:** eliminar `created_by`; allowlist explícita de
+`intent_id`; `doctor_id`, `phone_e164` y `RUN_STARTED_AT` **solo como defensas
+adicionales**, nunca criterio suficiente.
+
+**Actividad externa:** cualquier `appointment` o `booking_intent` del médico QA
+creado durante la ventana y **fuera de la allowlist** se **reporta y hace
+fallar**, y **nunca se borra automáticamente** — podría ser una reserva real.
+
+**Inventario fail-closed:** conteos `{status:'OK'|'ERROR', count}`, **nunca
+`-1`**. Tabla no verificable = fallo. **Nunca imprimir «cero residuos» con
+conteos desconocidos.** El `finally` intenta todas las limpiezas; el exit es
+**≠ 0** ante residuos, conteo desconocido, tabla no consultable, error de
+borrado, usuario Auth no eliminado, **restore fallido** o actividad externa.
+
+> ⚠️ **`auth.admin.listUsers` falla en `page=3` con `perPage=50`**
+> (`Database error finding users`), tras dos páginas sanas y con metadata
+> coherente (`total=139`, `lastPage=3`). **Lo único demostrado es eso**: no está
+> probado que las filas 101–139 sean irrecuperables ni que haya una fila
+> corrupta. Por diseño fail-closed, el preflight aborta salvo **atestación
+> manual del owner**, que exige simultáneamente
+> `ASP0_OWNER_AUTH_ATTESTED=1`, `ASP0_OWNER_AUTH_ATTESTED_DATE` y
+> `ASP0_OWNER_AUTH_ATTESTED_RUN_ID`, más coincidencia del hash de las
+> identidades. **Cada preflight nuevo volverá a requerirla.**
+
+---
+
+## 9. Checklist BLOQUEANTE antes del lanzamiento comercial (≤ 2026-10-02)
+
+- [ ] `doctors.booking_enabled = false`
+- [ ] `doctors.is_published = false`
+- [ ] `doctors.is_operational = false`
+- [ ] `availability_rules` del médico QA: **0 filas**
+- [ ] Ausente del **directorio** y de la **búsqueda** en `lucycare.app`
+- [ ] Ausente de `lucycare.app/sitemap.xml`
+- [ ] `/doctor/<slug>` no resuelve o devuelve `noindex`
+- [ ] Revisión en **Google Search Console** + `site:lucycare.app`; solicitar
+      retirada si llegó a indexarse
+- [ ] Sin citas, pacientes ni intents residuales del médico QA
+- [ ] **Decidir**: conservar despublicado o eliminar por Admin API
+
+**Mejora posterior registrada:** bandera explícita `doctors.is_qa_fixture` para
+excluir el perfil de sitemap, JSON-LD e indexación **sin despublicarlo**.
+
+---
+
+## 10. Próximo paso exacto
+
+### Primero — OWNER, desde LucyAdmin
+
+Completar §7: dos servicios, activar operativo, publicar. Después verificar
+slug, aparición en directorio y acceso al panel médico.
+
+### Después — DEV, con autorización explícita
+
+1. Preparar el **PR correctivo del smoke** (§8). Archivos previstos:
+   `scripts/_smoke-s7_71a.mjs`, `scripts/check-s7_71a.mjs`,
+   `docs/OWNER_S7_71A_APPLY.md`.
+2. Nuevo `--preflight` (invalidará el fingerprint anterior; requerirá atestación
+   manual del owner).
+3. Nueva corrida del smoke.
+4. Cerrar los tres gates de §4.4.
+5. **Solo entonces**, diseñar `s7_71b`.
+
+### Autorizaciones pendientes
+
+- Abrir rama y PR para la corrección del smoke
+- Ejecutar `--preflight` (con atestación)
+- Ejecutar `--run`
+- Abrir `s7_71b`
+- Documentar en `CLAUDE.md` el checklist bloqueante de §9
+
+### Lo que NO debe ejecutarse
+
+- ❌ El rollback de `s7_71a`
+- ❌ `s7_71b`
+- ❌ TWILIO-P0
+- ❌ El smoke o el preflight sin autorización puntual
+- ❌ SQL sobre `auth.users`
+- ❌ Borrar el médico QA, su clínica, su credencial o su `auth.user`
+- ❌ Cualquier otro frente
+
+---
+
+## 11. Evidencia — qué está verificado y qué no
+
+**Verificado en producción por el owner:** aplicación de `s7_71a` · §4.1–§4.4 ·
+la fase administrativa del médico QA · ACL y policies de `audit_log` y de la
+secuencia · `rolbypassrls` · FKs de `profiles` · `handle_new_user` ·
+`slot_duration_min integer NOT NULL DEFAULT 30`.
+
+**Verificado por el dev con `service_role` read-only:** estado del médico QA
+antes y después del claim · cero residuos del smoke · catálogo de ubicación
+(`LI` / `LI-21`) · colisiones de la identidad QA.
+
+**Ejecutado por el dev con autorización puntual:** creación del `auth.user` QA
+(Admin API) · `submit_affiliation_request` (anon) · sesión QA
+(`generateLink` + `verifyOtp`) · `claim_doctor_profile` · la única corrida del
+smoke.
+
+**NO verificado — inferencias del repositorio, no medidas en producción:**
+definiciones reales de `claim_doctor_profile`, `submit_affiliation_request`,
+`admin_affiliation_preflight`, `admin_approve_and_create_doctor`,
+`admin_update_doctor_info`, `admin_update_doctor_clinic`,
+`admin_set_doctor_published`, `admin_set_doctor_operational` y
+`admin_create_service` · triggers reales de `profiles` ·
+`audit_profiles_identity_fn` real · ausencia de efectos externos
+(`pg_net`, `http`, `NOTIFY`, `pg_cron`, webhooks): **cero coincidencias en
+migraciones**, pero podrían existir objetos no versionados.
+
+**Pendiente y no probado:** el comportamiento del trigger en cambio de estado,
+reprogramación, cancelación, merge/unmerge, update irrelevante y `service_role`.
+**Solo la sección 1 (walk-in) está demostrada.**
+
+**Este documento no contiene** secretos, tokens, `service_role`, OTP ni claves.
+
+---
+
+## 12. Cómo arrancar en una ventana nueva
+
+```bash
+git fetch origin --prune
+git checkout main
+git pull --ff-only origin main
+git log --oneline -10
+```
+
+Leer, en este orden:
+
+1. `CLAUDE.md` (guía rápida; si contradice a `docs/`, mandan los `docs/`)
+2. **Este handoff** — fuente canónica del estado
+3. `docs/OWNER_S7_71A_APPLY.md` — aplicación, verificación, gate y bloques
+   owner-only (`db_direct`, `context_rejected`, firma de consulta)
+4. `docs/HISTORIAL_FRENTES.md` — detalle por PR de frentes cerrados
+
+**INSTRUCCIÓN 0:** no iniciar ningún frente sin instrucción del owner. El frente
+abierto es **AUDIT-SEC-P0** y el próximo paso está en §10.
