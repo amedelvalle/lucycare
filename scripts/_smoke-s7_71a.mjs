@@ -636,6 +636,47 @@ export function deleteVerdict({ preCount, deletedCount, error }) {
 }
 
 /**
+ * Veredicto del borrado de la `availability_rule` TEMPORAL del médico QA.
+ *
+ * Esta operación se invoca DOS VECES por diseño: una en el `finally` local de
+ * la sección de reserva —que es la que realmente borra— y otra como red de
+ * seguridad al inicio del cleanup global. La segunda no encuentra nada, y eso
+ * es exactamente lo correcto.
+ *
+ * ⚠️ La tolerancia a `0` está confinada AQUÍ y solo en modo `defensive`. El
+ * helper general de DELETE **no** la tiene: para él, borrar 0 de N filas
+ * existentes sigue siendo `PARTIAL` y sigue fallando cerrado.
+ *
+ * · `primary`   → se exige **exactamente 1**. Si borra 0, la regla no estaba
+ *                 donde debía y hay que enterarse: es un residuo sobre un
+ *                 médico PUBLICADO en producción.
+ * · `defensive` → `0` (ya eliminada) y `1` (existía y se eliminó) son válidos.
+ *
+ * Cualquier otro resultado —`count` desconocido, `>1`, o error— falla cerrado
+ * en ambos modos. PURA y exportada.
+ */
+export function tempRuleDeleteVerdict({ mode, count, error }) {
+  if (error) return { ok: false, status: 'ERROR', detail: String(error.message ?? error) };
+  if (typeof count !== 'number' || !Number.isFinite(count)) {
+    return { ok: false, status: 'UNKNOWN', detail: 'el DELETE no devolvió un count numérico' };
+  }
+  if (count > 1) {
+    return { ok: false, status: 'UNEXPECTED', detail: `borró ${count} filas con un filtro por id único` };
+  }
+  if (mode === 'primary') {
+    return count === 1
+      ? { ok: true, status: 'OK', detail: 'eliminada (1 fila)' }
+      : { ok: false, status: 'MISSING', detail: 'borró 0 filas y era la eliminación real: la regla no estaba' };
+  }
+  if (mode === 'defensive') {
+    return count === 1
+      ? { ok: true, status: 'OK', detail: 'todavía existía y fue eliminada (1 fila)' }
+      : { ok: true, status: 'ALREADY_GONE', detail: 'ya estaba eliminada (0 filas)' };
+  }
+  return { ok: false, status: 'UNKNOWN', detail: `modo no reconocido: ${String(mode)}` };
+}
+
+/**
  * Separa la actividad del médico QA entre la que creó ESTA corrida
  * (allowlist explícita de UUID) y la EXTERNA.
  *
@@ -1939,22 +1980,35 @@ async function restoreQaState() {
   }
 }
 
-/** Borra las reglas temporales SOLO por su ruleId allowlisted. */
-async function deleteQaTempRules() {
+/**
+ * Borra las reglas temporales SOLO por su ruleId allowlisted.
+ *
+ * @param {{mode: 'primary'|'defensive'}} opts
+ *   `primary`   — la eliminación REAL, en el `finally` de la sección de
+ *                 reserva. Exige **exactamente 1** fila.
+ *   `defensive` — la red de seguridad del cleanup global. Acepta **0 o 1**,
+ *                 porque para entonces `primary` ya la borró. Sin esta
+ *                 distinción, la propia red de seguridad se denunciaba a sí
+ *                 misma: la corrida del 2026-08-07 terminó en exit 1 con el
+ *                 inventario en CERO por este falso positivo.
+ *
+ * La tolerancia vive en `tempRuleDeleteVerdict` y **solo** en modo
+ * `defensive`. El helper general de DELETE no la comparte.
+ */
+async function deleteQaTempRules({ mode }) {
   if (ids.qaRuleIds.length === 0) return;
   for (const ruleId of ids.qaRuleIds) {
     // Nunca `.eq('doctor_id', …)`: eso borraría cualquier regla del médico QA,
     // incluida una que no hubiéramos creado nosotros.
     const { count, error } = await admin.from('availability_rules')
       .delete({ count: 'exact' }).eq('id', ruleId);
-    // Cuenta exacta: si la regla no se borró, es un residuo sobre un médico
-    // PUBLICADO y hay que enterarse, no darlo por hecho.
-    if (error || count !== 1) {
-      const detalle = error?.message ?? `borró ${count} fila(s), se esperaba 1`;
-      cleanupErrors.push(`regla temporal ${ruleId}: ${detalle}`);
-      console.error(`  ⚠️  regla temporal ${ruleId}: ${detalle}`);
+    const v = tempRuleDeleteVerdict({ mode, count, error });
+    if (v.ok) {
+      console.log(`  🧹 regla temporal ${ruleId.slice(0, 8)}… [${mode}] ${v.detail}`
+        + ' (por ruleId, nunca por doctor_id)');
     } else {
-      console.log(`  🧹 regla temporal ${ruleId.slice(0, 8)}… (por ruleId, nunca por doctor_id)`);
+      cleanupErrors.push(`regla temporal ${ruleId} [${v.status}]: ${v.detail}`);
+      console.error(`  ⚠️  regla temporal ${ruleId} [${v.status}]: ${v.detail}`);
     }
   }
 }
@@ -2058,7 +2112,8 @@ async function bookViaIntent(fx) {
     //    que un médico PUBLICADO en producción acepta reservas se cierra acá
     //    mismo, no al final de la corrida; el cleanup global lo re-verifica.
     await restoreQaState();
-    await deleteQaTempRules();
+    // Eliminación REAL: acá la regla debe existir, así que se exige 1 fila.
+    await deleteQaTempRules({ mode: 'primary' });
   }
 }
 
@@ -2425,7 +2480,10 @@ async function cleanup() {
   //    puede quedar abierto es la reserva de un médico publicado en producción.
   //    Idempotente: si bookViaIntent ya restauró, esto no encuentra nada que hacer.
   await restoreQaState();
-  await deleteQaTempRules();
+  // Red de seguridad: si la sección 2 corrió, `primary` ya la borró y acá se
+  // esperan 0 filas. Si la corrida abortó antes del `finally` local, puede
+  // seguir existiendo y se borra aquí. Ambos casos son correctos.
+  await deleteQaTempRules({ mode: 'defensive' });
 
   // ── DENYLIST: ninguna lista de borrado puede tocar un objeto permanente ──
   //    La aserción LANZA. No filtra en silencio: si un id permanente llegara a
