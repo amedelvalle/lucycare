@@ -257,14 +257,34 @@ Verificación final: **las 16 categorías en 0** y el médico QA intacto
 (publicado, operativo, `booking_enabled=false`, 0 reglas, 0 citas, 0 intents,
 0 pacientes en su clínica, sus dos servicios sin cambios).
 
-> **Nota sobre `audit_log`.** Tras la limpieza quedaron **3 filas**
-> (`id` 14437-14439, `action=delete`, `table_name=patients`, `user_id` =
-> centinela). **No son residuo de la corrida**: son el rastro de auditoría que
-> generó la propia limpieza al borrar las tres fichas, posterior al
-> `cleanupAuditLog` del smoke. **No se tocaron**: borrar auditoría de una acción
-> administrativa real sería exactamente lo que este frente existe para impedir.
-> En una corrida que termine bien no aparecerán, porque `cleanupAuditLog` se
-> ejecuta **después** de todos los borrados.
+### DECISIÓN DEL OWNER sobre `audit_log` 14437–14439
+
+**Tomada el 2026-08-06 (hora local de El Salvador) · 2026-08-07 UTC.**
+
+Tras la limpieza quedaron **3 filas** en `audit_log` —`id` **14437, 14438,
+14439**, `action=delete`, `table_name=patients`, `user_id` = centinela— con
+timestamp posterior al `cleanupAuditLog` del smoke. Son las **trazas esperadas**
+que generó la limpieza administrativa manual de los tres `patients` sintéticos.
+
+- **No son residuos de fixtures** de la corrida.
+- **No deben eliminarse** como parte del cleanup actual **ni de futuras
+  corridas** del smoke.
+- **No deben incluirse en el conteo de residuos de fixtures** de futuras
+  corridas. (Mecánicamente tampoco pueden alcanzarlas: `cleanupAuditLog` borra
+  solo por la allowlist de UUID de *su propia* corrida, y estos `record_id` no
+  pertenecen a ninguna. Pero la regla es vinculante por decisión, no por esa
+  mecánica.)
+- **Se conservan por ahora**, salvo que exista posteriormente una decisión
+  explícita y separada sobre retención o depuración de `audit_log`.
+- La corrida del **2026-08-07 UTC** quedó, después de la limpieza manual, con
+  **residuos de fixtures = 0**.
+
+> ⚠️ **Matiz que corrige una redacción anterior de este handoff.** Mientras la
+> vulnerabilidad de escritura de `audit_log` siga abierta —es decir, hasta
+> `s7_71b`— estas filas se documentan como **trazas operativas observadas**, no
+> como evidencia independiente e infalsificable. Cualquiera con la clave `anon`
+> puede insertar filas arbitrarias en esa tabla (§4.1), así que su valor
+> probatorio es limitado por construcción y no debe presentarse de otro modo.
 
 ---
 
