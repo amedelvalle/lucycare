@@ -225,6 +225,69 @@ con el cleanup corregido. Ver §5-bis y `docs/OWNER_S7_71A_APPLY.md` §5-ter.
 
 ---
 
+## 5-ter. Tercera corrida (2026-08-07T02:37:03Z) — auditoría ✅, cleanup 🔴
+
+Sobre `HEAD 51e2dbb`, huella `33c71f58…`. **74 OK**, exit 1.
+
+Las diez secciones funcionales volvieron a pasar, incluidas las nuevas `2.11`
+(grants capturados por `booking_intent_id`) y el gate de `cancel_my_appointment`
+con exactamente una fila. El orden de borrado de §5-ter de la guía funcionó:
+**grants e intents se eliminaron correctamente**.
+
+**Falló por un defecto nuevo, introducido en el PR #317:** el helper contaba
+las filas borradas con `.select('id')`, y
+`appointment_patient_cancellations` **no tiene columna `id`**. El borrado no se
+ejecutó y la fila superviviente bloqueó por FK a todo lo demás: **23 residuos**.
+
+### Limpieza de los 23 residuos — 2026-08-07T02:44Z
+
+Identificación read-only encadenada desde objetos con pertenencia demostrable
+(marca `S7_71_FIXTURE`, `RUN_ID` en el nombre de la clínica, teléfonos
+`8800–8802`); **nada se identificó por `doctor_id` ni `clinic_id`**. Allowlist
+validada como disjunta de los objetos permanentes. Borrado en el orden
+autorizado, con **count exacto** en cada paso:
+
+```
+cancelaciones 1 · citas 11 · pacientes 3 · servicios 2 · médicos 1 · clínicas 1
+auth.users 2 (Admin API) → profiles 2 por cascada
+grants, intents, reglas y membresías: 0 (ya estaban)
+```
+
+Verificación final: **las 16 categorías en 0** y el médico QA intacto
+(publicado, operativo, `booking_enabled=false`, 0 reglas, 0 citas, 0 intents,
+0 pacientes en su clínica, sus dos servicios sin cambios).
+
+### DECISIÓN DEL OWNER sobre `audit_log` 14437–14439
+
+**Tomada el 2026-08-06 (hora local de El Salvador) · 2026-08-07 UTC.**
+
+Tras la limpieza quedaron **3 filas** en `audit_log` —`id` **14437, 14438,
+14439**, `action=delete`, `table_name=patients`, `user_id` = centinela— con
+timestamp posterior al `cleanupAuditLog` del smoke. Son las **trazas esperadas**
+que generó la limpieza administrativa manual de los tres `patients` sintéticos.
+
+- **No son residuos de fixtures** de la corrida.
+- **No deben eliminarse** como parte del cleanup actual **ni de futuras
+  corridas** del smoke.
+- **No deben incluirse en el conteo de residuos de fixtures** de futuras
+  corridas. (Mecánicamente tampoco pueden alcanzarlas: `cleanupAuditLog` borra
+  solo por la allowlist de UUID de *su propia* corrida, y estos `record_id` no
+  pertenecen a ninguna. Pero la regla es vinculante por decisión, no por esa
+  mecánica.)
+- **Se conservan por ahora**, salvo que exista posteriormente una decisión
+  explícita y separada sobre retención o depuración de `audit_log`.
+- La corrida del **2026-08-07 UTC** quedó, después de la limpieza manual, con
+  **residuos de fixtures = 0**.
+
+> ⚠️ **Matiz que corrige una redacción anterior de este handoff.** Mientras la
+> vulnerabilidad de escritura de `audit_log` siga abierta —es decir, hasta
+> `s7_71b`— estas filas se documentan como **trazas operativas observadas**, no
+> como evidencia independiente e infalsificable. Cualquiera con la clave `anon`
+> puede insertar filas arbitrarias en esa tabla (§4.1), así que su valor
+> probatorio es limitado por construcción y no debe presentarse de otro modo.
+
+---
+
 ## 5-bis. Segunda corrida (2026-08-06T20:41:59Z) — auditoría ✅, cleanup 🔴
 
 Ejecutada sobre `HEAD bb36364` con la huella v6, autorizada y única.
@@ -708,9 +771,23 @@ colisión. Baseline QA **19/19**. La huella v6 anterior queda **invalidada**:
 ASP0_PREFLIGHT_FINGERPRINT=33c71f583d46d429ce0669df9e916f4728ede98dfb5ce99086ba01ce9cf44988
 ```
 
+### ⏳ En curso — PR del helper de DELETE (`count: 'exact'`)
+
+Rama `claude/audit-sec-p0-s7-71a-cleanup-count-fix` sobre `51e2dbb`
+(`docs/OWNER_S7_71A_APPLY.md` §5-quater).
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = 93c684347681a6dc11fbdbebbba01922030794757a09afa581d4b9958786c963   ← NUEVO
+ASP0_PREFLIGHT_FINGERPRINT=eb6369dba4f599b7a40d2e5c06d792d28947e3c6ae9cded828dd1d1b711b4bce
+```
+
+Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
+
 ### Siguiente — con autorización explícita del owner
 
-1. Mergear el PR correctivo del cleanup.
+1. Mergear el PR del helper de DELETE.
 2. Corrida `--run` nueva con la huella nueva.
 3. Cerrar el gate que falta: **cero residuos por sí misma**.
 4. **Solo entonces**, diseñar `s7_71b`.
