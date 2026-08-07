@@ -751,9 +751,23 @@ colisión. Baseline QA **19/19**. La huella v6 anterior queda **invalidada**:
 ASP0_PREFLIGHT_FINGERPRINT=33c71f583d46d429ce0669df9e916f4728ede98dfb5ce99086ba01ce9cf44988
 ```
 
+### ⏳ En curso — PR del helper de DELETE (`count: 'exact'`)
+
+Rama `claude/audit-sec-p0-s7-71a-cleanup-count-fix` sobre `51e2dbb`
+(`docs/OWNER_S7_71A_APPLY.md` §5-quater).
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = 93c684347681a6dc11fbdbebbba01922030794757a09afa581d4b9958786c963   ← NUEVO
+ASP0_PREFLIGHT_FINGERPRINT=eb6369dba4f599b7a40d2e5c06d792d28947e3c6ae9cded828dd1d1b711b4bce
+```
+
+Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
+
 ### Siguiente — con autorización explícita del owner
 
-1. Mergear el PR correctivo del cleanup.
+1. Mergear el PR del helper de DELETE.
 2. Corrida `--run` nueva con la huella nueva.
 3. Cerrar el gate que falta: **cero residuos por sí misma**.
 4. **Solo entonces**, diseñar `s7_71b`.
