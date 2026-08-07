@@ -1,9 +1,67 @@
 # OWNER — aplicación de `s7_71a` (AUDIT-SEC-P0 · PR 1)
 
 > **Qué es.** Primer PR del frente AUDIT-SEC-P0. Añade la auditoría
-> **server-side** de `appointments`, que hoy no existe. **No cierra todavía**
-> la vulnerabilidad de `audit_log` — eso es `s7_71b`, y solo se abre si esta
-> validación pasa.
+> **server-side** de `appointments`, que antes no existía. **No cierra** la
+> vulnerabilidad de `audit_log` — eso es `s7_71b`.
+
+---
+
+## 🟢 ESTADO: `s7_71a` CERRADA Y VALIDADA (2026-08-07)
+
+**Decisión del owner.** La migración **`s7_71a` no requiere más pruebas**, y su
+**instrumento queda también CERRADO**.
+
+**Corrida final de referencia** — `HEAD ccfa8ec0ecb77daecfb4aec1c520015f749ee506`:
+
+```
+inicio                    2026-08-07T03:39:32.450Z
+final                     2026-08-07T03:40:09.212Z   (37 s)
+EXIT CODE                 0
+resultado                 76 OK · 0 fallos · 0 errores de cleanup
+RESIDUOS DE FIXTURES      0
+CLEANUP MANUAL POSTERIOR  NO
+actividad externa         0
+```
+
+**Los tres gates cerrados:** `cancel_my_appointment` produce exactamente una
+fila · `notes` e `internal_notes` quedan fuera de `audit_log` · cero residuos de
+fixtures, sin intervención manual.
+
+**Instrumento:** `primary` borra la regla temporal con 1 fila exacta;
+`defensive` reporta `ALREADY_GONE` con 0; los trece counts del cleanup
+coincidieron con lo esperado; el inventario de las 16 categorías terminó en 0.
+
+**Checksums y huella utilizados:**
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e
+smoke_sha256     = 129de64b860dece8f2736c7e00c5ae4552ff2a38ae0b9cebe5ca47a5166ce3cb
+ASP0_PREFLIGHT_FINGERPRINT=e02ad689ba2633639d30fdd1d827d0ccc4875e5b0f74c2c1f67b4c0fa79a8c7c
+```
+
+Los dos primeros son los mismos desde que se aplicó la migración: **ninguno de
+los cuatro PR del instrumento tocó la migración ni su rollback.**
+
+**Estado final del médico QA:** `is_published=true` · `is_operational=true` ·
+`booking_enabled=false` · `availability_rules=0` · `appointments=0` ·
+`booking_intents=0` · `patients` de su clínica `=0` · sus dos servicios
+permanentes intactos.
+
+**`audit_log` 14437–14439:** conservadas e intactas. No son residuos de
+fixtures y siguen bajo la decisión de conservación documentada en el handoff.
+
+> ⛔ **NO repetir el smoke ni el preflight.** `s7_71a` está cerrada. Solo con
+> una decisión explícita y separada del owner en el futuro.
+
+> ⚠️ **AUDIT-SEC-P0 SIGUE ABIERTO.** La **escritura arbitraria sobre
+> `audit_log` continúa en producción** (§4.1 del handoff). Próximo frente
+> candidato: **`s7_71b`** (§8 de esta guía), **BLOQUEADA hasta autorización
+> separada del owner**.
+
+Lo que sigue de este documento es la referencia operativa e histórica: cómo se
+aplicó, cómo se verificó y los cinco defectos del instrumento que se corrigieron
+por el camino (§5-bis a §5-quinquies).
 
 ---
 

@@ -12,11 +12,15 @@
 > construyó la cobertura previa; el cierre es `s7_71b`, que **todavía está
 > bloqueada**.
 >
-> 🔄 **Actualizado el 2026-08-06 (segunda revisión).** §7 quedó **completado**
-> por el owner y verificado read-only; la corrección del smoke (§8) está
-> **implementada** en la rama `claude/audit-sec-p0-s7-71a-smoke-fix`. El
-> `smoke_sha256` cambió, así que **el fingerprint anterior está invalidado** y
-> hace falta un `--preflight` nuevo (§3, §10).
+> 🟢 **CIERRE (2026-08-07). `s7_71a` está CERRADA Y VALIDADA, y su instrumento
+> también.** Corrida final sobre `ccfa8ec`: **exit 0 · 76 OK · 0 fallos · 0
+> residuos · sin intervención manual**. Los tres gates de §4.4 cerrados.
+> **No requiere más pruebas y el smoke NO debe repetirse** salvo decisión
+> explícita y separada del owner. Resultado canónico en **§5-cierre**.
+>
+> ⚠️ Eso **no cierra el frente**: la vulnerabilidad de escritura arbitraria
+> sobre `audit_log` **sigue en producción**. Próximo frente candidato:
+> **`s7_71b`**, todavía **BLOQUEADA**.
 
 ---
 
@@ -212,17 +216,97 @@ La cancelación del paciente **no** se duplica.
 - [x] §4.2 — `SECURITY DEFINER`, `search_path`, EXECUTE revocado
 - [x] §4.3 — `cancel_my_appointment` correcta
 - [x] §4.4 — `audit_log` sin cambios
-- [x] Instrumento corregido (§8) — `check-s7_71a.mjs` en **849 OK, 0 fallos**
-- [x] `--preflight` v6 emitido y aceptado
-- [x] **Smoke: exactamente una fila por `cancel_my_appointment`** — §5-bis, 6.1
-- [x] **Smoke: `notes` e `internal_notes` ausentes de la auditoría** — 1.8, 1.9, 6.8
-- [x] **Smoke: cero residuos de fixtures** — cerrado en la corrida del
-      2026-08-07T03:19Z (§5-quater): inventario en **0** sin intervención manual
+- [x] Instrumento corregido — `check-s7_71a.mjs` en **947 OK, 0 fallos**
+- [x] `--preflight` emitido y aceptado
+- [x] **Smoke: exactamente una fila por `cancel_my_appointment`**
+- [x] **Smoke: `notes` e `internal_notes` ausentes de la auditoría**
+- [x] **Smoke: cero residuos de fixtures**
 
-**LOS TRES GATES ESTÁN CERRADOS.** `s7_71a` queda **funcionalmente validada**
-por decisión del owner. Pendiente único: cerrar el **instrumento**, cuyo exit 1
-se debía a un falso positivo ya corregido
-(`docs/OWNER_S7_71A_APPLY.md` §5-quinquies).
+**LOS TRES GATES ESTÁN CERRADOS.**
+
+> ## 🟢 DECISIÓN DEL OWNER (2026-08-07): `s7_71a` CERRADA Y VALIDADA
+>
+> **La migración `s7_71a` NO requiere más pruebas.** El **instrumento** queda
+> **también CERRADO**: la corrida se sostiene sola, con exit 0 y sin dejar
+> rastro.
+>
+> **El smoke NO debe repetirse** salvo decisión explícita y separada del owner
+> en el futuro.
+>
+> Resultado canónico en §5-cierre.
+
+---
+
+## 5-cierre. Corrida FINAL (2026-08-07T03:39:32Z) — `s7_71a` CERRADA
+
+**Resultado canónico. Es la corrida de referencia; las anteriores son historia
+del proceso.**
+
+| Ítem | Valor |
+|---|---|
+| HEAD | `ccfa8ec0ecb77daecfb4aec1c520015f749ee506` |
+| inicio | `2026-08-07T03:39:32.450Z` |
+| final | `2026-08-07T03:40:09.212Z` (37 s) |
+| **exit code** | **0** |
+| resultado | **76 OK · 0 fallos · 0 errores de cleanup** |
+| RESIDUOS DE FIXTURES | **0** |
+| CLEANUP MANUAL POSTERIOR | **NO** |
+| actividad externa | **0** |
+
+**Checksums y huella utilizados:**
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e
+smoke_sha256     = 129de64b860dece8f2736c7e00c5ae4552ff2a38ae0b9cebe5ca47a5166ce3cb
+ASP0_PREFLIGHT_FINGERPRINT=e02ad689ba2633639d30fdd1d827d0ccc4875e5b0f74c2c1f67b4c0fa79a8c7c
+RUN_ID=s771a0805a · atestación del owner 2026-08-06, limitada a 8800-8802
+```
+
+`migration_sha256` y `rollback_sha256` son los mismos desde que se aplicó la
+migración: **ninguno de los cuatro PR del instrumento tocó la migración ni su
+rollback.**
+
+**Los tres gates de §4.4:**
+
+1. `cancel_my_appointment` → **exactamente una fila** ✅
+2. `notes` / `internal_notes` **fuera** de `audit_log` ✅
+3. **cero residuos de fixtures** ✅
+
+**Regla temporal del médico QA — el comportamiento esperado:**
+
+```
+[primary]   93755c68… eliminada (1 fila)
+[defensive] 93755c68… ya estaba eliminada (0 filas) → ALREADY_GONE
+```
+
+**Counts del cleanup, los trece esperados:** cancelaciones 1 · grants 1 ·
+intents 1 · citas 12 · pacientes 3 · reglas 14 · servicios 2 · médicos 2 ·
+membresías 2 · clínicas 1 · perfiles 3 · `auth.users` 3 · `audit_log`
+sintético 27. Ninguno `PARTIAL`, `UNKNOWN` ni `ERROR`.
+
+**Inventario final — las 16 categorías en 0**, sin ningún conteo desconocido.
+
+**Estado final del médico QA:**
+
+```
+is_published true · is_operational true · booking_enabled false
+lucy_status claimed · slug qa-lucycare-perfil-medico-de-prueba
+availability_rules 0 · appointments 0 · booking_intents 0 · patients clínica QA 0
+servicios permanentes intactos:
+  QA — No reservar (consulta)  30 min · $0 · is_first_visit=true  · activo
+  QA — No reservar (control)   30 min · $0 · is_first_visit=false · activo
+```
+
+**`audit_log` 14437–14439: conservadas e intactas**, verificado por lectura
+posterior (3 de 3). No pertenecen a la allowlist de esta corrida ni se cuentan
+como residuos. Siguen bajo la decisión de conservación documentada más abajo.
+
+> ⚠️ **AUDIT-SEC-P0 SIGUE ABIERTO.** Que `s7_71a` esté cerrada **no** cierra el
+> frente: la **escritura arbitraria sobre `audit_log` continúa en producción**.
+> `s7_71a` construyó la cobertura previa; el cierre es **`s7_71b`**, que es el
+> **próximo frente candidato** y sigue **BLOQUEADA hasta autorización separada
+> del owner**.
 
 ---
 
@@ -832,17 +916,24 @@ ASP0_PREFLIGHT_FINGERPRINT=eb6369dba4f599b7a40d2e5c06d792d28947e3c6ae9cded828dd1
 
 Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
 
-### Siguiente — con autorización explícita del owner
+### ✅ CERRADO — `s7_71a` y su instrumento
 
-1. Mergear el PR del helper de DELETE.
-2. Corrida `--run` nueva con la huella nueva.
-3. Cerrar el gate que falta: **cero residuos por sí misma**.
-4. **Solo entonces**, diseñar `s7_71b`.
+Corrida final `2026-08-07T03:39:32Z` sobre `ccfa8ec`: **exit 0 · 76 OK · 0
+fallos · 0 residuos · sin intervención manual**. Detalle en **§5-cierre**.
+
+**La migración `s7_71a` no requiere más pruebas.** El smoke **no debe
+repetirse** salvo decisión explícita y separada del owner.
+
+### Próximo frente candidato — `s7_71b`, BLOQUEADA
+
+**AUDIT-SEC-P0 sigue ABIERTO**: la escritura arbitraria sobre `audit_log`
+continúa en producción. Lo que debe cerrar `s7_71b` está en §4.3.
+
+**`s7_71b` sigue BLOQUEADA hasta autorización separada del owner.** No
+diseñarla, no abrirla, no preparar su migración.
 
 ### Autorizaciones pendientes
 
-- Mergear el PR correctivo del cleanup
-- Ejecutar `--run` de nuevo
 - Abrir `s7_71b`
 - Documentar en `CLAUDE.md` el checklist bloqueante de §9
 
@@ -851,9 +942,11 @@ Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
 - ❌ El rollback de `s7_71a`
 - ❌ `s7_71b`
 - ❌ TWILIO-P0
-- ❌ El smoke o el preflight sin autorización puntual
+- ❌ **Repetir el smoke o el preflight** — `s7_71a` está cerrada; solo con
+  decisión explícita y separada del owner
 - ❌ SQL sobre `auth.users`
 - ❌ Borrar el médico QA, su clínica, su credencial o su `auth.user`
+- ❌ Borrar `audit_log` 14437–14439
 - ❌ Cualquier otro frente
 
 ---
