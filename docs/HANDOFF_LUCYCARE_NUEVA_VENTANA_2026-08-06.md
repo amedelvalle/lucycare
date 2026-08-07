@@ -916,6 +916,51 @@ ASP0_PREFLIGHT_FINGERPRINT=eb6369dba4f599b7a40d2e5c06d792d28947e3c6ae9cded828dd1
 
 Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
 
+### ⚠️ `s7_71b` — APLICADA A MANO EN PRODUCCIÓN, PR de reconciliación abierto
+
+**La vulnerabilidad de escritura arbitraria sobre `audit_log` está CERRADA en
+producción desde el `2026-08-07`.** Se aplicó **manualmente**, antes de existir
+el PR. Detalle completo en `docs/OWNER_S7_71B_APPLY.md`.
+
+```
+SHA-256 (LF) del SQL efectivo = 8fe8ccd6ee24b63e45c01852d10906b56fb098bf23f46aef94dc265a5dce2e37
+Aplicado manualmente en producción el 2026-08-07.
+Timestamp exacto de ejecución del SQL Editor no recuperado al momento de versionar.
+```
+
+**⛔ NO volver a ejecutar la migración.** Producción ya está endurecida; el
+preflight abortaría porque el estado base que exige ya no existe.
+
+**Estado verificado por catálogo:** cero policies · `anon`/`authenticated` sin
+ningún privilegio · `service_role` solo `SELECT` · secuencia solo para el owner
+· `_admin_log_doctor_change` con ACL `{postgres=X/postgres}`.
+
+> ⚠️ **Frontera pre-apply / post-apply.** El preflight que realmente corrió
+> comprobó **seis** invariantes. Las verificaciones más estrictas —43
+> escritores todos `DEFINER`/`postgres`, ACL baseline, policy exacta,
+> `FORCE RLS=false`, exactamente dos llamadores del helper— se hicieron **por
+> catálogo en la Fase A y post-apply**, NO dentro del SQL ejecutado. La
+> migración versionada conserva el texto aplicado, sin retoques.
+
+> ⚠️ La fecha es el **marcador operativo del cambio de régimen**. **No
+> sustituye a `integrity_epoch`** —que quedó fuera por decisión— ni es garantía
+> criptográfica ni prueba de integridad histórica.
+
+```
+RUTA HELPER POST-HARDENING = NO DEMOSTRADA AÚN
+```
+
+No hay actividad de auditoría posterior al corte (la fila más reciente de toda
+la tabla es la `14439`, anterior al inicio de la Fase A). No es indicio de
+fallo: es ausencia de tráfico. La prueba funcional queda pendiente, con diseño
+y autorización separados, **sin médicos reales, sin Camilo y sin el médico QA**.
+
+**Fuera de alcance, documentado:** las tres funciones `_func` huérfanas, el debt
+de `search_path` de las ocho escritoras sin `SET`, `FORCE RLS` e
+`integrity_epoch`.
+
+---
+
 ### ✅ CERRADO — `s7_71a` y su instrumento
 
 Corrida final `2026-08-07T03:39:32Z` sobre `ccfa8ec`: **exit 0 · 76 OK · 0

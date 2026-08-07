@@ -4,7 +4,6 @@
 // ═══════════════════════════════════════════════════════════
 
 import { supabase } from '@/lib/supabase';
-import { logAuditEntry } from '@/services/auditLog.service';
 import {
   isWithinDoctorAvailability,
   OUTSIDE_AVAILABILITY_MESSAGE,
@@ -339,21 +338,10 @@ export async function updateAppointmentStatus(
 
   if (error) throw error;
 
-  await logAuditEntry({
-    action: 'update',
-    tableName: 'appointments',
-    recordId: appointmentId,
-    oldData: options?.oldStatusName ? { status: options.oldStatusName } : undefined,
-    newData: {
-      status: options?.newStatusName,
-      ...(options?.cancelReasonId
-        ? { cancel_reason_id: options.cancelReasonId }
-        : {}),
-      ...(options?.internalNotes
-        ? { internal_notes: options.internalNotes }
-        : {}),
-    },
-  });
+  // La auditoría la escribe el trigger server-side `audit_appointments`
+  // (s7_71a), que clasifica este cambio como `status_change`. El INSERT desde
+  // el cliente se retiró en s7_71b: `audit_log` ya no acepta escrituras de
+  // `authenticated`, y aquel payload metía `internal_notes` en la auditoría.
 }
 
 // ─── Edición de cita ─────────────────────────────────────────────────
@@ -497,12 +485,11 @@ export async function updateAppointment(
     throw new Error(error.message);
   }
 
-  await logAuditEntry({
-    action: 'update',
-    tableName: 'appointments',
-    recordId: appointmentId,
-    newData: payload,
-  });
+  // La auditoría la escribe el trigger server-side `audit_appointments`
+  // (s7_71a), que clasifica esto como `reschedule`, `appointment_update` o
+  // `mixed` según lo que haya cambiado. El INSERT desde el cliente se retiró
+  // en s7_71b: aquel payload incluía `notes`, texto libre que la whitelist del
+  // trigger excluye a propósito.
 }
 
 /** ¿La cita admite edición desde la UI según su estado? */
