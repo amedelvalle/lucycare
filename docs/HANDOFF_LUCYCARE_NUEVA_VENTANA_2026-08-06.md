@@ -6,11 +6,36 @@
 > junto con los anteriores. El detalle por PR de frentes cerrados vive en
 > `docs/HISTORIAL_FRENTES.md`.
 >
-> ⚠️ **HAY UN FRENTE ABIERTO: AUDIT-SEC-P0.** No abrir ningún otro.
+> # 🟢 AUDIT-SEC-P0 = CLOSED (2026-08-07)
 >
-> ⚠️ **La vulnerabilidad de `audit_log` SIGUE ABIERTA en producción.** `s7_71a`
-> construyó la cobertura previa; el cierre es `s7_71b`, que **todavía está
-> bloqueada**.
+> **La vulnerabilidad de escritura arbitraria sobre `audit_log` está CERRADA en
+> producción y RECONCILIADA en el repositorio.**
+>
+> | | |
+> |---|---|
+> | Último PR | **#321** — `s7_71b` |
+> | HEAD de `main` | **`88f0051a757cbf37b44a4beace199b5c52b35c3d`** |
+> | Migraciones | aplicadas hasta **`s7_71b`** |
+> | Prueba QA post-hardening | **PASS** |
+>
+> **Estado final de `audit_log`:** cero policies · `anon` y `authenticated` sin
+> ningún privilegio · `service_role` solo `SELECT` · secuencia solo para el owner
+> · `_admin_log_doctor_change` con ACL `{postgres=X/postgres}`. El escritor de
+> frontend `auditLog.service.ts` fue eliminado junto con sus tres call sites.
+>
+> **Continuidad demostrada.** La ruta
+> `LucyAdmin → admin_set_doctor_operational → _admin_log_doctor_change → audit_log`
+> escribió correctamente después del hardening (§QA). Las filas **`14494` y
+> `14495` se conservan permanentemente**.
+>
+> ⚠️ **El histórico anterior al corte NO se reinterpreta.** Hasta `s7_71b`,
+> `audit_log` admitía escritura arbitraria: ninguna fila previa puede
+> presentarse como evidencia infalsificable. Son trazas operativas observadas.
+>
+> **Ningún frente abierto.** Siguiente candidato: **TWILIO-P0**, pausado.
+> Pendientes registrados como frentes separados y **no abiertos**: las tres
+> funciones `_func` huérfanas · el debt de `search_path` de las ocho escritoras
+> sin `SET` · la regla `*.sql` de `.gitignore` frente a `docs/rollbacks/`.
 >
 > 🟢 **CIERRE (2026-08-07). `s7_71a` está CERRADA Y VALIDADA, y su instrumento
 > también.** Corrida final sobre `ccfa8ec`: **exit 0 · 76 OK · 0 fallos · 0
@@ -951,14 +976,50 @@ ningún privilegio · `service_role` solo `SELECT` · secuencia solo para el own
 > sustituye a `integrity_epoch`** —que quedó fuera por decisión— ni es garantía
 > criptográfica ni prueba de integridad histórica.
 
+### ✅ QA — prueba de continuidad post-hardening: **PASS** (2026-08-07)
+
 ```
-RUTA HELPER POST-HARDENING = NO DEMOSTRADA AÚN
+RUTA HELPER POST-HARDENING = DEMOSTRADA
 ```
 
-No hay actividad de auditoría posterior al corte (la fila más reciente de toda
-la tabla es la `14439`, anterior al inicio de la Fase A). No es indicio de
-fallo: es ausencia de tráfico. La prueba funcional queda pendiente, con diseño
-y autorización separados, **sin médicos reales, sin Camilo y sin el médico QA**.
+Ejecutada sobre el **médico QA sintético persistente**, con las dos acciones
+hechas por el owner desde LucyAdmin. Sin SQL, sin `service_role` para escribir,
+sin tocar identidad, credenciales, publicación, booking, servicios ni
+disponibilidad.
+
+```
+id 14494 · 2026-08-07T11:41:11-06:00 · update · doctors · ac0ba772…
+   old_data {"is_operational": true}   →  new_data {"is_operational": false}
+id 14495 · 2026-08-07T13:21:46-06:00 · update · doctors · ac0ba772…
+   old_data {"is_operational": false}  →  new_data {"is_operational": true}
+   ambas: user_id 739cac58-… (profiles.role = admin), mismo actor
+```
+
+**Qué prueba que las escribió `_admin_log_doctor_change` y no otro camino:**
+ninguna de las dos tiene clave `edited_via` —los escritores de
+`table_name='doctors'` redefinidos en `s7_57` sí la añaden—; `new_data` tiene
+**una sola clave**, `is_operational`, campo que solo escribe
+`admin_set_doctor_operational`; y el `user_id` **no es el centinela**
+`00000000-…`, o sea que `auth.uid()` viajó desde la sesión de LucyAdmin a
+través de la función `SECURITY DEFINER`.
+
+Eso responde la duda de fondo del paso 5 de `s7_71b`: **revocar el `EXECUTE`
+directo del helper no rompió su invocación anidada.**
+
+**Actividad colateral:**
+
+- filas totales nuevas relevantes desde la última fila preexistente (`14439`): **2**
+- filas de la prueba: **2**
+- filas adicionales / colaterales: **0**
+
+**Estado final del médico QA: restaurado e idéntico al previo.**
+`is_operational=true` · `is_published=true` · `booking_enabled=false` ·
+`lucy_status=claimed` · slug intacto · los dos servicios intactos · reglas,
+citas, intents y pacientes en `0` · `profiles.email` sigue `null`.
+
+> **Las filas `14494` y `14495` se conservan permanentemente. Sin cleanup.**
+> Son las primeras filas de auditoría generadas bajo el régimen cerrado, y
+> quedan bajo la misma regla de conservación que `14437–14439`.
 
 **Fuera de alcance, documentado:** las tres funciones `_func` huérfanas, el debt
 de `search_path` de las ocho escritoras sin `SET`, `FORCE RLS` e
