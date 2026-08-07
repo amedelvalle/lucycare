@@ -1,601 +1,455 @@
-# Análisis — Pagos SaaS autoservicio (suscripción del médico)
+# Pagos SaaS / BILLING — fuente canónica
 
-> Documento de análisis + decisión. **Snapshot original 2026-06-01 · refresh 2026-06-29 (post-#193, HEAD `e048ee4`).**
-> **Estado: diseño vigente / BORRADOR para discusión. NO implementar código ni tocar la
-> DB hasta cerrar las preguntas de la §10 y elegir pasarela (§4).**
-> El cuerpo (§1–§13) sigue válido tal cual. Ver **§0bis (Refresh)** para el
-> estado actual del repo y los deltas desde el snapshot original.
+> 🟢 **ÚNICA FUENTE CANÓNICA DE BILLING.** Cualquier otro documento del repo que
+> hable de suscripción, pagos, planes o facturación es **histórico** y cede ante
+> este archivo.
+>
+> **Estado del frente — BILLING-P0: PAUSADO — arquitectura definida y capturada
+> en PR #324, pendiente de merge.**
+>
+> **Reconciliado el 2026-08-07** con las decisiones de arquitectura BILLING-P0
+> tomadas por el owner. Esa reconciliación **reemplazó** las partes obsoletas de
+> las versiones anteriores (snapshot 2026-06-01 · refresh 2026-06-29 ·
+> aprobaciones 2026-06-29). El registro exacto de qué se retiró y por qué está
+> en **§20**.
+>
+> **Este documento NO autoriza código.** No hay implementación, no hay
+> migraciones, no hay proveedor elegido.
 >
 > Acompaña a:
-> - `docs/ANALISIS_AFILIACION_MEDICO.md` — cómo entra un médico (lead → listed_only).
+> - `docs/ANALISIS_AFILIACION_MEDICO.md` — cómo entra un médico (lead → `listed_only`).
 > - `docs/ANALISIS_RECLAMAR_PERFIL.md` — cómo reclama (`listed_only` → `claimed`).
-> - `docs/HANDOFF_LUCYCARE_SPRINT7.md` — ejes del médico (`is_operational`, `booking_enabled`, `is_verified`).
->
-> ⚠️ **Stripe NO es decisión cerrada.** Es el candidato técnico principal,
-> pero su disponibilidad legal/operativa para una empresa que opera
-> **desde El Salvador** debe validarse antes de comprometerlo (§4).
+> - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — capacidades granulares de LucyAdmin.
 
 ---
 
-## 0bis. Refresh — estado actual del repo (2026-06-29, HEAD `e048ee4`)
+## 0. Cómo leer este documento
 
-> Esta sección se agregó en un refresh docs-only. **No cambia el diseño**
-> (§1–§13 siguen vigentes); solo reconcilia el documento con el estado real
-> del código a hoy y marca lo que ya existe vs. lo que sigue pendiente.
+| Bloque | Qué contiene | Estado |
+|---|---|---|
+| §1–§9 | **Arquitectura BILLING-P0**: titularidad, estados, entitlements, políticas, override, webhooks, asientos | **Aprobado 2026-08-07** |
+| §10–§13 | **Modelo comercial**: precios, autoservicio, LucyAdmin Billing, separación | **Vigente** (aprobado 2026-06-29) |
+| §14 | Responsabilidades por actor | Aprobado 2026-08-07 |
+| §15 | Proveedor: contexto + **grilla final de evaluación** | Grilla aprobada; **proveedor NO elegido** |
+| §16–§17 | Riesgos y fases | Aprobado 2026-08-07 |
+| §18–§19 | Antecedente PR #323 y qué falta para retomar | Registro |
+| §20 | **Qué quedó obsoleto y fue retirado** | Registro de la reconciliación |
 
-### 0bis.1 Estado de implementación
-- **HEAD `e048ee4`, PRs #1–#193 mergeados, migraciones hasta `s7_51`.**
-- **Pagos: SIN implementación.** No existe ninguna pantalla de pago, checkout,
-  ni gate de suscripción. La activación operativa (`is_operational` /
-  `booking_enabled`) **sigue siendo 100% manual** por LucyAdmin.
-- **NO existen las tablas `subscriptions` ni `subscription_events`** (verificado:
-  0 referencias en `migrations/`; solo aparecen como **propuesta** en este doc).
-  El modelo del §8 sigue siendo diseño, no esquema.
-- **Edge Functions / webhooks: siguen SIN usarse** en el proyecto. El
-  `payments-webhook` del §8.2 sería la **primera** Edge Function (R10 vigente).
+**Dos principios gobiernan todo lo demás:**
 
-### 0bis.2 Lo que YA existe y es punto de enganche (no rehacer)
-- **Infra de asientos parcialmente construida y LIVE (`s7_27`, PR #70):**
-  - `team_seat_limit(p_clinic_id)` → hoy retorna **`2` fijo**, con un
-    **`TODO(pagos)` explícito** en la migración para reemplazarlo por los
-    asientos contratados en la suscripción. **Toma `p_clinic_id` justamente
-    para que la fase de pagos lo lea de `subscriptions`.**
-  - `team_seats_used(...)` cuenta asistentes activos + invitaciones pendientes
-    (excluye vencidas desde `s7_36`).
-  - **Enforcement server-side ya activo:** trigger `enforce_team_seat_limit`
-    en `clinic_invitations` + revalidación en `accept_clinic_invitations`.
-  - ⇒ **La Fase 5 (§11) se acorta:** básicamente cambiar el `2` fijo por
-    `3 + seats_additional` leído de la suscripción; el enforcement ya está.
-
-### 0bis.3 Reconciliación de semántica de asientos (a tener en cuenta)
-- El **modelo comercial (§2.2)** habla de **3 usuarios totales = titular + 2
-  asistentes**.
-- `team_seat_limit` hoy representa **asistentes (= 2), NO el total de usuarios**
-  (el titular no se cuenta en ese número).
-- Al wirear pagos hay que **alinear semánticas**: `subscriptions.seats_included`
-  (pensado como "3 totales") ⟷ lo que devuelve `team_seat_limit` (asistentes).
-  No es contradicción, pero **debe quedar explícito** para no contar mal el
-  cupo. Sugerencia: documentar `seats_included` como "asistentes incluidos = 2"
-  o derivar `team_seat_limit = seats_included_total - 1 (titular)`.
-
-### 0bis.4 Principios reconfirmados por el owner (2026-06-29)
-- **Separación de ejes (vinculante):** `verified`/confianza/licencia **NO**
-  depende del pago; `claimed`/identidad **NO** depende del pago. El pago impacta
-  **solo operatividad SaaS** (`is_operational`, `booking_enabled`, asientos/
-  asistentes, capacidades operativas) — nunca el sello `is_verified` ni el claim.
-- Enfoque confirmado: **hosted checkout / pasarela externa + webhook firmado +
-  idempotencia + alta/baja automática + reactivación + audit + override manual
-  de LucyAdmin**.
-- El botón/enlace de pago es **solo la entrada**; lo crítico es el ciclo
-  recurrente y el estado de pago gobernado por el webhook (no por el redirect).
-
-### 0bis.5 Bloqueantes vigentes antes de cualquier código
-1. **Validación de pasarela (§4.5)** — owner/legal. Sin proveedor elegido no se
-   integra nada.
-2. **Q1–Q11 (§10)** sin cerrar (gating exacto, trial, prorrateo, multi-doctor,
-   self-service vs portal, etc.).
-3. **IVA / DTE / facturación (Q6)** — legal/contable; no asumir "IVA incluido".
-4. **Reglas exactas de suspensión / reactivación / período de gracia / cancelación
-   / conciliación manual** — cerrar antes de la máquina de estados real.
-
-> **Siguiente paso (sin cambios respecto al original):** el owner ejecuta §4.5 y
-> responde §10. Recién con pasarela elegida + Q's cerradas arranca la Fase 1
-> (modelo de datos `subscriptions`/`subscription_events`).
+1. **El estado comercial es independiente del estado administrativo.**
+   `doctors.is_operational` **no** es —ni será— indicador de pago.
+2. **El enforcement se activa último.** Primero el modelo en sombra, después la
+   integración medida, y solo entonces los gates.
 
 ---
 
 ## 1. Problema y objetivo
 
-Hoy el médico puede llegar a `claimed` (reclamó su perfil) pero **no hay
-forma de cobrarle** ni de gatear el acceso al panel según un pago. La
-activación operativa (`is_operational`, `booking_enabled`) se hace hoy
-manualmente por LucyAdmin.
+Hoy el médico puede llegar a `claimed` pero **no hay forma de cobrarle**. La
+activación operativa (`is_operational`, `booking_enabled`) se hace manualmente
+por LucyAdmin.
 
-**Objetivo:** monetizar LucyCare como SaaS de suscripción **autoservicio**:
-el médico reclama → elige plan → paga con tarjeta → un webhook confirma →
-Lucy activa el acceso automáticamente, con renovación recurrente y manejo
-de fallos/cancelaciones. Sin intervención manual de LucyAdmin en el camino
-feliz.
+**Objetivo:** monetizar LucyCare como SaaS de suscripción autoservicio, con
+renovación recurrente, manejo de fallos de cobro y cancelación, sin intervención
+manual en el camino feliz.
 
-**No-objetivos de este documento:**
-- No define el diseño visual final de las pantallas de pago.
-- No cierra la pasarela (eso requiere validación con proveedores, §4).
-- No incluye facturación tributaria DTE (diferida — decisión de stack:
-  "Facturación DTE: API externa, no se desarrolla internamente").
+**No-objetivos de este documento:** diseño visual de las pantallas de pago ·
+elección de pasarela (§15) · facturación tributaria DTE (diferida; decisión de
+stack: API externa, no se desarrolla internamente).
+
+> **Billing NO bloquea el piloto.** Durante el piloto, la gestión comercial de
+> los pocos médicos participantes se maneja **manualmente**. Este frente es
+> prerequisito del **lanzamiento comercial**, no del piloto.
 
 ---
 
-## 2. Modelo comercial
+## 2. Estado verificado del modelo actual (repo, 2026-08-07)
 
-> ⚠️ **PRECIOS SUPERSEDED — ver §14 (modelo comercial APROBADO 2026-06-29).**
-> Los montos de §2.1/§2.2 ($55/mes, $594/año, 10% off, $5/usuario) son la
-> **propuesta original (2026-06-01)** y quedan como histórico. **Los precios
-> vigentes y aprobados están en §14** ($59/mes, $601.80/año, 15% off,
-> $6/usuario), con desglose IVA-incluido y montos en centavos. Ante cualquier
-> contradicción, **mandan §14**.
+> Todo lo de esta sección sale del repositorio: migraciones, tipos generados y
+> código. **No se consultó la base con `service_role`** — no fue autorizado y no
+> se pidió. El catálogo real podría diferir.
 
-### 2.1 Planes
+### 2.1 Entidades y cardinalidades reales
 
-| Plan | Precio | Equivalente mensual | Incluye |
+```
+profiles (id = auth.users.id; role: patient | doctor | assistant | admin)
+   │
+   ├─1:1──→ doctors.profile_id          FK UNIQUE  (isOneToOne: true)
+   ├───────→ clinics.owner_id            FK no unique
+   └───────→ clinic_members.profile_id   FK no unique
+
+clinics (id, owner_id, is_active, name, timezone, department_id, municipality_id)
+   │
+   ├─1:N──→ doctors.clinic_id            FK NO unique
+   └─1:N──→ clinic_members (clinic_id, profile_id, role, is_active)
+
+clinic_member_role = owner | doctor | assistant
+lucy_status        = listed_only | claimed | booking_enabled | verified
+```
+
+**Tres hallazgos que condicionan el diseño:**
+
+| # | Hallazgo | Consecuencia |
+|---|---|---|
+| **H1** | `doctors.profile_id` es **UNIQUE** | Un profile es a lo sumo un médico → el titular contractual es identificable sin ambigüedad |
+| **H2** | `doctors.clinic_id` **NO** es unique | El esquema **ya admite N médicos por clínica**. Billing no puede asumir 1:1 |
+| **H3** | El titular está representado **dos veces**: `clinics.owner_id` y `clinic_members.role='owner'` | Dos fuentes que pueden divergir. Billing se ancla a **una** y trata la otra como derivada |
+
+### 2.2 Los cuatro ejes del médico y dónde se aplican de verdad
+
+| Eje | Semántica | Enforcement real |
+|---|---|---|
+| `is_published` | aparece en el directorio | RPCs `directory_*` |
+| `booking_enabled` | muestra reserva en línea | `validate_booking_slot` |
+| **`is_operational`** | gate del panel | **frontend** `src/pages/panel/PanelLayout.tsx` · **server-side** `validate_booking_slot` (`s7_66:105`: exige `is_published AND booking_enabled AND is_operational`) |
+| `is_verified` | sello de confianza | GENERATED de `lucy_status='verified'`, no editable |
+
+**Verificado: ninguna policy RLS depende de `is_operational`.** Barrido de las 92
+migraciones: cero coincidencias en cláusulas `USING` / `WITH CHECK` / `POLICY`.
+Sus únicos dos gates son el frontend y `validate_booking_slot`.
+
+> Consecuencia estructural favorable: **desacoplar billing de `is_operational` no
+> obliga a reescribir RLS.**
+
+### 2.3 Qué NO existe hoy
+
+- Cero infraestructura de billing: no hay `subscriptions`, `subscription_events`,
+  `plans` ni `invoices`.
+- Cero Edge Functions y cero webhooks en el proyecto.
+- Cero referencias a proveedor de pago en `src/`.
+
+### 2.4 Dos trampas registradas
+
+**T1 — No reutilizar el pago de consulta.** Existen
+`appointments.stripe_payment_id` y el enum `payment_status (pending|paid|refunded)`.
+Pertenecen al **pago del paciente al médico por la consulta**, son legacy y están
+sin uso. Mezclarlos con la suscripción SaaS es un error caro y difícil de
+deshacer: son dos dominios de dinero distintos.
+
+**T2 — Deriva de tipos.** `src/types/database.types.ts` está desactualizado: le
+faltan `doctors.is_operational` (existe desde `s7_02`) y la tabla
+`waitlist_entries` (`s7_18`). Por eso el código los lee con `as any`
+(`useClinicContext.ts`, `appointments.service.ts`). Billing añadirá tablas: **hay
+que regenerar los tipos en el mismo PR de la migración**, según la convención
+vigente.
+
+---
+
+## 3. Modelo de titularidad — APROBADO (2026-08-07)
+
+```
+profiles (titular)
+   │ owner_profile_id
+   ▼
+billing_account ──1:N──→ billing_account_scope (clinic_id)
+   │                      [MVP: exactamente 1 fila]
+   │ 1:N (histórico)
+   ▼
+subscription ──→ plan_price (versionado, inmutable)
+   │              [MVP: mensual · anual · asistente adicional]
+   │
+   ├──→ subscription_events   (webhooks, append-only, idempotente)
+   └──→ access_override       (excepciones acotadas, NO financiero)
+                                        │
+                                        ▼
+                              entitlements (DERIVADOS)
+```
+
+**MVP:** 1 titular → 1 `billing_account` → 1 clínica → 1 suscripción vigente.
+El diseño debe permitir después múltiples clínicas/médicos **sin rehacer la
+arquitectura**.
+
+### 3.1 Invariantes vinculantes
+
+| # | Invariante |
+|---|---|
+| **I1** | `billing_account.owner_profile_id` → `profiles.id` = titular contractual |
+| **I2** | El scope vive en `billing_account_scope`, **no** como columna `clinic_id` en la cuenta |
+| **I3** | Una sola suscripción vigente por cuenta: índice único parcial sobre `status IN ('pending_checkout','active','grace_period','suspended')`. Las `ended` se acumulan como historia |
+| **I4** | **Ninguna columna de billing entra a `doctors` ni a `clinics`** |
+| **I5** | **`doctors.is_operational` no se lee ni se escribe nunca desde billing** |
+
+### 3.2 Por qué se descartaron las alternativas
+
+| Candidato | Por qué NO |
+|---|---|
+| **`doctor_id`** | `doctors` ya carga cuatro flags de estado. Peor: `doctors.clinic_id` es mutable — si un médico cambia de clínica, la suscripción se "mudaría" con él y arrastraría los asientos del equipo equivocado |
+| **`clinic_id` solo** | La clínica no tiene identidad contractual: su `owner_id` puede cambiar y no hay forma de expresar quién firmó. Y por **H2** el esquema ya permite N médicos por clínica → ambigüedad sobre quién paga |
+| **`profile_id` solo** | Suficiente como titular, insuficiente como scope: asientos, agenda y pacientes ya son clinic-scoped (`team_seat_limit(p_clinic_id)`) |
+
+**Por qué el scope es tabla y no columna:** con columna, pasar a "un titular con
+dos clínicas" exige migrar datos y reescribir toda consulta de entitlements. Con
+tabla, es insertar una fila. El costo hoy es una tabla de dos columnas.
+
+---
+
+## 4. Máquina de estados — APROBADA (2026-08-07)
+
+### 4.1 Estado local de suscripción — cinco estados
+
+| Estado | Significado | Entitlements | Sale hacia |
 |---|---|---|---|
-| **Mensual** | **$55 / mes** | $55 | 1 médico titular + 2 usuarios/asistentes = **3 usuarios** |
-| **Anual** | **$594 / año** (10% off) | $49.50 | Igual: 3 usuarios |
+| `pending_checkout` | contrató, sin confirmación del proveedor | **ninguno** | `active` · `ended` |
+| `active` | período vigente y pagado | plenos | `grace_period` · `ended` |
+| `grace_period` | cobro falló, dentro de los 7 días | **plenos** | `active` · `suspended` |
+| `suspended` | gracia agotada sin pago | degradados | `active` · `ended` |
+| `ended` | terminal | ninguno | — |
 
-Cálculo anual: `$55 × 12 = $660`; `−10% = −$66`; **`$594/año`**. ✔
+**`trialing` queda FUERA del MVP.**
 
-### 2.2 Usuarios incluidos vs adicionales
+### 4.2 `canceled` NO es un estado — VINCULANTE
 
-- **Incluidos en el plan base: 3 usuarios totales.**
-  - 1 médico **titular** (owner de la clínica).
-  - 2 usuarios/asistentes adicionales.
-- **Usuario adicional (4º en adelante): $5 / mes** por usuario, o su
-  equivalente anual.
-  - **Decisión pendiente (Q3):** ¿el adicional anual lleva el mismo 10%
-    (→ $54/año/usuario) o es $5×12=$60 plano? Default sugerido: mismo
-    descuento por consistencia ($54/año).
-  - **Decisión pendiente (Q4):** ¿prorrateo al agregar/quitar un asiento a
-    mitad de ciclo? Default MVP: cobro del adicional **desde el próximo
-    ciclo** (sin prorrateo intra-período); el asiento se habilita al
-    confirmarse el cargo.
+Mientras quede período pagado, la suscripción sigue `active`. La cancelación es
+un **atributo del período**:
 
-### 2.3 Notas de modelo
+```
+cancel_at_period_end   boolean      -- el médico pidió no renovar
+canceled_at            timestamptz  -- cuándo lo pidió (traza, no efecto)
+current_period_start   timestamptz
+current_period_end     timestamptz  -- la fecha que gobierna el corte
+```
 
-- **Unidad comercial (MVP) = el médico titular.** El plan se vende por
-  **1 médico titular + 2 usuarios/asistentes = 3 accesos**. El pricing es
-  **por médico titular**, no por clínica.
-- **Anclaje técnico:** la suscripción se ancla a `clinic_id` porque hoy la
-  clínica funciona como **tenant operativo** y en el MVP hay **1 titular
-  por clínica** (el `owner` de `clinic_members`). Es un detalle de
-  implementación, no el modelo comercial.
-- **Multi-médico dentro de una misma clínica** (varios titulares bajo un
-  mismo tenant) **no es MVP** → queda como **Q11 / fase posterior**
-  (requerirá repensar si la unidad de cobro pasa a ser el médico aunque
-  compartan `clinic_id`).
-- "Usuario/asistente" = fila en `clinic_members` con rol distinto de
-  cancelado/inactivo. El titular cuenta dentro de los 3.
-- Moneda: **USD** (El Salvador usa USD como moneda de curso legal → sin
-  conversión cambiaria si la pasarela liquida en USD).
-- **Decisión pendiente (Q5):** ¿hay trial gratis (ej. 14 días) o el pago
-  es requisito inmediato post-reclamo? Default sugerido: **sin trial** en
-  el MVP (pago para activar), evaluable después.
-- **Decisión pendiente (Q6) — NO cerrar todavía:** los precios comerciales
-  base son **$55 mensual** y **$594 anual**. **Pendiente de validación
-  legal/contable/fiscal:** si esos montos **incluyen o no IVA (13% SV)**,
-  **cómo se factura** y **cómo se emiten los comprobantes** (coordinar con
-  el flujo DTE diferido). **Debe resolverse antes de la implementación**;
-  no se asume "IVA incluido".
+**Recorrido de una cancelación:**
+
+```
+día 3 del ciclo  → el médico cancela
+                   status = active            (SIN CAMBIO)
+                   cancel_at_period_end = true
+                   canceled_at = now()
+día 3 → día 30   → entitlements PLENOS, opera con normalidad
+día 30 (period_end sin renovación) → status = ended
+```
+
+**Reactivación antes del vencimiento:** basta `cancel_at_period_end = false`. Sin
+cambio de estado, sin recontratación, sin hueco de servicio. Ese es exactamente
+el bug que evita eliminar `canceled` del enum.
+
+### 4.3 Estado financiero — separado, nunca colapsado
+
+Vive en `subscription_events`. Se conserva además `provider_status` como espejo
+del último estado reportado, **explícitamente informativo**: no gobierna
+entitlements.
+
+| Evento del proveedor | Efecto local |
+|---|---|
+| pago exitoso | `grace_period`/`pending_checkout` → `active`; se recalcula `current_period_*` |
+| cobro fallido | `active` → `grace_period`; `grace_until = now() + 7d` |
+| cancelación en el portal | `cancel_at_period_end = true`, `canceled_at` — **el estado NO cambia** |
+| reembolso / contracargo | **no cambia estado automáticamente** → cola de revisión de LucyAdmin |
+
+### 4.4 Las dos transiciones que ningún webhook dispara
+
+| Transición | Quién |
+|---|---|
+| `grace_period` → `suspended` | **job de vencimiento**, y solo tras reconsultar el proveedor |
+| período vencido + `cancel_at_period_end` → `ended` | **job de vencimiento** |
+
+Sin ese job, una cuenta impaga se queda en `grace_period` indefinidamente. Es el
+modo de fallo más frecuente de este diseño: el job es parte del alcance de P2, no
+un extra.
+
+**Regla dura antes de suspender:** consultar el estado real en el proveedor. Si
+responde `active`, **no suspender** y abrir alerta de discrepancia. Un webhook
+perdido nunca debe producir un corte.
+
+### 4.5 Principios del flujo
+
+- **La fuente de verdad del pago es el webhook verificado**, no el redirect del
+  navegador. El redirect solo muestra "estamos confirmando…".
+- **Idempotencia**: cada evento se procesa una sola vez (§8).
+- **Reconciliación diaria** como red de seguridad ante webhooks perdidos.
+- **Nunca activar acceso desde el cliente.**
 
 ---
 
-## 3. Flujo autoservicio (camino feliz + bordes)
+## 5. Entitlements — APROBADO (2026-08-07)
 
-### 3.1 Camino feliz
-
-```
-1. Médico reclama perfil (claim_doctor_profile → lucy_status='claimed').
-2. Entra al panel → ve pantalla "Activar LucyCare" (gate de suscripción).
-3. Elige plan: Mensual ($55) o Anual ($594).
-4. Va al checkout de la pasarela (hosted) y paga con tarjeta.
-5. La pasarela emite un webhook "pago confirmado / suscripción activa".
-6. Lucy (Edge Function que recibe el webhook) marca subscription='active'
-   y activa el acceso según reglas (§5).
-7. Renovación automática al final del ciclo (la pasarela recobra).
-8. Cada renovación exitosa → webhook → se extiende el período.
-```
-
-### 3.2 Bordes (no felices)
-
-| Evento | Origen | Acción de Lucy |
-|---|---|---|
-| **Pago inicial falla** | webhook `payment_failed` | Suscripción `payment_failed`/`none`; no se activa el acceso; pantalla "reintentar pago". |
-| **Renovación falla** | webhook `past_due` / `invoice.payment_failed` | `active` → `past_due`; **período de gracia** (Q7, default 7 días) con acceso aún operativo + banner de aviso. La pasarela reintenta (dunning). |
-| **Gracia vencida sin pago** | dunning agotado | `past_due` → `canceled`/`payment_failed`; se **revoca** acceso operativo (panel muestra "Cuenta suspendida", copy ya existente). |
-| **Médico cancela** | acción del médico / portal pasarela | `active` → `canceled` al final del período pagado (no se corta inmediato; mantiene acceso hasta fin de ciclo). |
-| **Período termina tras cancelar** | fin de ciclo | `canceled` → `expired`; revoca acceso. |
-| **Reactivación** | médico re-paga | `canceled`/`expired`/`past_due` → `pending_checkout` → `active`; re-activa acceso y asientos. |
-
-### 3.3 Principios del flujo
-
-- **Idempotencia de webhooks**: cada evento de la pasarela se procesa una
-  sola vez (dedupe por `event_id`). Log inmutable de eventos.
-- **La fuente de verdad del pago es el webhook**, no el redirect del
-  browser (el usuario puede cerrar la pestaña). El redirect solo muestra
-  "estamos confirmando…"; el estado real lo fija el webhook.
-- **Reconciliación**: job/endpoint que consulta el estado en la pasarela
-  si un webhook se pierde (fallback).
-- **Nunca activar acceso desde el cliente.** Solo el webhook server-side
-  (con verificación de firma) cambia `subscription`.
-
----
-
-## 4. Pasarela de pago — evaluación (NO cerrada)
-
-### 4.1 El problema central: operar desde El Salvador
-
-La pregunta bloqueante **no** es técnica (todas las pasarelas hacen
-checkout + webhooks), sino **si el proveedor admite a LucyCare como
-comercio operando desde El Salvador** y **cómo liquida el dinero** a una
-cuenta utilizable por la empresa.
-
-> ⚠️ **A la fecha de redacción, El Salvador NO figura en la lista de
-> países soportados por Stripe para crear cuentas de comercio**
-> (`stripe.com/global`). **Validar antes de comprometer Stripe.** Si se
-> confirma, Stripe directo queda descartado y se necesita un rodeo
-> (entidad US vía Stripe Atlas) o una alternativa.
-
-### 4.2 Requisitos para LucyCare
-
-1. **Admite comercio/seller en El Salvador** (o rodeo viable y legal).
-2. **Liquida en USD** a una cuenta usable por la empresa (idealmente banco
-   SV en USD; o Payoneer/Wise/transferencia).
-3. **Suscripciones recurrentes nativas** (o tokenización de tarjeta para
-   construir el recobro nosotros).
-4. **Webhooks firmados** + API decente.
-5. **Acepta tarjetas locales SV** (Visa/Mastercard emitidas en SV) y,
-   deseable, internacionales.
-6. **Comisiones razonables** y previsibilidad.
-7. **Cumplimiento**: PCI manejado por la pasarela (checkout hosted /
-   tokenización, no tocamos PAN).
-8. Deseable: **Merchant of Record (MoR)** que asuma impuestos/retenciones
-   internacionales (simplifica DTE/tributario).
-
-### 4.3 Candidatos (a validar — no confirmados)
-
-| Proveedor | Opera desde SV | Liquidación USD | Recurring nativo | MoR (impuestos) | DX/API | Notas / a validar |
-|---|---|---|---|---|---|---|
-| **Stripe (directo)** | ❌ probable (SV no soportado) | — | ✅ Billing | ❌ | ✅✅ excelente | Validar país; si no, vía entidad US. |
-| **Stripe vía entidad US (Atlas)** | ⚠️ requiere LLC/C-corp US | USD a banco US → repatriar | ✅ Billing | ❌ | ✅✅ | Costo legal/contable US + repatriación + tributación dual. |
-| **Paddle** | ⚠️ validar seller SV | payout Wise/wire | ✅ | ✅ MoR | ✅ | MoR asume IVA/tax global; comisión ~5%+; confirmar acepta SV. |
-| **Lemon Squeezy** | ⚠️ validar seller SV | Wise/PayPal | ✅ | ✅ MoR | ✅ | Ahora de Stripe; payout a SV por verificar. |
-| **2Checkout / Verifone** | ⚠️ validar | varios | ✅ | ✅ MoR | ⚠️ | MoR global con cobertura LatAm amplia. |
-| **dLocal** | ✅ cubre SV | local/intl | ⚠️ (orientado enterprise) | parcial | ⚠️ | Enterprise; mínimos de volumen probables. |
-| **Wompi (SV — Banco Agrícola)** | ✅ local | ✅ USD banco SV | ⚠️ recurring por tokenización (validar) | ❌ | ⚠️ media | Local, comisión baja, settlement directo SV. Recurring a confirmar. |
-| **N1CO (SV)** | ✅ local | ✅ USD SV | ⚠️ validar | ❌ | ⚠️ | Fintech SV; payment links + API. |
-| **Pagadito (SV/Centroamérica)** | ✅ regional | ✅ USD | ⚠️ recurrente parcial | ❌ | ⚠️ | Veterano regional; capacidades recurrentes a validar. |
-
-> Las celdas ⚠️/❌ son **hipótesis de redacción**, no hechos cerrados.
-> Cada una es una **tarea de validación** (§4.5).
-
-### 4.4 Tres caminos arquetípicos
-
-- **Camino A — MoR global (Paddle / Lemon Squeezy / 2Checkout):**
-  El proveedor es el "vendedor de registro": cobra al médico, asume
-  impuestos internacionales, y nos liquida neto a Wise/Payoneer/banco.
-  - ✅ Recurring SaaS llave en mano, sidestepa acquiring local y gran
-    parte del problema tributario cross-border.
-  - ✅ No necesitamos entidad US ni contrato con banco adquirente SV.
-  - ❌ Comisión más alta (~5%+ típico). ❌ Menos control del branding del
-    cobro. ⚠️ Confirmar que aceptan seller en SV y payout a SV.
-
-- **Camino B — Pasarela local SV (Wompi / N1CO / Pagadito):**
-  Cobro directo a tarjetas SV, **liquidación en USD a banco local** (sin
-  FX, sin repatriación).
-  - ✅ Comisión local más baja, settlement simple, alineado a que **tanto
-    Lucy como los médicos están en SV**.
-  - ❌ Suscripción recurrente puede no ser nativa → habría que **construir
-    el recobro** (tokenizar tarjeta + cron de cargo + reintentos), más
-    trabajo y más responsabilidad.
-  - ⚠️ DX/webhooks/documentación más limitada; cobertura de tarjetas
-    internacionales menor (irrelevante si el cliente es 100% SV).
-
-- **Camino C — Stripe vía entidad US (Stripe Atlas o LLC existente):**
-  - ✅ Mejor tooling de billing del mercado (Stripe Billing, Customer
-    Portal, dunning, prorrateo, todo resuelto).
-  - ❌ Requiere constituir/mantener entidad US (costo y contabilidad),
-    repatriar fondos a SV, y manejar tributación en dos jurisdicciones.
-  - Solo se justifica si se busca escalar regional/global y ya hay (o se
-    quiere) presencia US.
-
-### 4.5 Tareas de validación (owner/legal — antes de elegir)
-
-1. Confirmar en `stripe.com/global` si **El Salvador** es país soportado
-   hoy (cambia con el tiempo).
-2. Contactar **Wompi (Banco Agrícola)** y **N1CO**: ¿soportan **cobros
-   recurrentes / tokenización de tarjeta** vía API? ¿webhooks? ¿comisión?
-   ¿requisitos de alta del comercio? ¿settlement USD?
-3. Contactar **Paddle / Lemon Squeezy**: ¿aceptan **seller con domicilio
-   fiscal en El Salvador**? ¿método y costo de **payout** a SV?
-4. Revisar con contador/legal: implicaciones de IVA 13% SV, DTE, y (si
-   aplica camino C) tributación de entidad US.
-5. Estimar volumen del piloto (5 médicos → ~$275/mes) para descartar
-   proveedores con mínimos enterprise (dLocal).
-
-### 4.6 Recomendación tentativa (sujeta a §4.5)
-
-Dado que **piloto y clientes son 100% El Salvador** y la economía es en
-**USD**:
-
-- **Preferencia 1 (si valida recurring):** **pasarela local SV** (Wompi o
-  N1CO) — settlement USD local, comisión baja, alineamiento operativo.
-  Riesgo: construir el motor de recobro si no hay recurring nativo.
-- **Preferencia 2 (si se quiere recurring llave en mano ya):** **MoR
-  global** (Paddle/Lemon Squeezy) — más rápido de implementar, sidestepa
-  tributos cross-border, a costa de comisión.
-- **Preferencia 3 (solo si hay/se quiere entidad US y mira a escalar):**
-  **Stripe vía US**.
-
-**No se codifica integración hasta cerrar este punto.** El diseño de DB y
-estados (§5–§8) se hace **agnóstico de pasarela** para no atarse.
-
----
-
-## 5. Estados de suscripción
-
-### 5.1 Enum propuesto
-
-```
-none             — nunca inició checkout (default tras claim).
-pending_checkout — inició checkout, esperando confirmación del webhook.
-active           — pago confirmado, suscripción vigente.
-past_due         — renovación falló; en período de gracia (dunning).
-payment_failed   — pago (inicial o tras gracia) falló definitivamente.
-canceled         — el médico canceló; vigente hasta fin del período pagado.
-expired          — período terminó (tras canceled o sin pago); acceso revocado.
-```
-
-### 5.2 Transiciones
-
-```
-none ─(elige plan)→ pending_checkout ─(webhook pago OK)→ active
-pending_checkout ─(webhook pago falla)→ payment_failed ─(reintenta)→ pending_checkout
-active ─(renovación falla)→ past_due ─(paga)→ active
-past_due ─(gracia vence)→ expired (o payment_failed)
-active ─(cancela)→ canceled ─(fin de período)→ expired
-canceled/expired/past_due ─(re-paga)→ pending_checkout → active
-```
-
-### 5.3 Notas
-
-- El estado vive en una tabla nueva `subscriptions` (§8), **no** en
-  `doctors`. `doctors` solo se ve afectado en sus flags derivados (§6).
-- `pending_checkout` debe tener **timeout** (ej. expira a `none` si no se
-  confirma en N horas) para no dejar al médico bloqueado.
-- Mapear los nombres de evento de la pasarela elegida a este enum interno
-  (capa anticorrupción).
-
----
-
-## 6. Relación con los estados del médico (gating)
-
-**Reglas clave (a confirmar en Q1/Q2):**
-
-| Eje del médico | Lo controla | Regla propuesta |
-|---|---|---|
-| `lucy_status='claimed'` | el reclamo | **`claimed` ≠ pagado.** El claim no implica suscripción. |
-| `subscription='active'` | el pago (webhook) | **active ≠ verified.** Pagar no da el sello de confianza. |
-| `is_operational` | **la suscripción** | `active`/`past_due(gracia)` → `true`; `expired`/`canceled(fin)`/`payment_failed` → `false`. **El pago habilita operar el panel.** |
-| `booking_enabled` | suscripción (+ Q2) | Default propuesto: se habilita con `active` (un médico que paga puede recibir reservas). **Decisión Q2:** ¿requiere además `is_operational` o algún check de completitud (servicios + disponibilidad cargados)? |
-| `is_verified` | **LucyAdmin (manual)** | **No cambia.** Es sello de confianza, independiente del pago. Un médico pago NO se auto-verifica. |
-
-### 6.1 Consecuencias
-
-- La pantalla **"Cuenta suspendida"** (ya existente en `PanelLayout`) pasa
-  a cubrir también el caso **suscripción vencida/impaga** (`is_operational=false`
-  por falta de pago), además del caso admin-suspende. Definir copy
-  diferenciado: "Renová tu suscripción" vs "Cuenta pausada por el admin".
-- La pantalla **"Activar LucyCare"** (gate de pago) se muestra cuando
-  `claimed` + `subscription IN (none, payment_failed, expired, canceled)`.
-- **`verified` sigue siendo decisión de LucyAdmin** (no automatizar nunca
-  con el pago).
-
-### 6.2 Quién dispara el cambio de flags
-
-- **Solo el handler de webhook** (server-side) cambia `is_operational` /
-  `booking_enabled` por motivo de pago, escribiendo en `audit_log` con un
-  `edited_via='subscription_webhook'`.
-- LucyAdmin conserva override manual (puede suspender aunque esté pago, o
-  cortesía sin pago) — pero eso es excepción auditada.
-
----
-
-## 7. Límite de equipo (enforcement)
-
-### 7.1 Regla
-
-- Plan base = **3 asientos** ocupables (titular + 2).
-- Asiento adicional = $5/mes, **debe estar contratado** (reflejado en la
-  suscripción) **antes** de poder invitar al 4º usuario.
-
-### 7.2 Enforcement fuerte (backend/DB, NO solo UI)
-
-- La invitación de asistente (`clinic_invitations` / `accept_clinic_invitations`)
-  debe validar **server-side** que `usuarios_activos < asientos_contratados`.
-- `asientos_contratados = 3 + seats_adicionales_pagados` (de la suscripción).
-- Validación en la **RPC** que crea la invitación y/o en la que la acepta
-  (no confiar en el front). Idealmente un **trigger/constraint** que
-  impida exceder el límite aunque alguien llame la RPC directo.
-- Contar como "usuario" toda fila activa en `clinic_members` (incluido el
-  titular) que no esté cancelada.
-
-### 7.3 Asientos adicionales vinculados a la suscripción
-
-- Cada asiento adicional es un **add-on de la suscripción** (cantidad), no
-  un cobro suelto. Al bajar de plan o cancelar, los asientos extra se
-  liberan (y los usuarios por encima del límite quedan **bloqueados**, no
-  borrados — se conservan, pero no pueden operar hasta re-contratar).
-- **Decisión pendiente (Q8):** si el médico baja asientos teniendo más
-  usuarios activos, ¿a quién se bloquea? Default: el médico elige; si no
-  elige, se bloquean los de invitación más reciente (LIFO), conservando al
-  titular siempre.
-
----
-
-## 8. Arquitectura técnica (agnóstica de pasarela — borrador)
-
-> Se define el **modelo de datos y la capa de webhooks de forma agnóstica**
-> para no atarse al proveedor. La integración concreta se especifica
-> recién al cerrar §4.
-
-### 8.1 Tablas nuevas (propuesta)
-
-```
-subscriptions
-  id, clinic_id (UNIQUE — anclaje técnico; MVP: 1 titular por clínica,
-                 unidad comercial = médico titular, no la clínica),
-  plan ('monthly'|'annual'),
-  status (enum §5.1),
-  seats_included int default 3,
-  seats_additional int default 0,
-  current_period_start, current_period_end,
-  grace_until timestamptz null,
-  provider text,                 -- 'wompi'|'paddle'|'stripe'|...
-  provider_customer_id text,     -- id del cliente en la pasarela
-  provider_subscription_id text, -- id de la suscripción en la pasarela
-  cancel_at_period_end boolean default false,
-  created_at, updated_at
-
-subscription_events            -- log inmutable de webhooks (idempotencia)
-  id, subscription_id null, provider, provider_event_id (UNIQUE),
-  event_type, payload jsonb, processed_at, created_at
-
-subscription_seats (opcional)  -- si se quiere trazar asiento↔clinic_member
-  id, subscription_id, clinic_member_id, active, created_at
-```
-
-- `doctors`/`clinics` **no** cambian de esquema; el gating se aplica sobre
-  `is_operational`/`booking_enabled` ya existentes.
-- RLS: el médico titular ve **su** suscripción (por `clinic_id`);
-  LucyAdmin ve todas; el handler de webhook usa `service_role`.
-
-### 8.2 Componentes
-
-- **Edge Function `payments-webhook`** (Supabase): recibe webhooks,
-  **verifica firma**, dedupe por `provider_event_id`, mapea evento →
-  estado interno, actualiza `subscriptions` + flags del doctor, audita.
-  (Primera Edge Function del proyecto — hoy no se usan; ver decisión de
-  stack. Implica habilitar Edge Functions.)
-- **RPC `start_checkout(plan, seats)`**: crea/recupera customer en la
-  pasarela, devuelve URL de checkout hosted, deja `pending_checkout`.
-- **RPC `get_my_subscription()`**: estado para la UI del panel.
-- **Capa anticorrupción**: módulo que traduce eventos del proveedor
-  elegido a nuestro enum (aísla el resto del código de la pasarela).
-- **Reconciliación**: endpoint/cron que reconsulta estado si falta un
-  webhook.
-
-### 8.3 Seguridad
-
-- Verificar **firma del webhook** (secreto del proveedor en ENV, nunca en
-  repo — mismo principio que `service_role`/Resend).
-- Webhook **idempotente** (UNIQUE en `provider_event_id`).
-- Nunca tocar datos de tarjeta (checkout hosted / tokenización del lado de
-  la pasarela; PCI fuera de nuestro alcance).
-- Toda mutación de acceso por pago → `audit_log` (`edited_via='subscription_webhook'`).
-
----
-
-## 9. Riesgos
-
-| # | Riesgo | Severidad | Mitigación |
+| Key | Tipo | `active` / `grace_period` | `suspended` / `ended` |
 |---|---|---|---|
-| R1 | **Stripe no opera en SV** | 🚨 Alta | Validar primero (§4.5). Plan B local/MoR ya contemplado. |
-| R2 | Pasarela local sin recurring nativo | ⚠ Media | Construir recobro propio (tokenización + cron + dunning) o ir a MoR. |
-| R3 | Webhook perdido → estado desincronizado | ⚠ Media | Idempotencia + reconciliación periódica + estado por timeout. |
-| R4 | Doble activación / replay de webhook | ⚠ Media | UNIQUE `provider_event_id`, dedupe. |
-| R5 | Pago activa pero `verified` se confunde | ⚠ Media | Regla explícita: pago ≠ verified (§6). |
-| R6 | Bypass del límite de equipo por RPC directa | ⚠ Media | Enforcement server-side + trigger/constraint (§7.2). |
-| R7 | Cobro recurrente sin DTE/factura legal | ⚠ Media-Alta | Coordinar con DTE diferido; MoR lo resuelve; o emitir DTE vía API externa. |
-| R8 | Repatriación/tributación (camino US) | ⚠ Alta (si C) | Solo si se elige camino C; requiere contador. |
-| R9 | Médico paga y no puede operar (gating mal) | ⚠ Media | Tests de la máquina de estados; gate claro `active → is_operational`. |
-| R10 | Edge Functions: primera vez en el proyecto | ⚠ Baja | Validar deploy/infra de Supabase Functions antes del PR funcional. |
+| `panel.access` | bool | ✅ | ❌ |
+| `booking.online` | bool | ✅ según plan | ❌ |
+| `team.assistant_seats` | int | 2 + adicionales pagados | 0 nuevos (los existentes no se borran) |
+| `clinical.records.read` | bool | ✅ | **según política legal de retención (§6.1)** |
+| `clinical.records.write` | bool | ✅ | ❌ |
+| `clinical.records.export` | bool | ✅ | **según política legal de retención (§6.1)** |
+
+**Reglas:**
+
+- **Derivados**, por función pura `estado + plan + overrides vigentes → capacidades`.
+  Nunca se escriben a mano.
+- **Fail-closed**: sin cuenta, sin suscripción o estado no resoluble → sin
+  entitlements. Con la salvedad crítica de que **P1 y P2 no aplican
+  entitlements**, así que ese fail-closed no puede afectar a nadie hasta P3.
+- La separación `read` / `write` / `export` es lo que permite **degradar sin
+  destruir**: se corta escribir, no leer.
+- **Suspender no borra nada**: ni datos clínicos, ni asistentes, ni configuración.
+
+### 5.1 Convivencia con `is_operational`
+
+`is_operational` **no se toca y no se reutiliza**. Sigue siendo el flag
+administrativo de LucyAdmin (suspensión por conducta, verificación, soporte). El
+gate pasa a ser la **conjunción de dos ejes independientes**:
+
+```
+puede operar el panel  :=  doctors.is_operational                      (eje administrativo)
+                       AND has_entitlement(clinic, 'panel.access')     (eje comercial)
+```
+
+Ventaja concreta: un médico suspendido por LucyAdmin **sigue figurando como al
+día** en billing, y un médico impago **no queda marcado como sancionado**. Los
+dos motivos de bloqueo quedan distinguibles en la UI, cosa que hoy sería
+imposible.
+
+Punto de aplicación server-side (**solo en P3**): `validate_booking_slot` suma la
+condición de entitlement, y `team_seat_limit` lee `team.assistant_seats`.
+
+> **`is_verified` no cambia.** Es sello de confianza de LucyAdmin. Un médico que
+> paga **no** se auto-verifica. Y **`claimed` tampoco depende del pago**: la
+> identidad es previa e independiente.
 
 ---
 
-## 10. Decisiones pendientes (cerrar antes de implementar)
+## 6. Políticas comerciales — APROBADAS (2026-08-07)
 
-| Q | Pregunta | Default sugerido |
-|---|---|---|
-| **Q1** | ¿`is_operational` se activa **solo** con `subscription='active'`? | Sí: active → operativo; vencido → suspendido. |
-| **Q2** | ¿`booking_enabled` requiere además completitud (servicios+disponibilidad) o basta `active`? | Basta `active`; revisar completitud como aviso, no bloqueo. |
-| **Q3** | ¿Adicional anual con 10% ($54) o plano ($60)? | Con 10% ($54/año). |
-| **Q4** | ¿Prorrateo intra-ciclo al cambiar asientos? | No en MVP; cambios desde próximo ciclo. |
-| **Q5** | ¿Trial gratis? | No en MVP. |
-| **Q6** | ¿Precios IVA incluido o + IVA? ¿Cómo se factura/emiten comprobantes? | **Pendiente legal/contable/fiscal — no cerrar.** Base comercial $55/$594; validar IVA + facturación + DTE antes de implementar. |
-| **Q7** | ¿Días de gracia en `past_due`? | 7 días. |
-| **Q8** | Al bajar asientos con exceso de usuarios, ¿a quién se bloquea? | El médico elige; fallback LIFO, nunca al titular. |
-| **Q9** | ¿Pasarela? (§4) | Pendiente de validación; lean a local SV o MoR. |
-| **Q10** | ¿Self-service de cambio de plan/cancelación dentro de Lucy o portal de la pasarela? | Portal de la pasarela en MVP si existe; UI propia después. |
-| **Q11** | ¿Quién paga si una clínica tiene varios médicos? (multi-doctor) | MVP: 1 suscripción por clínica, titular paga. Revisar para multi-doctor. |
+| Política | Valor |
+|---|---|
+| Trial | **no** en MVP |
+| Renovación | aniversario de contratación |
+| Cobro fallido | → `grace_period` |
+| Gracia | **7 días** |
+| Reintentos / dunning | del proveedor |
+| Suspensión | al agotarse la gracia, **previa reconciliación contra el proveedor** |
+| Cancelación | efectiva al fin del período ya pagado |
+| Reactivación | self-service si el proveedor lo soporta |
+| Asistentes incluidos | **2** |
+| Reconciliación proveedor ↔ LucyCare | **diaria** |
 
----
+### 6.1 Datos clínicos — texto vinculante
 
-## 11. Fases de implementación (después de cerrar §4 y §10)
+> Tras suspensión o cancelación, los datos clínicos **no se eliminan por impago**,
+> y su acceso read-only / exportación **se regirá por la política legal de
+> retención vigente**.
 
-> Ninguna fase arranca hasta elegir pasarela y cerrar las Q de §10.
+⚠️ **Esa política todavía NO está definida.** Ningún diseño de P1–P3 puede asumir
+un alcance concreto de lectura o exportación hasta que exista.
 
-- **Fase 0 — Validación de pasarela (no código):** ejecutar §4.5, elegir
-  proveedor, confirmar recurring + settlement + alta del comercio.
-- **Fase 1 — Modelo de datos + estados (migración):** tablas
-  `subscriptions` + `subscription_events` + RLS + enum, **sin** integración
-  de pasarela. Estado `none` por default para los `claimed`.
-- **Fase 2 — Gate de UI "Activar LucyCare":** pantalla de planes en el
-  panel del médico, leyendo `get_my_subscription()`. Sin cobro real aún
-  (mock/sandbox).
-- **Fase 3 — Integración pasarela (checkout + webhook):** Edge Function
-  `payments-webhook`, `start_checkout`, capa anticorrupción, idempotencia.
-  Sandbox del proveedor primero.
-- **Fase 4 — Gating de acceso:** webhook activa/revoca `is_operational` /
-  `booking_enabled` según §6; pantalla "Cuenta suspendida" extendida.
-- **Fase 5 — Límite de equipo + asientos adicionales:** enforcement
-  server-side + add-on de asientos en la suscripción (§7).
-- **Fase 6 — Bordes:** dunning/`past_due`/gracia, cancelación,
-  reactivación, reconciliación, timeouts de `pending_checkout`.
-- **Fase 7 — Facturación/DTE:** vía API externa (diferido), o delegado al
-  MoR si se eligió ese camino.
+### 6.2 Upgrades / downgrades / prorrateo
 
-Cada fase: 1 PR chico, migración `s7_NN`/`s8_NN` con `check-*.mjs`,
-`vite build` OK, preview validado, smoke, luego merge. Secrets de la
-pasarela en ENV/dashboard, **nunca en repo**.
+- **No se construye motor propio de prorrateo, ni de invoices.**
+- Modalidades del MVP: **mensual · anual · asistentes adicionales**.
+- Si el proveedor elegido soporta **prorrateo nativo** → se usa el suyo.
+- Si no lo soporta → los cambios que lo requerirían se aplican **al siguiente
+  ciclo**, salvo política específica posterior.
+- Consecuencia: "soporta prorrateo nativo" es un **criterio comercial** de la
+  grilla (§15.C), **no** un requisito eliminatorio.
 
 ---
 
-## 12. Recomendación
+## 7. Override administrativo — APROBADO (2026-08-07)
 
-1. **Tratar Stripe como candidato, no como elegido.** Ejecutar la
-   validación de §4.5 **antes** de cualquier código.
-2. Diseñar DB/estados **agnósticos de pasarela** (§5, §8) para no atarse.
-3. Lean inicial: **pasarela local SV (Wompi/N1CO)** si soporta recurring
-   con settlement USD local; si no, **MoR (Paddle/Lemon Squeezy)** para
-   recurring llave en mano. **Stripe vía US** solo si se busca escalar
-   global y se acepta el costo de entidad US.
-4. Mantener separados los tres ejes: **pago (active) ≠ confianza
-   (verified) ≠ identidad (claimed)**.
-5. Enforcement de asientos **server-side**, no en UI.
+**LucyAdmin nunca marca una suscripción como "paid". No existe ese camino.**
 
----
+Las cortesías y excepciones se modelan aparte:
 
-## 13. Coordinación con otros docs
+```
+access_override
+  id
+  billing_account_id
+  entitlement_key         -- qué derecho concede
+  reason                  -- OBLIGATORIO
+  actor_profile_id        -- quién lo otorgó
+  created_at
+  expires_at              -- OBLIGATORIO, sin nulo posible
+  revoked_at
+```
 
-- `docs/ANALISIS_AFILIACION_MEDICO.md` / `docs/ANALISIS_RECLAMAR_PERFIL.md`
-  — el pago entra **después** del reclamo; `claimed` precede a la
-  suscripción.
-- `docs/HANDOFF_LUCYCARE_SPRINT7.md` — ejes del médico; este doc define
-  cuándo el pago mueve `is_operational`/`booking_enabled` (no `verified`).
-- `docs/SECURITY_GATE_PILOTO.md` — agregar, al implementar: verificación
-  de firma de webhook, idempotencia, secretos en ENV, RLS de
-  `subscriptions`.
-- Decisión de stack "Pagos: Stripe Checkout hosted" → **reabierta como
-  candidato a validar** por este análisis (operación desde El Salvador).
+| Regla | Motivo |
+|---|---|
+| Modifica **entitlements**, jamás el estado financiero ni el de suscripción | La contabilidad sigue siendo cierta |
+| `expires_at` **NOT NULL**, sin excepción | Un override sin vencimiento se vuelve cortesía permanente que nadie recuerda |
+| Alta, modificación y revocación → `audit_log` | Trazabilidad |
+| Nunca sustituye un pago: la cuenta sigue apareciendo como impaga en la reportería | Evita corromper el dato financiero |
 
 ---
 
-**Siguiente paso:** el owner ejecuta la validación de pasarela (§4.5) y
-responde §10. Con pasarela elegida + Q cerradas, se arma el plan operativo
-del primer PR (Fase 1: modelo de datos).
+## 8. Webhook events — APROBADO (2026-08-07)
+
+**Por defecto NO se persiste el payload íntegro del proveedor.**
+
+```
+subscription_events
+  id
+  provider
+  provider_event_id         ┐ UNIQUE(provider, provider_event_id)
+  event_type                ┘
+  occurred_at               -- del proveedor: ordena los eventos
+  received_at               -- nuestro: mide latencia y reentregas
+  provider_customer_id
+  provider_subscription_id
+  billing_account_id        -- resuelto; nullable si no se pudo mapear
+  processing_result         -- applied | ignored_duplicate | unmapped | error
+  processing_error          -- acotado, sin volcado del proveedor
+```
+
+| Regla |
+|---|
+| `UNIQUE(provider, provider_event_id)` → **idempotencia por construcción** |
+| El orden lo da `occurred_at`, no `received_at`: los proveedores reentregan y reordenan |
+| **Ningún dato de tarjeta, ningún PAN, ningún token de pago** |
+| Verificación de **firma** del webhook; secreto en ENV, nunca en el repo |
+| Si más adelante se justifica conservar payload adicional, definir **antes**: campos · sensibilidad · retención · sanitización. No se persiste "por las dudas" |
 
 ---
 
-## 14. Pricing configurable / modelo comercial APROBADO (2026-06-29)
+## 9. Límite de equipo y asientos
 
-> Esta sección **reemplaza** los precios de §2 (que quedan como histórico de la
-> propuesta original). Aprobada por el owner el 2026-06-29. Sigue siendo
-> **diseño/decisión comercial** — **NO implica implementación** (no hay tablas,
-> no hay pasarela elegida, no hay código).
+### 9.1 Lo que YA existe y es punto de enganche (no rehacer)
 
-### 14.1 Precios aprobados (USD, IVA 13% incluido)
+`migrations/s7_27_team_seat_limit.sql`:
+
+```sql
+CREATE OR REPLACE FUNCTION team_seat_limit(p_clinic_id uuid) ...
+  -- TODO(pagos): reemplazar el 2 fijo por
+  --   included_assistants + additional_assistants de subscriptions(p_clinic_id).
+  SELECT 2;
+```
+
+- `team_seats_used(p_clinic_id)` = asistentes activos + invitaciones pendientes
+  vigentes (las vencidas no ocupan cupo, desde `s7_36`).
+- **Enforcement server-side ya activo**: trigger `trg_enforce_team_seat_limit`
+  sobre `clinic_invitations` + revalidación en `accept_clinic_invitations`.
+- **La firma toma `clinic_id`** → el entitlement se cablea sin cambiar firma, ni
+  triggers, ni RPCs.
+
+⚠️ **Ese cableado pertenece a BILLING-P3, no a P1** (§17).
+
+### 9.2 Regla de asientos
+
+- Plan base = **1 titular + 2 asistentes incluidos**.
+- `extra_seats = max(asistentes_activos − 2, 0)`.
+- Sin prorrateo en MVP: agregar o quitar impacta el cobro **desde el próximo
+  ciclo** (§6.2).
+- Al reducir asientos, los usuarios por encima del límite se **bloquean, no se
+  borran**. **Nunca se elimina historial clínico ni auditoría** por quitar un
+  asistente.
+
+### 9.3 Semántica a alinear al implementar
+
+El modelo comercial habla de **3 usuarios totales** (titular + 2 asistentes),
+mientras `team_seat_limit` representa **asistentes (= 2)**, sin contar al
+titular. No es contradicción, pero debe quedar explícito para no contar mal el
+cupo: `team_seat_limit = asistentes incluidos + adicionales pagados`.
+
+---
+
+## 10. Modelo comercial y precios — VIGENTE (aprobado 2026-06-29)
+
+### 10.1 Precios aprobados (USD, IVA 13% incluido)
 
 Unidad comercial = **médico titular**; cada plan base incluye **1 titular + 2
-asistentes** (3 accesos). Todos los montos son **IVA incluido** (el monto bruto
-es lo que se cobra). Moneda **USD** (curso legal en SV).
+asistentes** (3 accesos). Todos los montos son **IVA incluido**. Moneda **USD**
+(curso legal en SV).
 
 | Concepto | Bruto (IVA incl.) | Base s/IVA | IVA 13% | Centavos (bruto / base / IVA) |
 |---|---|---|---|---|
@@ -608,47 +462,32 @@ es lo que se cobra). Moneda **USD** (curso legal en SV).
 Verificaciones: mensual×12 = $708 → −15% = **$601.80**; $601.80/12 = **$50.15/mes**;
 adicional mensual×12 = $72 → −15% = **$61.20**; en las 4 filas `base + IVA = bruto`.
 
-- **Usuario adicional anual — CONFIRMADO:** aplica el **mismo 15%** que el plan
-  anual → **$61.20/usuario/año IVA incluido** (consistencia comercial).
-- **IVA:** los precios son **IVA-incluido** (resuelve la parte de presentación de
-  Q6). La **emisión de comprobante/DTE sigue pendiente** (legal/contable, §14.5).
+- **Usuario adicional anual:** aplica el **mismo 15%** que el plan anual.
+- **IVA:** los precios son **IVA-incluido**. La **emisión de comprobante/DTE
+  sigue pendiente** (§15.E).
 
-### 14.2 Prorrateo (MVP) — CONFIRMADO
-- **No** automatizar prorrateo intra-ciclo en la primera versión.
-- Los usuarios adicionales **self-service** se **cobran y habilitan desde el
-  siguiente ciclo** (no a mitad de período).
-- Si se necesita **habilitación inmediata**, queda como **caso manual de
-  LucyAdmin/soporte** con **nota + auditoría**.
-- **No** construir motor de proration en MVP.
+> **Histórico (2026-06-01, superseded):** la propuesta original era $55/mes,
+> $594/año (10% off) y $5/usuario adicional. Se conserva solo como registro; los
+> precios vigentes son los de arriba.
 
-### 14.3 Principio obligatorio — precios configurables, NO hardcoded
-- **Fuente de verdad futura = servidor/DB.** El **frontend solo muestra** precios
+### 10.2 Principio obligatorio — precios configurables, NO hardcoded
+
+- **Fuente de verdad = servidor/DB.** El frontend **solo muestra** precios
   entregados por el backend; **nunca** calcula dinero crítico ni asume el IVA.
 - **Dinero en centavos enteros** (`*_cents`), **nunca floats**.
 - **IVA y descuentos en basis points** (IVA `1300`, descuento anual `1500`).
 - **Filas de precio versionadas e inmutables:** cambiar un precio público =
   **insertar una fila nueva** (`effective_from` nuevo) + **desactivar** la
-  anterior (`active=false`, `effective_to`). **Nunca editar el monto de una fila
-  viva (sin edición silenciosa).**
-- **Grandfathering:** cada suscripción guarda el **`plan_price_id`** con el que se
+  anterior. **Nunca editar el monto de una fila viva.**
+- **Grandfathering:** cada suscripción guarda el `plan_price_id` con el que se
   contrató; cambiar el precio público **no** modifica suscripciones existentes.
-  **No re-preciar médicos antiguos sin decisión explícita** (nunca retroactivo
-  silencioso).
 - **IDs de la pasarela** (`provider_product_id` / `provider_price_id`) viven
-  **asociados a la fila de precio/configuración**, **no quemados en componentes**.
+  asociados a la fila de precio, **no quemados en componentes**.
 
-**Riesgos de hardcodear** (por qué la regla anterior): cambio de precio/IVA
-exigiría deploy; inconsistencia entre componentes; imposible grandfathering ni
-promos; drift con los IDs de la pasarela; errores de redondeo si el front calcula
-dinero con floats.
-
-### 14.4 Diseño futuro `subscription_plan_prices` (PROPUESTA — NO implementar)
-Tabla única para el MVP (2 planes + 1 add-on = pocas filas); más simple que el
-split en 3 tablas (`subscription_plans`/`subscription_prices`/`subscription_addons`),
-que queda para si el catálogo crece. **Filas append-only / inmutables.**
+### 10.3 Diseño de `plan_price` (propuesta, NO implementar)
 
 ```
-subscription_plan_prices
+plan_price
   id
   code                       -- 'base_monthly' | 'base_annual' | 'extra_seat_monthly' | 'extra_seat_annual'
   name                       -- label visible ("Plan Mensual")
@@ -662,313 +501,461 @@ subscription_plan_prices
   tax_amount_cents           -- derivado
   included_assistant_seats   -- 2 en base; 0/null en addon
   annual_discount_bps        -- 1500 (auditoría del cálculo)
-  provider                   -- 'wompi'|'pagadito'|'n1co'|'stripe'|null (pre-integración)
-  provider_product_id        -- nullable hasta integrar pasarela
-  provider_price_id          -- nullable hasta integrar pasarela
-  active                     -- bool
+  provider                   -- nullable hasta elegir pasarela
+  provider_product_id        -- nullable hasta integrar
+  provider_price_id          -- nullable hasta integrar
+  active
   effective_from / effective_to
   created_at / updated_at
 ```
-- Canónico = `gross_amount_cents` + `tax_rate_bps` + `tax_included`; `net`/`tax`
-  se derivan (`net = round(gross/(1+rate))`, `tax = gross − net`) — si se
-  almacenan, **CHECK `net_amount_cents + tax_amount_cents = gross_amount_cents`**.
-- Relación futura: `subscriptions.plan_price_id` → FK a esta tabla
-  (grandfathering). `subscriptions` y `subscription_events` (§8) **NO existen aún**.
-- **NO se implementa en este PR** (docs-only).
 
-### 14.5 Pendientes vigentes (no cerrados por esta aprobación)
-- **Pasarela: NO decidida.** Matriz de validación (Wompi SV / Pagadito / N1CO /
-  Stripe-referencia) pendiente de ejecutar (§4.5 + reporte de validación). Criterio
-  bloqueante: **recurring nativo + webhooks firmados + settlement USD a cuenta SV**.
-- **DTE / IVA / facturación:** emisión de comprobante sigue **pendiente legal/
-  contable** (los precios ya son IVA-incluido, pero falta cómo se factura/emite).
-- Resto de Q1–Q11 (§10): gracia, suspensión exacta, reactivación, cancelación,
-  trial, multi-doctor, self-service vs portal.
-
-### 14.6 Separación de ejes (VINCULANTE, reconfirmado)
-- **Pago (`subscription='active'`) ≠ `verified`** — pagar no da el sello de
-  confianza (lo decide LucyAdmin).
-- **Pago ≠ `claimed`** — la identidad/reclamo no depende del pago.
-- **El pago impacta solo operatividad SaaS** (`is_operational`, `booking_enabled`,
-  asientos/asistentes), **nunca** identidad ni confianza.
+Canónico = `gross_amount_cents` + `tax_rate_bps` + `tax_included`; `net`/`tax` se
+derivan. Relación futura: `subscription.plan_price_id` → FK a esta tabla
+(grandfathering).
 
 ---
 
-## 15. Autoservicio de suscripción / customer portal (APROBADO 2026-06-29)
+## 11. Autoservicio del médico — VIGENTE (aprobado 2026-06-29)
 
-> Diseño/decisión de producto. Extiende §14. **NO implica implementación**
-> (sin tablas, sin pasarela elegida, sin código). Alineado al principio:
-> el camino feliz es autoservicio; LucyAdmin solo para excepciones auditadas.
-
-### 15.1 Decisión de producto
 El médico debe poder gestionar su suscripción **sin intervención manual** de
-LucyCare, idealmente desde **la pasarela o un portal externo seguro**:
-1. cancelar la suscripción;
-2. cambiar método de pago / tarjeta;
-3. reactivar si corresponde;
-4. ajustar usuarios adicionales cuando tenga más de 2 asistentes.
+LucyCare, desde el entorno comercial (`medicos.lucycare.app`) o el portal seguro
+del proveedor:
 
-### 15.2 Cambio de método de pago
-- **LucyCare NO captura ni almacena datos de tarjeta** (PCI fuera de alcance).
-- El médico se **redirige a la pasarela / portal seguro** para actualizar tarjeta.
-- LucyCare solo guarda **identificadores seguros del proveedor** y **estado
-  derivado** (nunca el PAN).
-- La confirmación real viene por **webhook firmado** o verificación server-side;
-  **la URL de retorno NO es fuente de verdad**.
+1. contratar y elegir plan;
+2. ver estado de su suscripción;
+3. cambiar método de pago / tarjeta;
+4. cancelar;
+5. reactivar;
+6. ajustar usuarios adicionales.
 
-### 15.3 Cancelación (regla MVP)
-- Efectiva **al final del período ya pagado** (`cancel_at_period_end`).
-- **No** suspender inmediatamente si el período actual está pagado: mantener
-  servicio activo hasta **`current_period_end`**.
-- Al vencimiento, si no hay renovación/reactivación → **suspender operatividad
-  SaaS** según reglas (§6).
-- **Default MVP: sin reembolso automático** por período parcial.
+**Cambio de método de pago:** LucyCare **no captura ni almacena datos de
+tarjeta** (PCI fuera de alcance). El médico se redirige al portal seguro.
+LucyCare solo guarda **identificadores del proveedor** y **estado derivado**,
+nunca el PAN. La confirmación real llega por **webhook firmado**; **la URL de
+retorno no es fuente de verdad**.
 
-### 15.4 Usuarios adicionales / asientos
-- Plan base = **1 titular + 2 asistentes incluidos**.
-- Regla conceptual: **`extra_seats = max(asistentes_activos − 2, 0)`**.
-  - 2 asistentes → 0 adicionales · 3 → 1 adicional · 4 → 2 adicionales.
-- Precios (§14): adicional **$6.00/mes** o **$61.20/año** (−15%), IVA incluido.
-
-### 15.5 Quitar asistentes
-Separar **dos cosas distintas**:
-1. **quitar/desactivar a una persona** del equipo (operación de equipo);
-2. **reducir el cobro** de usuarios adicionales (operación de facturación).
-
-Regla MVP:
-- Si al quitar un asistente baja la cantidad de adicionales necesarios, el
-  **cambio de cobro aplica en el siguiente ciclo** (sin prorrateo intra-ciclo).
-- Ajuste inmediato = **caso manual LucyAdmin/soporte** con **nota + auditoría**.
-- **Nunca borrar historial clínico ni auditoría** por quitar un asistente
-  (el usuario se desactiva/bloquea, no se hard-delete).
-- Ejemplo: 4 asistentes (paga 2 adicionales) → elimina 1 → 3 asistentes →
-  **desde el próximo ciclo paga 1 adicional**.
-
-### 15.6 Agregar asistentes
-- **Self-service automático:** el nuevo adicional se **cobra/habilita desde el
-  siguiente ciclo** (consistente con §14.2, sin prorrateo).
-- **Habilitación inmediata:** caso manual LucyAdmin/soporte, **o** fase futura si
-  la pasarela soporta *quantity update* con cobro inmediato.
-- **No** construir motor de prorrateo propio en MVP.
-
-### 15.7 Modelo conceptual futuro (campos a considerar — NO implementar)
-A considerar en `subscriptions` (o estructura equivalente) cuando se diseñe la
-Fase 1; **no se crea nada en este PR**:
-```
-included_assistant_seats        -- 2
-paid_extra_seats_quantity       -- adicionales pagados vigentes
-active_assistant_count          -- asistentes activos (derivado / cache)
-pending_extra_seats_quantity    -- cambio de cantidad que aplica el próximo ciclo
-pending_change_effective_at     -- cuándo aplica el cambio pendiente
-billing_interval                -- 'monthly' | 'annual'
-current_period_start
-current_period_end
-cancel_at_period_end            -- bool
-canceled_at
-payment_method_update_required  -- bool (tarjeta vencida/rechazada)
-provider_customer_portal_url    -- o mecanismo equivalente
-```
-- Los eventos relacionados (cambio de tarjeta, cancelación, update de cantidad,
-  `past_due`, etc.) quedan en **`subscription_events`** (log inmutable, idempotente).
-
-### 15.8 Enforcement futuro (server-side, NO solo frontend)
-- El límite de asistentes **no debe depender solo del frontend**.
-- Regla futura: **`team_seat_limit` = 2 incluidos + `paid_extra_seats_quantity`**.
-  - Hoy `team_seat_limit(p_clinic_id)` retorna `2` fijo (`s7_27`) con `TODO(pagos)`
-    — ese es el punto exacto a cablear (§0bis.2).
-- **No permitir** más asistentes activos / invitaciones aceptables que asientos
-  permitidos; **conservar enforcement server-side** (trigger + revalidación en
-  `accept_clinic_invitations`, ya existentes).
-
-### 15.9 Matriz de pasarela — criterios adicionales (extiende §4.2/§4.5)
-Sumar a la validación de pasarela (Wompi/Pagadito/N1CO/Stripe-referencia) estos
-criterios, **pendientes de validar** con cada proveedor:
-- customer portal / portal de cliente;
-- actualización de método de pago;
-- cancelación self-service;
-- cancelación **al final del período**;
-- reactivación self-service;
-- modificación de **cantidad de add-ons/asientos**;
-- webhooks de cambio de tarjeta;
-- webhooks de cancelación;
-- webhooks de actualización de suscripción;
-- manejo de **`past_due`**;
-- reintentos de cobro;
-- **dunning**;
-- estado de suscripción claro/consultable.
-
-> **Riesgo:** si la pasarela **no** soporta **portal de cliente** ni
-> **modificación de cantidad/asientos**, LucyCare tendría que construir más
-> lógica propia o manejar esos cambios **manualmente desde LucyAdmin**. Eso
-> **baja la conveniencia** de esa pasarela para el MVP y debe pesar en la
-> decisión de §4.
+**Cancelación:** efectiva al final del período pagado (§4.2). Sin reembolso
+automático por período parcial en MVP.
 
 ---
 
-## 16. LucyAdmin Billing — administración y reportería de pagos (APROBADO 2026-06-29)
+## 12. LucyAdmin Billing — VIGENTE (aprobado 2026-06-29)
 
-> Diseño/decisión de producto. **NO implica implementación** (sin módulo admin,
-> sin tablas, sin pasarela elegida, sin código). Define qué debe poder hacer y
-> ver LucyAdmin para operar el negocio SaaS — independiente del panel de la pasarela.
+**La pasarela cobra; LucyAdmin gobierna el negocio.** Módulo administrativo para
+controlar ingresos, suscripciones, usuarios y suspensiones.
 
-### 16.1 Decisión de producto
-LucyCare necesita un **módulo administrativo de billing** para controlar ingresos,
-pagos, suscripciones, usuarios incluidos/adicionales y suspensión/reactivación por
-impago. **La pasarela cobra; LucyAdmin gobierna el negocio.** Indispensable para
-operar como SaaS.
+### 12.1 Qué debe poder saberse
 
-### 16.2 Objetivos (qué debe poder saberse)
-1. qué médicos tienen suscripción activa; 2. quién pagó; 3. cuánto pagó cada uno;
-4. qué plan tiene (mensual/anual); 5. asistentes incluidos; 6. usuarios adicionales
-que paga; 7. cuánto debe pagar el próximo ciclo; 8. cuándo vence el período actual;
-9. estado (`active`/`past_due`/`suspended`/`canceled`/…); 10. quién debe darse de
-baja por impago; 11. quién fue reactivado; 12. ingreso cobrado del mes; 13. MRR
-proyectado; 14. ARR; 15. pendiente / fallido / vencido.
+Qué médicos tienen suscripción vigente · quién pagó · cuánto · qué plan ·
+asistentes incluidos y adicionales · cuánto corresponde el próximo ciclo · cuándo
+vence el período · estado · quién está en gracia · quién fue reactivado · ingreso
+cobrado del mes · MRR · ARR · pendiente/fallido/vencido.
 
-### 16.3 Dashboard mínimo (MVP futuro) — KPIs
-- ingresos cobrados del mes; **MRR** estimado; **ARR** estimado;
-- médicos activos por pago; en período de gracia; vencidos/`past_due`; suspendidos;
-  cancelados;
-- usuarios adicionales activos; ingresos por usuarios adicionales;
-- próximos vencimientos; pagos fallidos recientes; reactivaciones recientes.
+### 12.2 Dashboard mínimo (KPIs)
 
-### 16.4 Lista administrativa de suscripciones
-Vista tabla con **filtros**: estado de suscripción · plan mensual/anual · médico ·
-clínica · próximo cobro · último pago · estado de pago · pasarela · pago fallido ·
-en gracia · suspendibles.
+Ingresos cobrados del mes · MRR · ARR · médicos por estado (`active`,
+`grace_period`, `suspended`, `ended`) · usuarios adicionales activos e ingresos
+por ellos · próximos vencimientos · pagos fallidos recientes · reactivaciones.
 
-**Columnas sugeridas:** médico · clínica · plan · estado de suscripción · monto
-bruto · base s/IVA · IVA · usuarios incluidos · usuarios adicionales cobrados ·
-total estimado próximo ciclo · último pago · próximo vencimiento/cobro · proveedor ·
-`provider_customer_id` · `provider_subscription_id` · fecha de cancelación (si
-aplica) · `cancel_at_period_end` · estado operativo resultante · notas/override
-manual.
+### 12.3 Lista y detalle
 
-### 16.5 Detalle por médico / suscripción
-- plan actual; precio contratado (`plan_price_id`); historial de pagos; historial
-  de eventos de la pasarela; usuarios incluidos; usuarios adicionales; estado
-  actual; fechas de período; intentos fallidos; motivo de suspensión;
-  reactivaciones; overrides manuales; notas internas.
+**Filtros:** estado · plan · médico · clínica · próximo cobro · último pago ·
+proveedor · en gracia · suspendibles.
+**Detalle por cuenta:** plan actual · `plan_price_id` contratado · historial de
+pagos y de eventos · asientos · fechas de período · intentos fallidos · motivo de
+suspensión · reactivaciones · **overrides vigentes y vencidos** · notas internas.
 
-### 16.6 Control operativo (acciones LucyAdmin)
-1. ver quién debe suspenderse; 2. suspender manualmente si corresponde;
-3. reactivar manualmente; 4. aplicar **override temporal**; 5. registrar
-nota/motivo; 6. **exportar reporte**; 7. revisar **conciliación** pasarela↔LucyCare.
-Toda acción → **`audit_log`** (override/suspensión/reactivación auditados).
+### 12.4 Control operativo
 
-### 16.7 Reglas de suspensión (pendiente de cerrar, pero necesaria)
-- pago fallido → `past_due`; **período de gracia configurable**; gracia vencida →
-  **suspensión operativa**.
-- la suspensión afecta **operatividad SaaS** (`is_operational`/`booking_enabled`),
-  **no** identidad ni confianza; **se conservan perfil/historial/datos**.
-- reactivación al pagar **o** por override LucyAdmin; **todo cambio auditado**.
-- (Reafirma §6 y la separación pago ≠ verified ≠ claimed.)
+Ver quién está por suspenderse · **otorgar `access_override` acotado y auditado
+(§7)** · registrar nota/motivo · exportar reporte · revisar la conciliación
+proveedor ↔ LucyCare. Toda acción → `audit_log`.
 
-### 16.8 Reportería financiera (reportes mínimos)
-ingresos cobrados por mes · por plan mensual · por plan anual · por usuarios
-adicionales · pagos fallidos · pagos pendientes · cancelaciones · reactivaciones ·
-médicos suspendidos por impago · **churn** · **MRR** · **ARR** · **export CSV/XLS**
-(futuro).
+> **Prohibido:** marcar manualmente una suscripción como "pagada". No existe ese
+> camino (§7).
 
-### 16.9 Conciliación
-Fuente principal de eventos = **webhook firmado** de la pasarela; además LucyAdmin
-debe permitir **conciliar**:
-- comparar pagos recibidos en pasarela vs estado en LucyCare;
-- detectar **webhook fallido/perdido**; **pago duplicado**;
-- **activa en pasarela pero suspendida en LucyCare** (y viceversa: **activa en
-  LucyCare sin pago vigente**);
-- permitir **revisión manual segura** (con audit).
+### 12.5 Conciliación
 
-### 16.10 Modelo de datos futuro (para reportería, NO implementar)
-El diseño debe soportar **reportería y trazabilidad**, no solo activación. Además de
-`subscriptions` y `subscription_events`, considerar conceptos como:
-```
-pagos recibidos / intentos de cobro / invoices internos
-  período facturado, gross_amount_cents, net_amount_cents, tax_amount_cents,
-  currency, plan_price_id, extra_seats_quantity,
-  provider_payment_id, provider_invoice_id (si aplica), provider_event_id,
-  reconciliation_status, timestamps auditables
-```
-- **No** crear todas las tablas en MVP, **pero sí diseñar para no perder
-  trazabilidad** (montos en centavos, `plan_price_id` para grandfathering, IDs del
-  proveedor, estado de conciliación).
+Fuente principal = webhook firmado. Además LucyAdmin debe permitir comparar
+pagos del proveedor vs estado local · detectar webhook perdido y pago duplicado ·
+detectar "vigente en proveedor pero suspendida en LucyCare" y su inverso ·
+revisión manual segura con auditoría.
 
-### 16.11 Principio importante (VINCULANTE)
-**No depender solo del panel de la pasarela para administrar el negocio.** La
-pasarela procesa el pago; **LucyAdmin** debe tener visibilidad operativa y
-financiera suficiente para **activar / suspender / reactivar / conciliar / reportar
-/ auditar**.
+### 12.6 Reportería
+
+Ingresos por mes · por plan mensual · por plan anual · por usuarios adicionales ·
+pagos fallidos · cancelaciones · reactivaciones · suspendidos por impago ·
+churn · MRR · ARR · export CSV/XLS (futuro).
+
+### 12.7 Principio vinculante
+
+**No depender solo del panel de la pasarela para administrar el negocio.**
 
 ---
 
-## 17. Separación arquitectónica: Lucy SaaS vs LucyAdmin Billing (APROBADO 2026-06-29)
+## 13. Separación arquitectónica — VIGENTE (aprobado 2026-06-29)
 
-> Decisión de producto/arquitectura. **NO implica implementación** (sin módulo,
-> sin rutas, sin tablas, sin pasarela, sin código). Las partes ya detalladas en
-> §14/§15/§16 **no se repiten** acá: se referencian y se reconfirman bajo esta
-> separación (ver §17.5).
-
-### 17.1 Decisión de arquitectura
 **LucyAdmin Billing es un módulo administrativo separado del SaaS operativo del
-médico.** No se mezcla con el panel médico ni con las vistas clínicas. Cuatro
-responsabilidades distintas:
-- **Lucy SaaS** — operación del médico (panel, agenda, ficha clínica, reserva).
-- **LucyAdmin Billing** — control financiero: suscripciones, pagos, reportería,
-  conciliación, auditoría, suspensión/reactivación.
-- **Pasarela externa** — cobro, tarjeta, cancelación y/o portal de cliente.
-- **Webhooks / backend** — sincronización **confiable** del estado de pago
-  (fuente de verdad firmada, idempotente).
+médico.** Cuatro responsabilidades distintas: Lucy SaaS (operación clínica) ·
+LucyAdmin Billing (control financiero) · pasarela (cobro) · backend/webhooks
+(sincronización confiable).
 
-En **MVP** puede vivir **dentro del mismo proyecto/app** como **rutas protegidas
-de LucyAdmin**, pero **conceptualmente es un backoffice separado**. Lo importante
-no es separar repos/DB, sino **separar permisos, rutas, auditoría y
-responsabilidad**.
+En MVP puede vivir dentro del mismo proyecto como **rutas protegidas de
+LucyAdmin** (`/admin/billing/...`); conceptualmente es un backoffice separado. Lo
+que importa es separar **permisos, rutas, auditoría y responsabilidad**.
 
-### 17.2 Ubicación sugerida (MVP futuro)
-Rutas dentro de LucyAdmin, p. ej.:
-`/admin/billing` · `/admin/billing/dashboard` · `/admin/billing/suscripciones` ·
-`/admin/billing/pagos` · `/admin/billing/conciliacion` · `/admin/billing/reportes` ·
-`/admin/billing/precios` · `/admin/billing/eventos`.
+**Qué ve el médico:** solo su suscripción — plan, estado, próxima fecha,
+asistentes, enlaces para pagar/cambiar medio de pago/cancelar, y avisos de pago
+fallido o gracia.
+**Qué NO ve:** ingresos globales · pagos de otros médicos · conciliación ·
+reportería financiera · overrides · eventos internos.
 
-A futuro podría migrar a **subdominio / app administrativa separada** (p. ej.
-`admin.lucycare.app`). **En MVP NO hace falta** otro repo ni otra base de datos
-solo por separación visual.
+**Roles de billing (diseño futuro):** `super_admin` · `billing_admin` ·
+`billing_readonly` · `support_admin`. Se alinean con la Fase 2 de
+`docs/ANALISIS_ADMINISTRADORES_LUCY.md`. Hoy `profiles.role='admin'` +
+`lucyadmin_access` (`s7_57`) es lo único existente.
 
-### 17.3 Qué ve el médico (Lucy SaaS) vs qué NO ve
-**El médico ve solo una vista limitada de SU suscripción:**
-- plan actual; estado de suscripción; próxima fecha de cobro/vencimiento;
-  asistentes incluidos; usuarios adicionales; botón/enlace para **pagar**, para
-  **cambiar método de pago**, y para **gestionar/cancelar** en la pasarela;
-  mensajes de pago fallido / período de gracia / suspensión.
+---
 
-**El médico NO ve (pertenece solo a LucyAdmin Billing):**
-- ingresos globales; pagos de otros médicos; conciliación; reportería financiera;
-  overrides; eventos internos de webhook; decisiones administrativas globales.
+## 14. Responsabilidades por actor
 
-### 17.4 Separación de permisos (roles futuros posibles)
-- `super_admin` · `billing_admin` · `billing_readonly` · `support_admin`.
-- Reglas:
-  - **No todo admin clínico debe poder modificar pagos.**
-  - **Todo override de pago / suspensión / reactivación → auditado** (`audit_log`).
-  - **Reportes financieros con acceso restringido.**
-- (Hoy `profiles.role='admin'` es el único bit de autorización admin; estos roles
-  de billing son **diseño futuro**, no se implementan acá. Se alinean con la Fase 2
-  de `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — capacidades granulares.)
+| Actor | Sí | **No** |
+|---|---|---|
+| **`medicos.lucycare.app`** (entorno comercial) | contratar · elegir/cambiar plan · ver estado · administrar medio de pago · cancelar · consultar facturación | ser fuente de verdad del estado · escribir entitlements |
+| **Proveedor** | tokenizar · cobrar · renovar · dunning · emitir eventos · portal seguro | conocer el modelo de LucyCare |
+| **Backend LucyCare** | billing account · suscripción local · plan · **entitlements** · consumo de webhooks · idempotencia · reconciliación · control de acceso | almacenar datos de tarjeta · cobrar |
+| **LucyAdmin** | observabilidad · ver estado · detectar fallos · `access_override` **acotado y auditado** | **marcar "pagado"** |
+| **LucyCare operativo** (`lucycare.app`) | mostrar el estado necesario y enlazar al entorno comercial | administrar pagos |
 
-### 17.5 Lo ya documentado (reconfirmado bajo esta arquitectura — no se repite)
-- **Autoservicio del médico** (cancelar / cambiar tarjeta / reactivar / ajustar
-  asientos), **cambio de método de pago**, **cancelación a fin de período**,
-  **usuarios adicionales/asientos** (`extra_seats = max(asistentes−2,0)`,
-  agregar/quitar sin prorrateo MVP) → **§15** (precios en **§14**).
-- **LucyAdmin Billing** (objetivos, **dashboard/KPIs**, **lista filtrable** +
-  columnas, **detalle por médico**, **control operativo**, **reportería**,
-  **conciliación**, **modelo de datos futuro**) → **§16**.
-- **Pricing configurable / no-hardcoded** y separación **pago ≠ verified ≠
-  claimed** → **§14**.
+---
 
-### 17.6 Principio (VINCULANTE)
-**No depender solo del panel de la pasarela para administrar el negocio.** La
-pasarela procesa pagos; **LucyAdmin Billing** debe dar visibilidad operativa y
-financiera suficiente para **activar / suspender / reactivar / conciliar /
-reportar / auditar** — y debe estar **separado** del SaaS operativo del médico
-(permisos, rutas, auditoría, responsabilidad).
+## 15. Proveedor — contexto y grilla final de evaluación
+
+> **Proveedor NO elegido.** Esta sección define **cómo** se elige, no cuál.
+
+### 15.0 El problema central: operar desde El Salvador
+
+La pregunta bloqueante no es técnica (todas las pasarelas hacen checkout +
+webhooks), sino **si el proveedor admite a LucyCare como comercio operando desde
+El Salvador** y **cómo liquida el dinero**.
+
+**Tres caminos arquetípicos:**
+
+- **A — MoR global** (Paddle, Lemon Squeezy, 2Checkout): recurring llave en mano
+  y menos fricción tributaria cross-border, a costa de comisión más alta y menos
+  control del branding. **Requiere comprobar** que aceptan seller en SV y payout
+  a SV.
+- **B — Pasarela local SV** (PayWay, N1CO, Wompi, Pagadito): settlement USD
+  local, comisión más baja, alineado a que Lucy y los médicos están en SV. Riesgo:
+  si el recurrente no es nativo, hay que **construir el motor de recobro**.
+- **C — Estructura extranjera** (p. ej. Stripe vía entidad US): el mejor tooling
+  de billing, a cambio de constituir y mantener una entidad, repatriar fondos y
+  tributar en dos jurisdicciones. Solo se justifica si se busca escalar fuera de
+  SV.
+
+### 15.1 Cómo se usa la grilla
+
+Cada criterio tiene una pregunta verificable. Un criterio solo se marca ✅ con
+**evidencia**: documentación oficial, respuesta escrita del proveedor o prueba en
+sandbox. **"Probablemente sí" cuenta como ❌.**
+
+⚠️ **Las celdas de capacidad nacen vacías a propósito.** No se rellenan desde el
+repositorio ni de memoria: las capacidades de estos proveedores cambian, y
+afirmarlas sin verificar produce exactamente la decisión mal fundada que este
+frente busca evitar.
+
+### 15.A ELIMINATORIOS — un ❌ descarta al proveedor
+
+| # | Criterio | Pregunta de verificación |
+|---|---|---|
+| **E1** | Opera legalmente desde El Salvador | ¿Admite alta de comercio con domicilio fiscal en SV? ¿Qué documentación exige? |
+| **E2** | Liquidación en USD utilizable | ¿A qué tipo de cuenta liquida? ¿Plazo? ¿Requiere cuenta fuera de SV? |
+| **E3** | Cobro recurrente | ¿Nativo, o tokenización sobre la que haya que construirlo? |
+| **E4** | Webhooks firmados y verificables | ¿Qué esquema de firma? ¿Documentado? |
+| **E5** | `customer_id` y `subscription_id` estables y consultables | ¿Sobreviven a cambio de tarjeta y a reactivación? |
+| **E6** | Sandbox funcional | ¿Permite simular cobro fallido, dunning y cancelación? |
+| **E7** | PCI fuera de nuestro alcance | ¿Checkout hosted o tokenización? ¿El PAN toca alguna vez nuestro dominio? |
+
+### 15.B OPERATIVOS — obligatorios; un ❌ exige plan de mitigación escrito
+
+| # | Criterio | Por qué |
+|---|---|---|
+| **O1** | Cambio de medio de pago (portal o API) | Sin esto, cada tarjeta vencida es un ticket de soporte |
+| **O2** | Cancelación self-service | Sin esto, cancelar exige intervención humana |
+| **O3** | Reintentos / dunning configurables u observables | El dunning se delega: hay que poder verlo |
+| **O4** | **Historial de transacciones por API** | **Sin esto la reconciliación diaria es imposible** |
+| **O5** | Idempotencia: `event_id` único + reentrega documentada | Base de `subscription_events` |
+| **O6** | **Consulta de estado bajo demanda** | **Requisito de la política: reconsultar antes de suspender (§4.4)** |
+| **O7** | Reactivación self-service | Política aprobada §6 |
+| **O8** | Latencia y fiabilidad de webhooks | ¿SLA? ¿Cuántas reentregas? ¿Hasta cuándo? |
+
+> **O4 y O6 son los más subestimados.** Sin ellos, la regla "reconciliar antes de
+> suspender" no es implementable y el diseño pierde su red de seguridad.
+> Tratarlos como **cuasi-eliminatorios**.
+
+### 15.C COMERCIALES
+
+| # | Criterio |
+|---|---|
+| C1 | Soporta plan **mensual** y **anual** en el mismo producto |
+| C2 | Soporta **add-on por cantidad** (asistentes adicionales) |
+| C3 | **Prorrateo nativo** — si no lo hay, aplica la regla de "siguiente ciclo" (§6.2) |
+| C4 | Cancelación a fin de período nativa (`cancel_at_period_end`) |
+| C5 | Precios en USD sin conversión |
+| C6 | Cupones / descuentos (para el 15% anual, si no se modela como precio propio) |
+| C7 | Portal de cliente completo, o APIs suficientes para construirlo |
+| C8 | Acepta tarjetas emitidas en El Salvador — **verificar con tarjetas reales de bancos SV** |
+
+### 15.D COSTO
+
+**No comparar "comisión %".** Calcular el **costo total real para LucyCare en El
+Salvador**, sobre escenarios concretos.
+
+| # | Componente |
+|---|---|
+| D1 | Comisión por transacción (% + fijo) |
+| D2 | Costo de **transacción fallida** y de reintento |
+| D3 | Costo de contracargo |
+| D4 | Costo de **liquidación / payout / transferencia** a la cuenta destino |
+| D5 | Costo de conversión de divisa, si liquida fuera de SV |
+| D6 | Mensualidad, mínimos o setup |
+| D7 | Costo de mantener la **estructura** (entidad, contabilidad, cumplimiento) — decisivo en el camino C |
+| D8 | **Costo total sobre escenario tipo** — modelar dos: **piloto (5 médicos)** y **objetivo (50 médicos)** |
+
+> Un proveedor con 3% y payout gratuito puede resultar **más caro** que uno de 5%
+> que exige una entidad extranjera con contabilidad anual. D7 y D8 revelan eso.
+
+### 15.E FISCALES
+
+| # | Criterio |
+|---|---|
+| F1 | ¿Quién es el **vendedor de registro** frente al médico salvadoreño? |
+| F2 | ¿Quién emite el **comprobante** al médico y con qué validez en SV? |
+| F3 | **Tratamiento del IVA 13%** — los precios ya son IVA incluido (§10.1); falta cómo se declara |
+| F4 | **DTE**: ¿quién lo emite, cómo y con qué integración? |
+| F5 | Retenciones o percepciones aplicables al recibir del exterior |
+| F6 | Obligaciones de reporte para LucyCare según la estructura elegida |
+| F7 | **Validación con contador/legal salvadoreño — escrita, no verbal** |
+
+> ⚠️ **REGLA VINCULANTE:** **no asumir que un Merchant of Record resuelve
+> automáticamente las obligaciones fiscales salvadoreñas.** El MoR asume impuestos
+> **en su jurisdicción y según su contrato**; qué queda del lado de LucyCare en SV
+> depende del proveedor y de la estructura contractual concreta, y **debe
+> comprobarse caso por caso**. Un ✅ en F1–F6 sin F7 **no vale**.
+
+### 15.F UX DEL MÉDICO
+
+| # | Criterio |
+|---|---|
+| U1 | Checkout en **español** |
+| U2 | Checkout usable en **móvil** — el médico salvadoreño opera desde el teléfono |
+| U3 | Portal de cliente en español |
+| U4 | Métodos de pago familiares en SV (¿solo tarjeta? ¿transferencia? ¿billeteras locales?) |
+| U5 | Correos del proveedor (recibo, fallo de cobro) en español y con marca aceptable |
+| U6 | Fricción del alta: cuántos pasos y cuántos datos hasta el primer cobro |
+| U7 | Coherencia de marca entre `medicos.lucycare.app` y el checkout |
+
+### 15.G COMPLEJIDAD DE IMPLEMENTACIÓN
+
+| # | Criterio |
+|---|---|
+| X1 | Calidad de documentación y SDK |
+| X2 | ¿Hay que **construir el motor de recobro**? (si E3 es solo tokenización → mayor esfuerzo de todo el frente) |
+| X3 | Cantidad de eventos a mapear a los 5 estados locales |
+| X4 | Esfuerzo de la **reconciliación diaria** dado O4/O6 |
+| X5 | Madurez del sandbox (X4 y X5 determinan cuánto dura P2) |
+| X6 | Soporte técnico: canal, idioma, tiempo de respuesta |
+| X7 | Riesgo de dependencia: ¿qué pasa si el proveedor cierra o cambia condiciones? ¿Se puede migrar la cartera de suscripciones? |
+
+### 15.1 Hoja de evaluación
+
+| | PayWay SV | N1CO | Paddle | Stripe (estructura viable) | Wompi SV | Recurrente | Pagadito |
+|---|---|---|---|---|---|---|---|
+| **A** eliminatorios E1–E7 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **B** operativos O1–O8 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **C** comerciales C1–C8 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **D** costo total (5 / 50 médicos) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **E** fiscales + F7 validado | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **F** UX médico U1–U7 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **G** complejidad (bajo/medio/alto) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+
+**Candidatos base:** PayWay El Salvador · N1CO · Paddle · Stripe con estructura
+viable desde El Salvador (evaluar la estructura dentro de D7, no solo la pasarela).
+
+**Candidatos agregados por ser materialmente comparables:**
+
+| Candidato | Por qué entra | Qué verificar primero |
+|---|---|---|
+| **Wompi (Banco Agrícola, SV)** | Adquirencia local con settlement USD directo a banco SV — elimina D4/D5 y buena parte de la sección E | **E3**: si el recurrente no es nativo, X2 dispara el esfuerzo del frente entero |
+| **Recurrente (Guatemala)** | Enfocado en SaaS recurrente para Centroamérica; perfil funcional más cercano al necesario que un adquirente genérico | **E1**: cobertura real de comercios salvadoreños, no solo de tarjetas SV |
+| **Pagadito (SV/CA)** | Presencia regional de larga data | **E3** y **O4** |
+
+**Sobre Lemon Squeezy y 2Checkout/Verifone:** mismo arquetipo MoR que Paddle.
+Solo tiene sentido sumarlos si Paddle falla E1 o E2; si no, se compara el
+arquetipo una vez y se elige dentro de él al final.
+
+### 15.2 Reglas de decisión
+
+1. Un ❌ en cualquier **E** → descartado, sin discusión de precio.
+2. Un ❌ en **O4** u **O6** → solo continúa con plan de mitigación **escrito**.
+3. **F7 sin validación escrita de contador/legal salvadoreño → el proveedor no se
+   puede elegir**, por mucho que gane en todo lo demás.
+4. **C3 (prorrateo) no descarta a nadie**: sin él aplica la regla de "siguiente
+   ciclo".
+5. **D se evalúa por escenario, no por porcentaje.**
+6. Empate en A–C → decide **G**, porque determina cuánto dura P2, y P2 es la fase
+   que retrasa el enforcement.
+
+---
+
+## 16. Riesgos
+
+| # | Riesgo | Sev. | Mitigación |
+|---|---|---|---|
+| R1 | **Suspensión indebida de un médico al día** (webhook perdido, reloj mal) | 🚨 | Gracia + reconciliación diaria + suspensión solo por job con doble verificación contra el proveedor (§4.4) |
+| R2 | **Acceso a historia clínica cortado por impago** | 🚨 | §5 y §6.1: no se elimina nada; read/export según política legal de retención |
+| R3 | Webhook duplicado o reordenado → doble activación o estado viejo pisando uno nuevo | ⚠️ | `UNIQUE(provider, provider_event_id)` + orden por `occurred_at` |
+| R4 | **Webhook perdido → cuenta congelada en `grace_period` para siempre** | ⚠️ | Job de vencimiento independiente + reconciliación diaria |
+| R5 | Proveedor sin recurring nativo → construir el motor de recobro | ⚠️ | Eliminatorio E3; si no, MoR |
+| R6 | Estado comercial contaminando `is_operational` | ⚠️ | Invariante **I5** desde el primer día; una vez mezclados no se separan sin migración de datos |
+| R7 | Cobro sin comprobante legal válido en SV | ⚠️ | §15.E; **F7 bloqueante** |
+| R8 | Sin SSO entre `lucycare.app` y `medicos.lucycare.app` → el médico se re-autentica | ⚠️ | Decisión aparte. **No resolver con tokens ni identificadores en la URL** |
+| R9 | **Primera Edge Function del proyecto** — infra nunca ejercitada | ⚠️ | Validar deploy antes del PR funcional de P2 |
+| R10 | Deriva de `database.types.ts` (§2.4 T2) | ⚠️ | Regenerar tipos en el mismo PR de la migración |
+| R11 | Reutilizar `appointments.stripe_payment_id` / `payment_status` para SaaS | ⚠️ | Prohibido: son pago paciente→médico (§2.4 T1) |
+| R12 | Bypass del límite de asientos por RPC directa | ⚠️ | Enforcement server-side ya activo (§9.1) |
+
+---
+
+## 17. Fases — APROBADAS (2026-08-07)
+
+### BILLING-P0 · arquitectura, políticas y proveedor — **sin código**
+
+Cerrar el modelo (este documento) · **llenar la grilla de §15** · validar
+fiscalidad/DTE · **elegir proveedor**.
+**Salida:** arquitectura + proveedor elegido. Cero migraciones.
+
+**Estado: PAUSADO — arquitectura definida.** Falta lo listado en §19.
+
+### BILLING-P1 · modelo local en SHADOW MODE
+
+Tablas, estados, precios, eventos y funciones de **lectura**. Vista read-only en
+LucyAdmin.
+
+**Prohibido en P1 — es el contrato de la fase:**
+
+- ❌ bloquear a ningún médico
+- ❌ modificar `is_operational`
+- ❌ modificar booking ni `validate_booking_slot`
+- ❌ modificar `team_seat_limit` (el `TODO(pagos)` de `s7_27` **no se toca en P1**)
+- ❌ cambiar cualquier comportamiento productivo
+
+**Criterio de aceptación:** todo usuario existente opera **exactamente igual**
+antes y después. Demostrable, no afirmable.
+
+### BILLING-P2 · integración real, todavía sin gates
+
+Checkout · webhooks verificados · idempotencia · job de vencimiento ·
+reconciliación diaria · portal comercial · sandbox completo.
+
+**Los entitlements se calculan y se registran, pero NO se aplican.** La fase
+termina cuando hay **evidencia medida** de que proveedor, webhooks y
+reconciliación son confiables — no cuando el código funciona.
+
+### BILLING-P3 · enforcement
+
+`has_entitlement` en los gates · `team_seat_limit` cableado · booking · acceso al
+panel · degradación · LucyAdmin Billing · **recrear el CTA "Planes y
+facturación"** (§18).
+
+> **Regla que gobierna las cuatro fases:** el enforcement se activa **solo
+> después** de demostrar la confiabilidad medida en P2. Aplicar gates sobre un
+> estado no verificado deja afuera a clientes que pagaron.
+
+Cada fase: 1 PR chico, migración `s8_NN` con `check-*.mjs` y `_smoke-*.mjs`,
+`vite build` OK, preview validado, y merge solo con OK explícito del owner.
+Secretos de la pasarela en ENV/dashboard, **nunca en el repo**.
+
+---
+
+## 18. Antecedente — PR #323 (cerrado sin merge)
+
+El 2026-08-07 se implementó y luego se **cerró sin merge** el PR #323, que
+agregaba en el panel del médico el acceso **"Planes y facturación"** hacia
+`https://medicos.lucycare.app/medicos/planes`.
+
+**Motivo del cierre: de producto, no técnico.** El destino sigue siendo un flujo
+comercial demostrativo y todavía no constituye un portal autoritativo de
+suscripción/facturación. Publicar el CTA prometería administración de plan,
+tarjeta, pagos y cancelación sin backend que la sostenga.
+
+**El CTA NO está publicado.** Se recrea en **BILLING-P3**, no antes. Su alcance
+conocido y validado era:
+
+- `src/pages/panel/PanelLayout.tsx` — enlace en el footer del sidebar y del
+  drawer móvil, antes de "Buscar médico", solo para el médico titular
+  (`!isAssistant`), `target="_blank"` + `rel="noopener noreferrer"`.
+- **URL sin query params**, sin transmitir `doctor_id`, `clinic_id`, `phone`,
+  `email`, sesión ni token.
+- `src/pages/panel/equipo/EquipoPage.tsx` — retirar la frase "cuando habilitemos
+  los planes", que contradice el acceso.
+
+⚠️ **Pendiente vivo:** mientras el CTA no exista, `EquipoPage` sigue diciéndole al
+médico que los planes **todavía no están habilitados**. Es hoy el único copy del
+producto que menciona "plan". Debe reconciliarse cuando se recree el acceso.
+
+---
+
+## 19. Qué falta para retomar BILLING-P0
+
+- **Investigación verificable de proveedores.**
+- **Completar la grilla E1–E7 / O1–O8** (§15).
+- **Costos sobre los escenarios 5 / 50 médicos** (D8).
+- **Validación fiscal / contable / DTE** (§15.E, F7).
+- **Elección de proveedor.**
+- **Política legal de retención clínica** (§6.1).
+
+> La investigación técnica/comercial de proveedores podrá hacerse posteriormente.
+> **La validación fiscal/legal final requerirá evidencia externa competente.**
+
+---
+
+## 20. Registro de la reconciliación (2026-08-07)
+
+Qué decía este documento en sus versiones anteriores y **por qué se retiró**:
+
+| Contenido retirado | Dónde estaba | Por qué |
+|---|---|---|
+| **`is_operational` "lo controla la suscripción"**; `active`/gracia → `true`, vencido → `false` | §6, tabla de gating | Contradice el invariante **I5**. El estado comercial es independiente del administrativo (§5.1) |
+| La pantalla "Cuenta suspendida" pasa a cubrir también el impago | §6.1 | Con ejes separados son dos estados distinguibles y deben tener copy distinto |
+| **El webhook cambia `is_operational` / `booking_enabled`** | §6.2 | El webhook actualiza la suscripción; los entitlements se derivan. **El webhook nunca escribe flags de `doctors`** |
+| `subscriptions.clinic_id UNIQUE` como **única** ancla | §8.1 | Falta el titular contractual y el scope separable (§3). Por **H2** el esquema ya admite N médicos por clínica |
+| Enum de estados con **`canceled`**, sin `grace_period` ni `suspended` | §5.1 | Reemplazado por los cinco estados de §4.1 y por la cancelación como atributo del período (§4.2) |
+| `trialing` como estado modelado | §5.1 | Trial fuera del MVP (§6) |
+| Q1–Q11 abiertas (gracia, suspensión, trial, prorrateo, self-service…) | §10 | **Cerradas** por las decisiones de §6 y §6.2 |
+| Fases 0–7 con gating en Fase 4 | §11 | Reemplazadas por P0/P1/P2/P3, con enforcement al final (§17) |
+| Guardar el **payload íntegro** del webhook | §8.2 | Reemplazado por el conjunto acotado de §8 |
+| "Stripe Checkout hosted" como decisión de stack | §13 | La elección de proveedor es parte de BILLING-P0 y **no está tomada** (§15) |
+
+**Lo que se conservó por seguir vigente:** precios aprobados y principio de
+precios configurables (§10) · autoservicio del médico (§11) · LucyAdmin Billing
+(§12) · separación arquitectónica (§13) · el punto de enganche `team_seat_limit`
+(§9.1) · el análisis del problema de operar desde SV y los tres caminos
+arquetípicos (§15.0) · la separación **pago ≠ verified ≠ claimed** (§5.1).
+
+---
+
+## 21. Coordinación con otros documentos
+
+- `docs/ANALISIS_AFILIACION_MEDICO.md` / `docs/ANALISIS_RECLAMAR_PERFIL.md` — el
+  pago entra **después** del reclamo; `claimed` precede a la suscripción y no
+  depende de ella.
+- `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — los roles de billing (§13) se alinean
+  con su Fase 2 de capacidades granulares.
+- `docs/SECURITY_GATE_PILOTO.md` — al implementar, agregar: verificación de firma
+  de webhook, idempotencia, secretos en ENV, RLS de las tablas de billing.
+- `CLAUDE.md` — guía rápida. Ante contradicción sobre billing, **manda este
+  documento**.
+
+**Este documento no contiene** secretos, tokens, `service_role`, claves ni datos
+de tarjeta.

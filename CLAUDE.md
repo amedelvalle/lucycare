@@ -99,6 +99,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 **Análisis vivos (cada uno cubre un eje):**
 - `docs/ANALISIS_ANALYTICS_LUCYCARE.md` — medición de tráfico/conversión de `lucycare.app`: Q1–Q5 cerradas (Vercel Web Analytics + Speed Insights **cookieless** como primario, GA4 descartado; `doctor_slug` como id de evento; **jamás PII/clínico ni texto libre de búsqueda**; dashboard DB LucyAdmin separado y posterior). **PR-0 diseño ✅ #214. Fase 1A ✅ live #215 + prod + validación owner** — `@vercel/analytics` + `@vercel/speed-insights` + componente `PublicAnalytics` (montaje único en `App.tsx`, **defensa doble**: render allowlist `/`·`/doctor/*`·`/privacidad` + `beforeSend` backstop que retorna `null` fuera del allowlist y recorta query/hash; excluye `/panel`·`/admin`·`/paciente`·`/reset-password`·`/calificar`; sin eventos custom/cookies/PII/dashboard). **Fase 1B ✅ operativa (2026-07-02):** Google Search Console verificado (archivo HTML — `public/google3f2e02a3c176b538.html` #217 + `public/googlef334c08cb9e5d942.html` #218, **permanentes, no borrar**) + sitemap `lucycare.app/sitemap.xml` enviado/procesado (**Correcto**, 35 páginas descubiertas). **Pendiente NO iniciado:** 2 (eventos custom, sujeto a soporte del plan Vercel) · 3 (dashboard conversión DB) · 4 (dashboards por médico/especialidad/canal).
 - `docs/ANALISIS_ANALYTICS_FARMA.md` — **capa estratégica INTERNA** de inteligencia de prescripción por médico (agregados, admin-only, no divulgable, sin paciente/receta individual/texto clínico). **PR-0 read-only ✅ (diseño):** viable hoy sobre `prescriptions` (snapshots `s7_37`) → `consultations.doctor_id`; base V1 = `is_current=true` + `status='signed'` + fecha `signed_at`; presentación (enum)/fuente global-vs-personal (`medications.doctor_id`)/crónicos (`duration_unit='permanente'`)/especialidad/tendencia son limpios; principio activo/concentración requieren normalización; **no existe categoría terapéutica**. **NO implementado** (backend `s7_54` / RPCs `admin_pharma_*` / módulo `/admin/analytics/farma` pendientes, sin abrir).
+- `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` — **única fuente canónica de BILLING** (pagos, suscripción, planes, facturación). Reconciliado el 2026-08-07 con la arquitectura BILLING-P0: `billing_account` como entidad independiente, máquina de cinco estados sin `canceled`, entitlements derivados, **`is_operational` NO es estado de pago**, fases P0–P3 con enforcement al final, y grilla de evaluación de proveedor. **BILLING-P0 = PAUSADO — arquitectura definida**; proveedor no elegido; no bloquea el piloto.
 - `docs/SECURITY_GATE_PILOTO.md` — auditoría pre-piloto + hallazgos cerrados.
 - `docs/ANALISIS_RECLAMAR_PERFIL.md` — diseño del reclamo (Fase 2 ✅ live).
 - `docs/ANALISIS_AUTH_MEDICO.md` — plan auth email+password (PR-A ✅ live, PR-B en cola).
@@ -164,7 +165,7 @@ Detalle completo en el handoff vigente §H:**
 - (1) **Traducir al español los errores de contraseña** — no mostrar mensajes crudos de Supabase. Caso observado: `New password should be different from the old password.` → copy aprobado: **"La nueva contraseña debe ser diferente de la contraseña anterior."** Revisar creación, cambio y recuperación. Tuteo.
 - (2) **`NotificationBell`** — cerrar el popover con Escape + devolver el foco al botón. Quedó explícitamente fuera de #311.
 - (3) Correo verificado como canal secundario de recuperación (el teléfono sigue siendo la identidad principal).
-- (4) **Botón "Gestionar plan y facturación"** hacia `medicos.lucycare.app` (plan, modalidad, tarjeta, método de pago) + evaluar qué cambios requiere el sitio de médicos. Su flujo actual es **demostrativo** y **no** es todavía sistema autoritativo de cobro.
+- (4) **Acceso "Planes y facturación"** hacia `medicos.lucycare.app` — **PR #323 CERRADO SIN MERGE** (2026-08-07): el destino sigue siendo **demostrativo** y **no** es todavía sistema autoritativo de cobro. **El CTA NO está publicado** y se recrea en **BILLING-P3**, no antes. Detalle en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` §18.
 - (5) Entregabilidad de correo (SPF/DKIM/DMARC + plantilla de Supabase/Resend).
 - (6) Razón genérica "Otro motivo" en `cancel_reasons` (tabla no versionada en `migrations/`).
 - (7) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
@@ -175,7 +176,13 @@ Detalle completo en el handoff vigente §H:**
 ### Stack
 - Backend: Supabase (Postgres + Auth + Edge Functions + Storage).
 - Frontend: React 19 + TypeScript + Tailwind + Vite + React Query.
-- Pagos: Stripe Checkout hosted.
+- Pagos: **proveedor NO elegido** — la elección es parte de **BILLING-P0**
+  (PAUSADO). "Stripe Checkout hosted" fue una decisión tentativa **reabierta**;
+  no comprometer ninguna pasarela sin la grilla de
+  `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` §15 y la validación fiscal.
+- **Billing NO controla `doctors.is_operational`.** El estado comercial vive en
+  una entidad separada (`billing_account` → `subscription` → entitlements);
+  `is_operational` sigue siendo el flag administrativo de LucyAdmin.
 - Hosting: Vercel + Supabase.
 - Facturación DTE: diferida (API externa, no se desarrolla internamente).
 
