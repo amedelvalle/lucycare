@@ -216,12 +216,49 @@ La cancelación del paciente **no** se duplica.
 - [x] `--preflight` v6 emitido y aceptado
 - [x] **Smoke: exactamente una fila por `cancel_my_appointment`** — §5-bis, 6.1
 - [x] **Smoke: `notes` e `internal_notes` ausentes de la auditoría** — 1.8, 1.9, 6.8
-- [ ] **Smoke: cero residuos de fixtures** — 🔴 la corrida dejó 6 residuos
-      (limpiados a mano). Requiere el PR correctivo del cleanup y una corrida
-      nueva que termine con el inventario en cero **por sí misma**
+- [x] **Smoke: cero residuos de fixtures** — cerrado en la corrida del
+      2026-08-07T03:19Z (§5-quater): inventario en **0** sin intervención manual
 
-**Dos de los tres gates quedan cerrados.** El tercero exige repetir la corrida
-con el cleanup corregido. Ver §5-bis y `docs/OWNER_S7_71A_APPLY.md` §5-ter.
+**LOS TRES GATES ESTÁN CERRADOS.** `s7_71a` queda **funcionalmente validada**
+por decisión del owner. Pendiente único: cerrar el **instrumento**, cuyo exit 1
+se debía a un falso positivo ya corregido
+(`docs/OWNER_S7_71A_APPLY.md` §5-quinquies).
+
+---
+
+## 5-quater. Cuarta corrida (2026-08-07T03:19:21Z) — s7_71a FUNCIONALMENTE VALIDADA
+
+Sobre `HEAD e2092ac`, huella `eb6369db…`. **75 OK, 1 fallo, exit 1.**
+
+**Los diez criterios de éxito del owner se cumplen:**
+
+| # | Criterio | Resultado |
+|---|---|---|
+| 1 | Todas las secciones funcionales | ✅ |
+| 2 | `cancel_my_appointment` = exactamente 1 fila | ✅ `6.1` |
+| 3 | `notes` / `internal_notes` fuera de `audit_log` | ✅ `1.8`, `1.9`, `6.8` |
+| 4 | Actividad externa desconocida | ✅ 0 |
+| 5 | `booking_enabled` termina en `false` | ✅ |
+| 6 | `availability_rules` del QA termina en 0 | ✅ |
+| 7 | El cleanup elimina sus doce categorías | ✅ todos los counts exactos |
+| 8 | Inventario final de fixtures | ✅ **0** |
+| 9 | `auth.users` temporales | ✅ 0 |
+| 10 | Sin intervención manual | ✅ |
+
+Counts del cleanup: cancelaciones 1 · grants 1 · intents 1 · citas **12** ·
+pacientes 3 · reglas 14 · servicios 2 · médicos 2 · membresías 2 · clínicas 1 ·
+perfiles 3 · `auth.users` 3 · `audit_log` sintético 27. Todos coincidieron.
+Las 12 citas se borraron **explícitamente**, ya no por cascada.
+
+**Decisión del owner:** `s7_71a` queda **FUNCIONALMENTE VALIDADA**. Lo que no
+se declara cerrado todavía es el **instrumento**, porque el proceso terminó en
+exit 1 por un **falso positivo**: la red de seguridad de
+`deleteQaTempRules()` exigía 1 fila donde correctamente hay 0. Corregido en
+`docs/OWNER_S7_71A_APPLY.md` §5-quinquies.
+
+Las filas `audit_log` **14437–14439 permanecen intactas**, verificado por
+lectura: quedaron fuera del borrado por dos filtros independientes (no están en
+la allowlist de esta corrida y su `created_at` es anterior a `RUN_STARTED_AT`).
 
 ---
 

@@ -520,6 +520,51 @@ Cualquier estado distinto de `OK` entra en `cleanupErrors` (exit ≠ 0) y el
 > comprueba contra `src/types/database.types.ts` que la tabla **realmente** no
 > tiene columna `id` — la declaración no se cree a sí misma.
 
+---
+
+## 5-quinquies. Idempotencia de la regla temporal del médico QA
+
+La corrida del 2026-08-07T03:19Z **cumplió los diez criterios de éxito**:
+diez secciones funcionales, los tres gates de §4.4, inventario en cero y
+ninguna intervención manual. Y aun así salió con **exit 1**.
+
+`deleteQaTempRules()` se invoca **dos veces por diseño**:
+
+1. en el `finally` local de la sección de reserva — la eliminación **real**;
+2. al inicio del cleanup global — la **red de seguridad**, por si la corrida
+   abortó antes de llegar al `finally` local.
+
+La segunda no encuentra nada, que es exactamente lo correcto. Pero §5-quater
+había endurecido la función a `count === 1` **sin contemplar que es
+idempotente**, así que la red de seguridad **se denunciaba a sí misma**.
+
+### La corrección
+
+La función recibe ahora un **modo obligatorio**, y el veredicto vive en
+`tempRuleDeleteVerdict()` —pura y exportada—:
+
+| Modo | `0` filas | `1` fila | `>1`, `count` desconocido o error |
+|---|---|---|---|
+| `primary` (eliminación real) | ❌ `MISSING` | ✅ `OK` | ❌ fail-closed |
+| `defensive` (red de seguridad) | ✅ `ALREADY_GONE` | ✅ `OK` | ❌ fail-closed |
+
+Que `primary` siga exigiendo exactamente 1 no es ceremonia: si la regla no
+estuviera donde debe, sería un **residuo sobre un médico publicado en
+producción**.
+
+> ⚠️ **La tolerancia a `0` está confinada a `tempRuleDeleteVerdict` y solo en
+> modo `defensive`.** El helper general de DELETE **no** la comparte: para él,
+> borrar 0 de N filas existentes sigue siendo `PARTIAL` y sigue fallando
+> cerrado. El check verifica ambas cosas —que la tolerancia existe donde debe y
+> que **no** se filtró a ninguna otra categoría del cleanup—, y que `ALREADY_GONE`
+> aparece **una sola vez** en todo el archivo.
+
+> **A/B quirúrgico:** forzando la red de seguridad de vuelta a `primary`, el
+> check dispara «la red de seguridad del cleanup usa el modo `defensive`».
+> Durante ese A/B, un `restore` mal anclado llegó a **intercambiar** los dos
+> modos, y el check lo detectó en la corrida siguiente — el instrumento
+> haciendo su trabajo sobre su propio mantenimiento.
+
 **Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
 *hostname* derivado de `SUPABASE_URL`.
 

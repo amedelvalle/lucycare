@@ -33,7 +33,7 @@ import {
   qaBaselineChecks, qaManifestIds, buildPermanentIds, permanentHits, assertNotPermanent,
   SV_TIMEZONE, svTodayLocal, addDaysLocal, dowLocal, buildLocalSlot,
   countResult, summarizeInventory, partitionExternal,
-  CLEANUP_TARGETS, cleanupColumnFor, deleteVerdict,
+  CLEANUP_TARGETS, cleanupColumnFor, deleteVerdict, tempRuleDeleteVerdict,
 } from './_smoke-s7_71a.mjs';
 
 let pass = 0, fail = 0;
@@ -1857,14 +1857,17 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('la regla temporal se borra por ruleId, NUNCA por doctor_id',
     /\.from\('availability_rules'\)\s*\n?\s*\.delete\(\{ count: 'exact' \}\)\.eq\('id', ruleId\)/
       .test(codigo.replace(/\r/g, '')));
-  check('el borrado de la regla temporal exige count exacto 1',
-    /borró \$\{count\} fila\(s\), se esperaba 1/.test(smoke));
+  check('el borrado REAL de la regla temporal exige exactamente 1',
+    /await deleteQaTempRules\(\{ mode: 'primary' \}\)/.test(codigo));
+  check('la red de seguridad del cleanup usa el modo defensive',
+    /await deleteQaTempRules\(\{ mode: 'defensive' \}\)/.test(codigo));
   check('no existe ningún delete de reglas por doctor_id del QA',
     /from\('availability_rules'\)[\s\S]{0,80}delete[\s\S]{0,60}QA\.doctorId/.test(codigo) === false);
 
   // ── El restore corre primero y pase lo que pase ──
   check('bookViaIntent restaura en su propio finally',
-    /\} finally \{[\s\S]{0,400}await restoreQaState\(\);[\s\S]{0,80}await deleteQaTempRules\(\);/.test(codigo));
+    /\} finally \{[\s\S]{0,400}await restoreQaState\(\);[\s\S]{0,120}await deleteQaTempRules\(\{ mode: 'primary' \}\);/
+      .test(codigo));
   check('el cleanup restaura ANTES de cualquier borrado',
     cl.indexOf('await restoreQaState()') >= 0
     && cl.indexOf('await restoreQaState()') < cl.indexOf('await del('), true);
@@ -2314,6 +2317,87 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('sigue: la denylist del médico QA', /assertNotPermanent\(ids\.grantIds/.test(cl2));
   check('sigue: el inventario final completo', /auth_creation_grants \(por booking_intent_id\)/.test(codigo));
   check('sigue: la actividad externa nunca se borra', /NO se borran/.test(smoke));
+}
+
+// ─── 30. Idempotencia de la regla temporal del médico QA ──────────────
+//
+// La corrida del 2026-08-07 terminó con el inventario en CERO y aun así salió
+// con exit 1: `deleteQaTempRules()` se invoca dos veces por diseño —la
+// eliminación real en el `finally` de la sección 2, y la red de seguridad del
+// cleanup global— y la segunda exigía 1 fila donde correctamente hay 0. La red
+// de seguridad se denunciaba a sí misma.
+{
+  console.log('\n30. Idempotencia de la regla temporal (primary vs defensive)');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const V = tempRuleDeleteVerdict;
+
+  // ── primary: la eliminación REAL exige exactamente 1 ──
+  check('primary · 1 fila → OK', V({ mode: 'primary', count: 1 }).ok === true);
+  check('primary · 0 filas → NO ok', V({ mode: 'primary', count: 0 }).ok === false);
+  check('primary · 0 filas → status MISSING', V({ mode: 'primary', count: 0 }).status === 'MISSING');
+  check('primary · el motivo explica que era la eliminación real',
+    /era la eliminación real/.test(V({ mode: 'primary', count: 0 }).detail));
+
+  // ── defensive: 0 o 1 son válidos ──
+  check('defensive · 0 filas → OK (ya eliminada)', V({ mode: 'defensive', count: 0 }).ok === true);
+  check('defensive · 0 filas → status ALREADY_GONE',
+    V({ mode: 'defensive', count: 0 }).status === 'ALREADY_GONE');
+  check('defensive · 1 fila → OK (existía y se eliminó)', V({ mode: 'defensive', count: 1 }).ok === true);
+  check('defensive · 1 fila → status OK', V({ mode: 'defensive', count: 1 }).status === 'OK');
+
+  // ── Fail-closed en AMBOS modos ──
+  for (const mode of ['primary', 'defensive']) {
+    check(`${mode} · >1 fila → NO ok`, V({ mode, count: 2 }).ok === false);
+    check(`${mode} · >1 fila → status UNEXPECTED`, V({ mode, count: 2 }).status === 'UNEXPECTED');
+    check(`${mode} · count null → NO ok`, V({ mode, count: null }).ok === false);
+    check(`${mode} · count null → status UNKNOWN`, V({ mode, count: null }).status === 'UNKNOWN');
+    check(`${mode} · count undefined → UNKNOWN`, V({ mode, count: undefined }).status === 'UNKNOWN');
+    check(`${mode} · count NaN → UNKNOWN`, V({ mode, count: NaN }).status === 'UNKNOWN');
+    check(`${mode} · error → NO ok`, V({ mode, count: 1, error: { message: 'x' } }).ok === false);
+    check(`${mode} · error → status ERROR`, V({ mode, count: 1, error: { message: 'x' } }).status === 'ERROR');
+    check(`${mode} · el error se conserva en el detalle`,
+      /FK/.test(V({ mode, count: 0, error: { message: 'FK' } }).detail));
+  }
+  check('un modo desconocido NO se acepta', V({ mode: 'otro', count: 0 }).ok === false);
+  check('sin modo tampoco se acepta', V({ count: 0 }).ok === false);
+
+  // ── La tolerancia NO se filtra al helper general ──
+  check('el helper general sigue tratando 0 de N como PARTIAL',
+    deleteVerdict({ preCount: 1, deletedCount: 0 }).status === 'PARTIAL');
+  check('el helper general NO acepta 0 cuando existían filas',
+    deleteVerdict({ preCount: 1, deletedCount: 0 }).ok === false);
+  {
+    // Tramo acotado a deleteVerdict: `tempRuleDeleteVerdict` va justo después,
+    // así que cerrar en `partitionExternal` metía su código en la muestra.
+    const dv = between(codigo, 'export function deleteVerdict(', 'export function tempRuleDeleteVerdict');
+    check('el tramo de deleteVerdict no está vacío', dv.length > 200);
+    check('el helper general no conoce los modos primary/defensive', /mode/.test(dv) === false);
+    check('el helper general no conoce ALREADY_GONE', /ALREADY_GONE/.test(dv) === false);
+  }
+  check('la tolerancia vive solo en tempRuleDeleteVerdict',
+    /ALREADY_GONE/.test(codigo)
+    && (codigo.match(/ALREADY_GONE/g) || []).length === 1, true);
+  check('se documenta que la excepción está confinada',
+    /La tolerancia a `0` está confinada AQUÍ/.test(smoke));
+
+  // ── Ninguna otra categoría del cleanup adopta la tolerancia ──
+  const cl3 = between(codigo, 'async function cleanup()', 'async function cleanupAuditLog');
+  check('ninguna llamada del helper general pasa un modo',
+    /await del\([^;]*mode:/.test(cl3) === false);
+  check('tempRuleDeleteVerdict no se usa en el helper general',
+    /tempRuleDeleteVerdict/.test(between(codigo, 'const del = async', 'await del(')) === false);
+  check('solo hay dos invocaciones de deleteQaTempRules',
+    (codigo.match(/await deleteQaTempRules\(/g) || []).length === 2);
+  check('cada invocación declara su modo explícitamente',
+    (codigo.match(/await deleteQaTempRules\(\{ mode: '(primary|defensive)' \}\)/g) || []).length === 2);
+  check('la firma exige el modo', /async function deleteQaTempRules\(\{ mode \}\)/.test(codigo));
+  check('el veredicto se aplica al resultado real del DELETE',
+    /const v = tempRuleDeleteVerdict\(\{ mode, count, error \}\)/.test(codigo));
+  check('un veredicto no-ok entra en cleanupErrors',
+    /cleanupErrors\.push\(`regla temporal \$\{ruleId\} \[\$\{v\.status\}\]/.test(codigo));
+  check('la regla se sigue borrando por ruleId, nunca por doctor_id',
+    /\.delete\(\{ count: 'exact' \}\)\.eq\('id', ruleId\)/.test(codigo));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
