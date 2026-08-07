@@ -79,7 +79,9 @@ transacción. No hubo estados intermedios parcialmente endurecidos.
 
 **Esta distinción es importante y no debe difuminarse.**
 
-### Lo que el preflight aplicado sí comprobó — seis invariantes
+### Lo que el preflight aplicado sí comprobó — NUEVE condiciones
+
+**Seis de existencia y estado base:**
 
 1. existe `public.audit_log`;
 2. existe `public.audit_log_id_seq`;
@@ -88,31 +90,49 @@ transacción. No hubo estados intermedios parcialmente endurecidos.
 5. el owner de la tabla tiene `BYPASSRLS`;
 6. hay **exactamente 1** policy en el estado base.
 
-Más dos guardas de forma en sus sondas: `prokind='f'` y la barrera `OFFSET 0`,
-necesarias porque `pg_get_functiondef()` **lanza error sobre agregados**
-(`42809: "array_agg" is an aggregate function`). Sin ellas, el primer intento
-de aplicar la migración falló — y ese fallo **no produjo cambios**, porque
-ocurrió dentro del bloque `DO`, que es de solo lectura, y antes de cualquier
-sentencia DDL.
+**Y tres guardas SUSTANTIVAS, que son las que protegían la operación:**
+
+7. **cero escritores de `audit_log` `SECURITY INVOKER`** — uno solo habría
+   perdido su auditoría al revocar el grant;
+8. **cero escritores cuyo owner carezca de `BYPASSRLS`** — con cero policies no
+   podrían escribir;
+9. **cero llamadores `SECURITY INVOKER` de `_admin_log_doctor_change`** —
+   protege el paso 5, el `REVOKE EXECUTE`.
+
+Las tres abortan con `RAISE EXCEPTION` y, por estar dentro de la transacción,
+habrían impedido cualquier cambio. **No son cosméticas: son el mecanismo por el
+que la migración se negaba a aplicarse sobre un esquema que no cumpliera sus
+premisas.**
+
+Sus sondas llevan además dos guardas de forma, `prokind='f'` y la barrera
+`OFFSET 0`, necesarias porque `pg_get_functiondef()` **lanza error sobre
+agregados** (`42809: "array_agg" is an aggregate function`). Sin ellas, el
+primer intento de aplicar la migración falló — y ese fallo **no produjo
+cambios**, porque ocurrió dentro del bloque `DO`, que es de solo lectura, y
+antes de cualquier sentencia DDL.
 
 ### Lo que el preflight NO comprobó — verificado por catálogo, fuera de la migración
 
-Estas verificaciones se hicieron con consultas read-only en la **Fase A** y en
-la **verificación post-apply**, no dentro del SQL ejecutado:
+Las guardas 7–9 comprobaron **ausencia de casos malos** (`count = 0`). No
+comprobaron **cardinalidad ni identidad**. Eso se hizo con consultas read-only
+en la **Fase A** y en la **verificación post-apply**, fuera del SQL ejecutado:
 
-- **43 escritores** de `audit_log` en el catálogo real, **todos**
-  `SECURITY DEFINER`, **todos** con owner `postgres`, **todos** con
-  `rolbypassrls = true`. Es la premisa que sostiene todo el diseño: por eso el
-  hardening no deja sin auditar ninguna ruta legítima;
-- que la policy fuera **exactamente** `audit_log_insert_only` con
-  `WITH CHECK true`, no solo que hubiera una;
-- el **ACL baseline** completo de tabla y secuencia;
-- `FORCE RLS = false`;
-- **exactamente dos** llamadores de `_admin_log_doctor_change`
-  (`admin_set_doctor_operational` y `admin_set_lucy_status`), ambos
-  `SECURITY DEFINER`/`postgres` — lo que demuestra que revocar el `EXECUTE`
-  directo no los rompe: la llamada anidada usa los privilegios del owner de la
-  función en ejecución, no los del rol original.
+- **exactamente 43 escritores** de `audit_log` en el catálogo real —el
+  preflight solo sabía que ninguno era `INVOKER`, no cuántos había—;
+- **43/43 `SECURITY DEFINER`** y **43/43 con owner `postgres`**, nominalmente
+  identificados. Es la premisa que sostiene todo el diseño;
+- que la policy fuera **exactamente** `audit_log_insert_only`, PERMISSIVE,
+  `INSERT`, `roles={public}`, `WITH CHECK true` — el preflight solo contó que
+  hubiera una;
+- el **ACL baseline completo** de tabla y secuencia;
+- **`FORCE RLS = false`**;
+- **exactamente dos** llamadores de `_admin_log_doctor_change`, con nombre:
+  `admin_set_doctor_operational` y `admin_set_lucy_status`, ambos
+  `SECURITY DEFINER`/`postgres`. El preflight solo sabía que ninguno era
+  `INVOKER`. Que sean `DEFINER` con owner `postgres` es lo que demuestra que
+  revocar el `EXECUTE` directo no los rompe: la llamada anidada usa los
+  privilegios del owner de la función en ejecución, no los del rol original;
+- el **estado final efectivo** de grants, policies, helper y secuencia.
 
 **Requisitos de preflight más estrictos se definieron DESPUÉS del apply.** No
 se incorporaron a la migración —que debe conservar el texto aplicado— sino a

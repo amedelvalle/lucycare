@@ -15,11 +15,15 @@
  * falla. Esa es la garantía de que el repo refleja producción.
  *
  * ⚠️ DISTINCIÓN IMPORTANTE. El preflight que realmente se ejecutó comprueba
- * SEIS invariantes (§ "preflight aplicado"). Las verificaciones más estrictas
- * —43 escritores, todos con owner postgres, ACL baseline, exactamente dos
- * llamadores del helper, FORCE RLS=false— se hicieron por CATÁLOGO en la
- * Fase A y en la verificación post-apply, NO por el preflight. Este check no
- * afirma lo contrario.
+ * NUEVE condiciones: seis de existencia/estado base y TRES GUARDAS
+ * SUSTANTIVAS (cero escritores INVOKER, cero escritores con owner sin
+ * BYPASSRLS, cero llamadores INVOKER del helper).
+ *
+ * Lo que NO comprobó es CARDINALIDAD ni IDENTIDAD: cuántos escritores hay
+ * (43), que todos tengan owner postgres, la policy exacta y sus atributos,
+ * FORCE RLS=false, y quiénes son los dos llamadores del helper. Eso se hizo
+ * por CATÁLOGO en la Fase A y post-apply. Este check no atribuye al preflight
+ * exactitud que no tuvo, ni omite las guardas que sí ejecutó.
  */
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -92,11 +96,12 @@ const rb = stripComments(rbRaw);
     /^\s*BEGIN;/m.test(rb) && /^\s*COMMIT;/m.test(rb), true);
 }
 
-// ─── 3. Preflight REALMENTE aplicado — seis invariantes ───────────────
+// ─── 3. Preflight REALMENTE aplicado — NUEVE condiciones ──────────────
 //
-// Ni una más. Las demás se comprobaron por catálogo, fuera de la migración.
+// Seis de existencia/estado base + TRES guardas sustantivas. Lo que no
+// comprobó es cardinalidad ni identidad; eso fue por catálogo.
 {
-  console.log('\n3. Preflight aplicado (las seis invariantes que sí ejecutó)');
+  console.log('\n3. Preflight aplicado (las NUEVE condiciones que sí ejecutó)');
   const pre = sqlRaw.slice(sqlRaw.indexOf('DO $pre$'), sqlRaw.indexOf('$pre$;'));
   check('el bloque de preflight existe', pre.length > 500);
   check('3.1 existe public.audit_log', /to_regclass\('public\.audit_log'\)/.test(pre));
@@ -106,7 +111,25 @@ const rb = stripComments(rbRaw);
   check('3.4 RLS habilitado', /relrowsecurity/.test(pre));
   check('3.5 el owner tiene BYPASSRLS', /rolbypassrls/.test(pre));
   check('3.6 exactamente 1 policy en el estado base', /v_n <> 1/.test(pre));
+
+  // ── Las TRES guardas sustantivas. No son cosméticas: son el mecanismo por
+  //    el que la migración se negaba a aplicarse sobre un esquema que no
+  //    cumpliera sus premisas. Omitirlas del relato sería subestimarlas.
+  check('3.7 GUARDA — cero escritores de audit_log SECURITY INVOKER',
+    /escritor\(es\) de audit_log son SECURITY INVOKER/.test(pre)
+    && /NOT p\.prosecdef/.test(pre), true);
+  check('3.8 GUARDA — cero escritores con owner sin BYPASSRLS',
+    /escritor\(es\) con owner sin BYPASSRLS/.test(pre)
+    && /NOT r\.rolbypassrls/.test(pre), true);
+  check('3.9 GUARDA — cero llamadores INVOKER de _admin_log_doctor_change',
+    /llamador\(es\) de _admin_log_doctor_change son INVOKER/.test(pre)
+    && /NOT c\.prosecdef/.test(pre), true);
+  check('las tres guardas abortan con RAISE EXCEPTION',
+    (pre.match(/IF v_bad > 0 THEN\s*\r?\n\s*RAISE EXCEPTION/g) || []).length, 3);
+
   check('el preflight aborta con RAISE EXCEPTION', /RAISE EXCEPTION 's7_71b PRE:/.test(pre));
+  check('el preflight tiene nueve condiciones, no seis',
+    (pre.match(/RAISE EXCEPTION 's7_71b PRE:/g) || []).length, 9);
   // El guard que hizo falta: pg_get_functiondef revienta sobre agregados.
   check('las sondas filtran por prokind = f',
     (pre.match(/prokind='f'/g) || []).length >= 3);

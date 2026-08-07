@@ -936,11 +936,16 @@ ningún privilegio · `service_role` solo `SELECT` · secuencia solo para el own
 · `_admin_log_doctor_change` con ACL `{postgres=X/postgres}`.
 
 > ⚠️ **Frontera pre-apply / post-apply.** El preflight que realmente corrió
-> comprobó **seis** invariantes. Las verificaciones más estrictas —43
-> escritores todos `DEFINER`/`postgres`, ACL baseline, policy exacta,
-> `FORCE RLS=false`, exactamente dos llamadores del helper— se hicieron **por
-> catálogo en la Fase A y post-apply**, NO dentro del SQL ejecutado. La
-> migración versionada conserva el texto aplicado, sin retoques.
+> comprobó **NUEVE** condiciones: seis de existencia/estado base **y tres
+> guardas sustantivas** —cero escritores `INVOKER`, cero escritores con owner
+> sin `BYPASSRLS`, cero llamadores `INVOKER` del helper—, todas con
+> `RAISE EXCEPTION` dentro de la transacción.
+>
+> Lo que **no** comprobó es **cardinalidad ni identidad**: cuántos escritores
+> hay (43), que todos tengan owner `postgres`, la policy exacta y sus
+> atributos, `FORCE RLS=false`, y quiénes son los dos llamadores del helper.
+> Eso se hizo **por catálogo en la Fase A y post-apply**, fuera del SQL
+> ejecutado. La migración versionada conserva el texto aplicado, sin retoques.
 
 > ⚠️ La fecha es el **marcador operativo del cambio de régimen**. **No
 > sustituye a `integrity_epoch`** —que quedó fuera por decisión— ni es garantía
@@ -958,6 +963,18 @@ y autorización separados, **sin médicos reales, sin Camilo y sin el médico QA
 **Fuera de alcance, documentado:** las tres funciones `_func` huérfanas, el debt
 de `search_path` de las ocho escritoras sin `SET`, `FORCE RLS` e
 `integrity_epoch`.
+
+**Verificado antes del merge:** `AUTO-APPLY DE MIGRACIONES AL MERGE = NO`. No
+hay `.github/`, ni hooks de ciclo de vida en `package.json`, ni `supabase/`, ni
+runner de migraciones; `vercel.json` solo define rewrites y headers. Mergear
+este PR **no reaplica** `s7_71b` sobre una producción que ya está endurecida.
+
+> 🔖 **BACKLOG (frente separado, NO abrir ahora).** `.gitignore:32` ignora
+> `*.sql` con una única excepción, `!migrations/*.sql`. **`docs/rollbacks/` no
+> está exceptuado**, así que todo rollback nuevo requiere `git add -f` y puede
+> quedarse fuera de un PR en silencio. Ocurrió en este mismo PR y lo detectó la
+> aserción de rastreo que se añadió a `check-s7_71b`. Evaluar una excepción
+> `!docs/rollbacks/*.sql` cuando el owner lo autorice.
 
 ---
 
