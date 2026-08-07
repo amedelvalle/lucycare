@@ -4,15 +4,15 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🔴 **ESTADO VIGENTE (2026-08-06) — post PR #314. FRENTE ABIERTO: AUDIT-SEC-P0.**
+> 🟢 **ESTADO VIGENTE (2026-08-07) — post PR #321. AUDIT-SEC-P0 = CLOSED.
+> NINGÚN FRENTE ABIERTO.**
 > **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md`
 > (leer PRIMERO).** Ese handoff es autocontenido y reemplaza al `2026-08-03`, que
 > pasa a **histórico** junto con los anteriores. El detalle por PR de los frentes ya
 > cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `cd965ea031dcefe0b7a0e114e7ce06ade0a64c04`** · **PRs mergeados hasta #311**
-> (merge commit de #311: `df0d3b50e11fd9c2a1d0e84c2e4f4a7e858fc8b3`) ·
-> **migraciones aplicadas hasta `s7_70`** · `main == origin/main` · árbol limpio ·
+> **HEAD `88f0051a757cbf37b44a4beace199b5c52b35c3d`** · **PRs mergeados hasta #321** ·
+> **migraciones aplicadas hasta `s7_71b`** · `main == origin/main` · árbol limpio ·
 > **0 PRs abiertos** · producción desplegada (`https://lucycare.app`).
 >
 > **Último eje cerrado — cancelación por el paciente (#310 / `s7_70` + #311):** el
@@ -36,12 +36,23 @@
 > Auth.** Para desactivar, el orden es el inverso: **apagar el enforcement en
 > Supabase primero**, y recién después quitar `VITE_CAPTCHA_ENABLED` y redeployar.
 >
-> **Siguiente frente: AUDIT-SEC-P0 — NO iniciado.** Riesgo: `audit_log` admite
-> **INSERT arbitrario** por `public`/`anon`/`authenticated` (policy con
-> `WITH CHECK true` + grants amplios), por lo que **hoy no es evidencia
-> autoritativa**. Debe empezar por un **análisis read-only** con alcance aprobado
-> por el owner. Después vendrá **TWILIO-P0**, que sigue **pausado**: no configurar
-> Twilio todavía.
+> **🟢 AUDIT-SEC-P0 = CLOSED (2026-08-07).** La escritura arbitraria sobre
+> `audit_log` está **cerrada en producción y reconciliada en el repo**. `s7_71a`
+> (#313) añadió la cobertura server-side de `appointments`; `s7_71b` (#321) revocó
+> los privilegios de cliente, eliminó la única policy permisiva y cerró
+> `_admin_log_doctor_change`. `anon` y `authenticated` **sin ningún privilegio** ·
+> `service_role` **solo `SELECT`** · **cero policies** · secuencia solo para el
+> owner. El escritor de frontend (`auditLog.service.ts`) fue eliminado.
+> **Prueba QA post-hardening: PASS** — la ruta
+> `LucyAdmin → admin_set_doctor_operational → _admin_log_doctor_change → audit_log`
+> quedó demostrada (filas `14494`/`14495`, que **se conservan**).
+>
+> ⚠️ **El histórico anterior al corte NO se reinterpreta como evidencia
+> infalsificable.** Hasta `s7_71b`, `audit_log` admitía escritura arbitraria: esas
+> filas son trazas operativas observadas, no prueba de no-repudio.
+>
+> **Siguiente frente: TWILIO-P0**, todavía **PAUSADO**: no configurar Twilio sin
+> instrucción del owner.
 >
 > **Prohibiciones vigentes:** **no desactivar ni reconfigurar Turnstile/CAPTCHA** ·
 > no tocar claves en Vercel/Supabase/Cloudflare · no tocar Twilio ni crear Verify
@@ -134,9 +145,16 @@ squash-merge, la rama puede borrarse.
 - **#265–#293** ✅ — SEO JSON-LD+OG, receta corregida minimal, hardening grants (s7_60), doctor_credentials F1-a/F1-b (s7_61–s7_62) → [detalle](docs/HISTORIAL_FRENTES.md)
 - **#295–#311** ✅ — **F1-c1** cutover lógico de `doctor_credentials` (s7_63–s7_64; **F1-c2 / DROP físico sigue PENDIENTE**), eje Auth completo OTP+contraseña+consentimiento (s7_65–s7_69), PILOTO-P0 Turnstile (#308), cancelación por paciente (s7_70, #310–#311) → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#313–#321** ✅ — **AUDIT-SEC-P0 completo**: cobertura server-side de `appointments` (`s7_71a`, #313), instrumento del smoke corregido en cuatro PRs (#316–#320), cierre de la escritura arbitraria sobre `audit_log` (`s7_71b`, #321) y prueba QA de continuidad post-hardening PASS
+
 **Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
-1. **AUDIT-SEC-P0** — **NO iniciado.** `audit_log` admite INSERT arbitrario por `public`/`anon`/`authenticated` (policy con `WITH CHECK true` + grants amplios), por lo que hoy **no es evidencia autoritativa**. Debe empezar por **análisis read-only** con alcance aprobado.
-2. **TWILIO-P0** — **PAUSADO** hasta cerrar AUDIT-SEC-P0. No configurar Twilio todavía.
+1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
+2. **TWILIO-P0** — **PAUSADO.** Es ahora el siguiente frente candidato, pero **no configurar Twilio sin instrucción del owner**.
+
+**Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
+- **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
+- **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
+- **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).

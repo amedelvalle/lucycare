@@ -170,21 +170,65 @@ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
 WHERE n.nspname='public' AND p.proname='_admin_log_doctor_change';
 ```
 
-### Lo que esa verificación NO demuestra
+### Lo que esa verificación NO demuestra — y cómo se cerró
 
-Demuestra que la **superficie está cerrada**. **No demuestra que los escritores
-legítimos sigan auditando** — eso solo se prueba con una escritura real.
+La verificación de catálogo demuestra que la **superficie está cerrada**. **No
+demuestra que los escritores legítimos sigan auditando** — eso solo se prueba
+con una escritura real.
 
-Lectura read-only posterior al corte: **cero filas de auditoría nuevas**. La más
-reciente de toda la tabla es la `14439`, del `2026-08-07T02:44:05Z`, anterior
-incluso al inicio de la Fase A. No es indicio de fallo: es ausencia de tráfico.
+## 3-bis. ✅ Prueba QA de continuidad post-hardening: **PASS** (2026-08-07)
 
 ```
-RUTA HELPER POST-HARDENING = NO DEMOSTRADA AÚN
+RUTA HELPER POST-HARDENING = DEMOSTRADA
 ```
 
-La prueba funcional queda pendiente, con diseño y autorización separados. **No
-debe hacerse con médicos reales, ni con Camilo, ni con el médico QA.**
+Ejecutada sobre el **médico QA sintético persistente**
+(`ac0ba772-4263-4fb2-a146-dd90033d8c76`), con las dos acciones hechas por el
+owner desde LucyAdmin. Sin SQL, sin `service_role` para escribir, y sin tocar
+identidad, credenciales, publicación, booking, servicios ni disponibilidad.
+
+| id | cuándo | old_data → new_data |
+|---|---|---|
+| **14494** | `2026-08-07T11:41:11-06:00` | `{"is_operational": true}` → `{"is_operational": false}` |
+| **14495** | `2026-08-07T13:21:46-06:00` | `{"is_operational": false}` → `{"is_operational": true}` |
+
+Ambas `action=update`, `table_name=doctors`, `record_id` del médico QA, y el
+mismo actor: `user_id 739cac58-…` con `profiles.role = admin`.
+
+**Por qué prueba que las escribió `_admin_log_doctor_change`:**
+
+1. **Sin clave `edited_via`** — su firma. Los escritores de
+   `table_name='doctors'` redefinidos en `s7_57` sí la añaden.
+2. **`new_data` con una sola clave, `is_operational`** — campo que solo escribe
+   `admin_set_doctor_operational`.
+3. **`user_id` no es el centinela `00000000-…`** — `auth.uid()` viajó desde la
+   sesión de LucyAdmin a través de la función `SECURITY DEFINER`.
+
+Eso responde la duda de fondo del paso 5: **revocar el `EXECUTE` directo del
+helper no rompió su invocación anidada.** La llamada usa los privilegios del
+owner de la función en ejecución, no los del rol original.
+
+**Actividad colateral:**
+
+- filas totales nuevas relevantes desde la última fila preexistente (`14439`): **2**
+- filas de la prueba: **2**
+- filas adicionales / colaterales: **0**
+
+**Estado final del médico QA: restaurado e idéntico al previo.**
+
+> **Las filas `14494` y `14495` se conservan permanentemente. Sin cleanup.** Son
+> las primeras generadas bajo el régimen cerrado y quedan bajo la misma regla de
+> conservación que `14437–14439`.
+
+### Alcance de la prueba
+
+Prueba **una** ruta: la del helper, que era la que quedaba en duda. **No prueba**
+los otros 42 escritores ni los triggers de `appointments`, `patients` o
+`consultations`; para esos, la evidencia será la actividad normal del sistema.
+
+Y **no es una prueba de integridad**: mientras el histórico anterior al corte
+siga sin ser atestable, estas dos filas son **trazas operativas observadas**,
+igual que las `14437–14439`.
 
 ---
 
