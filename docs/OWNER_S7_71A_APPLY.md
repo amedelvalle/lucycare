@@ -457,6 +457,69 @@ puede declarar limpieza.
 > intent» e «intent ANTES que appointment». No es acoplamiento: es
 > discriminación real del defecto.
 
+---
+
+## 5-quater. El helper de DELETE no puede asumir la columna `id`
+
+La corrección de §5-ter arregló el **orden**, pero introdujo un defecto nuevo.
+Para detectar borrados parciales, el helper hacía `.select('id')` sobre el
+builder del `DELETE`, y eso **asume que toda tabla tiene columna `id`**.
+
+**`appointment_patient_cancellations` no la tiene**: su clave es
+`appointment_id`. PostgREST rechazó la consulta, el borrado **no se ejecutó** y
+la fila superviviente bloqueó por FK a citas, pacientes, servicios, médicos,
+clínica, perfiles y usuarios de Auth. **23 residuos en producción**, limpiados
+después con una limpieza controlada.
+
+La corrida en la que ocurrió **pasó las diez secciones funcionales** (74 OK):
+el fallo fue exclusivamente del cleanup.
+
+### La corrección
+
+**1. `.delete({ count: 'exact' })`** devuelve cuántas filas se borraron **sin
+seleccionar ninguna columna**. Validado contra la versión de `supabase-js` del
+proyecto durante la limpieza manual de los 23 residuos: los siete borrados
+devolvieron el `count` exacto esperado.
+
+**2. `CLEANUP_TARGETS`** declara la columna de filtro REAL de cada tabla, y es
+la única fuente de la verdad:
+
+| Tabla | Columna | ¿Tiene `id`? |
+|---|---|---|
+| `appointment_patient_cancellations` | **`appointment_id`** | **no** |
+| el resto (`appointments`, `patients`, `services`, `doctors`, `clinics`, `profiles`, `booking_intents`, `auth_creation_grants`, `availability_rules`, `clinic_members`, `consultations`) | `id` | sí |
+
+`cleanupColumnFor(tabla)` **lanza** si la tabla no está declarada: ninguna se
+borra adivinando su columna.
+
+**3. El helper recibe explícitamente** tabla y allowlist; la columna la resuelve
+`CLEANUP_TARGETS`. Cuenta **antes** de borrar para poder comparar.
+
+**4. `deleteVerdict()`** —pura y exportada— clasifica el resultado:
+
+| Estado | Cuándo | ¿Éxito? |
+|---|---|---|
+| `OK` | borradas == existentes | sí |
+| `PARTIAL` | borradas < existentes | **no** |
+| `UNKNOWN` | `count` no numérico, o no se pudo contar antes | **no** |
+| `ERROR` | el `DELETE` falló (p. ej. FK) | **no** |
+
+Comparar contra las filas que **existían** —y no contra el tamaño de la
+allowlist— es deliberado: una cascada legítima puede haberse llevado alguna
+antes. Ocurrió: al borrar un `auth.user` sintético, su profile, su médico y una
+cita cayeron por cascada.
+
+Cualquier estado distinto de `OK` entra en `cleanupErrors` (exit ≠ 0) y el
+`finally` continúa con las demás categorías.
+
+> **A/B quirúrgico:** reintroduciendo **solo** `.select('id')` en el helper
+> sobre el smoke corregido, el check dispara **4 fallos** que nombran la
+> regresión: «ningún DELETE selecciona columnas para contar», «todos los DELETE
+> usan `.delete({ count: 'exact' })`», «ningún DELETE inline usa `.select('id')`»
+> y «todo DELETE del cleanup filtra por columna declarada». Además, el check
+> comprueba contra `src/types/database.types.ts` que la tabla **realmente** no
+> tiene columna `id` — la declaración no se cree a sí misma.
+
 **Nunca** incluye `SUPABASE_SERVICE_ROLE_KEY`, la anon key ni tokens: solo el
 *hostname* derivado de `SUPABASE_URL`.
 

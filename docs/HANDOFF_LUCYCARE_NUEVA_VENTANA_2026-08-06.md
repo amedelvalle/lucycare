@@ -225,6 +225,49 @@ con el cleanup corregido. Ver §5-bis y `docs/OWNER_S7_71A_APPLY.md` §5-ter.
 
 ---
 
+## 5-ter. Tercera corrida (2026-08-07T02:37:03Z) — auditoría ✅, cleanup 🔴
+
+Sobre `HEAD 51e2dbb`, huella `33c71f58…`. **74 OK**, exit 1.
+
+Las diez secciones funcionales volvieron a pasar, incluidas las nuevas `2.11`
+(grants capturados por `booking_intent_id`) y el gate de `cancel_my_appointment`
+con exactamente una fila. El orden de borrado de §5-ter de la guía funcionó:
+**grants e intents se eliminaron correctamente**.
+
+**Falló por un defecto nuevo, introducido en el PR #317:** el helper contaba
+las filas borradas con `.select('id')`, y
+`appointment_patient_cancellations` **no tiene columna `id`**. El borrado no se
+ejecutó y la fila superviviente bloqueó por FK a todo lo demás: **23 residuos**.
+
+### Limpieza de los 23 residuos — 2026-08-07T02:44Z
+
+Identificación read-only encadenada desde objetos con pertenencia demostrable
+(marca `S7_71_FIXTURE`, `RUN_ID` en el nombre de la clínica, teléfonos
+`8800–8802`); **nada se identificó por `doctor_id` ni `clinic_id`**. Allowlist
+validada como disjunta de los objetos permanentes. Borrado en el orden
+autorizado, con **count exacto** en cada paso:
+
+```
+cancelaciones 1 · citas 11 · pacientes 3 · servicios 2 · médicos 1 · clínicas 1
+auth.users 2 (Admin API) → profiles 2 por cascada
+grants, intents, reglas y membresías: 0 (ya estaban)
+```
+
+Verificación final: **las 16 categorías en 0** y el médico QA intacto
+(publicado, operativo, `booking_enabled=false`, 0 reglas, 0 citas, 0 intents,
+0 pacientes en su clínica, sus dos servicios sin cambios).
+
+> **Nota sobre `audit_log`.** Tras la limpieza quedaron **3 filas**
+> (`id` 14437-14439, `action=delete`, `table_name=patients`, `user_id` =
+> centinela). **No son residuo de la corrida**: son el rastro de auditoría que
+> generó la propia limpieza al borrar las tres fichas, posterior al
+> `cleanupAuditLog` del smoke. **No se tocaron**: borrar auditoría de una acción
+> administrativa real sería exactamente lo que este frente existe para impedir.
+> En una corrida que termine bien no aparecerán, porque `cleanupAuditLog` se
+> ejecuta **después** de todos los borrados.
+
+---
+
 ## 5-bis. Segunda corrida (2026-08-06T20:41:59Z) — auditoría ✅, cleanup 🔴
 
 Ejecutada sobre `HEAD bb36364` con la huella v6, autorizada y única.

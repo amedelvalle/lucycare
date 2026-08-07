@@ -573,6 +573,69 @@ export function summarizeInventory(rows) {
 }
 
 /**
+ * Columna de filtro REAL de cada tabla del cleanup.
+ *
+ * ⚠️ NO existe una convención universal: `appointment_patient_cancellations`
+ * **no tiene columna `id`** — su clave es `appointment_id`. Un helper que
+ * asumiera `id` para todas las tablas revienta ahí, el borrado no se ejecuta y
+ * la fila superviviente bloquea por FK todo lo que viene detrás. Pasó de
+ * verdad: dejó 23 residuos en producción.
+ *
+ * Esta tabla es la fuente única de la verdad y `check-s7_71a.mjs` la verifica.
+ */
+export const CLEANUP_TARGETS = [
+  { table: 'appointment_patient_cancellations', column: 'appointment_id', hasIdColumn: false },
+  { table: 'auth_creation_grants', column: 'id', hasIdColumn: true },
+  { table: 'booking_intents', column: 'id', hasIdColumn: true },
+  { table: 'appointments', column: 'id', hasIdColumn: true },
+  { table: 'patients', column: 'id', hasIdColumn: true },
+  { table: 'availability_rules', column: 'id', hasIdColumn: true },
+  { table: 'services', column: 'id', hasIdColumn: true },
+  { table: 'doctors', column: 'id', hasIdColumn: true },
+  { table: 'clinic_members', column: 'id', hasIdColumn: true },
+  { table: 'clinics', column: 'id', hasIdColumn: true },
+  { table: 'profiles', column: 'id', hasIdColumn: true },
+  { table: 'consultations', column: 'id', hasIdColumn: true },
+];
+
+/** Columna de filtro de una tabla. Lanza si la tabla no está declarada. */
+export function cleanupColumnFor(table) {
+  const t = CLEANUP_TARGETS.find((x) => x.table === table);
+  if (!t) {
+    throw new Error(
+      `ABORTADO: la tabla '${table}' no está declarada en CLEANUP_TARGETS. `
+      + 'Ninguna tabla se borra asumiendo su columna de filtro.'
+    );
+  }
+  return t.column;
+}
+
+/**
+ * Veredicto de un DELETE por allowlist. PURA y exportada.
+ *
+ * `preCount` es cuántas filas existían INMEDIATAMENTE antes: comparar contra
+ * él —y no contra el tamaño de la allowlist— es lo correcto, porque una
+ * cascada legítima pudo haberse llevado alguna antes (pasó: al borrar un
+ * `auth.user` sintético, su profile, su médico y una cita cayeron por cascada).
+ *
+ * Estados: `OK` · `ERROR` (falló) · `UNKNOWN` (sin count numérico) ·
+ * `PARTIAL` (borró menos de las que había). Solo `OK` cuenta como éxito.
+ */
+export function deleteVerdict({ preCount, deletedCount, error }) {
+  if (error) return { ok: false, status: 'ERROR', detail: String(error.message ?? error) };
+  if (typeof deletedCount !== 'number' || !Number.isFinite(deletedCount)) {
+    return { ok: false, status: 'UNKNOWN', detail: 'el DELETE no devolvió un count numérico' };
+  }
+  if (typeof preCount !== 'number' || !Number.isFinite(preCount)) {
+    return { ok: false, status: 'UNKNOWN', detail: `no se pudo contar antes de borrar (borradas: ${deletedCount})` };
+  }
+  if (deletedCount !== preCount) {
+    return { ok: false, status: 'PARTIAL', detail: `borradas ${deletedCount} de ${preCount} existentes` };
+  }
+  return { ok: true, status: 'OK', detail: `${deletedCount} fila(s)` };
+}
+
+/**
  * Separa la actividad del médico QA entre la que creó ESTA corrida
  * (allowlist explícita de UUID) y la EXTERNA.
  *
@@ -1882,10 +1945,14 @@ async function deleteQaTempRules() {
   for (const ruleId of ids.qaRuleIds) {
     // Nunca `.eq('doctor_id', …)`: eso borraría cualquier regla del médico QA,
     // incluida una que no hubiéramos creado nosotros.
-    const { error } = await admin.from('availability_rules').delete().eq('id', ruleId);
-    if (error) {
-      cleanupErrors.push(`regla temporal ${ruleId}: ${error.message}`);
-      console.error(`  ⚠️  regla temporal ${ruleId}: ${error.message}`);
+    const { count, error } = await admin.from('availability_rules')
+      .delete({ count: 'exact' }).eq('id', ruleId);
+    // Cuenta exacta: si la regla no se borró, es un residuo sobre un médico
+    // PUBLICADO y hay que enterarse, no darlo por hecho.
+    if (error || count !== 1) {
+      const detalle = error?.message ?? `borró ${count} fila(s), se esperaba 1`;
+      cleanupErrors.push(`regla temporal ${ruleId}: ${detalle}`);
+      console.error(`  ⚠️  regla temporal ${ruleId}: ${detalle}`);
     } else {
       console.log(`  🧹 regla temporal ${ruleId.slice(0, 8)}… (por ruleId, nunca por doctor_id)`);
     }
@@ -2308,20 +2375,41 @@ async function cleanup() {
   console.log('\n13. Cleanup (se ejecuta aunque la corrida haya fallado)');
 
   /**
-   * Ejecuta un DELETE y REPORTA cuántas filas borró.
+   * DELETE por ALLOWLIST, con la columna REAL de cada tabla y count exacto.
    *
-   * `.select('id')` sobre el builder devuelve las filas eliminadas: sin eso,
-   * un borrado que no afecta a nadie —o que afecta a menos de las esperadas—
-   * es indistinguible de uno completo. Un error de FK entra en
-   * `cleanupErrors` y el proceso sale con exit ≠ 0; el `finally` sigue con el
-   * resto del cleanup igualmente.
+   * ⚠️ La versión anterior hacía `.select('id')` sobre el builder para saber
+   * cuántas filas borraba. Eso asume que **toda** tabla tiene columna `id`, y
+   * `appointment_patient_cancellations` **no la tiene**: PostgREST rechazaba
+   * la consulta, el borrado no se ejecutaba y la fila superviviente bloqueaba
+   * por FK a citas, pacientes, servicios, médicos, clínica, perfiles y
+   * usuarios de Auth. Dejó 23 residuos en producción.
+   *
+   * Ahora: `.delete({ count: 'exact' })` devuelve el número de filas borradas
+   * **sin seleccionar ninguna columna**, y la columna de filtro sale de
+   * `CLEANUP_TARGETS`, que es explícita por tabla.
+   *
+   * Se cuenta ANTES de borrar para poder detectar un borrado PARCIAL. Un
+   * `ERROR`, `UNKNOWN` o `PARTIAL` entra en `cleanupErrors` (exit ≠ 0) y el
+   * `finally` continúa con las demás categorías.
    */
-  const del = async (label, promise) => {
+  const del = async (label, table, values) => {
+    const list = (values ?? []).filter(Boolean);
+    if (list.length === 0) return;
     try {
-      const q = typeof promise?.select === 'function' ? promise.select('id') : promise;
-      const { data, error } = await q;
-      if (error) { cleanupErrors.push(`${label}: ${error.message}`); console.error(`  ⚠️  ${label}: ${error.message}`); }
-      else console.log(`  🧹 ${label}${Array.isArray(data) ? ` (${data.length} fila/s)` : ''}`);
+      const column = cleanupColumnFor(table);
+      const pre = countResult(await admin.from(table)
+        .select('*', { count: 'exact', head: true }).in(column, list));
+      const { count, error } = await admin.from(table)
+        .delete({ count: 'exact' }).in(column, list);
+      const v = deleteVerdict({
+        preCount: pre.status === 'OK' ? pre.count : null, deletedCount: count, error,
+      });
+      if (v.ok) {
+        console.log(`  🧹 ${label} — ${v.detail} (${table}.${column})`);
+      } else {
+        cleanupErrors.push(`${label} [${v.status}]: ${v.detail}`);
+        console.error(`  ⚠️  ${label} [${v.status}]: ${v.detail}`);
+      }
     } catch (e) {
       cleanupErrors.push(`${label}: ${e.message}`);
       console.error(`  ⚠️  ${label}: ${e.message}`);
@@ -2355,11 +2443,19 @@ async function cleanup() {
   console.log(`  🛡️  denylist verificada: ${PERMANENT_IDS.size} objeto(s) permanente(s) intocables`);
 
   if (has(ids.consultIds)) {
+    // Dependencias de consulta: todas se filtran por `consultation_id`, que sí
+    // existe en las cuatro. Se borran con el mismo patrón de count exacto.
     for (const t of ['consultation_amendments', 'prescriptions',
                      'consultation_diagnoses', 'consultation_family_history']) {
-      await del(`${t}`, admin.from(t).delete().in('consultation_id', ids.consultIds));
+      const pre = countResult(await admin.from(t)
+        .select('*', { count: 'exact', head: true }).in('consultation_id', ids.consultIds));
+      const { count, error } = await admin.from(t)
+        .delete({ count: 'exact' }).in('consultation_id', ids.consultIds);
+      const v = deleteVerdict({ preCount: pre.status === 'OK' ? pre.count : null, deletedCount: count, error });
+      if (v.ok) console.log(`  🧹 ${t} — ${v.detail} (${t}.consultation_id)`);
+      else { cleanupErrors.push(`${t} [${v.status}]: ${v.detail}`); console.error(`  ⚠️  ${t} [${v.status}]: ${v.detail}`); }
     }
-    await del('consultas', admin.from('consultations').delete().in('id', ids.consultIds));
+    await del('consultas', 'consultations', ids.consultIds);
   }
 
   // ── ORDEN DE BORRADO — impuesto por la cadena real de claves foráneas ──
@@ -2378,41 +2474,27 @@ async function cleanup() {
   // Regla vinculante: **no depender de ninguna cascada**. Cada dependencia se
   // borra explícitamente, por id exacto, antes que aquello de lo que depende.
 
-  if (has(ids.eventApptIds)) {
-    await del('eventos de cancelación',
-      admin.from('appointment_patient_cancellations').delete().in('appointment_id', ids.eventApptIds));
-  }
+  // Cada llamada declara TABLA + allowlist; la columna sale de CLEANUP_TARGETS.
+  // `appointment_patient_cancellations` se filtra por `appointment_id` porque
+  // NO tiene columna `id`.
+  await del('eventos de cancelación', 'appointment_patient_cancellations', ids.eventApptIds);
   // 1. Grants — por su id exacto, capturado vía `booking_intent_id`.
-  if (has(ids.grantIds)) {
-    await del('auth_creation_grants (por id allowlisted)',
-      admin.from('auth_creation_grants').delete().in('id', ids.grantIds));
-  }
+  await del('auth_creation_grants (por id allowlisted)', 'auth_creation_grants', ids.grantIds);
   // 2. Intents — `booking_intents` NO tiene `created_by`: por id exacto.
-  if (has(ids.intentIds)) {
-    await del('booking_intents (por id allowlisted)',
-      admin.from('booking_intents').delete().in('id', ids.intentIds));
-  }
+  await del('booking_intents (por id allowlisted)', 'booking_intents', ids.intentIds);
   // 3. Citas — explícitas, nunca por cascada del médico.
-  if (has(ids.apptIds)) await del('citas', admin.from('appointments').delete().in('id', ids.apptIds));
+  await del('citas', 'appointments', ids.apptIds);
   // 4. Fichas de paciente.
-  if (has(patientIds)) await del('pacientes', admin.from('patients').delete().in('id', patientIds));
+  await del('pacientes', 'patients', patientIds);
   // 5. Servicios y reglas — ya sin citas que los referencien. Por id exacto.
-  if (has(ids.ruleIds)) {
-    await del('reglas de disponibilidad', admin.from('availability_rules').delete().in('id', ids.ruleIds));
-  }
-  if (has(ids.serviceIds)) {
-    await del('servicios', admin.from('services').delete().in('id', ids.serviceIds));
-  }
+  await del('reglas de disponibilidad', 'availability_rules', ids.ruleIds);
+  await del('servicios', 'services', ids.serviceIds);
   // 6. Médicos, membresías y clínica.
-  if (has(doctorIds)) await del('médicos', admin.from('doctors').delete().in('id', doctorIds));
-  if (has(ids.memberIds)) {
-    await del('membresías', admin.from('clinic_members').delete().in('id', ids.memberIds));
-  }
-  if (ids.clinicId) {
-    await del('clínicas', admin.from('clinics').delete().eq('id', ids.clinicId));
-  }
+  await del('médicos', 'doctors', doctorIds);
+  await del('membresías', 'clinic_members', ids.memberIds);
+  await del('clínicas', 'clinics', [ids.clinicId].filter(Boolean));
 
-  if (has(ids.users)) await del('perfiles', admin.from('profiles').delete().in('id', ids.users));
+  await del('perfiles', 'profiles', ids.users);
   for (const uid of ids.users) {
     try {
       // Última guarda antes de la operación IRREVERSIBLE. `profiles_id_fkey`
@@ -2464,10 +2546,11 @@ async function cleanupAuditLog() {
     return;
   }
 
-  const { error: eDel } = await admin.from('audit_log').delete()
+  const { count, error: eDel } = await admin.from('audit_log').delete({ count: 'exact' })
     .in('record_id', allow).in('table_name', SMOKE_TABLES).gte('created_at', RUN_STARTED_AT);
-  if (eDel) { cleanupErrors.push(`audit_log (delete): ${eDel.message}`); console.error(`  ⚠️  audit_log: ${eDel.message}`); }
-  else console.log(`  🧹 audit_log: ${filas.length} fila(s) sintéticas`);
+  const vAudit = deleteVerdict({ preCount: filas.length, deletedCount: count, error: eDel });
+  if (vAudit.ok) console.log(`  🧹 audit_log: ${vAudit.detail} sintéticas`);
+  else { cleanupErrors.push(`audit_log [${vAudit.status}]: ${vAudit.detail}`); console.error(`  ⚠️  audit_log [${vAudit.status}]: ${vAudit.detail}`); }
 }
 
 /**

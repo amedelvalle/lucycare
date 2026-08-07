@@ -33,6 +33,7 @@ import {
   qaBaselineChecks, qaManifestIds, buildPermanentIds, permanentHits, assertNotPermanent,
   SV_TIMEZONE, svTodayLocal, addDaysLocal, dowLocal, buildLocalSlot,
   countResult, summarizeInventory, partitionExternal,
+  CLEANUP_TARGETS, cleanupColumnFor, deleteVerdict,
 } from './_smoke-s7_71a.mjs';
 
 let pass = 0, fail = 0;
@@ -1854,15 +1855,19 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   check('el UPDATE al médico QA afecta exactamente 1 fila o falla',
     /afectó \$\{data\?\.length\} filas, se esperaba 1/.test(smoke));
   check('la regla temporal se borra por ruleId, NUNCA por doctor_id',
-    /\.from\('availability_rules'\)\.delete\(\)\.eq\('id', ruleId\)/.test(codigo));
+    /\.from\('availability_rules'\)\s*\n?\s*\.delete\(\{ count: 'exact' \}\)\.eq\('id', ruleId\)/
+      .test(codigo.replace(/\r/g, '')));
+  check('el borrado de la regla temporal exige count exacto 1',
+    /borró \$\{count\} fila\(s\), se esperaba 1/.test(smoke));
   check('no existe ningún delete de reglas por doctor_id del QA',
-    /from\('availability_rules'\)\.delete\(\)[\s\S]{0,60}QA\.doctorId/.test(codigo) === false);
+    /from\('availability_rules'\)[\s\S]{0,80}delete[\s\S]{0,60}QA\.doctorId/.test(codigo) === false);
 
   // ── El restore corre primero y pase lo que pase ──
   check('bookViaIntent restaura en su propio finally',
     /\} finally \{[\s\S]{0,400}await restoreQaState\(\);[\s\S]{0,80}await deleteQaTempRules\(\);/.test(codigo));
   check('el cleanup restaura ANTES de cualquier borrado',
-    cl.indexOf('await restoreQaState()') < cl.indexOf('.delete('), true);
+    cl.indexOf('await restoreQaState()') >= 0
+    && cl.indexOf('await restoreQaState()') < cl.indexOf('await del('), true);
   check('el cleanup corre desde el finally global',
     /\} finally \{[\s\S]{0,400}await cleanup\(\)/.test(codigo));
   check('restoreQaState es idempotente (sin snapshot no hace nada)',
@@ -1939,7 +1944,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /created_by/.test(codigo) === false);
   check('el intent_id exacto se captura', /ids\.intentIds\.push\(intentId\)/.test(codigo));
   check('el borrado de intents va por id allowlisted',
-    /from\('booking_intents'\)\.delete\(\)\.in\('id', ids\.intentIds\)/.test(codigo));
+    /await del\('booking_intents \(por id allowlisted\)', 'booking_intents', ids\.intentIds\)/.test(codigo));
   check('el inventario cuenta intents por id, no por created_by',
     /\['booking_intents', 'id', ids\.intentIds\]/.test(codigo));
   check('la corrida verifica que se capturó el intentId',
@@ -2083,7 +2088,7 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /ids\.grantIds\.push\(\.\.\.\(grants \?\? \[\]\)\.map\(\(g\) => g\.id\)\)/.test(codigo));
   check('existe la lista grantIds', /grantIds: \[\]/.test(codigo));
   check('el borrado de grants va por id allowlisted',
-    /from\('auth_creation_grants'\)\.delete\(\)\.in\('id', ids\.grantIds\)/.test(codigo));
+    /await del\('auth_creation_grants \(por id allowlisted\)', 'auth_creation_grants', ids\.grantIds\)/.test(codigo));
   check('la corrida verifica que se capturaron los grants',
     /2\.11 grants capturados por booking_intent_id/.test(smoke));
   check('una captura fallida impide declarar limpieza',
@@ -2093,20 +2098,23 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /label: 'auth_creation_grants \(captura fallida\)',\s*\n?\s*result: \{ status: 'ERROR'/.test(codigo.replace(/\r/g, '')));
 
   // ── ORDEN: cada dependencia antes que aquello de lo que depende ──
-  const pos = (re) => {
-    const m = cl.match(re);
+  // El orden lo determina la SECUENCIA de llamadas `await del(label, tabla, …)`.
+  // `[^;]*?` y no `[^)]*`: varias etiquetas llevan paréntesis —«(por id
+  // allowlisted)»— y `[^)]*` cortaba en ellos, dando -1 en silencio.
+  const pos = (tabla) => {
+    const m = cl.match(new RegExp(`await del\\([^;]*?,\\s*'${tabla}'`));
     return m ? cl.indexOf(m[0]) : -1;
   };
-  const pGrant = pos(/from\('auth_creation_grants'\)\.delete\(\)/);
-  const pIntent = pos(/from\('booking_intents'\)\.delete\(\)/);
-  const pAppt = pos(/from\('appointments'\)\.delete\(\)/);
-  const pPatient = pos(/from\('patients'\)\.delete\(\)/);
-  const pService = pos(/from\('services'\)\.delete\(\)/);
-  const pRule = pos(/from\('availability_rules'\)\.delete\(\)\.in\('id', ids\.ruleIds\)/);
-  const pDoctor = pos(/from\('doctors'\)\.delete\(\)/);
-  const pProfile = pos(/from\('profiles'\)\.delete\(\)/);
+  const pGrant = pos('auth_creation_grants');
+  const pIntent = pos('booking_intents');
+  const pAppt = pos('appointments');
+  const pPatient = pos('patients');
+  const pService = pos('services');
+  const pRule = pos('availability_rules');
+  const pDoctor = pos('doctors');
+  const pProfile = pos('profiles');
   const pUser = cl.indexOf('deleteUser');
-  const pCanc = pos(/from\('appointment_patient_cancellations'\)\.delete\(\)/);
+  const pCanc = pos('appointment_patient_cancellations');
 
   for (const [label, p] of [['grants', pGrant], ['intents', pIntent], ['citas', pAppt],
                             ['pacientes', pPatient], ['servicios', pService], ['reglas', pRule],
@@ -2127,27 +2135,26 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
     /no depender de ninguna cascada/i.test(smoke));
   check('se documenta que el orden anterior funcionaba por accidente',
     /funcionaba por accidente/.test(smoke));
-  check('las citas se borran por id exacto, nunca por doctor_id',
-    /from\('appointments'\)\.delete\(\)\.in\('id', ids\.apptIds\)/.test(codigo)
-    && /from\('appointments'\)\.delete\(\)[\s\S]{0,40}doctor_id/.test(codigo) === false, true);
-  check('servicios y reglas se borran por id exacto, no por doctor_id',
-    /from\('services'\)\.delete\(\)\.in\('id', ids\.serviceIds\)/.test(codigo)
-    && /from\('availability_rules'\)\.delete\(\)\.in\('id', ids\.ruleIds\)/.test(codigo), true);
-  check('las membresías se borran por id exacto, no por clinic_id',
-    /from\('clinic_members'\)\.delete\(\)\.in\('id', ids\.memberIds\)/.test(codigo)
-    && /from\('clinic_members'\)\.delete\(\)\.eq\('clinic_id'/.test(codigo) === false, true);
+  check('las citas se borran por allowlist de ids, nunca por doctor_id',
+    /await del\('citas', 'appointments', ids\.apptIds\)/.test(codigo));
+  check('servicios y reglas se borran por allowlist de ids',
+    /await del\('servicios', 'services', ids\.serviceIds\)/.test(codigo)
+    && /await del\('reglas de disponibilidad', 'availability_rules', ids\.ruleIds\)/.test(codigo), true);
+  check('las membresías se borran por allowlist de ids, no por clinic_id',
+    /await del\('membresías', 'clinic_members', ids\.memberIds\)/.test(codigo));
   check('los memberId se capturan al crear la membresía',
     /ids\.memberIds\.push\(data\.id\)/.test(codigo));
 
-  // ── DELETE parcial: se reporta el número de filas ──
-  check('cada DELETE reporta cuántas filas borró',
-    /typeof promise\?\.select === 'function' \? promise\.select\('id'\) : promise/.test(codigo));
-  check('el número de filas se imprime junto al borrado',
-    /\$\{Array\.isArray\(data\) \? ` \(\$\{data\.length\} fila\/s\)` : ''\}/.test(codigo));
-  check('un error de FK entra en cleanupErrors',
-    /cleanupErrors\.push\(`\$\{label\}: \$\{error\.message\}`\)/.test(codigo));
+  // ── DELETE parcial: count exacto, sin seleccionar columnas ──
+  check('cada DELETE usa count exacto', /\.delete\(\{ count: 'exact' \}\)/.test(codigo));
+  check('el helper cuenta ANTES de borrar para detectar borrados parciales',
+    /const pre = countResult\(await admin\.from\(table\)/.test(codigo));
+  check('el veredicto del borrado pasa por deleteVerdict',
+    /const v = deleteVerdict\(\{/.test(codigo));
+  check('un error o borrado parcial entra en cleanupErrors',
+    /cleanupErrors\.push\(`\$\{label\} \[\$\{v\.status\}\]: \$\{v\.detail\}`\)/.test(codigo));
   check('el finally sigue con el resto del cleanup pese al error',
-    /catch \(e\) \{\s*cleanupErrors\.push\(`\$\{label\}/.test(codigo.replace(/\r/g, '')));
+    /catch \(e\) \{\s*cleanupErrors\.push\(`\$\{label\}: \$\{e\.message\}`\)/.test(codigo.replace(/\r/g, '')));
 
   // ── Inventario final por IDs exactos ──
   for (const [desc, re] of [
@@ -2185,13 +2192,128 @@ const fnCancel = between(sql, 'CREATE OR REPLACE FUNCTION public.cancel_my_appoi
   }
 
   // ── Nada externo se borra: todo criterio es una allowlist de ids ──
-  const deletes = cl.match(/\.delete\(\)[^\n]*/g) || [];
-  check(`todos los DELETE del cleanup son por allowlist de ids (${deletes.length})`,
-    deletes.every((d) => /\.in\('id',|\.eq\('id',|\.in\('appointment_id',|\.in\('consultation_id',/.test(d)));
-  check('ningún DELETE del cleanup usa doctor_id, clinic_id ni profile_id',
-    deletes.some((d) => /\.eq\('doctor_id'|\.in\('doctor_id'|\.eq\('clinic_id'|\.in\('profile_id'/.test(d)) === false);
+  const llamadas = cl.match(/await del\([^;]*\)/g) || [];
+  check(`el cleanup borra solo mediante el helper de allowlist (${llamadas.length})`,
+    llamadas.length >= 10);
+  check('ninguna llamada de borrado pasa doctor_id, clinic_id ni profile_id',
+    llamadas.some((d) => /doctorId\b(?!s)|clinicId'|profile_id/.test(d)) === false);
+  // El único DELETE inline admitido es el de las dependencias de consulta, que
+  // se filtran por `consultation_id` (columna que sí existe en las cuatro).
+  const inline = (cl.replace(/\r/g, '').match(/admin\.from\([^)]*\)\s*\n?\s*\.delete\(\{ count: 'exact' \}\)[^;]*/g) || []);
+  // Dos formas admitidas: la del helper —que filtra por la columna declarada
+  // en CLEANUP_TARGETS— y la de las dependencias de consulta.
+  check(`todo DELETE del cleanup filtra por columna declarada o consultation_id (${inline.length})`,
+    inline.length === 2
+    && inline.every((d) => /\.in\(column, list\)/.test(d) || /\.in\('consultation_id', ids\.consultIds\)/.test(d)), true);
+  check('ningún DELETE inline usa .select(\'id\')', /\.delete\(\)[\s\S]{0,40}\.select\('id'\)/.test(cl) === false);
   check('la denylist cubre también grants y membresías',
     cl.includes("'cleanup/auth_creation_grants'") && cl.includes("'cleanup/clinic_members'"), true);
+}
+
+// ─── 29. El helper de DELETE no puede asumir la columna `id` ──────────
+//
+// La corrida del 2026-08-07 dejó 23 residuos por esto: el helper hacía
+// `.select('id')` sobre el builder para saber cuántas filas borraba, y
+// `appointment_patient_cancellations` NO tiene columna `id` (su clave es
+// `appointment_id`). PostgREST rechazó la consulta, el borrado no se ejecutó y
+// la fila superviviente bloqueó por FK todo lo que venía detrás.
+{
+  console.log('\n29. Helper de DELETE: sin suposición universal de columna id');
+  const smoke = read('scripts/_smoke-s7_71a.mjs');
+  const codigo = smoke.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  // ── El patrón exacto que causó el fallo ya no existe ──
+  check("el helper YA NO hace .select('id') sobre el builder de DELETE",
+    /promise\.select\('id'\)/.test(codigo) === false);
+  check('ningún DELETE selecciona columnas para contar',
+    /\.delete\(\)\.select\(/.test(codigo) === false);
+  check("todos los DELETE usan .delete({ count: 'exact' })",
+    /\.delete\(\{ count: 'exact' \}\)/.test(codigo)
+    && (codigo.match(/\.delete\(\)/g) || []).length === 0, true);
+
+  // ── CLEANUP_TARGETS: la columna real de cada tabla ──
+  check('CLEANUP_TARGETS está exportada', Array.isArray(CLEANUP_TARGETS));
+  check('declara appointment_patient_cancellations',
+    CLEANUP_TARGETS.some((t) => t.table === 'appointment_patient_cancellations'));
+  check('appointment_patient_cancellations usa appointment_id',
+    cleanupColumnFor('appointment_patient_cancellations') === 'appointment_id');
+  check('appointment_patient_cancellations está marcada SIN columna id',
+    CLEANUP_TARGETS.find((t) => t.table === 'appointment_patient_cancellations').hasIdColumn === false);
+  check('NO todas las tablas usan id (la suposición universal es falsa)',
+    CLEANUP_TARGETS.some((t) => t.column !== 'id'));
+  for (const t of ['auth_creation_grants', 'booking_intents', 'appointments',
+                   'patients', 'services', 'doctors', 'clinics', 'profiles',
+                   'availability_rules', 'clinic_members']) {
+    check(`${t} declara su columna de filtro`, cleanupColumnFor(t) === 'id');
+  }
+  // Una tabla no declarada NO se borra a ciegas.
+  {
+    let lanzo = false;
+    try { cleanupColumnFor('tabla_inexistente'); } catch { lanzo = true; }
+    check('una tabla no declarada hace LANZAR, no adivinar la columna', lanzo);
+  }
+  check('la declaración explica por qué no hay convención universal',
+    /NO existe una convención universal/.test(smoke));
+
+  // ── El esquema real respalda la declaración ──
+  {
+    const tipos = read('src/types/database.types.ts');
+    const bloque = between(tipos, 'appointment_patient_cancellations: {', 'Insert: {');
+    check('el esquema confirma que la tabla NO tiene columna id',
+      bloque.length > 0 && /^\s*id:/m.test(bloque) === false, true);
+    check('el esquema confirma que sí tiene appointment_id',
+      /appointment_id: string/.test(bloque));
+  }
+
+  // ── deleteVerdict: exacto / cero / null / parcial ──
+  const V = deleteVerdict;
+  check('exacto → OK', V({ preCount: 3, deletedCount: 3 }).ok === true);
+  check('exacto → status OK', V({ preCount: 3, deletedCount: 3 }).status === 'OK');
+  check('cero existentes y cero borradas → OK', V({ preCount: 0, deletedCount: 0 }).ok === true);
+  check('parcial → NO ok', V({ preCount: 3, deletedCount: 1 }).ok === false);
+  check('parcial → status PARTIAL', V({ preCount: 3, deletedCount: 1 }).status === 'PARTIAL');
+  check('parcial informa ambos números',
+    /borradas 1 de 3 existentes/.test(V({ preCount: 3, deletedCount: 1 }).detail));
+  check('borró 0 de 3 → PARTIAL, no éxito', V({ preCount: 3, deletedCount: 0 }).status === 'PARTIAL');
+  check('count null → UNKNOWN', V({ preCount: 3, deletedCount: null }).status === 'UNKNOWN');
+  check('count undefined → UNKNOWN', V({ preCount: 3, deletedCount: undefined }).status === 'UNKNOWN');
+  check('count NaN → UNKNOWN', V({ preCount: 3, deletedCount: NaN }).status === 'UNKNOWN');
+  check('preCount desconocido → UNKNOWN', V({ preCount: null, deletedCount: 3 }).status === 'UNKNOWN');
+  check('preCount desconocido NO se declara éxito', V({ preCount: null, deletedCount: 3 }).ok === false);
+  check('error → ERROR', V({ error: { message: 'FK violation' } }).status === 'ERROR');
+  check('error → NO ok', V({ error: { message: 'FK violation' } }).ok === false);
+  check('el error de FK se conserva en el detalle',
+    /FK violation/.test(V({ error: { message: 'FK violation' } }).detail));
+  check('ningún estado distinto de OK se considera éxito',
+    ['ERROR', 'UNKNOWN', 'PARTIAL'].every((s) => [
+      V({ error: { message: 'x' } }), V({ preCount: 1, deletedCount: null }), V({ preCount: 3, deletedCount: 1 }),
+    ].filter((r) => r.status === s).every((r) => r.ok === false)));
+
+  // ── Integración: el helper llama a cleanupColumnFor, no adivina ──
+  check('el helper obtiene la columna de CLEANUP_TARGETS',
+    /const column = cleanupColumnFor\(table\);/.test(codigo));
+  check('el helper recibe tabla y allowlist explícitas',
+    /const del = async \(label, table, values\) =>/.test(codigo));
+  check('el helper ignora allowlists vacías sin tocar la DB',
+    /if \(list\.length === 0\) return;/.test(codigo));
+  check('el borrado de audit_log también usa count exacto y deleteVerdict',
+    /audit_log'\)\.delete\(\{ count: 'exact' \}\)/.test(codigo)
+    && /const vAudit = deleteVerdict\(\{/.test(codigo), true);
+
+  // ── Las protecciones previas siguen en pie ──
+  const cl2 = between(codigo, 'async function cleanup()', 'async function cleanupAuditLog');
+  const p = (t) => {
+    const m = cl2.match(new RegExp(`await del\\([^;]*?,\\s*'${t}'`));
+    return m ? cl2.indexOf(m[0]) : -1;
+  };
+  check('sigue: cancelaciones antes que citas', p('appointment_patient_cancellations') < p('appointments'), true);
+  check('sigue: grants antes que intents', p('auth_creation_grants') < p('booking_intents'), true);
+  check('sigue: intents antes que citas', p('booking_intents') < p('appointments'), true);
+  check('sigue: citas antes que pacientes', p('appointments') < p('patients'), true);
+  check('sigue: pacientes antes que perfiles', p('patients') < p('profiles'), true);
+  check('sigue: la denylist del médico QA', /assertNotPermanent\(ids\.grantIds/.test(cl2));
+  check('sigue: el inventario final completo', /auth_creation_grants \(por booking_intent_id\)/.test(codigo));
+  check('sigue: la actividad externa nunca se borra', /NO se borran/.test(smoke));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_71a: ${pass} OK, ${fail} fallos\n`);
