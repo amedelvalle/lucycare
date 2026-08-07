@@ -916,6 +916,68 @@ ASP0_PREFLIGHT_FINGERPRINT=eb6369dba4f599b7a40d2e5c06d792d28947e3c6ae9cded828dd1
 
 Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
 
+### ⚠️ `s7_71b` — APLICADA A MANO EN PRODUCCIÓN, PR de reconciliación abierto
+
+**La vulnerabilidad de escritura arbitraria sobre `audit_log` está CERRADA en
+producción desde el `2026-08-07`.** Se aplicó **manualmente**, antes de existir
+el PR. Detalle completo en `docs/OWNER_S7_71B_APPLY.md`.
+
+```
+SHA-256 (LF) del SQL efectivo = 8fe8ccd6ee24b63e45c01852d10906b56fb098bf23f46aef94dc265a5dce2e37
+Aplicado manualmente en producción el 2026-08-07.
+Timestamp exacto de ejecución del SQL Editor no recuperado al momento de versionar.
+```
+
+**⛔ NO volver a ejecutar la migración.** Producción ya está endurecida; el
+preflight abortaría porque el estado base que exige ya no existe.
+
+**Estado verificado por catálogo:** cero policies · `anon`/`authenticated` sin
+ningún privilegio · `service_role` solo `SELECT` · secuencia solo para el owner
+· `_admin_log_doctor_change` con ACL `{postgres=X/postgres}`.
+
+> ⚠️ **Frontera pre-apply / post-apply.** El preflight que realmente corrió
+> comprobó **NUEVE** condiciones: seis de existencia/estado base **y tres
+> guardas sustantivas** —cero escritores `INVOKER`, cero escritores con owner
+> sin `BYPASSRLS`, cero llamadores `INVOKER` del helper—, todas con
+> `RAISE EXCEPTION` dentro de la transacción.
+>
+> Lo que **no** comprobó es **cardinalidad ni identidad**: cuántos escritores
+> hay (43), que todos tengan owner `postgres`, la policy exacta y sus
+> atributos, `FORCE RLS=false`, y quiénes son los dos llamadores del helper.
+> Eso se hizo **por catálogo en la Fase A y post-apply**, fuera del SQL
+> ejecutado. La migración versionada conserva el texto aplicado, sin retoques.
+
+> ⚠️ La fecha es el **marcador operativo del cambio de régimen**. **No
+> sustituye a `integrity_epoch`** —que quedó fuera por decisión— ni es garantía
+> criptográfica ni prueba de integridad histórica.
+
+```
+RUTA HELPER POST-HARDENING = NO DEMOSTRADA AÚN
+```
+
+No hay actividad de auditoría posterior al corte (la fila más reciente de toda
+la tabla es la `14439`, anterior al inicio de la Fase A). No es indicio de
+fallo: es ausencia de tráfico. La prueba funcional queda pendiente, con diseño
+y autorización separados, **sin médicos reales, sin Camilo y sin el médico QA**.
+
+**Fuera de alcance, documentado:** las tres funciones `_func` huérfanas, el debt
+de `search_path` de las ocho escritoras sin `SET`, `FORCE RLS` e
+`integrity_epoch`.
+
+**Verificado antes del merge:** `AUTO-APPLY DE MIGRACIONES AL MERGE = NO`. No
+hay `.github/`, ni hooks de ciclo de vida en `package.json`, ni `supabase/`, ni
+runner de migraciones; `vercel.json` solo define rewrites y headers. Mergear
+este PR **no reaplica** `s7_71b` sobre una producción que ya está endurecida.
+
+> 🔖 **BACKLOG (frente separado, NO abrir ahora).** `.gitignore:32` ignora
+> `*.sql` con una única excepción, `!migrations/*.sql`. **`docs/rollbacks/` no
+> está exceptuado**, así que todo rollback nuevo requiere `git add -f` y puede
+> quedarse fuera de un PR en silencio. Ocurrió en este mismo PR y lo detectó la
+> aserción de rastreo que se añadió a `check-s7_71b`. Evaluar una excepción
+> `!docs/rollbacks/*.sql` cuando el owner lo autorice.
+
+---
+
 ### ✅ CERRADO — `s7_71a` y su instrumento
 
 Corrida final `2026-08-07T03:39:32Z` sobre `ccfa8ec`: **exit 0 · 76 OK · 0

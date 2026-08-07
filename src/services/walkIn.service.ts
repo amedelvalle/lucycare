@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import { logAuditEntry } from '@/services/auditLog.service';
 import {
   isPastStart,
   PAST_APPOINTMENT_MESSAGE,
@@ -222,8 +221,6 @@ export async function createWalkInAppointment(
   if (statusError) throw statusError;
 
   // 3. Insertar cita
-  const { data: { user } } = await supabase.auth.getUser();
-
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
@@ -248,20 +245,9 @@ export async function createWalkInAppointment(
     throw error;
   }
 
-  // 4. Audit log (no bloquea si falla)
-  await logAuditEntry({
-    action: 'insert',
-    tableName: 'appointments',
-    recordId: appointment.id,
-    newData: {
-      source: 'manual',
-      doctor_id: data.doctorId,
-      patient_id: data.patientId,
-      start_time: data.startTime,
-      end_time: data.endTime,
-      created_by: user?.id ?? null,
-    },
-  });
+  // 4. Auditoría: la escribe el trigger server-side `audit_appointments`
+  //    (s7_71a) como `appointment_created`, con el `source` literal. El INSERT
+  //    desde el cliente se retiró en s7_71b.
 
   return appointment.id;
 }
