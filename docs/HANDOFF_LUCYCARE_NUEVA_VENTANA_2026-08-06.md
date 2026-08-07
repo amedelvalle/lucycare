@@ -254,7 +254,17 @@ Las 12 citas se borraron **explícitamente**, ya no por cascada.
 se declara cerrado todavía es el **instrumento**, porque el proceso terminó en
 exit 1 por un **falso positivo**: la red de seguridad de
 `deleteQaTempRules()` exigía 1 fila donde correctamente hay 0. Corregido en
-`docs/OWNER_S7_71A_APPLY.md` §5-quinquies.
+`docs/OWNER_S7_71A_APPLY.md` §5-quinquies, en la rama
+`claude/audit-sec-p0-s7-71a-rule-idempotent`:
+
+```
+migration_sha256 = 1e9ec409cc6cfbe4547067b8fd8f2bca7c58082a5024dec6e84f6052e3047af0   ← SIN CAMBIOS
+rollback_sha256  = b36f8f757749b36cb622f6bfd637a5bd7893f87c4eff8f041ed1c01f4bd53b5e   ← SIN CAMBIOS
+smoke_sha256     = 129de64b860dece8f2736c7e00c5ae4552ff2a38ae0b9cebe5ca47a5166ce3cb   ← NUEVO
+ASP0_PREFLIGHT_FINGERPRINT=e02ad689ba2633639d30fdd1d827d0ccc4875e5b0f74c2c1f67b4c0fa79a8c7c
+```
+
+Preflight read-only autorizado: **54 OK, 0 fallos, APTO**. Baseline QA 19/19.
 
 Las filas `audit_log` **14437–14439 permanecen intactas**, verificado por
 lectura: quedaron fuera del borrado por dos filtros independientes (no están en
