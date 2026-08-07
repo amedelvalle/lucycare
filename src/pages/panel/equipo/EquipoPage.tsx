@@ -109,8 +109,8 @@ function TeamHeader({ clinicId, onInvite }: { clinicId: string; onInvite: () => 
 
       {atLimit && (
         <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          Tu plan incluye hasta {INCLUDED_ASSISTANTS} asistentes. Para sumar más vas a poder
-          contratar usuarios adicionales cuando habilitemos los planes.
+          Tu plan incluye hasta {INCLUDED_ASSISTANTS} asistentes. Para sumar más, consulta
+          las opciones disponibles en Planes y facturación.
         </div>
       )}
       <p className="text-[11px] text-gray-400 mt-1.5">

@@ -15,6 +15,14 @@ import NotificationBell from '../../components/NotificationBell';
  *  cuelga (select sin timeout / red), no dejamos el spinner infinito. */
 const AUTH_LOAD_TIMEOUT_MS = 8_000;
 
+/** Entorno comercial del médico (planes / facturación). Vive FUERA de LucyCare
+ *  operativo: acá solo existe el punto de entrada. Ninguna lógica de billing,
+ *  pagos, checkout ni estado de suscripción entra a lucycare.app.
+ *
+ *  ⚠️ La URL va limpia a propósito: sin query params y sin transmitir
+ *  doctor_id, clinic_id, phone, email, sesión ni token. No agregar ninguno. */
+const MEDICOS_PLANS_URL = 'https://medicos.lucycare.app/medicos/planes';
+
 interface NavItem {
   path: string;
   label: string;
@@ -341,6 +349,24 @@ export default function PanelLayout() {
             </div>
           </div>
 
+          {/* Planes y facturación — solo el médico titular. Punto de entrada al
+              entorno comercial (otro subdominio), sin sesión compartida. */}
+          {!isAssistant && (
+            <a
+              href={MEDICOS_PLANS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Planes y facturación"
+              className="w-full flex items-center gap-2 px-2 lg:px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer justify-center lg:justify-start"
+            >
+              <i className="ri-bank-card-line"></i>
+              <span className="hidden lg:inline flex-1 text-left leading-tight">
+                Planes y facturación
+              </span>
+              <i className="ri-external-link-line text-xs text-gray-400 hidden lg:inline"></i>
+            </a>
+          )}
+
           <button
             onClick={() => navigate('/')}
             title="Buscar médico"
@@ -413,6 +439,20 @@ export default function PanelLayout() {
                   <p className="text-xs text-gray-500 truncate">{user.phone}</p>
                 </div>
               </div>
+              {!isAssistant && (
+                <a
+                  href={MEDICOS_PLANS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setSidebarOpen(false)}
+                  className="w-full flex items-center gap-2 px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"
+                >
+                  <i className="ri-bank-card-line"></i>
+                  <span className="flex-1 text-left">Planes y facturación</span>
+                  <i className="ri-external-link-line text-xs text-gray-400"></i>
+                </a>
+              )}
+
               <button
                 onClick={() => { setSidebarOpen(false); navigate('/'); }}
                 className="w-full flex items-center gap-2 px-4 py-2 mb-1 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer"
