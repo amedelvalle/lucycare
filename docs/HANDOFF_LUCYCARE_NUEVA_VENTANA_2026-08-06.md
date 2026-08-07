@@ -32,10 +32,18 @@
 > `audit_log` admitía escritura arbitraria: ninguna fila previa puede
 > presentarse como evidencia infalsificable. Son trazas operativas observadas.
 >
-> **Ningún frente abierto.** Siguiente candidato: **TWILIO-P0**, pausado.
+> **Ningún frente abierto.** Siguiente candidato para el piloto: **TWILIO-P0 —
+> OTP SMS real**, pausado.
 > Pendientes registrados como frentes separados y **no abiertos**: las tres
 > funciones `_func` huérfanas · el debt de `search_path` de las ocho escritoras
 > sin `SET` · la regla `*.sql` de `.gitignore` frente a `docs/rollbacks/`.
+>
+> **💳 BILLING-P0 = PAUSADO — arquitectura definida.** No bloquea el piloto: la
+> gestión comercial de los pocos médicos participantes se maneja **manualmente**.
+> `doctors.is_operational` **NO representa estado de pago**. Proveedor **no
+> elegido**, validación fiscal/DTE **pendiente**, P1/P2/P3 **pendientes**. El
+> CTA "Planes y facturación" **NO está publicado** (PR #323 cerrado sin merge).
+> Fuente canónica: **`docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`**. Detalle en **§13**.
 >
 > 🟢 **CIERRE (2026-08-07). `s7_71a` está CERRADA Y VALIDADA, y su instrumento
 > también.** Corrida final sobre `ccfa8ec`: **exit 0 · 76 OK · 0 fallos · 0
@@ -1127,3 +1135,77 @@ Leer, en este orden:
 
 **INSTRUCCIÓN 0:** no iniciar ningún frente sin instrucción del owner. El frente
 abierto es **AUDIT-SEC-P0** y el próximo paso está en §10.
+
+---
+
+## 13. BILLING — estado al 2026-08-07
+
+### 13.1 Estado del frente
+
+**BILLING-P0 = PAUSADO — arquitectura definida.**
+
+| Ítem | Estado |
+|---|---|
+| Arquitectura de suscripción | **DEFINIDA** y capturada en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` |
+| Fuente canónica de billing | **`docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`** — única, reconciliada el 2026-08-07 |
+| Proveedor de pago | **NO elegido** |
+| Validación fiscal / DTE | **PENDIENTE** |
+| BILLING-P1 / P2 / P3 | **PENDIENTES**, no iniciados |
+| Implementación | **CERO** — sin tablas, sin migraciones, sin webhooks, sin Edge Functions |
+
+### 13.2 Billing NO bloquea el piloto
+
+Durante el piloto, la gestión comercial de los **pocos médicos participantes se
+maneja de forma manual**. Billing es prerequisito del **lanzamiento comercial**,
+no del piloto.
+
+### 13.3 Regla vinculante
+
+> **`doctors.is_operational` NO representa estado de pago.**
+
+Sigue siendo el flag **administrativo** de LucyAdmin. El estado comercial vive en
+una entidad separada (`billing_account` → `subscription` → entitlements) y el
+gate del panel pasará a ser la **conjunción de dos ejes independientes**, recién
+en BILLING-P3:
+
+```
+puede operar el panel := doctors.is_operational
+                     AND has_entitlement(clinic, 'panel.access')
+```
+
+Verificado en el repo: **ninguna policy RLS depende de `is_operational`**; sus
+únicos dos gates son `PanelLayout.tsx` (frontend) y `validate_booking_slot`
+(`s7_66:105`).
+
+### 13.4 PR #323 — CLOSED sin merge
+
+Agregaba en el panel del médico el acceso **"Planes y facturación"** hacia
+`medicos.lucycare.app/medicos/planes`. **Cerrado sin merge por decisión de
+producto**, no técnica: el destino sigue siendo un flujo comercial demostrativo
+y no es todavía un portal autoritativo de suscripción/facturación.
+
+> **El CTA "Planes y facturación" NO está publicado.** Se recrea en BILLING-P3.
+
+Rama borrada, `main` intacto. Alcance validado del cambio, para cuando se
+recree: `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` §18.
+
+⚠️ **Pendiente vivo:** `src/pages/panel/equipo/EquipoPage.tsx` sigue diciéndole
+al médico que los planes *"todavía no están habilitados"*. Es el único copy del
+producto que menciona "plan"; se reconcilia al recrear el CTA.
+
+### 13.5 Qué falta para retomar BILLING-P0
+
+- Investigación verificable de proveedores
+- Completar la grilla **E1–E7 / O1–O8**
+- Costos sobre los escenarios **5 / 50 médicos**
+- Validación **fiscal / contable / DTE**
+- **Elección de proveedor**
+- **Política legal de retención clínica**
+
+La investigación técnica/comercial de proveedores podrá hacerse posteriormente.
+**La validación fiscal/legal final requerirá evidencia externa competente.**
+
+### 13.6 Siguiente frente candidato para el piloto
+
+**TWILIO-P0 — OTP SMS real.** Sigue **PAUSADO**: no configurar Twilio, no crear
+Verify Service, sin instrucción del owner.
