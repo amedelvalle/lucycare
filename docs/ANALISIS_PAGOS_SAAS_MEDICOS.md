@@ -4,8 +4,8 @@
 > hable de suscripción, pagos, planes o facturación es **histórico** y cede ante
 > este archivo.
 >
-> **Estado del frente — BILLING-P0: PAUSADO — arquitectura definida y capturada
-> en PR #324, pendiente de merge.**
+> **Estado del frente — BILLING-P0: PAUSADO — arquitectura definida.**
+> Documentada y persistida en `main` con el **PR #324 (MERGED, 2026-08-07)**.
 >
 > **Reconciliado el 2026-08-07** con las decisiones de arquitectura BILLING-P0
 > tomadas por el owner. Esa reconciliación **reemplazó** las partes obsoletas de

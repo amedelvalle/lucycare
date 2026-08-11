@@ -32,8 +32,14 @@
 > `audit_log` admitía escritura arbitraria: ninguna fila previa puede
 > presentarse como evidencia infalsificable. Son trazas operativas observadas.
 >
-> **Ningún frente abierto.** Siguiente candidato para el piloto: **TWILIO-P0 —
-> OTP SMS real**, pausado.
+> **Ningún frente abierto.**
+>
+> **📱 TWILIO-P0 = CLOSED / VALIDATED FOR PILOT (2026-08-11).** El OTP por SMS
+> real está **activo y validado end-to-end**: Supabase usa **Twilio Verify**
+> (SMS, 6 dígitos, Fraud Guard, Geo Permissions solo El Salvador). Turnstile
+> sigue **ACTIVO**, el Before User Created Hook sigue **ACTIVO** y los **Test
+> Phones se conservan**. **No volver a Programmable Messaging.** Detalle en
+> **§14**.
 > Pendientes registrados como frentes separados y **no abiertos**: las tres
 > funciones `_func` huérfanas · el debt de `search_path` de las ocho escritoras
 > sin `SET` · la regla `*.sql` de `.gitignore` frente a `docs/rollbacks/`.
@@ -1207,5 +1213,121 @@ La investigación técnica/comercial de proveedores podrá hacerse posteriorment
 
 ### 13.6 Siguiente frente candidato para el piloto
 
-**TWILIO-P0 — OTP SMS real.** Sigue **PAUSADO**: no configurar Twilio, no crear
-Verify Service, sin instrucción del owner.
+**TWILIO-P0 — OTP SMS real.** ✅ **CERRADO el 2026-08-11** — ver §14.
+
+---
+
+## 14. TWILIO-P0 — CLOSED / VALIDATED FOR PILOT (2026-08-11)
+
+### 14.1 Arquitectura vigente del OTP
+
+```
+LucyCare (frontend)
+   → Turnstile (captchaToken)
+   → record_otp_consent  (s7_69, OBLIGATORIO: sin evidencia no hay SMS)
+   → Supabase Auth (GoTrue)
+   → Twilio Verify
+   → SMS real
+   → verifyOtp
+   → creación de contraseña (paso obligatorio)
+   → sesión
+```
+
+**El cambio de proveedor NO requirió una sola línea de código.** El frontend
+llama a `signInWithOtp` / `verifyOtp`; quién entrega el SMS es transparente para
+el cliente. Fue configuración pura de Supabase.
+
+### 14.2 Configuración vigente
+
+| Ítem | Estado |
+|---|---|
+| Cuenta Twilio | **Upgraded / Paid** |
+| Proveedor SMS en Supabase | **Twilio Verify** (antes: Programmable Messaging) |
+| Verify Service — Friendly Name | `LucyCare` |
+| Canal | **SMS** (Voice deshabilitado) |
+| Longitud del OTP | **6 dígitos** · Custom Verification Code OFF |
+| Expiración del OTP | **300 s** |
+| Fraud Guard | **ACTIVO** |
+| Geo Permissions | **solo El Salvador (+503)**; demás países deshabilitados |
+| Branded Sender ID | vacío |
+| Número Twilio comprado | **ninguno** — Verify no lo requiere |
+| Turnstile | **ACTIVO** (no se tocó en todo el frente) |
+| Before User Created Hook | **ACTIVO** |
+| Test Phones | **conservados y funcionando** |
+| Phone Auth / Email Auth / Resend | sin cambios |
+| Rate limits | sin cambios |
+
+> ⚠️ **No volver a Programmable Messaging.** El proveedor vigente es Twilio
+> Verify.
+
+### 14.3 QA ejecutada
+
+**Control 1 — Test Phone (sin SMS real).** Login de la cuenta demo autorizada
+tras el cambio de proveedor: **PASS**. Demuestra que la infraestructura de QA no
+se rompió; **no** demuestra envío por Twilio.
+
+**Control 2 — un único SMS real controlado**, sobre un teléfono real bajo
+control del owner, provisto para esta prueba y **no documentado**:
+
+| Verificación | Resultado |
+|---|---|
+| Solicitud de OTP con Turnstile resuelto | PASS |
+| Consentimiento registrado **antes** del envío | PASS |
+| Twilio Verify — estado final | **Approved** |
+| Intentos (Verified / Sent) | **1 / 1** — sin reintentos |
+| Fraud Guard | sin bloqueo |
+| SMS recibido, código de 6 dígitos | PASS |
+| `verifyOtp` | PASS |
+| Creación de contraseña (paso obligatorio) | PASS |
+| Sesión válida, rol `patient` | PASS |
+| Efectos colaterales | **0** |
+
+**El orden vinculante quedó probado por timestamps**, no inferido: el
+consentimiento se registró **43 s antes** de la confirmación del teléfono, y la
+sesión **29 s después**.
+
+### 14.4 Identidad QA temporal — creada y eliminada
+
+Para no crear paciente, cita ni reserva, la prueba usó una identidad Auth
+temporal creada por **Admin API** (solo teléfono, sin email, sin datos
+personales, marcada `user_metadata.fixture = TWILIO_P0_QA`) y aislada de
+médico, clínica, paciente y agenda.
+
+**Hallazgo:** `auth.admin.createUser` **no fue bloqueado** por el Before User
+Created Hook.
+
+**Cleanup ejecutado por Admin API** (`deleteUser`), con guardas previas que
+verificaban teléfono y marcador y una denylist de identidades permanentes.
+Resultado: `auth.users` no encontrado · `profiles` de vuelta al baseline de
+**140** · **cero residuos** en las 15 superficies verificadas.
+
+**La fila de `otp_consent_events` de la prueba se conserva**
+(`d896b5ce-2a78-41d2-82b6-459c2d931dd5`): es append-only y evidencia legítima
+del consentimiento. Desde `s7_71b`, además, `service_role` no podría borrarla.
+
+### 14.5 Regla reafirmada
+
+> **`auth.users` NUNCA se modifica ni elimina mediante SQL.** Toda operación va
+> por la **Supabase Admin API** (`createUser`, `deleteUser`, `generateLink`).
+
+### 14.6 Safeguard operativo pendiente — NO es un fallo de TWILIO-P0
+
+La cuenta Twilio está **Paid**, pero **Auto Recharge no quedó habilitado**
+durante esta configuración.
+
+**Antes de incorporar usuarios reales al piloto** hay que asegurar continuidad
+operativa: **saldo suficiente** y, como mínimo, **alerta de saldo bajo o
+política de recarga controlada**. Sin eso, un saldo agotado deja al piloto sin
+OTP y por lo tanto sin acceso.
+
+**No se modificó nada de esto.** Queda registrado como pendiente operativo.
+
+### 14.7 Lo que este frente NO validó
+
+- **booking** con `shouldCreateUser=true`, el `auth_creation_grant` y el camino
+  del Before User Created Hook en creación real de usuario. Ese flujo tiene QA
+  previa con Test Phones; si merece un smoke real adicional se decidirá aparte.
+- Envío a números fuera de El Salvador (deshabilitado a propósito).
+- Comportamiento del rate limit bajo carga: se conserva el valor configurado y
+  **`0` sigue descartado como palanca de rollback**, con su semántica sin
+  validar.
