@@ -51,13 +51,33 @@
 > infalsificable.** Hasta `s7_71b`, `audit_log` admitía escritura arbitraria: esas
 > filas son trazas operativas observadas, no prueba de no-repudio.
 >
-> **Siguiente frente: TWILIO-P0**, todavía **PAUSADO**: no configurar Twilio sin
-> instrucción del owner.
+> **📱 TWILIO-P0 = CLOSED / VALIDATED FOR PILOT (2026-08-11).** El OTP por SMS
+> real está **activo y validado end-to-end**. Supabase usa **Twilio Verify**
+> (SMS · 6 dígitos · Fraud Guard · Geo Permissions solo El Salvador · sin número
+> comprado). **El cambio no requirió código.** QA: control con Test Phone PASS +
+> **un único SMS real** con Twilio `Approved`, intentos **1/1**, sesión válida y
+> **cero efectos colaterales**; la identidad QA temporal se eliminó por Admin API
+> y `profiles` volvió a su baseline. Turnstile **ACTIVO**, Before User Created
+> Hook **ACTIVO**, Test Phones **conservados**.
+>
+> **Alcance de la validación:** cubre OTP SMS real · Turnstile · consentimiento ·
+> Supabase Auth · Twilio Verify · `verifyOtp` · creación de contraseña · sesión ·
+> cleanup. **NO cubre todavía** booking real con `shouldCreateUser=true`,
+> comportamiento bajo carga/rate limits, ni países fuera de El Salvador.
+> Detalle y alcance exacto en el handoff vigente **§14**.
+>
+> **⚠️ Safeguard operativo pendiente (no es fallo del frente):** la cuenta Twilio
+> está **Paid** pero **sin Auto Recharge**. Antes de incorporar usuarios reales al
+> piloto: saldo suficiente + alerta de saldo bajo o política de recarga
+> controlada.
 >
 > **Prohibiciones vigentes:** **no desactivar ni reconfigurar Turnstile/CAPTCHA** ·
-> no tocar claves en Vercel/Supabase/Cloudflare · no tocar Twilio ni crear Verify
-> Service · no ejecutar SQL ni usar `service_role` sin autorización puntual · no
-> tocar `auth.users` por SQL · **jamás Katherine (`50372608827`)** · no modificar la
+> **no revertir de Twilio Verify a Programmable Messaging sin autorización
+> explícita del owner** · **no reconfigurar el Verify Service, Geo Permissions,
+> Fraud Guard, canales ni credenciales sin autorización explícita del owner** · no
+> tocar claves en Vercel/Supabase/Cloudflare · no ejecutar SQL ni usar
+> `service_role` sin autorización puntual · **no tocar `auth.users` por SQL —
+> siempre Admin API** · **jamás Katherine (`50372608827`)** · no modificar la
 > identidad ni la configuración permanente de **Camilo (`50378627694`)** · no iniciar
 > ningún pendiente del backlog sin instrucción del owner.
 >
@@ -150,7 +170,7 @@ squash-merge, la rama puede borrarse.
 
 **Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
-2. **TWILIO-P0** — **PAUSADO.** Es ahora el siguiente frente candidato, pero **no configurar Twilio sin instrucción del owner**.
+2. ~~**TWILIO-P0**~~ — **✅ CLOSED / VALIDATED FOR PILOT (2026-08-11).** Supabase con **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · solo El Salvador); sin cambios de código. QA: Test Phone PASS + un único SMS real (`Approved`, 1/1) con sesión válida y cero efectos colaterales; identidad QA temporal eliminada por Admin API. Detalle en el handoff vigente §14. **Pendiente operativo:** Auto Recharge de Twilio antes de sumar usuarios reales.
 
 **Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
@@ -170,6 +190,7 @@ Detalle completo en el handoff vigente §H:**
 - (6) Razón genérica "Otro motivo" en `cancel_reasons` (tabla no versionada en `migrations/`).
 - (7) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
 - (8) UX del widget de Turnstile en móvil — mejora cosmética, no bloqueante.
+- (9) **Auto Recharge / alerta de saldo de Twilio** — la cuenta está Paid pero sin recarga automática. **Bloqueante antes de incorporar usuarios reales al piloto**: sin saldo no hay OTP, y sin OTP no hay acceso.
 
 ## Decisiones cerradas (NO reabrir)
 
