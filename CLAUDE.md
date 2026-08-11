@@ -58,8 +58,13 @@
 > **un único SMS real** con Twilio `Approved`, intentos **1/1**, sesión válida y
 > **cero efectos colaterales**; la identidad QA temporal se eliminó por Admin API
 > y `profiles` volvió a su baseline. Turnstile **ACTIVO**, Before User Created
-> Hook **ACTIVO**, Test Phones **conservados**. **No volver a Programmable
-> Messaging.** Detalle en el handoff vigente **§14**.
+> Hook **ACTIVO**, Test Phones **conservados**.
+>
+> **Alcance de la validación:** cubre OTP SMS real · Turnstile · consentimiento ·
+> Supabase Auth · Twilio Verify · `verifyOtp` · creación de contraseña · sesión ·
+> cleanup. **NO cubre todavía** booking real con `shouldCreateUser=true`,
+> comportamiento bajo carga/rate limits, ni países fuera de El Salvador.
+> Detalle y alcance exacto en el handoff vigente **§14**.
 >
 > **⚠️ Safeguard operativo pendiente (no es fallo del frente):** la cuenta Twilio
 > está **Paid** pero **sin Auto Recharge**. Antes de incorporar usuarios reales al
@@ -67,7 +72,9 @@
 > controlada.
 >
 > **Prohibiciones vigentes:** **no desactivar ni reconfigurar Turnstile/CAPTCHA** ·
-> **no volver a Programmable Messaging ni reconfigurar el Verify Service** · no
+> **no revertir de Twilio Verify a Programmable Messaging sin autorización
+> explícita del owner** · **no reconfigurar el Verify Service, Geo Permissions,
+> Fraud Guard, canales ni credenciales sin autorización explícita del owner** · no
 > tocar claves en Vercel/Supabase/Cloudflare · no ejecutar SQL ni usar
 > `service_role` sin autorización puntual · **no tocar `auth.users` por SQL —
 > siempre Admin API** · **jamás Katherine (`50372608827`)** · no modificar la

@@ -38,8 +38,10 @@
 > real está **activo y validado end-to-end**: Supabase usa **Twilio Verify**
 > (SMS, 6 dígitos, Fraud Guard, Geo Permissions solo El Salvador). Turnstile
 > sigue **ACTIVO**, el Before User Created Hook sigue **ACTIVO** y los **Test
-> Phones se conservan**. **No volver a Programmable Messaging.** Detalle en
-> **§14**.
+> Phones se conservan**. La configuración vigente y preferida es **Twilio
+> Verify**: **no revertir a Programmable Messaging sin autorización explícita del
+> owner** (el rollback controlado sigue siendo posible ante una incidencia).
+> Detalle y alcance exacto de la validación en **§14**.
 > Pendientes registrados como frentes separados y **no abiertos**: las tres
 > funciones `_func` huérfanas · el debt de `search_path` de las ocho escritoras
 > sin `SET` · la regla `*.sql` de `.gitignore` frente a `docs/rollbacks/`.
@@ -1219,6 +1221,29 @@ La investigación técnica/comercial de proveedores podrá hacerse posteriorment
 
 ## 14. TWILIO-P0 — CLOSED / VALIDATED FOR PILOT (2026-08-11)
 
+### 14.0 Alcance exacto de esta validación
+
+**`CLOSED / VALIDATED FOR PILOT` significa exactamente esto y nada más:**
+
+| Validado | |
+|---|---|
+| OTP por **SMS real** | ✅ |
+| Turnstile | ✅ |
+| Consentimiento (`record_otp_consent`) | ✅ |
+| Supabase Auth | ✅ |
+| Twilio Verify | ✅ |
+| `verifyOtp` | ✅ |
+| Creación de contraseña | ✅ |
+| Sesión | ✅ |
+| Cleanup | ✅ |
+
+**NO validado todavía por este frente** (ver §14.7):
+
+- **booking real con `shouldCreateUser=true`** — el `auth_creation_grant` y el
+  Before User Created Hook en creación real de usuario;
+- **comportamiento bajo carga y de los rate limits**;
+- **países fuera de El Salvador** (deshabilitados a propósito).
+
 ### 14.1 Arquitectura vigente del OTP
 
 ```
@@ -1257,8 +1282,17 @@ el cliente. Fue configuración pura de Supabase.
 | Phone Auth / Email Auth / Resend | sin cambios |
 | Rate limits | sin cambios |
 
-> ⚠️ **No volver a Programmable Messaging.** El proveedor vigente es Twilio
-> Verify.
+> ⚠️ **Configuración vigente y preferida: Twilio Verify.** El **rollback
+> controlado a Programmable Messaging sigue siendo posible ante una incidencia**,
+> pero:
+>
+> - **NO revertir de Twilio Verify a Programmable Messaging sin autorización
+>   explícita del owner.**
+> - **NO reconfigurar el Verify Service, Geo Permissions, Fraud Guard, canales ni
+>   credenciales sin autorización explícita del owner.**
+>
+> Se mantienen: Turnstile activo · Test Phones intactos · Geo Permissions
+> actuales · **SMS como único canal del piloto**.
 
 ### 14.3 QA ejecutada
 
