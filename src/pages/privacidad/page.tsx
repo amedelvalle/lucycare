@@ -99,10 +99,9 @@ export default function PrivacidadPage() {
             <h2 className="text-lg font-semibold text-gray-900">5. Tus derechos</h2>
             <p>
               Tenés derecho a acceder, rectificar o pedir la eliminación de los datos personales
-              que tenemos sobre vos. Para ejercerlos, escribinos por WhatsApp al{' '}
-              <strong>+503 7805-6365</strong> o por correo a{' '}
-              <a href="mailto:hola@lucycare.app" className="text-emerald-700 underline">
-                hola@lucycare.app
+              que tenemos sobre vos. Para ejercerlos, escribinos por correo a{' '}
+              <a href="mailto:lucycare.digital@gmail.com" className="text-emerald-700 underline">
+                lucycare.digital@gmail.com
               </a>
               .
             </p>
@@ -143,10 +142,9 @@ export default function PrivacidadPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">9. Contacto</h2>
             <p>
-              Para cualquier consulta sobre privacidad: WhatsApp{' '}
-              <strong>+503 7805-6365</strong> · correo{' '}
-              <a href="mailto:hola@lucycare.app" className="text-emerald-700 underline">
-                hola@lucycare.app
+              Para cualquier consulta sobre privacidad, escribinos por correo a{' '}
+              <a href="mailto:lucycare.digital@gmail.com" className="text-emerald-700 underline">
+                lucycare.digital@gmail.com
               </a>
               .
             </p>

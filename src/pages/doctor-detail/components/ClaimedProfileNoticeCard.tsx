@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSessionWithTimeout } from '../../../lib/session';
 
+/** Canal público de soporte (temporal). NO usar un teléfono: el número
+ *  anterior era además credencial de una cuenta administrativa. */
+const SUPPORT_EMAIL = 'lucycare.digital@gmail.com';
+
 interface ClaimedProfileNoticeCardProps {
   /** profile_id del médico dueño del perfil. Se compara con auth.uid() para decidir variant. */
   doctorProfileId: string;
@@ -59,13 +63,11 @@ export default function ClaimedProfileNoticeCard({ doctorProfileId }: ClaimedPro
                 Ir al panel
               </button>
               <a
-                href="https://wa.me/50378056365"
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Necesito ayuda con mi perfil')}`}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-blue-300 text-blue-800 rounded-lg font-medium hover:bg-blue-100 transition-colors cursor-pointer text-sm"
               >
-                <i className="ri-whatsapp-line"></i>
-                WhatsApp Lucy
+                <i className="ri-mail-line"></i>
+                Escribir a Lucy
               </a>
             </div>
           </div>

@@ -25,6 +25,10 @@ interface ClaimProfileModalProps {
 
 const TOS_VERSION = 'v1.0';
 
+/** Canal público de soporte (temporal). NO usar un teléfono: el número
+ *  anterior era además credencial de una cuenta administrativa. */
+const SUPPORT_EMAIL = 'lucycare.digital@gmail.com';
+
 const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual?: boolean }> = {
   NOT_AUTHENTICATED: {
     title: 'Iniciá sesión primero',
@@ -443,13 +447,11 @@ export default function ClaimProfileModal({
               <p className="text-sm text-red-700 mt-1">{error.detail}</p>
               {error.manual && (
                 <a
-                  href="https://wa.me/50378056365"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Necesito ayuda para reclamar mi perfil')}`}
                   className="inline-flex items-center gap-2 mt-3 text-sm font-medium text-red-800 hover:text-red-900 underline"
                 >
-                  <i className="ri-whatsapp-line"></i>
-                  Escribinos por WhatsApp
+                  <i className="ri-mail-line"></i>
+                  Escríbenos por correo
                 </a>
               )}
             </div>
@@ -819,13 +821,11 @@ export default function ClaimProfileModal({
                 dejamos listo.
               </p>
               <a
-                href="https://wa.me/50378056365"
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Quiero activar mi agenda en línea')}`}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-brand-purple text-white rounded-lg font-medium hover:bg-brand-purple-dark cursor-pointer mb-3"
               >
-                <i className="ri-whatsapp-line text-lg"></i>
-                Contactar a Lucy
+                <i className="ri-mail-line text-lg"></i>
+                Escribir a Lucy
               </a>
               <button
                 onClick={onClose}
