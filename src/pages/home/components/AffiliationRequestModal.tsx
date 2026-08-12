@@ -26,9 +26,11 @@ interface AffiliationRequestModalProps {
 }
 
 const CONSENT_VERSION = 'v1.0'
-const WHATSAPP_NUMBER = '50378056365'
-const WHATSAPP_FALLBACK_URL = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
-  'Hola, soy médico y quiero afiliarme a Lucy.',
+/** Canal público de soporte (temporal). NO usar un teléfono: el número
+ *  anterior era además credencial de una cuenta administrativa. */
+const SUPPORT_EMAIL = 'lucycare.digital@gmail.com'
+const SUPPORT_FALLBACK_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+  'Solicitud de afiliación',
 )}`
 
 const SPECIALTY_OTHER_SENTINEL = '__other__'
@@ -106,7 +108,7 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
           title: 'Ya recibimos una solicitud reciente',
           detail:
             result.errorMessage ||
-            'Si necesitás contactarnos, escribinos por WhatsApp y el equipo de Lucy te responderá.',
+            'Si necesitás contactarnos, escribinos por correo y el equipo de Lucy te responderá.',
           isRateLimit: true,
         })
       } else {
@@ -186,13 +188,11 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
                   <p className="text-sm text-red-700 mt-1">{error.detail}</p>
                   {error.isRateLimit && (
                     <a
-                      href={WHATSAPP_FALLBACK_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={SUPPORT_FALLBACK_URL}
                       className="inline-flex items-center gap-2 mt-2 text-sm font-medium text-red-800 hover:text-red-900 underline"
                     >
-                      <i className="ri-whatsapp-line" />
-                      Escribir por WhatsApp
+                      <i className="ri-mail-line" />
+                      Escribir por correo
                     </a>
                   )}
                 </div>
@@ -403,13 +403,11 @@ export default function AffiliationRequestModal({ onClose }: AffiliationRequestM
               </button>
 
               <a
-                href={WHATSAPP_FALLBACK_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={SUPPORT_FALLBACK_URL}
                 className="block text-center text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
               >
-                <i className="ri-whatsapp-line mr-1" />
-                Prefiero contactar por WhatsApp
+                <i className="ri-mail-line mr-1" />
+                Prefiero contactar por correo
               </a>
             </div>
           )}
