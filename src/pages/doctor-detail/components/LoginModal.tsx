@@ -7,7 +7,7 @@ import {
   signInWithPhonePassword,
   setPasswordFromClaim,
   requestPasswordReset,
-  destinationForRole,
+  destinationAfterLogin,
 } from '../../../services/auth.service';
 import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_HINT } from '../../../lib/password';
 import { CAPTCHA_ENABLED, captchaRequired, captchaMisconfigured } from '../../../lib/authFlags';
@@ -211,7 +211,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
           onSuccess(undefined);
         } else {
           onClose();
-          navigate(destinationForRole(result.user.role));
+          navigate(await destinationAfterLogin(result.user.role));
         }
         resetState();
       } else {
@@ -363,7 +363,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
         onSuccess(intentIdRef.current ?? undefined);
       } else {
         onClose();
-        navigate(destinationForRole(login.user.role));
+        navigate(await destinationAfterLogin(login.user.role));
       }
       resetState();
     } catch {
@@ -385,11 +385,12 @@ export default function LoginModal({ isOpen, onClose, onSuccess, onBeforeSendOtp
       const result = await signInWithEmail(email, password, captchaToken ?? undefined);
       if (result.success && result.user) {
         // Redirect según rol: médico/asistente → /panel, admin → /admin.
-        // Diferencia clave vs OTP teléfono: el email es flujo del médico,
-        // no del paciente reservando una cita.
+        // Además, quien tenga acceso LucyAdmin por capacidad (`lucyadmin_access`)
+        // va a /admin aunque su rol sea 'patient'. Diferencia clave vs OTP
+        // teléfono: el email es flujo del médico, no del paciente reservando.
         onClose();
         resetState();
-        navigate(destinationForRole(result.user.role));
+        navigate(await destinationAfterLogin(result.user.role));
       } else {
         setError(result.error || 'No pudimos iniciar sesión.');
       }

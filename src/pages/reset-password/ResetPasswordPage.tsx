@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
-import { destinationForRole, setPasswordFromRecovery } from '@/services/auth.service';
+import { destinationAfterLogin, setPasswordFromRecovery } from '@/services/auth.service';
 import { MIN_PASSWORD_LENGTH } from '@/lib/password';
 
 type PageState = 'checking' | 'ready' | 'no_session' | 'success';
@@ -102,10 +102,14 @@ export default function ResetPasswordPage() {
         role = profile?.role ?? null;
       }
 
+      // Destino resuelto antes de la pausa: además del rol contempla el acceso
+      // LucyAdmin por capacidad (un operations_admin tiene role='patient').
+      const destination = await destinationAfterLogin(role);
+
       setState('success');
       // Pequeña pausa para que el usuario vea la confirmación
       setTimeout(() => {
-        navigate(destinationForRole(role));
+        navigate(destination);
       }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');

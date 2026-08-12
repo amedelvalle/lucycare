@@ -15,6 +15,7 @@ import { toAuthPhone, toAppPhone } from '../lib/authPhone'
 import { probeSessionState } from '../lib/sessionState'
 import { MIN_PASSWORD_LENGTH } from '../lib/password'
 import { OTP_CONSENT_VERSION, OTP_CONSENT_TEXT_SHA256 } from '../lib/otpConsent'
+import { getMyLucyAdminAccess } from './directoryEditor.service'
 
 // ═══════════════════════════════════════════════════════════
 // AUTH-P1A — teléfono como identidad, formato único y contexto de OTP
@@ -989,6 +990,31 @@ export function destinationForRole(role: string | null | undefined): string {
       return '/panel'
     default:
       return '/'
+  }
+}
+
+/**
+ * Destino post-login considerando TAMBIÉN el acceso LucyAdmin por capacidad
+ * (`lucyadmin_access`, s7_57) y no solo `profiles.role`.
+ *
+ * Un `operations_admin` / `directory_editor` tiene `profiles.role='patient'`:
+ * `destinationForRole` lo mandaría al home. Acá consultamos la MISMA RPC que
+ * usa el guard (`my_lucyadmin_access`) y lo mandamos a `/admin`. Qué sección
+ * ve después NO se decide aquí: lo resuelven `AdminOnlyRoute` y
+ * `RequireOwnerAdmin` (un nivel acotado aterriza en `/admin/medicos`).
+ *
+ * La RPC solo se consulta cuando el destino por rol es el home: admin, doctor
+ * y assistant ya tienen destino propio y no gastan una llamada. Si la RPC
+ * falla, cae al destino por rol — nunca bloquea el login.
+ */
+export async function destinationAfterLogin(role: string | null | undefined): Promise<string> {
+  const byRole = destinationForRole(role)
+  if (byRole !== '/') return byRole
+  try {
+    const access = await getMyLucyAdminAccess()
+    return access.can_access_lucyadmin ? '/admin' : byRole
+  } catch {
+    return byRole
   }
 }
 
