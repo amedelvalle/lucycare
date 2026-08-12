@@ -136,6 +136,9 @@ export function useIdleLogout(): IdleLogoutState {
         clearPersistedActivity();
         return;
       }
+      // TOKEN_REFRESHED no cambia identidad ni last_sign_in_at.
+      // Evita realimentar refresh() desde una renovación de sesión.
+      if (event === 'TOKEN_REFRESHED') return;
       // Login NUEVO = actividad ahora, de forma SÍNCRONA. Es imprescindible:
       // refresh() es async (await getSession) y el tick (1 s) podría evaluar
       // ANTES con un `lastActivity` viejo (p.ej. el que escribió el mount) y
