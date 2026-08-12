@@ -4,24 +4,29 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-07) — post PR #321. AUDIT-SEC-P0 = CLOSED.
-> NINGÚN FRENTE ABIERTO.**
-> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md`
-> (leer PRIMERO).** Ese handoff es autocontenido y reemplaza al `2026-08-03`, que
-> pasa a **histórico** junto con los anteriores. El detalle por PR de los frentes ya
-> cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
+> 🟢 **ESTADO VIGENTE (2026-08-12) — post PR #327.**
+> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`
+> (leer PRIMERO).** Ese handoff es autosuficiente y reemplaza al `2026-08-06`, que
+> pasa a **histórico** junto con todos los anteriores. El detalle por PR de los
+> frentes cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo
+> duplica.
 >
-> **HEAD `88f0051a757cbf37b44a4beace199b5c52b35c3d`** · **PRs mergeados hasta #321** ·
-> **migraciones aplicadas hasta `s7_71b`** · `main == origin/main` · árbol limpio ·
-> **0 PRs abiertos** · producción desplegada (`https://lucycare.app`).
+> **HEAD `c659cc5408ffc5e69dd63e418bc2311594db6d1f`** · **PRs mergeados hasta #327** ·
+> **migraciones aplicadas hasta `s7_71b`** (92 archivos, sin cambios) ·
+> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción desplegada
+> (`https://lucycare.app`, sirviendo `c659cc5`).
 >
-> **Último eje cerrado — cancelación por el paciente (#310 / `s7_70` + #311):** el
-> paciente cancela su cita desde "Mis atenciones"; el historial la conserva como
+> **🔴 FRENTE ACTIVO: RECOVERY-EMAIL-P0** — el único abierto. El PR #327 eliminó
+> la realimentación `TOKEN_REFRESHED → useIdleLogout → refresh() → getSession()`,
+> que podía agotar el rate limit de Auth; el 429 resultante **no es reintentable**
+> para auth-js, que borra la sesión y hace que `/reset-password` muestre
+> falsamente "link expirado". **Falta una única prueba real de recovery.**
+> **No abrir ningún otro frente mientras siga activo.** Detalle en el handoff §1.
+>
+> **Último eje cerrado antes — cancelación por el paciente (#310 / `s7_70` + #311):**
+> el paciente cancela su cita desde "Mis atenciones"; el historial la conserva como
 > *Cancelada*; el horario se libera; el médico ve la tarjeta "Cancelaciones
-> recientes" con el motivo y el enlace "Ver cita". Backend con smoke **65/65**;
-> frontend con P1 (scroll interno en móvil) y P2 (objetivo táctil de 44 px).
-> **`NotificationBell` NO se modificó.** Detalle y límites de la QA en el handoff
-> vigente (§B–§E) y en `docs/HISTORIAL_FRENTES.md`.
+> recientes". **`NotificationBell` NO se modificó.**
 >
 > **🔐 Turnstile: ACTIVO en producción y configurado también en Preview**
 > (variables de Preview configuradas y hostname del Preview autorizado en
@@ -130,7 +135,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — el **handoff vigente** declarado en el bloque de estado del inicio de este archivo (estado post-#314: **AUDIT-SEC-P0 en curso**, `s7_71a` aplicada y verificada, vulnerabilidad de `audit_log` todavía abierta, `s7_71b` bloqueada, smoke fallido con sus correcciones pendientes, médico QA persistente provisionado y reclamado, checklist bloqueante de despublicación e INSTRUCCIÓN 0).
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (post-#327). Autosuficiente: frente activo RECOVERY-EMAIL-P0 con su evidencia y su única prueba pendiente, ADMIN-JUNIOR/`operations_admin`, Test Phones y su objetivo final, LucyAdmin y Camilo post-swap, seguridad/Twilio, LEGAL-P0 pausado, pilot readiness, Booking E2E congelado, identidades protegidas y reglas operativas.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — **histórico** (post-#314: AUDIT-SEC-P0 en curso, `s7_71a` aplicada, `s7_71b` bloqueada; su §13 y §14 quedaron actualizados con el cierre de BILLING y TWILIO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-07-30.md` — **histórico** (estado post-#308: eje Auth cerrado #304/#305/#306, `s7_69` aplicada y validada, **§M = cierre de PILOTO-P0**). Su texto histórico dice "CAPTCHA desactivado" en algunas secciones: **está obsoleto**, manda el handoff `2026-08-03`.
@@ -335,18 +341,28 @@ Detallada en `docs/CUENTA_DEMO_CAMILO.md`. NO incluir en limpiezas de seed.
 |---|---|
 | `profile_id` | `db1fba98-a299-4f25-82f1-7feff01e58fa` |
 | `doctor_id` | `783a902a-55fd-407c-9e0a-69568135c7f5` |
-| Phone (Test Phone) | `50378627694` / OTP `123456` |
+| Phone (Test Phone) | `50378056365` — **cambió en el swap del 2026-08-12**. El OTP **no se documenta** |
 | Email | `carlosmartinezddv@gmail.com` |
 
 Estado: `lucy_status='verified'`, `is_published=true`, `is_operational=true`, `booking_enabled=true`. Con servicios, availability, ~50 appointments, ~15 consultations.
 
 ### Test Phones configurados
 
-| Phone | OTP | Uso |
+> ⚠️ **Los OTP fijos NO se documentan en el repositorio.** Viven solo en el
+> Dashboard de Supabase, en poder del owner. Estado tras la limpieza y el swap
+> del **2026-08-12**:
+
+| Phone | Uso | Estado |
 |---|---|---|
-| `50378627694` | `123456` | Camilo (médico demo) |
-| `50378056365` | `123456` | Admin de plataforma |
-| `50375000001` | `123456` | Paciente test Fase 1 (con 3 patients precargados, marker `notes='test_patient_phase1'`) |
+| `50378056365` | **Camilo** (médico demo) — recibió este número en el swap | **KEEP** |
+| `50378626108` | Paciente QA | **KEEP** |
+| `50377507479` | `operations_admin` (Josué) | **TEMPORAL** — sale al cerrar RECOVERY-EMAIL-P0 |
+| `50378627694` | **LucyAdmin** — su teléfono real, con SMS por Twilio Verify | **FUERA — nunca reponer** |
+
+Los demás (`50375000001`, `50375000099`, `50376193396`, `50370007201`,
+`50370008803`, `50378873634`, `50378590126`) fueron **retirados de Test Phones**
+el 2026-08-12. **Retirarlos no eliminó identidades ni datos.** Objetivo final:
+exactamente **2** Test Phones.
 
 ## Sprints completados
 
@@ -539,8 +555,8 @@ Desde `/panel/equipo` → "Invitar asistente" → teléfono → la asistente se 
   Si una tarea lo necesita (p. ej. un inventario global que la RLS no deja leer),
   **plantearlo y esperar el OK** antes de ejecutar.
 - **Datos de validación: jamás Katherine (`50372608827`)** ni datos reales
-  sensibles (ni en read-only). **Camilo (`50378627694` / OTP `123456`) solo como
-  demo controlado.**
+  sensibles (ni en read-only). **Camilo solo como demo controlado** — su Test
+  Phone es `50378056365` desde el swap del 2026-08-12; **el OTP no se documenta**.
 - **Fixtures: propias, creadas desde cero, marcadas** (p. ej. `F6_FIXTURE`),
   **limpiadas al final** con **verificación de 0 residuales**. Si la prueba crea
   algo **irreversible** (p. ej. una **adenda** de corrección post-firma), **NO
