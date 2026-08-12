@@ -136,15 +136,8 @@ export function useIdleLogout(): IdleLogoutState {
         clearPersistedActivity();
         return;
       }
-      // TOKEN_REFRESHED no cambia identidad, rol ni `last_sign_in_at` — las tres
-      // cosas que recalcula refresh() —, así que reaccionar a él es trabajo
-      // inútil. Y es el único punto donde un refresh puede realimentar a otro:
-      // refresh → TOKEN_REFRESHED → refresh() → getSession() → refresh → …
-      // Ese bucle agota el rate limit de Auth; el 429 resultante NO es
-      // reintentable para auth-js, que borra la sesión de storage y emite
-      // SIGNED_OUT (GoTrueClient `_callRefreshToken` → `_removeSession`). El
-      // usuario ve "link expirado" en /reset-password aunque el link fuera
-      // válido. Ver RECOVERY-EMAIL-P0.
+      // TOKEN_REFRESHED no cambia identidad ni last_sign_in_at.
+      // Evita realimentar refresh() desde una renovación de sesión.
       if (event === 'TOKEN_REFRESHED') return;
       // Login NUEVO = actividad ahora, de forma SÍNCRONA. Es imprescindible:
       // refresh() es async (await getSession) y el tick (1 s) podría evaluar
