@@ -63,6 +63,46 @@
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
 
+## Frentes cerrados 2026-08 (PRs #313–#327)
+
+- **AUDIT-SEC-P0 — #313 a #322** ✅ **CLOSED.** `s7_71a` (#313) añadió la cobertura
+  server-side de auditoría de `appointments`; #316–#320 corrigieron el instrumento
+  del smoke (no la migración); `s7_71b` (#321) cerró la escritura arbitraria sobre
+  `audit_log` —cero policies, `anon`/`authenticated` sin privilegios, `service_role`
+  solo `SELECT`, `_admin_log_doctor_change` cerrado, escritor de frontend
+  eliminado—; #322 documentó el cierre. Prueba QA de continuidad **PASS**.
+  ⚠️ El histórico anterior al corte son **trazas operativas observadas**, no
+  evidencia infalsificable.
+- **BILLING-P0 — #324** ✅ docs-only. `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` pasó a
+  ser la **única fuente canónica** de billing, reconciliada con la arquitectura
+  nueva: `billing_account` como entidad independiente, cinco estados sin
+  `canceled`, entitlements derivados, **`is_operational` NO es estado de pago**,
+  fases P0–P3 con enforcement al final y grilla de evaluación de proveedor.
+  **PAUSED** — proveedor no elegido; **no bloquea el piloto**.
+- **TWILIO-P0 — #325** ✅ **CLOSED / VALIDATED FOR PILOT.** Supabase pasó a
+  **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · Geo Permissions solo El
+  Salvador · sin número comprado). **No requirió código.** QA: control con Test
+  Phone PASS + un único SMS real con sesión válida y cero efectos colaterales;
+  identidad QA temporal eliminada por Admin API. Pendiente operativo: **saldo /
+  alerta de recarga** antes de sumar usuarios reales.
+- **TESTPHONE-SEC-P0 — #326** ✅ **CLOSED.** `50378056365` era simultáneamente
+  teléfono público de soporte, credencial de la única cuenta `role='admin'` y Test
+  Phone con código fijo. #326 lo retiró de las **6 superficies públicas**
+  (`/privacidad` ×2, `ClaimedProfileNoticeCard`, `ClaimProfileModal` ×2,
+  `AffiliationRequestModal`) y sustituyó el canal por
+  `lucycare.digital@gmail.com`, porque `hola@lucycare.app` no está operativo.
+  Después, un **swap operativo** (sin PR, por Admin API) separó definitivamente
+  **LucyAdmin → `50378627694`** (real, no Test Phone) y **Camilo QA →
+  `50378056365`** (Test Phone), con las 5 fichas `patients` y las 2 clínicas de
+  Camilo sincronizadas.
+- **RECOVERY-EMAIL-P0 — #327** 🔴 **ACTIVE.** `src/hooks/useIdleLogout.ts`, **1
+  línea**: el listener ignora `TOKEN_REFRESHED`. Elimina la realimentación
+  `refresh → TOKEN_REFRESHED → refresh() → getSession() → refresh`, que podía
+  agotar el rate limit de Auth; el **429 no es reintentable** para `auth-js`, que
+  borra la sesión (`_removeSession`) y hace que `/reset-password` muestre
+  falsamente "link expirado". QA A/B: sin el cambio, 3 llamadas nuevas; con el
+  cambio, 0. **Falta la prueba real de recovery** — ver el handoff vigente §1.
+
 ## Pre-piloto — detalle completo (PRs #53–#61)
 
 - **Mitigación del flujo público "Soy médico"** (PR #53, Hallazgo #7 del Security Gate). El `DoctorRegistrationModal` legacy + `registerDoctor` service creaban automáticamente profile/clinic/clinic_member/doctor con `lucy_status='claimed'` directo, sin validación de identidad. **Neutralizado**: el botón abrió `DoctorInterestModal` (WhatsApp-only) como mitigación temporal. Sin persistencia en DB. Archivos legacy marcados `@deprecated`.
@@ -75,7 +115,7 @@
 ### Smoke end-to-end de afiliación — ✅ COMPLETADO (2026-05-30)
 
 Validado el claim end-to-end del médico creado vía Fase 2, con test phone
-médico real (`50375000099` / OTP `123456`). Resultado en DB: el doctor pasó
+médico real (`50375000099`, OTP de QA no documentado). Resultado en DB: el doctor pasó
 de `listed_only` → `claimed`, `tos_accepted_at` seteado, `audit_log` con
 `edited_via='claim_self_service'`, y siguió sin `verified` / `is_operational`
 / `booking_enabled`. El claim pasó por el modal correcto y el password se
