@@ -19,6 +19,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
  *   - `/`            (Home / directorio)
  *   - `/doctor/*`    (perfil público del médico, por slug o UUID)
  *   - `/privacidad`
+ *   - `/terminos`
  * Todo lo demás (panel/admin/paciente, flujos con token como
  * `/calificar/:token` y `/reset-password`, etc.) queda BLOQUEADO.
  *
@@ -26,7 +27,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
  * (solo origin + pathname), como defensa en profundidad contra PII.
  */
 
-const PUBLIC_EXACT = new Set(['/', '/privacidad']);
+const PUBLIC_EXACT = new Set(['/', '/privacidad', '/terminos']);
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_EXACT.has(pathname)) return true;
