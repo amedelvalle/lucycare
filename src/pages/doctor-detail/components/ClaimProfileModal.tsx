@@ -23,7 +23,14 @@ interface ClaimProfileModalProps {
   onActivated?: () => void;
 }
 
-const TOS_VERSION = 'v1.0';
+/**
+ * Versión TÉCNICA que se registra en `doctors.tos_version` para las
+ * aceptaciones NUEVAS. Identificador deliberadamente distinto del `v1.0`
+ * histórico: aquel se firmó contra un documento que no estaba publicado, y
+ * no debe confundirse con las aceptaciones del documento real (`/terminos`,
+ * publicado en #331). Las filas históricas NO se reinterpretan ni se migran.
+ */
+const TOS_VERSION = 'tos-2026-08-13';
 
 /** Canal público de soporte (temporal). NO usar un teléfono: el número
  *  anterior era además credencial de una cuenta administrativa. */
@@ -571,20 +578,23 @@ export default function ClaimProfileModal({
               </div>
 
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                {/* El identificador técnico (`TOS_VERSION`) se registra, pero NO se
+                    imprime: es interno y no aporta nada al médico. La versión visible
+                    del documento vive en `/terminos`. */}
                 <p className="text-sm text-gray-700">
-                  Al reclamar este perfil confirmás que <strong>sos el profesional</strong> y aceptás nuestros{' '}
+                  Al reclamar este perfil confirmas que <strong>eres el profesional</strong> y aceptas nuestros{' '}
                   <a
                     href="/terminos"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-brand-purple underline"
                   >
-                    Términos de Uso
-                  </a>{' '}
-                  ({TOS_VERSION}).
+                    Términos y Condiciones
+                  </a>
+                  .
                 </p>
                 <p className="text-xs text-gray-500">
-                  Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos junto con vos después
+                  Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos contigo después
                   de un breve onboarding.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
