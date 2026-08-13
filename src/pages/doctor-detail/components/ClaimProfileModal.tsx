@@ -594,7 +594,7 @@ export default function ClaimProfileModal({
                   .
                 </p>
                 <p className="text-xs text-gray-500">
-                  Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos junto con vos después
+                  Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos contigo después
                   de un breve onboarding.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
