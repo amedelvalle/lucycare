@@ -4,26 +4,44 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-12) — post PR #327.**
+> 🟢 **ESTADO VIGENTE (2026-08-13) — post PR #329.**
 > **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`
-> (leer PRIMERO).** Ese handoff es autosuficiente y reemplaza al `2026-08-06`, que
-> pasa a **histórico** junto con todos los anteriores. El detalle por PR de los
-> frentes cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo
-> duplica.
+> (leer PRIMERO).** Ese handoff es autosuficiente, se mantiene actualizado post-#329
+> y reemplaza al `2026-08-06`, que pasa a **histórico** junto con todos los
+> anteriores. El detalle por PR de los frentes cerrados vive en
+> **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `c659cc5408ffc5e69dd63e418bc2311594db6d1f`** · **PRs mergeados hasta #327** ·
+> **HEAD `fcf07053043d455c9f6ec4e1b445c968b609fad8`** · **PRs mergeados hasta #329** ·
 > **migraciones aplicadas hasta `s7_71b`** (92 archivos, sin cambios) ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción desplegada
-> (`https://lucycare.app`, sirviendo `c659cc5`).
+> y **validada** (`https://lucycare.app` sirviendo `fcf0705`; bundle verificado en
+> el dominio, no solo el estado del deploy).
 >
-> **🔴 FRENTE ACTIVO: RECOVERY-EMAIL-P0** — el único abierto. El PR #327 eliminó
-> la realimentación `TOKEN_REFRESHED → useIdleLogout → refresh() → getSession()`,
-> que podía agotar el rate limit de Auth; el 429 resultante **no es reintentable**
-> para auth-js, que borra la sesión y hace que `/reset-password` muestre
-> falsamente "link expirado". **Falta una única prueba real de recovery.**
-> **No abrir ningún otro frente mientras siga activo.** Detalle en el handoff §1.
+> **✅ RECOVERY-EMAIL-P0 = CLOSED (2026-08-13).** El recovery real por email pasó
+> end-to-end: enlace → contraseña establecida → login email+contraseña → sesión
+> válida. El PR #327 había eliminado la realimentación
+> `TOKEN_REFRESHED → useIdleLogout → refresh() → getSession()`, que podía agotar el
+> rate limit de Auth (el 429 **no es reintentable** para auth-js, que borra la
+> sesión y hace que `/reset-password` muestre falsamente "link expirado").
+> **No reabrir Auth ni recovery salvo un incidente nuevo con evidencia propia.**
 >
-> **Último eje cerrado antes — cancelación por el paciente (#310 / `s7_70` + #311):**
+> **✅ ADMIN-JUNIOR = CLOSED (2026-08-13) — PR #329.** El acceso de
+> `operations_admin` a LucyAdmin ya estaba resuelto server-side; lo que fallaba era
+> **solo la navegación**: `destinationForRole` y el menú miraban únicamente
+> `profiles.role`, y un `operations_admin` tiene `role='patient'`. #329 agregó
+> `destinationAfterLogin()` (consulta la MISMA RPC del guard, `my_lucyadmin_access`)
+> y el ítem **"Ir a LucyAdmin"** en `PatientAccountMenu`. Sin migración, sin
+> backend, sin privilegios nuevos. La RPC **no corre para visitantes anónimos**
+> (verificado en producción con Performance API: 0 llamadas en el Home anónimo).
+>
+> **✅ TESTPHONE-CLEANUP-P0 = CLOSED (2026-08-13).** `50377507479` retirado de Test
+> Phones; el login posterior de `operations_admin` por email+contraseña = PASS.
+> **Josué ya no depende de ningún Test Phone.** Quedan **exactamente 2**.
+>
+> **🟡 SIGUIENTE FRENTE PENDIENTE: LEGAL-P0** — ya no está bloqueado, pero **no se
+> abre sin instrucción del owner**. Detalle en el handoff §6.
+>
+> **Último eje funcional cerrado antes — cancelación por el paciente (#310 / `s7_70` + #311):**
 > el paciente cancela su cita desde "Mis atenciones"; el historial la conserva como
 > *Cancelada*; el horario se libera; el médico ve la tarjeta "Cancelaciones
 > recientes". **`NotificationBell` NO se modificó.**
@@ -83,13 +101,16 @@
 > tocar claves en Vercel/Supabase/Cloudflare · no ejecutar SQL ni usar
 > `service_role` sin autorización puntual · **no tocar `auth.users` por SQL —
 > siempre Admin API** · **jamás Katherine (`50372608827`)** · no modificar la
-> identidad ni la configuración permanente de **Camilo (`50378627694`)** · no iniciar
-> ningún pendiente del backlog sin instrucción del owner.
+> identidad ni la configuración permanente de **Camilo (`50378056365`)** ni de
+> **LucyAdmin (`50378627694`)** · no iniciar ningún pendiente del backlog sin
+> instrucción del owner.
 >
 > **Objetivo comercial:** LucyCare listo para lanzamiento en El Salvador **a más
 > tardar el 2 de octubre de 2026** (sin expansión regional en este ciclo).
-> Secuencia: #311 ✅ → AUDIT-SEC-P0 → TWILIO-P0 → QA integral → soporte/recuperación
-> → pagos/facturación → legal/monitoreo → piloto comercial → go/no-go.
+> Secuencia: #311 ✅ → AUDIT-SEC-P0 ✅ → TWILIO-P0 ✅ → RECOVERY-EMAIL-P0 ✅ →
+> ADMIN-JUNIOR ✅ → TESTPHONE-CLEANUP-P0 ✅ → **LEGAL-P0 (siguiente)** → booking E2E
+> real → pagos/facturación → monitoreo → piloto comercial → go/no-go.
+> **BILLING-P0 sigue PAUSADO** y **no bloquea el piloto**.
 >
 > **Nota de smokes SQL:** no usar tablas temporales en el SQL Editor de Supabase
 > (`42P01` por `search_path`, `3F000` porque `pg_temp` no resuelve hasta que la
@@ -135,7 +156,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (post-#327). Autosuficiente: frente activo RECOVERY-EMAIL-P0 con su evidencia y su única prueba pendiente, ADMIN-JUNIOR/`operations_admin`, Test Phones y su objetivo final, LucyAdmin y Camilo post-swap, seguridad/Twilio, LEGAL-P0 pausado, pilot readiness, Booking E2E congelado, identidades protegidas y reglas operativas.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#329). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 **cerrados** con su evidencia, `operations_admin` y su navegación corregida, los 2 Test Phones vigentes, LucyAdmin y Camilo post-swap, seguridad/Twilio, **LEGAL-P0 = siguiente frente**, pilot readiness, Booking E2E congelado, identidades protegidas y reglas operativas.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — **histórico** (post-#314: AUDIT-SEC-P0 en curso, `s7_71a` aplicada, `s7_71b` bloqueada; su §13 y §14 quedaron actualizados con el cierre de BILLING y TWILIO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
@@ -174,7 +195,10 @@ squash-merge, la rama puede borrarse.
 
 - **#313–#321** ✅ — **AUDIT-SEC-P0 completo**: cobertura server-side de `appointments` (`s7_71a`, #313), instrumento del smoke corregido en cuatro PRs (#316–#320), cierre de la escritura arbitraria sobre `audit_log` (`s7_71b`, #321) y prueba QA de continuidad post-hardening PASS
 
+- **#327–#329** ✅ — fix de Auth `useIdleLogout`/`TOKEN_REFRESHED` (#327), handoff canónico (#328) y **ADMIN-JUNIOR: navegación de `operations_admin` a LucyAdmin** (#329, frontend, sin migración) → [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
+0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
 2. ~~**TWILIO-P0**~~ — **✅ CLOSED / VALIDATED FOR PILOT (2026-08-11).** Supabase con **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · solo El Salvador); sin cambios de código. QA: Test Phone PASS + un único SMS real (`Approved`, 1/1) con sesión válida y cero efectos colaterales; identidad QA temporal eliminada por Admin API. Detalle en el handoff vigente §14. **Pendiente operativo:** Auto Recharge de Twilio antes de sumar usuarios reales.
 
@@ -349,20 +373,22 @@ Estado: `lucy_status='verified'`, `is_published=true`, `is_operational=true`, `b
 ### Test Phones configurados
 
 > ⚠️ **Los OTP fijos NO se documentan en el repositorio.** Viven solo en el
-> Dashboard de Supabase, en poder del owner. Estado tras la limpieza y el swap
-> del **2026-08-12**:
+> Dashboard de Supabase, en poder del owner. Estado tras TESTPHONE-CLEANUP-P0
+> (**2026-08-13**): **objetivo final alcanzado — exactamente 2**.
 
 | Phone | Uso | Estado |
 |---|---|---|
 | `50378056365` | **Camilo** (médico demo) — recibió este número en el swap | **KEEP** |
 | `50378626108` | Paciente QA | **KEEP** |
-| `50377507479` | `operations_admin` (Josué) | **TEMPORAL** — sale al cerrar RECOVERY-EMAIL-P0 |
+| `50377507479` | `operations_admin` (Josué) | **FUERA (2026-08-13)** — accede por email+contraseña |
 | `50378627694` | **LucyAdmin** — su teléfono real, con SMS por Twilio Verify | **FUERA — nunca reponer** |
 
 Los demás (`50375000001`, `50375000099`, `50376193396`, `50370007201`,
 `50370008803`, `50378873634`, `50378590126`) fueron **retirados de Test Phones**
-el 2026-08-12. **Retirarlos no eliminó identidades ni datos.** Objetivo final:
-exactamente **2** Test Phones.
+el 2026-08-12. **Retirarlos no eliminó identidades ni datos** — es configuración
+de GoTrue, no identidad. Consecuencia vigente: un número fuera de la lista que
+intente OTP por teléfono consume **SMS real de Twilio Verify** (ver backlog #9,
+Auto Recharge).
 
 ## Sprints completados
 
