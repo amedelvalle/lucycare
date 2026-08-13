@@ -6,10 +6,10 @@
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados
 > vive en `docs/HISTORIAL_FRENTES.md`.
 >
-> **Actualización 2026-08-13 (post #329):** RECOVERY-EMAIL-P0, ADMIN-JUNIOR y
-> TESTPHONE-CLEANUP-P0 quedaron **CERRADOS**. **No hay frente funcional activo.**
-> El siguiente pendiente es **LEGAL-P0** (§6), que **no se abre sin instrucción
-> del owner**.
+> **Actualización 2026-08-13 (post #332):** RECOVERY-EMAIL-P0, ADMIN-JUNIOR,
+> TESTPHONE-CLEANUP-P0 y **LEGAL-P0** quedaron **CERRADOS**. **No hay frente
+> funcional activo.** El siguiente pendiente es el **Booking E2E real controlado**
+> (§8), que **no se abre sin instrucción del owner**.
 >
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales. Los teléfonos aparecen **solo como
@@ -25,17 +25,23 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD** | **`fcf07053043d455c9f6ec4e1b445c968b609fad8`** |
-| Subject | `fix(nav): operations_admin llega a LucyAdmin desde login y Mi cuenta (#329)` |
+| **HEAD** | **`ae61e8abd23d445d88a9b5545813405036cb2b9c`** |
+| Subject | `feat(legal): version tecnica nueva en el claim y linea legal en la reserva (#332)` |
 | `main == origin/main` | sí |
 | Árbol | limpio |
 | PRs abiertos | **0** |
 | Migraciones | **92 archivos**, versionadas y aplicadas hasta **`s7_71b`** — sin cambios |
-| Vercel producción | deployment de `fcf0705` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy) |
+| Vercel producción | deployment de `ae61e8a` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy) |
 
-**Últimos PRs mergeados:** #329 (navegación de `operations_admin`) · #328
-(handoff canónico) · #327 (fix de Auth) · #326 (retiro del teléfono admin de
-superficies públicas) · #325 (cierre TWILIO-P0) · #324 (BILLING canónico).
+**Últimos PRs mergeados:** #332 (integración legal) · #331 (publicación legal) ·
+#330 (cierre documental) · #329 (navegación de `operations_admin`) · #328
+(handoff canónico) · #327 (fix de Auth).
+
+**Deuda menor de performance, registrada y NO urgente:** el bundle principal
+quedó en **~666 kB** porque las dos páginas legales viajan en el chunk inicial,
+siguiendo la convención del router de mantener estáticas las rutas públicas/SEO
+(`src/router/config.tsx`). El arreglo sería `lazy()` en ambas páginas. **No es
+bloqueante; el owner decidió no hacerlo ahora.**
 
 ---
 
@@ -295,24 +301,65 @@ separó definitivamente **LucyAdmin → `50378627694`** (real, no Test Phone) y
 
 ---
 
-## 6. LEGAL-P0 — SIGUIENTE FRENTE PENDIENTE
+## 6. LEGAL-P0 — ✅ CLOSED (2026-08-13, PRs #331 y #332)
 
-Ya **no está bloqueado** (RECOVERY-EMAIL-P0 cerró el 2026-08-13), pero **no se
-abre sin instrucción expresa del owner**.
+Cerrado en dos PRs, ambos **sin migración, sin backend y sin fricción nueva**
+(ni checkbox, ni modal, ni consentimiento adicional).
 
-Pendiente ya definido:
+### 6.1 PR #331 — publicación
 
-- **Crear `/terminos`.** Hoy `ClaimProfileModal` enlaza a `/terminos`, que **no
-  existe** en el router → cae en `NotFound`. Y sin embargo la aceptación **sí se
-  registra** (`doctors.tos_accepted_at` + `tos_version='v1.0'`).
-- `/privacidad` **sí existe**.
-- **No reinterpretar** las aceptaciones históricas `v1.0`: se firmaron contra un
-  documento no publicado. La próxima versión debe tener **identificador nuevo y
-  fecha de vigencia**.
-- El paciente que reserva debe **aceptar Términos y reconocer Privacidad**.
-- La evidencia legal del booking va **separada** de `otp_consent_events`.
-- **No modificar `otp-consent-v1`** ni su hash.
+- **`/terminos` existe.** Antes, `ClaimProfileModal` enlazaba a esa ruta y caía
+  en `NotFound` mientras la aceptación **sí** se registraba. Eso quedó cerrado.
+- **`/privacidad`** reemplazó el texto provisional del MVP y perdió el descargo
+  "versión inicial / será revisado por asesoría legal".
+- Ambos son los **documentos definitivos del owner** (**Versión 1.0 · última
+  actualización julio de 2026 · entrada en vigor julio de 2026**), reproducidos
+  sin resumir ni parafrasear. Fidelidad verificada por conteo contra la fuente:
+  Términos 24 secciones / 149 viñetas; Privacidad 19 secciones / 7 subsecciones /
+  187 viñetas.
+- `/terminos` entró al allowlist de `PublicAnalytics`, por paridad con
+  `/privacidad`.
+
+### 6.2 PR #332 — integración
+
+- **`TOS_VERSION = 'tos-2026-08-13'`** en `ClaimProfileModal` para las
+  aceptaciones **nuevas**. Fluye por el camino que ya existía hasta
+  `claim_doctor_profile`; `claimProfile.service.ts`, su fallback `?? 'v1.0'`, la
+  RPC y `doctors.tos_version` **no se tocaron**.
+- **El identificador es técnico y NO se imprime en la UI.** El médico lee:
+  *"Al reclamar este perfil confirmas que eres el profesional y aceptas nuestros
+  Términos y Condiciones."* — tuteo, nombre publicado del documento, enlace a
+  `/terminos`.
+- **Línea legal discreta en `BookingCard`**, bajo el CTA: *"Al reservar, aceptas
+  los Términos y Condiciones y reconoces la Política de Privacidad."* Enlaces a
+  `/terminos` y `/privacidad` con `target="_blank"` — abren en pestaña nueva para
+  no perder el servicio y el horario ya seleccionados.
+- **`MobileBookingSheet` reutiliza `BookingCard`:** móvil cubierto sin una segunda
+  implementación. Validado en producción a 375×812.
+- **El flujo de reserva no cambió:** el diff de `BookingCard` no elimina ni una
+  línea; `handleBooking`, `completeBooking`, `registerBookingIntent` y
+  `createBookingWithIntent` quedaron intactos.
+
+### 6.3 Reglas que siguen vigentes
+
+- **Las aceptaciones históricas `v1.0` NO se reinterpretan ni se migran:** se
+  firmaron contra un documento que no estaba publicado.
+- **`CONSENT_VERSION` de `AffiliationRequestModal` queda en `v1.0`** y es otra
+  cosa: versiona el **consentimiento LOPD** del lead
+  (`doctor_affiliation_requests.consent_version`, `s7_21`), no la Política de
+  Privacidad. Verificado en código antes de decidirlo.
+- **`otp_consent_events` no se usó** para nada de este frente. **No modificar
+  `otp-consent-v1`** ni su hash.
 - **Tuteo** en todo copy nuevo.
+
+### 6.4 PR 3 — evidencia explícita del paciente: DIFERIDO
+
+Registrar en DB la versión aceptada por el paciente al reservar quedó **fuera de
+alcance por decisión del owner**: no se agregan columnas a `appointments` ni se
+toca `create_booking_with_intent`. **No bloquea el piloto.** Si alguna vez se
+retoma, el análisis previo descartó `booking_intents` como soporte (TTL de 15
+minutos, `service_role` únicamente, se consume, y existe antes de que haya
+usuario).
 
 ---
 
@@ -320,10 +367,11 @@ Pendiente ya definido:
 
 1. ~~Cerrar el recovery real de Josué (§1)~~ — **✅ hecho 2026-08-13.**
 2. ~~Retirar el Test Phone de `operations_admin` (§2, §3)~~ — **✅ hecho 2026-08-13.**
-3. Cerrar **LEGAL-P0**: `/terminos` + aceptación del paciente (§6). **← siguiente**
-4. **Booking E2E real controlado** — diseño congelado, ver §8.
+3. ~~Cerrar **LEGAL-P0** (§6)~~ — **✅ hecho 2026-08-13** (#331 + #332).
+4. **Booking E2E real controlado** — diseño congelado, ver §8. **← siguiente**
 5. Safeguard de saldo/recarga de Twilio (§5).
 6. Higiene final de perfiles QA no publicables (§9).
+7. **GO/NO-GO final.**
 
 **Billing automático NO bloquea el piloto. BILLING-P0 = PAUSED**, arquitectura
 definida y persistida en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`, que es la
@@ -431,6 +479,7 @@ gh pr list --state open
 Leer en orden: **1)** `CLAUDE.md` · **2)** este handoff.
 
 **INSTRUCCIÓN 0: no iniciar ningún frente ni cambio sin instrucción del owner.**
-**No hay frente funcional activo** (post-#329). El siguiente pendiente es
-**LEGAL-P0** (§6) y **no se abre sin instrucción expresa**. **No reabrir
-Auth/recovery salvo un incidente nuevo con evidencia propia.**
+**No hay frente funcional activo** (post-#332). El siguiente pendiente es el
+**Booking E2E real controlado** (§8) y **no se abre sin instrucción expresa**.
+**No reabrir Auth/recovery salvo un incidente nuevo con evidencia propia**, ni
+LEGAL-P0, que quedó cerrado en #331/#332 (§6).

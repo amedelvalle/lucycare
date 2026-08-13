@@ -4,18 +4,42 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-13) — post PR #329.**
+> 🟢 **ESTADO VIGENTE (2026-08-13) — post PR #332.**
 > **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`
-> (leer PRIMERO).** Ese handoff es autosuficiente, se mantiene actualizado post-#329
+> (leer PRIMERO).** Ese handoff es autosuficiente, se mantiene actualizado post-#332
 > y reemplaza al `2026-08-06`, que pasa a **histórico** junto con todos los
 > anteriores. El detalle por PR de los frentes cerrados vive en
 > **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `fcf07053043d455c9f6ec4e1b445c968b609fad8`** · **PRs mergeados hasta #329** ·
+> **HEAD `ae61e8abd23d445d88a9b5545813405036cb2b9c`** · **PRs mergeados hasta #332** ·
 > **migraciones aplicadas hasta `s7_71b`** (92 archivos, sin cambios) ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción desplegada
-> y **validada** (`https://lucycare.app` sirviendo `fcf0705`; bundle verificado en
-> el dominio, no solo el estado del deploy).
+> y **validada** (`https://lucycare.app` sirviendo `ae61e8a`; verificado en el
+> dominio, no solo el estado del deploy).
+>
+> **✅ LEGAL-P0 = CLOSED (2026-08-13) — PRs #331 y #332.**
+> **#331 (publicación):** `/terminos` **existe** —cierra el enlace que caía en
+> `NotFound`— y `/privacidad` reemplazó el texto provisional del MVP. Ambos son los
+> documentos definitivos del owner (**Versión 1.0 · julio de 2026**), reproducidos
+> sin resumir; se eliminó el descargo "versión inicial / será revisado por asesoría
+> legal". `/terminos` entró al allowlist de `PublicAnalytics`.
+> **#332 (integración):** `TOS_VERSION = 'tos-2026-08-13'` para las aceptaciones
+> **nuevas** del claim; el identificador es técnico y **NO se imprime en la UI**;
+> línea legal discreta bajo el CTA de `BookingCard` —*"Al reservar, aceptas los
+> Términos y Condiciones y reconoces la Política de Privacidad"*— con enlaces a
+> `/terminos` y `/privacidad` en pestaña nueva. `MobileBookingSheet` reutiliza
+> `BookingCard`: móvil cubierto sin segunda implementación.
+> **Sin migración, sin backend, sin checkbox nuevo ni modal.**
+>
+> ⚠️ **Las aceptaciones históricas `v1.0` NO se reinterpretan ni se migran:** se
+> firmaron contra un documento que no estaba publicado. **`CONSENT_VERSION` de
+> `AffiliationRequestModal` queda en `v1.0` y es otra cosa** — versiona el
+> consentimiento LOPD del lead (`doctor_affiliation_requests.consent_version`,
+> `s7_21`), no la Política de Privacidad.
+>
+> **PR 3 / evidencia explícita del paciente = DIFERIDO por decisión del owner.**
+> No se agregan columnas a `appointments` ni se toca `create_booking_with_intent`.
+> **No bloquea el piloto.**
 >
 > **✅ RECOVERY-EMAIL-P0 = CLOSED (2026-08-13).** El recovery real por email pasó
 > end-to-end: enlace → contraseña establecida → login email+contraseña → sesión
@@ -38,8 +62,16 @@
 > Phones; el login posterior de `operations_admin` por email+contraseña = PASS.
 > **Josué ya no depende de ningún Test Phone.** Quedan **exactamente 2**.
 >
-> **🟡 SIGUIENTE FRENTE PENDIENTE: LEGAL-P0** — ya no está bloqueado, pero **no se
-> abre sin instrucción del owner**. Detalle en el handoff §6.
+> **🟡 SECUENCIA PENDIENTE HACIA EL PILOTO** (ninguno se abre sin instrucción del
+> owner): **Booking E2E real controlado** (diseño congelado, handoff §8) →
+> **safeguard operativo de saldo/recarga de Twilio** → **higiene final de perfiles
+> QA publicados** → **GO/NO-GO final**.
+>
+> **📉 Deuda menor de performance (registrada, NO urgente):** el bundle principal
+> quedó en **~666 kB** porque las dos páginas legales viajan en el chunk inicial,
+> siguiendo la convención del router de mantener estáticas las rutas públicas/SEO.
+> El arreglo sería `lazy()` en ambas. **No es bloqueante y el owner decidió no
+> hacerlo ahora.**
 >
 > **Último eje funcional cerrado antes — cancelación por el paciente (#310 / `s7_70` + #311):**
 > el paciente cancela su cita desde "Mis atenciones"; el historial la conserva como
@@ -108,9 +140,9 @@
 > **Objetivo comercial:** LucyCare listo para lanzamiento en El Salvador **a más
 > tardar el 2 de octubre de 2026** (sin expansión regional en este ciclo).
 > Secuencia: #311 ✅ → AUDIT-SEC-P0 ✅ → TWILIO-P0 ✅ → RECOVERY-EMAIL-P0 ✅ →
-> ADMIN-JUNIOR ✅ → TESTPHONE-CLEANUP-P0 ✅ → **LEGAL-P0 (siguiente)** → booking E2E
-> real → pagos/facturación → monitoreo → piloto comercial → go/no-go.
-> **BILLING-P0 sigue PAUSADO** y **no bloquea el piloto**.
+> ADMIN-JUNIOR ✅ → TESTPHONE-CLEANUP-P0 ✅ → LEGAL-P0 ✅ → **booking E2E real
+> controlado (siguiente)** → safeguard de saldo/recarga Twilio → higiene de perfiles
+> QA publicados → GO/NO-GO. **BILLING-P0 sigue PAUSADO** y **no bloquea el piloto**.
 >
 > **Nota de smokes SQL:** no usar tablas temporales en el SQL Editor de Supabase
 > (`42P01` por `search_path`, `3F000` porque `pg_temp` no resuelve hasta que la
@@ -156,7 +188,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#329). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 **cerrados** con su evidencia, `operations_admin` y su navegación corregida, los 2 Test Phones vigentes, LucyAdmin y Camilo post-swap, seguridad/Twilio, **LEGAL-P0 = siguiente frente**, pilot readiness, Booking E2E congelado, identidades protegidas y reglas operativas.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#332). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / **LEGAL-P0** cerrados con su evidencia, `operations_admin` y su navegación corregida, los 2 Test Phones vigentes, LucyAdmin y Camilo post-swap, seguridad/Twilio, pilot readiness, **Booking E2E = siguiente frente** (congelado), identidades protegidas y reglas operativas.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — **histórico** (post-#314: AUDIT-SEC-P0 en curso, `s7_71a` aplicada, `s7_71b` bloqueada; su §13 y §14 quedaron actualizados con el cierre de BILLING y TWILIO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
@@ -197,10 +229,13 @@ squash-merge, la rama puede borrarse.
 
 - **#327–#329** ✅ — fix de Auth `useIdleLogout`/`TOKEN_REFRESHED` (#327), handoff canónico (#328) y **ADMIN-JUNIOR: navegación de `operations_admin` a LucyAdmin** (#329, frontend, sin migración) → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#330–#332** ✅ — cierre documental post-#329 (#330) y **LEGAL-P0 completo**: publicación de `/terminos` y `/privacidad` definitivos (#331) + integración `tos-2026-08-13` en el claim y línea legal en la reserva (#332). Todo frontend/docs, **sin migración** → [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
 2. ~~**TWILIO-P0**~~ — **✅ CLOSED / VALIDATED FOR PILOT (2026-08-11).** Supabase con **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · solo El Salvador); sin cambios de código. QA: Test Phone PASS + un único SMS real (`Approved`, 1/1) con sesión válida y cero efectos colaterales; identidad QA temporal eliminada por Admin API. Detalle en el handoff vigente §14. **Pendiente operativo:** Auto Recharge de Twilio antes de sumar usuarios reales.
+3. ~~**LEGAL-P0**~~ — **✅ CLOSED (2026-08-13).** `/terminos` y `/privacidad` publicados con los documentos definitivos (#331) · `TOS_VERSION='tos-2026-08-13'` para nuevas aceptaciones del claim, sin exponer el identificador en la UI, y línea legal discreta en `BookingCard` con enlaces a ambos documentos (#332). Sin migración ni backend. **PR 3 / evidencia explícita del paciente = DIFERIDO, no requerido para el piloto.** Detalle en el handoff §6.
 
 **Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
