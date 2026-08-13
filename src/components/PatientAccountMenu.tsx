@@ -5,6 +5,7 @@
  *
  * Opciones:
  *   - Ir al panel → /panel  (solo doctor/assistant)
+ *   - Ir a LucyAdmin → /admin  (solo con acceso LucyAdmin por capacidad)
  *   - Mi perfil → /paciente/perfil
  *   - Mis atenciones → /paciente/mis-atenciones
  *   - Cerrar sesión
@@ -20,6 +21,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from '@/services/auth.service';
+import { useLucyAdminAccess } from '@/hooks/useLucyAdminAccess';
 
 interface PatientAccountMenuProps {
   displayName: string;
@@ -33,6 +35,12 @@ interface PatientAccountMenuProps {
 
 export default function PatientAccountMenu({ displayName, role }: PatientAccountMenuProps) {
   const hasPanel = role === 'doctor' || role === 'assistant';
+  // Acceso LucyAdmin por CAPACIDAD (`lucyadmin_access`, s7_57), no por rol: un
+  // `operations_admin` tiene `profiles.role='patient'` y sin esto no tendría
+  // ninguna entrada visible a /admin. La RPC solo corre para sesiones
+  // autenticadas: este menú únicamente se monta cuando hay usuario en sesión
+  // (home y PatientHeader), nunca para visitantes anónimos.
+  const { canAccessLucyadmin } = useLucyAdminAccess();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,6 +110,20 @@ export default function PatientAccountMenu({ displayName, role }: PatientAccount
               >
                 <i className="ri-layout-grid-line text-emerald-600" aria-hidden="true"></i>
                 Ir al panel
+              </button>
+              <div className="border-t border-gray-100" />
+            </>
+          )}
+          {canAccessLucyadmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleNavigate('/admin')}
+                role="menuitem"
+                className="w-full text-left px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+              >
+                <i className="ri-shield-user-line text-emerald-600" aria-hidden="true"></i>
+                Ir a LucyAdmin
               </button>
               <div className="border-t border-gray-100" />
             </>
