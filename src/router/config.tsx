@@ -14,6 +14,7 @@ import NotFound from "../pages/NotFound";
 import Home from "../pages/home/page";
 import DoctorDetail from "../pages/doctor-detail/page";
 import PrivacidadPage from "../pages/privacidad/page";
+import TerminosPage from "../pages/terminos/page";
 import PatientOnlyRoute from "./PatientOnlyRoute";
 import DoctorOnlyRoute from "./DoctorOnlyRoute";
 import AdminOnlyRoute from "./AdminOnlyRoute";
@@ -77,6 +78,10 @@ const routes: RouteObject[] = [
   {
     path: "/privacidad",
     element: <PrivacidadPage />,
+  },
+  {
+    path: "/terminos",
+    element: <TerminosPage />,
   },
   {
     path: "/paciente/mis-atenciones",
