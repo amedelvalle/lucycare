@@ -1,10 +1,15 @@
-# HANDOFF LucyCare — nueva ventana (2026-08-12, post PR #327)
+# HANDOFF LucyCare — nueva ventana (2026-08-12 · actualizado 2026-08-13, post PR #329)
 
 > 🟢 **PUNTO DE ENTRADA CANÓNICO.** Autosuficiente: no asume que la ventana
 > nueva conozca ninguna conversación anterior. Reemplaza a
 > `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md`, que pasa a **histórico**
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados
 > vive en `docs/HISTORIAL_FRENTES.md`.
+>
+> **Actualización 2026-08-13 (post #329):** RECOVERY-EMAIL-P0, ADMIN-JUNIOR y
+> TESTPHONE-CLEANUP-P0 quedaron **CERRADOS**. **No hay frente funcional activo.**
+> El siguiente pendiente es **LEGAL-P0** (§6), que **no se abre sin instrucción
+> del owner**.
 >
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales. Los teléfonos aparecen **solo como
@@ -20,28 +25,36 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD** | **`c659cc5408ffc5e69dd63e418bc2311594db6d1f`** |
-| Subject | `fix(auth): useIdleLogout deja de reaccionar a TOKEN_REFRESHED (#327)` |
+| **HEAD** | **`fcf07053043d455c9f6ec4e1b445c968b609fad8`** |
+| Subject | `fix(nav): operations_admin llega a LucyAdmin desde login y Mi cuenta (#329)` |
 | `main == origin/main` | sí |
 | Árbol | limpio |
 | PRs abiertos | **0** |
 | Migraciones | **92 archivos**, versionadas y aplicadas hasta **`s7_71b`** — sin cambios |
-| Vercel producción | deployment de `c659cc5` = **success**, y el dominio sirve ese bundle |
+| Vercel producción | deployment de `fcf0705` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy) |
 
-**Últimos PRs mergeados:** #327 (fix de Auth) · #326 (retiro del teléfono admin
-de superficies públicas) · #325 (cierre TWILIO-P0) · #324 (BILLING canónico) ·
-#322 (cierre AUDIT-SEC-P0).
+**Últimos PRs mergeados:** #329 (navegación de `operations_admin`) · #328
+(handoff canónico) · #327 (fix de Auth) · #326 (retiro del teléfono admin de
+superficies públicas) · #325 (cierre TWILIO-P0) · #324 (BILLING canónico).
 
 ---
 
-## 1. FRENTE ACTIVO — RECOVERY-EMAIL-P0
+## 1. RECOVERY-EMAIL-P0 — ✅ CLOSED (2026-08-13)
 
-> **Es lo PRIMERO al reanudar. No abrir ningún otro frente mientras siga activo.**
+> **No hay frente funcional activo.** Esta sección queda como evidencia.
+> **No reabrir Auth ni recovery salvo un incidente nuevo con evidencia propia.**
 
 ### 1.1 Estado
 
-**ACTIVE / pendiente de una única prueba real.** El parche ya está en producción;
-falta confirmarlo con un recovery real.
+**CLOSED.** El parche está en producción y quedó confirmado con un recovery
+real end-to-end. Resultado del owner:
+
+| Paso | Resultado |
+|---|---|
+| Recovery por email (`josuediazdelvalle27@gmail.com`) | **PASS** |
+| Contraseña establecida | **PASS** |
+| Login email + contraseña | **PASS** |
+| Sesión creada y estable | **PASS** |
 
 ### 1.2 Qué pasó (evidencia de logs de producción, confirmada)
 
@@ -109,30 +122,31 @@ Fixture `RECOVERY_P0_QA` efímero: `createUser` + `generateLink` + `verifyOtp`
 recovery → `PASSWORD_RECOVERY` correcto. **Eliminado por Admin API**, `profiles`
 de vuelta a **140**, cero residuos, instrumentación revertida por completo.
 
-### 1.6 Pendiente inmediato — UN SOLO intento real
+### 1.6 Cierre
 
-`josuediazdelvalle27@gmail.com` → *Forgot password* → correo → establecer
-contraseña → login email + contraseña → acceso `operations_admin`.
+La prueba real se ejecutó y pasó. Al llegar a la UI apareció un problema
+**distinto y posterior**: la sesión era correcta pero la navegación lo trataba
+como paciente. Eso se diagnosticó y se cerró como **ADMIN-JUNIOR** (§2), no como
+un fallo de Auth.
 
-**Si falla:** **NO** pedir ni compartir la URL completa (puede contener
-credenciales). Registrar **hora exacta con zona horaria** y exportar **Auth Logs
-+ API Gateway/Edge Logs** de esa ventana.
-
-**Si pasa:** se puede cerrar RECOVERY-EMAIL-P0, y **por separado** el owner
-autorizará retirar su Test Phone.
+**Si en el futuro reaparece un fallo de recovery:** **NO** pedir ni compartir la
+URL completa (puede contener credenciales). Registrar **hora exacta con zona
+horaria** y exportar **Auth Logs + API Gateway/Edge Logs** de esa ventana.
+**No rediseñar Auth sin evidencia.**
 
 ---
 
-## 2. ADMIN-JUNIOR / operations_admin
+## 2. ADMIN-JUNIOR / operations_admin — ✅ CLOSED (2026-08-13, PR #329)
 
 | Campo | Valor |
 |---|---|
 | `user_id` / `profile_id` | `791e7d0b-8d6d-43db-8a43-95025d81581e` |
 | Email | `josuediazdelvalle27@gmail.com` — **añadido y confirmado** por Admin API |
-| Teléfono | `50377507479` |
+| Teléfono | `50377507479` — **ya NO es Test Phone** (retirado 2026-08-13) |
 | `identities` | **`email` + `phone`** |
-| `profiles.role` | **`patient`** |
+| `profiles.role` | **`patient`** — correcto, **no se elevó** |
 | `lucyadmin_access` | **`operations_admin`**, activo, otorgado 2026-07-10 |
+| Vía de acceso | **email + contraseña**. No depende de SMS ni de Test Phones |
 
 **Reglas vinculantes:** **no** convertir a `role='admin'` · **no** ampliar
 privilegios · **no** crear un rol nuevo · **no** usar la pantalla de invitación
@@ -145,21 +159,64 @@ cinco RPCs de datos públicos del médico están gateadas por
 `can_manage_directory()` (rango ≥ 1). Es decir: **esta cuenta sí opera** sobre el
 directorio. Lo que no tiene caller es `can_manage_doctor_operations()` (rango 2).
 
-**Pendiente:** recovery real → confirmar acceso → **con autorización expresa**
-retirar `50377507479` de Test Phones.
+### 2.1 El problema real y su cierre (PR #329)
+
+Autenticaba bien pero la UI lo mostraba como paciente. **El backend nunca estuvo
+mal:** `AdminOnlyRoute` ya admitía cualquier `lucyadmin_access` activo vía
+`my_lucyadmin_access()`, y el acceso directo a `/admin` **fue PASS antes de
+tocar código**. Lo que miraba solo `profiles.role` era la **navegación**, y un
+`operations_admin` tiene `role='patient'`.
+
+PR #329 — frontend, 4 archivos, +61/−8, **sin migración ni backend**:
+
+- `destinationAfterLogin(role)` en `auth.service.ts` — envuelve a
+  `destinationForRole` (que no cambió). Solo cuando el destino por rol es `/`
+  consulta **la misma RPC del guard** y devuelve `/admin` si
+  `can_access_lucyadmin`. Si la RPC falla, cae al destino por rol: **nunca
+  bloquea el login**. Aplicado en `LoginModal` (3 vías) y `ResetPasswordPage`.
+- Ítem **"Ir a LucyAdmin"** en `PatientAccountMenu`, visible solo con
+  `can_access_lucyadmin`. Lleva a `/admin`; qué sección se ve la siguen
+  decidiendo `AdminLayout` y `RequireOwnerAdmin`.
+
+**Ningún privilegio nuevo.** No se tocó `profiles.role`, `lucyadmin_access`,
+RLS, RPCs de autorización ni `auth.users`.
+
+### 2.2 QA — todo PASS
+
+Owner en Preview y producción: login email+contraseña · redirect automático ·
+`/admin/medicos` · capacidades acotadas de `operations_admin` · "Ir a LucyAdmin"
+visible · navegación y logout intactos.
+
+**Home anónimo:** `my_lucyadmin_access()` **no se ejecuta**. Verificado en
+producción con la Performance API — el grabador de red del navegador **no
+captura las llamadas cross-origin a Supabase** y habría dado un falso PASS; el
+instrumento válido sí registró las 6 llamadas reales del Home y **0** a la RPC.
+
+> ⚠️ El incidente de Turnstile durante la QA del Preview fue **hostname no
+> autorizado en Cloudflare**, no código del PR.
 
 ---
 
-## 3. Test Phones — estado y objetivo
+## 3. Test Phones — ✅ TESTPHONE-CLEANUP-P0 CLOSED (2026-08-13)
+
+**Objetivo final alcanzado: exactamente 2 Test Phones.**
 
 | Teléfono | Rol | Estado |
 |---|---|---|
 | `50378056365` | Camilo QA (médico demo) | **KEEP** |
 | `50378626108` | Paciente QA | **KEEP** |
-| `50377507479` | operations_admin / Josué | **TEMPORAL** — sale al cerrar §1 |
+| `50377507479` | operations_admin / Josué | **FUERA (2026-08-13)** |
 | `50378627694` | LucyAdmin | **FUERA — nunca reponer** |
 
-**Objetivo final: exactamente 2 Test Phones.**
+El retiro de `50377507479` fue **la única acción** del frente: solo se quitó de
+la lista de Test Phone Numbers. **No** se tocó la cuenta, el teléfono de la
+identidad, el email, la contraseña, `profiles`, `lucyadmin_access` ni roles. El
+login posterior por **email + contraseña** = **PASS**, con acceso
+`operations_admin` intacto.
+
+> ⚠️ Desde el retiro, cualquier intento de OTP por teléfono sobre un número
+> fuera de la lista consume **SMS real de Twilio Verify**. Ver §5 (Auto Recharge
+> pendiente).
 
 Retirados el 2026-08-12 sin tocar identidades ni datos: `50378873634` y
 `50378590126` (dos médicos reales importados y publicados), `50375000001`,
@@ -238,9 +295,10 @@ separó definitivamente **LucyAdmin → `50378627694`** (real, no Test Phone) y
 
 ---
 
-## 6. LEGAL-P0 — PAUSED
+## 6. LEGAL-P0 — SIGUIENTE FRENTE PENDIENTE
 
-Pausado mientras se cierra RECOVERY-EMAIL-P0. **No abrirlo antes.**
+Ya **no está bloqueado** (RECOVERY-EMAIL-P0 cerró el 2026-08-13), pero **no se
+abre sin instrucción expresa del owner**.
 
 Pendiente ya definido:
 
@@ -260,9 +318,9 @@ Pendiente ya definido:
 
 ## 7. Pilot readiness — pendientes antes del GO con pacientes reales
 
-1. Cerrar el recovery real de Josué (§1).
-2. Retirar el Test Phone de `operations_admin` (§2).
-3. Cerrar **LEGAL-P0**: `/terminos` + aceptación del paciente (§6).
+1. ~~Cerrar el recovery real de Josué (§1)~~ — **✅ hecho 2026-08-13.**
+2. ~~Retirar el Test Phone de `operations_admin` (§2, §3)~~ — **✅ hecho 2026-08-13.**
+3. Cerrar **LEGAL-P0**: `/terminos` + aceptación del paciente (§6). **← siguiente**
 4. **Booking E2E real controlado** — diseño congelado, ver §8.
 5. Safeguard de saldo/recarga de Twilio (§5).
 6. Higiene final de perfiles QA no publicables (§9).
@@ -373,5 +431,6 @@ gh pr list --state open
 Leer en orden: **1)** `CLAUDE.md` · **2)** este handoff.
 
 **INSTRUCCIÓN 0: no iniciar ningún frente ni cambio sin instrucción del owner.**
-El frente activo es **RECOVERY-EMAIL-P0** y su próximo paso está en §1.6.
-**No abrir LEGAL-P0 mientras RECOVERY-EMAIL-P0 siga activo.**
+**No hay frente funcional activo** (post-#329). El siguiente pendiente es
+**LEGAL-P0** (§6) y **no se abre sin instrucción expresa**. **No reabrir
+Auth/recovery salvo un incidente nuevo con evidencia propia.**
