@@ -566,6 +566,30 @@ export default function BookingCard({
                 <i className="ri-calendar-check-line text-brand-purple"></i>
                 <span>Reserva en línea · el pago se coordina con el médico</span>
               </div>
+              {/* Línea legal. Discreta a propósito: informa antes de la acción
+                  sin competir con el CTA. Los enlaces abren en pestaña nueva
+                  para no perder el servicio y el horario ya seleccionados. */}
+              <p className="mt-2 text-center text-xs text-gray-500">
+                Al reservar, aceptas los{' '}
+                <a
+                  href="/terminos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-600 underline hover:text-gray-800"
+                >
+                  Términos y Condiciones
+                </a>{' '}
+                y reconoces la{' '}
+                <a
+                  href="/privacidad"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-600 underline hover:text-gray-800"
+                >
+                  Política de Privacidad
+                </a>
+                .
+              </p>
             </div>
           </div>
         )}

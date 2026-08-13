@@ -23,7 +23,14 @@ interface ClaimProfileModalProps {
   onActivated?: () => void;
 }
 
-const TOS_VERSION = 'v1.0';
+/**
+ * Versión TÉCNICA que se registra en `doctors.tos_version` para las
+ * aceptaciones NUEVAS. Identificador deliberadamente distinto del `v1.0`
+ * histórico: aquel se firmó contra un documento que no estaba publicado, y
+ * no debe confundirse con las aceptaciones del documento real (`/terminos`,
+ * publicado en #331). Las filas históricas NO se reinterpretan ni se migran.
+ */
+const TOS_VERSION = 'tos-2026-08-13';
 
 /** Canal público de soporte (temporal). NO usar un teléfono: el número
  *  anterior era además credencial de una cuenta administrativa. */
