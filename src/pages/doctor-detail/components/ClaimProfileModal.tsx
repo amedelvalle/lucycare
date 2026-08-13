@@ -578,17 +578,20 @@ export default function ClaimProfileModal({
               </div>
 
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                {/* El identificador técnico (`TOS_VERSION`) se registra, pero NO se
+                    imprime: es interno y no aporta nada al médico. La versión visible
+                    del documento vive en `/terminos`. */}
                 <p className="text-sm text-gray-700">
-                  Al reclamar este perfil confirmás que <strong>sos el profesional</strong> y aceptás nuestros{' '}
+                  Al reclamar este perfil confirmas que <strong>eres el profesional</strong> y aceptas nuestros{' '}
                   <a
                     href="/terminos"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-brand-purple underline"
                   >
-                    Términos de Uso
-                  </a>{' '}
-                  ({TOS_VERSION}).
+                    Términos y Condiciones
+                  </a>
+                  .
                 </p>
                 <p className="text-xs text-gray-500">
                   Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos junto con vos después
