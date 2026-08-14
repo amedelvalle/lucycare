@@ -181,10 +181,24 @@ export default function BookingCard({
     ? doctorServices
     : [{ id: 'default', name: 'Consulta general', durationMinutes: 30, price: consultationFee, isFirstVisit: false, sortOrder: 0 }];
 
+  /**
+   * Descarta el paso de nombre pendiente. Se llama en los MISMOS puntos que
+   * invalidan `intentIdRef`: si cambia servicio, fecha u horario, el intent
+   * en espera quedó obsoleto y no debe seguir siendo utilizable. Sin esto, el
+   * botón "Continuar y reservar" reservaría el slot ANTERIOR —la RPC valida
+   * contra el intent, no contra lo que muestra la pantalla—.
+   */
+  const discardPendingNameStep = () => {
+    pendingIntentIdRef.current = null;
+    setNeedsName(false);
+    setNameInput('');
+  };
+
   const handleSlotSelect = (startTime: string, endTime: string) => {
     setSelectedSlotStart(startTime);
     setSelectedSlotEnd(endTime);
     intentIdRef.current = null; // nuevo slot ⇒ intent anterior obsoleto
+    discardPendingNameStep();
   };
 
   // Mapea el error de la RPC a mensaje visible y limpia el intent en memoria
@@ -509,7 +523,7 @@ export default function BookingCard({
                 {services.map((service) => (
                   <button
                     key={service.id}
-                    onClick={() => { setSelectedService(service); intentIdRef.current = null; }}
+                    onClick={() => { setSelectedService(service); intentIdRef.current = null; discardPendingNameStep(); }}
                     className={`w-full p-3 rounded-lg border-2 transition-all text-left cursor-pointer ${
                       selectedService?.id === service.id ? 'border-brand-purple bg-brand-mint/20' : 'border-gray-200 hover:border-gray-300'
                     }`}
@@ -542,6 +556,7 @@ export default function BookingCard({
                   setSelectedSlotStart('');
                   setSelectedSlotEnd('');
                   intentIdRef.current = null; // nueva fecha ⇒ intent obsoleto
+                  discardPendingNameStep();
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent cursor-pointer"
               />
