@@ -5,6 +5,7 @@ import WaitlistModal from './WaitlistModal';
 import { getCurrentAuthUser, signOut } from '../../../services/auth.service';
 import { useAvailableSlots, useAvailableDays } from '../../../hooks/useBooking';
 import { registerBookingIntent, createBookingWithIntent } from '../../../services/booking.service';
+import { updateMyProfile } from '../../../services/patientProfile.service';
 import type { BookingIntentError, BookingIntentErrorCategory } from '../../../services/booking.service';
 import { localDateStr } from '../../../services/slots.service';
 import { supabase } from '../../../lib/supabase';
@@ -15,6 +16,10 @@ import type { DoctorService } from '../../../types/directory.types';
  * AUTH-P1B1B — mensajes visibles del camino de reserva por intent. TUTEO
  * obligatorio (no voseo), aunque existan constantes con voseo en otras partes.
  */
+/** Tope de `create_booking_with_intent` (P009I). Se valida también acá para
+ *  no gastar un viaje al servidor con un nombre que la RPC va a rechazar. */
+const MAX_PATIENT_NAME = 150;
+
 const BOOKING_INTENT_MESSAGES: Record<BookingIntentErrorCategory, string> = {
   invalid_phone: 'El número de teléfono no es válido.',
   unavailable: 'Ese horario ya no está disponible. Elige otro horario.',
@@ -65,6 +70,13 @@ export default function BookingCard({
   const [booking, setBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingError, setBookingError] = useState('');
+  // Paso de nombre: solo para quien reserva con el perfil SIN nombre (típico
+  // del paciente recién creado por OTP). Sin esto, `patientName` caía al
+  // teléfono y el médico veía un número en lugar de un nombre.
+  const [needsName, setNeedsName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const pendingIntentIdRef = useRef<string | null>(null);
   // AUTH-P1B1B: intentId vigente, SOLO en memoria. Se limpia al cambiar
   // servicio/fecha/slot y ante categorías de error que lo invalidan.
   const intentIdRef = useRef<string | null>(null);
@@ -192,7 +204,25 @@ export default function BookingCard({
   // Completa la reserva a partir de un intent ya emitido, usando el objeto de
   // usuario LOCAL (no el estado currentUser, que puede no haber propagado).
   const completeBooking = async (intentId: string, user: AuthUser) => {
-    const patientName = (user.name?.trim() || user.phone || '').trim();
+    const existingName = user.name?.trim();
+    if (!existingName) {
+      // Perfil sin nombre: se pide una sola vez, ANTES de crear la cita. El
+      // intent queda en espera y sigue vigente mientras no expire.
+      pendingIntentIdRef.current = intentId;
+      setNameInput('');
+      setNeedsName(true);
+      return;
+    }
+    await finalizeBooking(intentId, existingName);
+  };
+
+  /**
+   * Crea la cita con un nombre ya resuelto. El fallback al teléfono se
+   * conserva como defensa técnica, pero el camino válido de reserva ya no
+   * puede alcanzarlo: o el perfil tiene nombre, o se pidió antes de llegar acá.
+   */
+  const finalizeBooking = async (intentId: string, name: string) => {
+    const patientName = (name.trim() || currentUser?.phone || '').trim();
     if (!patientName) {
       setBookingError(BOOKING_INTENT_MESSAGES.invalid_name);
       return;
@@ -200,6 +230,9 @@ export default function BookingCard({
     const res = await createBookingWithIntent({ intentId, patientName });
     if (res.ok) {
       intentIdRef.current = null;
+      pendingIntentIdRef.current = null;
+      setNeedsName(false);
+      setNameInput('');
       setBookingSuccess(true);
       setSelectedService(null);
       setSelectedDate('');
@@ -213,6 +246,38 @@ export default function BookingCard({
       queryClient.invalidateQueries({ queryKey: ['my-appointments'] });
     } else {
       handleIntentError(res.error);
+    }
+  };
+
+  const trimmedName = nameInput.trim();
+  const isNameValid = trimmedName.length > 0 && trimmedName.length <= MAX_PATIENT_NAME;
+
+  /**
+   * Guarda el nombre en `profiles.full_name` y solo entonces crea la cita.
+   * Persistirlo en el perfil —y no solo en la ficha— es lo que evita volver a
+   * preguntarlo en la próxima reserva: `AuthUser.name` sale de esa columna.
+   * Si el guardado falla NO se reserva: el intent y el horario siguen vigentes
+   * y el paciente puede reintentar.
+   */
+  const handleSubmitName = async () => {
+    const intentId = pendingIntentIdRef.current;
+    if (!isNameValid || savingName || !intentId) return;
+    setSavingName(true);
+    setBookingError('');
+    try {
+      await updateMyProfile({ full_name: trimmedName });
+    } catch {
+      setBookingError('No pudimos guardar tu nombre. Intenta de nuevo.');
+      setSavingName(false);
+      return;
+    }
+    setCurrentUser((u) => (u ? { ...u, name: trimmedName } : u));
+    pendingIntentIdRef.current = null;
+    setNeedsName(false);
+    try {
+      await finalizeBooking(intentId, trimmedName);
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -546,6 +611,44 @@ export default function BookingCard({
 
             {/* CTA Button */}
             <div className="pt-4 border-t border-gray-200">
+              {needsName ? (
+                /* Paso de nombre: reemplaza al CTA porque la reserva ya está en
+                   curso — el intent existe y solo falta este dato. */
+                <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">¿Cuál es tu nombre completo?</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Lo usaremos para identificar tu cita.</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && isNameValid && !savingName) handleSubmitName(); }}
+                    placeholder="Nombre completo"
+                    aria-label="Nombre completo"
+                    maxLength={MAX_PATIENT_NAME}
+                    autoFocus
+                    disabled={savingName}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-brand-purple disabled:bg-gray-100"
+                  />
+                  <button
+                    onClick={handleSubmitName}
+                    disabled={!isNameValid || savingName}
+                    className={`w-full px-6 py-3 rounded-lg font-semibold transition-colors ${
+                      isNameValid && !savingName
+                        ? 'bg-brand-purple text-white hover:bg-brand-purple-dark cursor-pointer'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {savingName ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        Guardando...
+                      </span>
+                    ) : 'Continuar y reservar'}
+                  </button>
+                </div>
+              ) : (
               <button
                 onClick={handleBooking}
                 disabled={!selectedService || !selectedSlotStart || booking}
@@ -562,6 +665,7 @@ export default function BookingCard({
                   </span>
                 ) : isAuthenticated ? 'Reservar ahora' : 'Inicia sesión para reservar'}
               </button>
+              )}
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
                 <i className="ri-calendar-check-line text-brand-purple"></i>
                 <span>Reserva en línea · el pago se coordina con el médico</span>
