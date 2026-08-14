@@ -92,7 +92,7 @@ export default function CalificarPage() {
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900">¿Cómo fue tu atención?</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Tu opinión es anónima para el médico y toma menos de un minuto.
+          Tu opinión es confidencial y completar la calificación toma menos de un minuto.
         </p>
       </div>
 
@@ -109,7 +109,7 @@ export default function CalificarPage() {
 
         <div className="pt-2 border-t border-gray-100">
           <p className="text-sm font-medium text-gray-800 mb-2">
-            ¿Recomendarías este médico a un familiar o amigo?
+            ¿Recomendarías a este médico a un familiar o amigo?
           </p>
           <div className="flex flex-wrap gap-1.5">
             {Array.from({ length: 11 }, (_, i) => i).map((n) => (
@@ -177,7 +177,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
         {children}
       </div>
-      <p className="text-[11px] text-gray-400 mt-6">Lucy Care · Encuesta de satisfacción</p>
+      <p className="text-[11px] text-gray-400 mt-6">LucyCare · Calificación de la atención</p>
     </div>
   );
 }
