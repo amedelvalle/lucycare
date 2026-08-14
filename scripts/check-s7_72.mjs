@@ -112,8 +112,15 @@ check('el PRE verifica el trigger y su definición',
 check('el PRE verifica review_tokens.token = text', /review_tokens/.test(pre) && /'text'/.test(pre));
 check('el PRE toma snapshot de los grants', /set_config\('s7_72\.acl_gen'/.test(pre));
 check('el POST aborta con RAISE EXCEPTION', /RAISE EXCEPTION 's7_72 POST:/.test(post));
-check('el POST comprueba que el helper NO es ejecutable por los 4 roles',
-  (post.match(/has_function_privilege\(/g) || []).length >= 4);
+check('el POST comprueba PUBLIC por ACL, no con has_function_privilege',
+  /aclexplode\(h\.proacl\)/.test(post) && /grantee\s*=\s*0/.test(post)
+  && !/has_function_privilege\('public'/.test(post));
+check('el POST trata proacl NULL como "PUBLIC tiene EXECUTE"',
+  /h\.proacl\s+IS\s+NULL/.test(post));
+check('el POST comprueba anon, authenticated y service_role',
+  (post.match(/has_function_privilege\('(anon|authenticated|service_role)'/g) || []).length === 3);
+check('los SELECT INTO de rowtype usan pr.* y no *',
+  /SELECT\s+\*\s+INTO\s+[phg]\b/.test(sql), false);
 check('el POST compara los grants contra el snapshot', /s7_72\.acl_gen/.test(post));
 check('el POST verifica que el OID no cambió (no se recreó)', /s7_72\.oid_gen/.test(post));
 check('el POST verifica submit_review sin modificar', /submit_review/.test(post));

@@ -55,7 +55,9 @@ DECLARE
   v_coltype    text;
 BEGIN
   -- 1.1 La función existe, es una función normal y tiene la firma esperada.
-  SELECT * INTO p
+  -- `pr.*` y NO `*`: `p` es pg_proc%ROWTYPE y un `*` sobre el JOIN traería
+  -- también las columnas de pg_namespace, lo que falla en ejecución.
+  SELECT pr.* INTO p
   FROM pg_proc pr
   JOIN pg_namespace n ON n.oid = pr.pronamespace
   WHERE n.nspname = 'public' AND pr.proname = 'generate_review_token'
@@ -277,7 +279,7 @@ DECLARE
   v_vistos     text[] := ARRAY[]::text[];
 BEGIN
   -- 4.1 Helper: existe con la firma esperada.
-  SELECT * INTO h
+  SELECT pr.* INTO h
   FROM pg_proc pr JOIN pg_namespace n ON n.oid = pr.pronamespace
   WHERE n.nspname = 'public' AND pr.proname = '_review_short_code'
     AND pr.prokind = 'f' AND pr.pronargs = 0;
@@ -311,7 +313,19 @@ BEGIN
   END IF;
 
   -- 4.6 Helper: sin EXECUTE para PUBLIC / anon / authenticated / service_role.
-  IF has_function_privilege('public', h.oid, 'EXECUTE') THEN
+  --
+  -- PUBLIC NO se comprueba con has_function_privilege(): no es un rol real
+  -- (no hay fila en pg_authid) y esa llamada lanzaría 'role "public" does not
+  -- exist'. Se inspecciona el ACL directamente.
+  --
+  -- ⚠️ Y `proacl IS NULL` NO significa "sin privilegios": significa ACL POR
+  -- DEFECTO, y el defecto de una función es EXECUTE para PUBLIC. Sin este
+  -- caso, un REVOKE que no se hubiera aplicado pasaría inadvertido — que es
+  -- justo la aserción de seguridad que no puede fallar en silencio.
+  IF h.proacl IS NULL THEN
+    RAISE EXCEPTION 's7_72 POST: el helper conserva el ACL por defecto (PUBLIC con EXECUTE): los REVOKE no se aplicaron';
+  END IF;
+  IF EXISTS (SELECT 1 FROM aclexplode(h.proacl) a WHERE a.grantee = 0) THEN
     RAISE EXCEPTION 's7_72 POST: el helper es ejecutable por PUBLIC';
   END IF;
   IF has_function_privilege('anon', h.oid, 'EXECUTE') THEN
@@ -325,7 +339,7 @@ BEGIN
   END IF;
 
   -- 4.7 generate_review_token(): atributos conservados.
-  SELECT * INTO g
+  SELECT pr.* INTO g
   FROM pg_proc pr JOIN pg_namespace n ON n.oid = pr.pronamespace
   WHERE n.nspname = 'public' AND pr.proname = 'generate_review_token'
     AND pr.prokind = 'f' AND pr.pronargs = 0;
