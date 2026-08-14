@@ -138,5 +138,29 @@ check('los set_config son transaction-local (tercer parámetro true)',
 check('ningún set_config quedó a nivel de sesión (false)',
   /set_config\('s7_72\.[a-z_]+',[^;]*,\s*false\)/.test(sql), false);
 
+// ─── 7. SQL de los documentos del owner ────────────────────────────
+// Los bloques que el owner copia y pega NO estaban bajo ningún check y por eso
+// se escapó un `'literal")` — comilla doble cerrando un literal— que rompía el
+// parser con 42601. Estas aserciones cubren esa clase de error.
+console.log('  — SQL de los documentos del owner —');
+for (const doc of ['docs/OWNER_S7_72_APPLY.md', 'docs/OWNER_S7_72_SMOKE.md']) {
+  if (!fs.existsSync(doc)) { check(`${doc} existe`, false); continue; }
+  const md = fs.readFileSync(doc, 'utf8');
+  const bloques = [...md.matchAll(/```sql\n([\s\S]*?)```/g)].map(m => m[1]);
+  check(`${doc}: tiene bloques SQL`, bloques.length > 0);
+
+  bloques.forEach((b, i) => {
+    const id = `${doc} bloque ${i + 1}`;
+    // Comillas simples balanceadas (los literales de estos bloques no usan '').
+    check(`${id}: comillas simples balanceadas`, (b.match(/'/g) || []).length % 2 === 0);
+    // El error exacto que rompió el PASO 1: literal cerrado con comilla doble.
+    check(`${id}: sin literal cerrado con comilla doble`, /'[\w.]+"/.test(b), false);
+    // Paréntesis balanceados.
+    let bal = 0, roto = false;
+    for (const ch of b) { if (ch === '(') bal++; else if (ch === ')') bal--; if (bal < 0) roto = true; }
+    check(`${id}: paréntesis balanceados`, !roto && bal === 0);
+  });
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_72: pass=${pass} fail=${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
