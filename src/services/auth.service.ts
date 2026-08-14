@@ -128,7 +128,7 @@ export const OTP_SHOULD_CREATE_USER: Readonly<Record<OtpContext, boolean>> = {
  * tipeado". No se crea ningún auth.user/profile/paciente.
  */
 export const NO_ACCOUNT_LOGIN_MESSAGE =
-  'No pudimos enviarte un código a ese número. Si es tu primera vez en Lucy, reserva una cita para crear tu cuenta; si ya tienes cuenta, revisa el número e intenta de nuevo.'
+  '¿Primera vez en LucyCare? Reserva una cita para crear tu acceso. Si ya tienes cuenta, verifica tu número e inténtalo de nuevo.'
 
 export interface AuthUser {
   id: string
