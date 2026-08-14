@@ -11,11 +11,17 @@
 > anteriores. El detalle por PR de los frentes cerrados vive en
 > **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `fa0d6ab140ccb08a51f26825a883453c146cfb97`** · **PRs mergeados hasta #335** ·
-> **migraciones aplicadas hasta `s7_71b`** (92 archivos, sin cambios) ·
-> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción desplegada
-> y **validada** (`https://lucycare.app` sirviendo `fa0d6ab`; verificado en el
-> dominio, no solo el estado del deploy).
+> **Último HEAD funcional previo a la reconciliación documental:
+> `fa0d6ab140ccb08a51f26825a883453c146cfb97` (#335).** · **PRs funcionales
+> mergeados hasta #335** · **migraciones aplicadas hasta `s7_71b`** (92 archivos,
+> sin cambios) · `main == origin/main` · árbol limpio · producción desplegada y
+> **validada** (`https://lucycare.app` sirviendo el bundle de `fa0d6ab`; verificado
+> en el dominio, no solo el estado del deploy).
+>
+> ℹ️ **El PR #336 es exclusivamente docs-only:** su merge **cambia el SHA del
+> repositorio** pero **no altera el estado funcional, las migraciones ni la
+> configuración**. El SHA vigente se consulta con `git rev-parse HEAD`; el
+> **estado funcional** sigue siendo el de `fa0d6ab`.
 >
 > **🚀 GO/NO-GO DEL PILOTO = GO (2026-08-14).** **Cero FAIL bloqueantes.** PASS en:
 > producción desplegada · Home/directorio · perfil y Booking de Camilo ·

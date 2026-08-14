@@ -27,13 +27,14 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD** | **`fa0d6ab140ccb08a51f26825a883453c146cfb97`** |
-| Subject | `copy(calificar): lenguaje neutral en la pagina de calificacion (#335)` |
+| **Último HEAD funcional** (previo a la reconciliación documental) | **`fa0d6ab140ccb08a51f26825a883453c146cfb97`** (#335) |
+| Subject de ese HEAD | `copy(calificar): lenguaje neutral en la pagina de calificacion (#335)` |
+| SHA vigente del repo | consultar con `git rev-parse HEAD` — **cambia con cada PR docs-only y no refleja cambio funcional** |
 | `main == origin/main` | sí |
 | Árbol | limpio |
 | PRs abiertos | **0** |
 | Migraciones | **92 archivos**, versionadas y aplicadas hasta **`s7_71b`** — sin cambios |
-| Vercel producción | deployment de `fa0d6ab` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy) |
+| Vercel producción | deployment de `fa0d6ab` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy). Los PRs docs-only redespliegan el **mismo bundle funcional** |
 
 **Últimos PRs mergeados:** #335 (copy de calificación) · #334 (nombre del paciente
 nuevo en Booking) · #333 (cierre documental de LEGAL-P0) · #332 (integración
@@ -407,7 +408,7 @@ usuario).
 
 | Área | Estado |
 |---|---|
-| Repo / main / PRs / migraciones | **PASS** — HEAD `fa0d6ab` · 0 PRs abiertos · 92 migraciones hasta `s7_71b` |
+| Repo / main / PRs / migraciones | **PASS** — último HEAD funcional `fa0d6ab` (#335) · 0 PRs abiertos al momento del GO · 92 migraciones hasta `s7_71b` |
 | Producción desplegada | **PASS** |
 | Home / directorio | **PASS** |
 | Perfil público y Booking de Camilo | **PASS** |
