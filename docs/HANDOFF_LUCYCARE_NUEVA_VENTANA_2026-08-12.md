@@ -33,7 +33,7 @@
 | `main == origin/main` | sí |
 | Árbol | limpio |
 | PRs abiertos | **0** |
-| Migraciones | **92 archivos**, versionadas y aplicadas hasta **`s7_71b`** — sin cambios |
+| Migraciones | **93 archivos**, versionadas y aplicadas hasta **`s7_72_review_token_short_code.sql`** |
 | Vercel producción | deployment de `fa0d6ab` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy). Los PRs docs-only redespliegan el **mismo bundle funcional** |
 
 **Últimos PRs mergeados:** #335 (copy de calificación) · #334 (nombre del paciente
@@ -340,6 +340,53 @@ separó definitivamente **LucyAdmin → `50378627694`** (real, no Test Phone) y
 
 ---
 
+### 5.2 RATING-URL-P0 — ✅ APLICADA Y VERIFICADA (2026-08-14, `s7_72` / PR #338)
+
+La URL de calificación que recibe el paciente pasó de **64 caracteres
+hexadecimales** a **20 caracteres Crockford Base32**:
+
+```
+antes:  /calificar/42b8edecf723481bb784b6943836c7a4f2bb3d058ca04918bc40b873eedd7c03
+ahora:  /calificar/K7M4QP2XR9TBNHF3VJCD
+```
+
+**`s7_72` es la migración 93** y está **aplicada en producción**. Crea el helper
+`public._review_short_code()` —20 caracteres, **100 bits exactos**, desde
+`gen_random_uuid()`/`pg_strong_random`, descartando los bytes 6 y 8 de cada UUID
+(bits fijos de version/variant) y mapeando con `byte % 32`, uniforme **por
+construcción** porque 256 = 8 × 32— y reemplaza **solo la expresión del token**
+dentro de `generate_review_token()`.
+
+**Compatibilidad:** los enlaces de 64 caracteres ya emitidos **siguen
+funcionando** hasta usarse o vencer (7 días). `submit_review` **no se tocó** y
+sigue comparando `token = p_token` por igualdad exacta sobre la misma columna.
+**Sin backfill:** los tokens existentes no se convirtieron.
+
+**Sin cambios** en `submit_review`, `get_review_link`, el esquema o los índices
+de `review_tokens`, el trigger, la ruta `/calificar/:token`, el frontend, el
+middleware, el SEO ni Analytics.
+
+**Verificación (owner en el SQL Editor + dev):** PRE 16/16 · aplicación en
+**una transacción explícita** con COMMIT · POST de catálogo y permisos 15/15 ·
+**10 000 generaciones, 10 000 únicas**, los 32 símbolos presentes y desvío
+máximo 2.82 % (~2.2σ: uniforme) · sin backfill (15 tokens siguen en 64
+caracteres) · `_smoke-s7_72.mjs` **5/5**.
+
+**El helper está acotado:** ACL `postgres=X/postgres` — sin EXECUTE para
+`PUBLIC`, `anon`, `authenticated` ni `service_role`, confirmado desde el
+catálogo y desde `service_role`, que recibe `42501`. Los grants de
+`generate_review_token()` quedaron **byte a byte** como antes.
+
+> ⚠️ **Aprendizaje operativo:** el primer intento de aplicar falló con `42883`
+> (`name[] = text[]`: faltaba castear `attname::text` en las guardas UNIQUE).
+> La transacción explícita hizo su trabajo — **rollback total, nada quedó a
+> medias**. Es la razón por la que las guardas PRE van dentro del `BEGIN`.
+
+Guía operativa completa en `docs/OWNER_S7_72_APPLY.md` (los tres pasos, con sus
+valores esperados) y `docs/OWNER_S7_72_SMOKE.md`.
+
+---
+
 ## 6. LEGAL-P0 — ✅ CLOSED (2026-08-13, PRs #331 y #332)
 
 Cerrado en dos PRs, ambos **sin migración, sin backend y sin fricción nueva**
@@ -408,7 +455,7 @@ usuario).
 
 | Área | Estado |
 |---|---|
-| Repo / main / PRs / migraciones | **PASS** — último HEAD funcional `fa0d6ab` (#335) · 0 PRs abiertos al momento del GO · 92 migraciones hasta `s7_71b` |
+| Repo / main / PRs / migraciones | **PASS** — último HEAD funcional `fa0d6ab` (#335) · 0 PRs abiertos al momento del GO · 92 migraciones hasta `s7_71b` *(al momento del GO; hoy son 93, ver §5.2)* |
 | Producción desplegada | **PASS** |
 | Home / directorio | **PASS** |
 | Perfil público y Booking de Camilo | **PASS** |

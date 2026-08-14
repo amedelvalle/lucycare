@@ -13,8 +13,8 @@
 >
 > **Último HEAD funcional previo a la reconciliación documental:
 > `fa0d6ab140ccb08a51f26825a883453c146cfb97` (#335).** · **PRs funcionales
-> mergeados hasta #335** · **migraciones aplicadas hasta `s7_71b`** (92 archivos,
-> sin cambios) · `main == origin/main` · árbol limpio · producción desplegada y
+> mergeados hasta #335** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
+> · `main == origin/main` · árbol limpio · producción desplegada y
 > **validada** (`https://lucycare.app` sirviendo el bundle de `fa0d6ab`; verificado
 > en el dominio, no solo el estado del deploy).
 >
@@ -60,6 +60,21 @@
 > ese flag. Salió de Home/directorio y del sitemap; la URL directa responde
 > `noindex,follow` **sin exponer datos del perfil**. **0 otros perfiles QA
 > publicados.**
+>
+> **🔗 RATING-URL-P0 = APLICADA Y VERIFICADA (2026-08-14) — `s7_72`, PR #338.**
+> La URL de calificación pasó de **64 caracteres hex** a **20 caracteres
+> Crockford Base32** (`/calificar/K7M4QP2XR9TBNHF3VJCD`). `s7_72` es la
+> **migración 93**, aplicada en producción: crea el helper
+> `public._review_short_code()` (**100 bits exactos**, `gen_random_uuid()` /
+> `pg_strong_random`, uniforme por construcción) y reemplaza **solo la expresión
+> del token** en `generate_review_token()`. **Los enlaces de 64 caracteres ya
+> emitidos siguen funcionando** hasta usarse o vencer (7 días); **sin backfill**.
+> **Sin cambios** en `submit_review`, el esquema/índices de `review_tokens`, el
+> trigger, la ruta `/calificar/:token`, el frontend ni el middleware. El helper
+> queda **sin EXECUTE** para `PUBLIC`, `anon`, `authenticated` ni `service_role`.
+> Verificación: PRE 16/16 · POST 15/15 · **10 000 generaciones, 10 000 únicas** ·
+> `_smoke-s7_72.mjs` 5/5. Detalle en el handoff §5.2 y guía de aplicación en
+> `docs/OWNER_S7_72_APPLY.md`.
 >
 > **📞 SAFEGUARD DE SALDO TWILIO = CLOSED (2026-08-14) — reportado y verificado por
 > el owner en la consola, no medido desde el repo.** Cuenta **Paid** · Twilio Verify
@@ -651,6 +666,8 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_63`–`s7_64` F1-c1 cutover lógico (approve escribe credencial, frontend sin fallback).
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
+- `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_72` RATING-URL-P0: helper `_review_short_code()` (20 caracteres Crockford Base32, 100 bits) y token corto en `generate_review_token()`. Sin backfill; los enlaces de 64 caracteres siguen válidos hasta vencer.
 
 > Detalle completo de cada migración en `docs/HISTORIAL_FRENTES.md`.
 

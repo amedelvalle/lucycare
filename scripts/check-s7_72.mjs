@@ -151,7 +151,11 @@ check('ningún set_config quedó a nivel de sesión (false)',
 console.log('  — SQL de los documentos del owner —');
 for (const doc of ['docs/OWNER_S7_72_APPLY.md', 'docs/OWNER_S7_72_SMOKE.md']) {
   if (!fs.existsSync(doc)) { check(`${doc} existe`, false); continue; }
-  const md = fs.readFileSync(doc, 'utf8');
+  // Normalizar finales de línea ANTES de extraer. En Windows git entrega los
+  // .md con CRLF al hacer checkout, y una regex que espera ```sql\n no matchea
+  // con \r\n: el check daba 61/63 desde `main` aunque el contenido fuera
+  // correcto. El defecto era del instrumento, no del documento.
+  const md = fs.readFileSync(doc, 'utf8').replace(/\r\n?/g, '\n');
   const bloques = [...md.matchAll(/```sql\n([\s\S]*?)```/g)].map(m => m[1]);
   check(`${doc}: tiene bloques SQL`, bloques.length > 0);
 
