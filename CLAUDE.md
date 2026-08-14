@@ -4,18 +4,71 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-13) — post PR #332.**
+> 🟢 **ESTADO VIGENTE (2026-08-14) — post PR #335. PILOTO = GO.**
 > **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`
 > (leer PRIMERO).** Ese handoff es autosuficiente, se mantiene actualizado post-#332
 > y reemplaza al `2026-08-06`, que pasa a **histórico** junto con todos los
 > anteriores. El detalle por PR de los frentes cerrados vive en
 > **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> **HEAD `ae61e8abd23d445d88a9b5545813405036cb2b9c`** · **PRs mergeados hasta #332** ·
-> **migraciones aplicadas hasta `s7_71b`** (92 archivos, sin cambios) ·
-> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción desplegada
-> y **validada** (`https://lucycare.app` sirviendo `ae61e8a`; verificado en el
-> dominio, no solo el estado del deploy).
+> **Último HEAD funcional previo a la reconciliación documental:
+> `fa0d6ab140ccb08a51f26825a883453c146cfb97` (#335).** · **PRs funcionales
+> mergeados hasta #335** · **migraciones aplicadas hasta `s7_71b`** (92 archivos,
+> sin cambios) · `main == origin/main` · árbol limpio · producción desplegada y
+> **validada** (`https://lucycare.app` sirviendo el bundle de `fa0d6ab`; verificado
+> en el dominio, no solo el estado del deploy).
+>
+> ℹ️ **El PR #336 es exclusivamente docs-only:** su merge **cambia el SHA del
+> repositorio** pero **no altera el estado funcional, las migraciones ni la
+> configuración**. El SHA vigente se consulta con `git rev-parse HEAD`; el
+> **estado funcional** sigue siendo el de `fa0d6ab`.
+>
+> **🚀 GO/NO-GO DEL PILOTO = GO (2026-08-14).** **Cero FAIL bloqueantes.** PASS en:
+> producción desplegada · Home/directorio · perfil y Booking de Camilo ·
+> Auth/login con contraseña · recuperación por email · OTP real con Twilio Verify ·
+> Turnstile · **Booking E2E real** · "Mis atenciones" · panel médico y
+> notificaciones · Legal · perfiles QA públicos · safeguard de saldo de Twilio.
+> Todas las deudas vigentes son **WARN no bloqueantes** (ver §H del handoff).
+>
+> **✅ BOOKING E2E REAL = PASS (2026-08-14).** Validada en producción la cadena
+> completa `booking_intent → auth_creation_grant → consentimiento OTP → Turnstile →
+> Twilio Verify real → Before User Created Hook → auth.user → contraseña → login →
+> patient → appointment → intent consumido`. **La ruta del grant quedó demostrada
+> por descarte:** en el instante de la creación, las otras cuatro ramas del hook
+> (`patients`, `doctors`, `clinic_invitations`, `platform_admin_invitations`)
+> estaban vacías para ese teléfono. Cleanup posterior completo, **cero residuos
+> operativos**; `otp_consent_events` y `audit_log` **preservados** como evidencia.
+> **No repetir el E2E.** Detalle en el handoff §8.
+>
+> **✅ PR #334 — nombre del paciente nuevo.** Un paciente creado por OTP nacía con
+> `profiles.full_name` vacío y la reserva caía al teléfono como nombre: la agenda
+> del médico mostraba números. Ahora se pide **"Nombre completo"** *solo* cuando el
+> perfil no lo tiene, se guarda primero con `updateMyProfile()` y recién entonces
+> se reserva. Incluye protección contra **intent/slot obsoleto** (cambio de
+> servicio/fecha/horario) y contra la **carrera** entre el guardado y ese cambio.
+> **Sin migración, sin backend nuevo.**
+>
+> **✅ PR #335 — CALIFICACIÓN-COPY-P0.** Solo copy en
+> `src/pages/calificar/CalificarPage.tsx`: *"Tu opinión es confidencial y completar
+> la calificación toma menos de un minuto."* · *"¿Recomendarías a este médico a un
+> familiar o amigo?"* · *"LucyCare · Calificación de la atención"*. **Sin lógica,
+> submit, backend, DB, RPC, RLS, Auth, Booking ni SEO.**
+>
+> **✅ HIGIENE QA = CLOSED (2026-08-14).** El **único** perfil QA público
+> (`QA LucyCare — Perfil médico de prueba`) fue **despublicado**: `is_published=false`.
+> **Se conserva la identidad** (médico, profile, clínica, `auth.user`); solo cambió
+> ese flag. Salió de Home/directorio y del sitemap; la URL directa responde
+> `noindex,follow` **sin exponer datos del perfil**. **0 otros perfiles QA
+> publicados.**
+>
+> **📞 SAFEGUARD DE SALDO TWILIO = CLOSED (2026-08-14) — reportado y verificado por
+> el owner en la consola, no medido desde el repo.** Cuenta **Paid** · Twilio Verify
+> operativo · saldo recargado a **~US$50** para el piloto · **Balance notification
+> en US$25** · **Auto Recharge OFF** (decisión deliberada del piloto, no una deuda).
+> Costo observado por verificación exitosa de un solo SMS: **~US$0.349**
+> (US$0.05 Verify + US$0.299 SMS El Salvador). **Mantener vigilancia del saldo
+> durante el piloto:** sin saldo no hay OTP, y el OTP es el único camino de alta de
+> pacientes nuevos.
 >
 > **✅ LEGAL-P0 = CLOSED (2026-08-13) — PRs #331 y #332.**
 > **#331 (publicación):** `/terminos` **existe** —cierra el enlace que caía en
@@ -62,10 +115,22 @@
 > Phones; el login posterior de `operations_admin` por email+contraseña = PASS.
 > **Josué ya no depende de ningún Test Phone.** Quedan **exactamente 2**.
 >
-> **🟡 SECUENCIA PENDIENTE HACIA EL PILOTO** (ninguno se abre sin instrucción del
-> owner): **Booking E2E real controlado** (diseño congelado, handoff §8) →
-> **safeguard operativo de saldo/recarga de Twilio** → **higiene final de perfiles
-> QA publicados** → **GO/NO-GO final**.
+> **✅ SECUENCIA HACIA EL PILOTO — COMPLETA.** Booking E2E real ✅ → safeguard de
+> saldo de Twilio ✅ → higiene de perfiles QA publicados ✅ → **GO/NO-GO final ✅ =
+> GO**. **No queda ningún frente funcional abierto**; nada se abre sin instrucción
+> del owner.
+>
+> **📋 Aclaración del directorio (comportamiento esperado, NO es un hallazgo):**
+> hay **36** médicos con `is_published=true` en la base, pero el Home muestra
+> **35**. El excluido es **Dr. Abraham Alfredo Amaya Mendoza**
+> (`fe7f4f9c-1ffd-4af6-954d-41c9cdc9aa02`), cuya **clínica no tiene dirección**, y
+> lo filtra la regla **D1 de completitud mínima**
+> (`full_name` + especialidad + `clinic.name` + `clinic.address`,
+> `src/services/directory.service.ts`). Verificado también con el cliente `anon`:
+> la RLS no oculta a nadie. Matiz intencional: **D1 gobierna el listado, no el
+> sitemap** — `isSitemapEligible` no exige ubicación, así que ese perfil sí está
+> indexado. Para incorporarlo basta cargarle la dirección desde LucyAdmin. **No se
+> modificó en este ciclo.**
 >
 > **📉 Deuda menor de performance (registrada, NO urgente):** el bundle principal
 > quedó en **~666 kB** porque las dos páginas legales viajan en el chunk inicial,
@@ -121,10 +186,9 @@
 > comportamiento bajo carga/rate limits, ni países fuera de El Salvador.
 > Detalle y alcance exacto en el handoff vigente **§14**.
 >
-> **⚠️ Safeguard operativo pendiente (no es fallo del frente):** la cuenta Twilio
-> está **Paid** pero **sin Auto Recharge**. Antes de incorporar usuarios reales al
-> piloto: saldo suficiente + alerta de saldo bajo o política de recarga
-> controlada.
+> **✅ Safeguard operativo = RESUELTO (2026-08-14):** saldo recargado a ~US$50,
+> Balance notification en US$25 y **Auto Recharge OFF por decisión del piloto**
+> (ver bloque de safeguard arriba). **Ya no es un pendiente.**
 >
 > **Prohibiciones vigentes:** **no desactivar ni reconfigurar Turnstile/CAPTCHA** ·
 > **no revertir de Twilio Verify a Programmable Messaging sin autorización
@@ -140,9 +204,9 @@
 > **Objetivo comercial:** LucyCare listo para lanzamiento en El Salvador **a más
 > tardar el 2 de octubre de 2026** (sin expansión regional en este ciclo).
 > Secuencia: #311 ✅ → AUDIT-SEC-P0 ✅ → TWILIO-P0 ✅ → RECOVERY-EMAIL-P0 ✅ →
-> ADMIN-JUNIOR ✅ → TESTPHONE-CLEANUP-P0 ✅ → LEGAL-P0 ✅ → **booking E2E real
-> controlado (siguiente)** → safeguard de saldo/recarga Twilio → higiene de perfiles
-> QA publicados → GO/NO-GO. **BILLING-P0 sigue PAUSADO** y **no bloquea el piloto**.
+> ADMIN-JUNIOR ✅ → TESTPHONE-CLEANUP-P0 ✅ → LEGAL-P0 ✅ → Booking E2E real ✅ →
+> safeguard de saldo Twilio ✅ → higiene de perfiles QA ✅ → **GO/NO-GO ✅ = GO**.
+> **BILLING-P0 sigue PAUSADO** y **no bloquea el piloto**.
 >
 > **Nota de smokes SQL:** no usar tablas temporales en el SQL Editor de Supabase
 > (`42P01` por `search_path`, `3F000` porque `pg_temp` no resuelve hasta que la
@@ -188,7 +252,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#332). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / **LEGAL-P0** cerrados con su evidencia, `operations_admin` y su navegación corregida, los 2 Test Phones vigentes, LucyAdmin y Camilo post-swap, seguridad/Twilio, pilot readiness, **Booking E2E = siguiente frente** (congelado), identidades protegidas y reglas operativas.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#335, **piloto = GO**). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / LEGAL-P0 / **Booking E2E real** / safeguard Twilio / higiene QA cerrados con su evidencia, matriz GO/NO-GO, `operations_admin`, los 2 Test Phones vigentes, LucyAdmin y Camilo, seguridad, identidades protegidas, deudas WARN y reglas operativas.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — **histórico** (post-#314: AUDIT-SEC-P0 en curso, `s7_71a` aplicada, `s7_71b` bloqueada; su §13 y §14 quedaron actualizados con el cierre de BILLING y TWILIO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
@@ -231,11 +295,17 @@ squash-merge, la rama puede borrarse.
 
 - **#330–#332** ✅ — cierre documental post-#329 (#330) y **LEGAL-P0 completo**: publicación de `/terminos` y `/privacidad` definitivos (#331) + integración `tos-2026-08-13` en el claim y línea legal en la reserva (#332). Todo frontend/docs, **sin migración** → [detalle](docs/HISTORIAL_FRENTES.md)
 
-**Secuencia prioritaria — BLOQUEANTE antes del piloto (no abrir sin instrucción del owner):**
+- **#333–#335** ✅ — cierre documental de LEGAL-P0 (#333), **nombre del paciente nuevo en Booking** (#334, frontend) y **CALIFICACIÓN-COPY-P0** (#335, solo copy). Todo frontend/docs, **sin migración** → [detalle](docs/HISTORIAL_FRENTES.md)
+
+**Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
-2. ~~**TWILIO-P0**~~ — **✅ CLOSED / VALIDATED FOR PILOT (2026-08-11).** Supabase con **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · solo El Salvador); sin cambios de código. QA: Test Phone PASS + un único SMS real (`Approved`, 1/1) con sesión válida y cero efectos colaterales; identidad QA temporal eliminada por Admin API. Detalle en el handoff vigente §14. **Pendiente operativo:** Auto Recharge de Twilio antes de sumar usuarios reales.
+2. ~~**TWILIO-P0**~~ — **✅ CLOSED / VALIDATED FOR PILOT (2026-08-11).** Supabase con **Twilio Verify** (SMS · 6 dígitos · Fraud Guard · solo El Salvador); sin cambios de código. QA: Test Phone PASS + un único SMS real (`Approved`, 1/1) con sesión válida y cero efectos colaterales; identidad QA temporal eliminada por Admin API. Detalle en el handoff vigente §14. **Safeguard de saldo cerrado el 2026-08-14** (saldo ~US$50, alerta US$25, Auto Recharge OFF por decisión).
 3. ~~**LEGAL-P0**~~ — **✅ CLOSED (2026-08-13).** `/terminos` y `/privacidad` publicados con los documentos definitivos (#331) · `TOS_VERSION='tos-2026-08-13'` para nuevas aceptaciones del claim, sin exponer el identificador en la UI, y línea legal discreta en `BookingCard` con enlaces a ambos documentos (#332). Sin migración ni backend. **PR 3 / evidencia explícita del paciente = DIFERIDO, no requerido para el piloto.** Detalle en el handoff §6.
+4. ~~**Booking E2E real controlado**~~ — **✅ PASS (2026-08-14).** Cadena completa validada en producción con un único SMS real; ruta del grant demostrada por descarte; cleanup completo con cero residuos operativos; `otp_consent_events` y `audit_log` preservados. **No repetir.** Detalle en el handoff §8.
+5. ~~**Safeguard de saldo de Twilio**~~ — **✅ CLOSED (2026-08-14).** Ver el bloque de safeguard arriba.
+6. ~~**Higiene final de perfiles QA publicados**~~ — **✅ CLOSED (2026-08-14).** Único perfil QA público despublicado; identidad conservada; 0 QA públicos restantes.
+7. ~~**GO/NO-GO final**~~ — **✅ CLOSED (2026-08-14) = GO.** Cero FAIL bloqueantes.
 
 **Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
@@ -255,7 +325,9 @@ Detalle completo en el handoff vigente §H:**
 - (6) Razón genérica "Otro motivo" en `cancel_reasons` (tabla no versionada en `migrations/`).
 - (7) Revisión de `cancel_reasons` como tabla legacy — entrar por migración versionada.
 - (8) UX del widget de Turnstile en móvil — mejora cosmética, no bloqueante.
-- (9) **Auto Recharge / alerta de saldo de Twilio** — la cuenta está Paid pero sin recarga automática. **Bloqueante antes de incorporar usuarios reales al piloto**: sin saldo no hay OTP, y sin OTP no hay acceso.
+- (9) ~~**Auto Recharge / alerta de saldo de Twilio**~~ — **✅ RESUELTO (2026-08-14).** Saldo recargado a ~US$50, Balance notification en US$25, **Auto Recharge OFF por decisión deliberada del piloto** (no es deuda). Reevaluar Auto Recharge si el consumo mensual crece o si entran usuarios sin supervisión. **Vigilancia de saldo = tarea operativa viva durante el piloto.**
+- (10) **Admin API `listUsers` no enumera todo el padrón** — falla con `Database error finding users` de forma persistente en la cola del listado (~15 de ~140 usuarios ilegibles) y `GET /auth/v1/admin/users?filter=` **no filtra por teléfono** (devuelve 0 incluso para números que existen → falsos limpios). **No afecta el runtime de Auth**, solo scripts de administración. Para buscar un teléfono, el camino fiable es la búsqueda del Dashboard.
+- (11) **Seguimiento SEO / Search Console** — el perfil QA estuvo publicado e indexable antes de despublicarse; ya sirve `noindex,follow` y saldrá del índice al próximo rastreo. "Eliminación de URLs" en Search Console lo acelera. No bloqueante.
 
 ## Decisiones cerradas (NO reabrir)
 

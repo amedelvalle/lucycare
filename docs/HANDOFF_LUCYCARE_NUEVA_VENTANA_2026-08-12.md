@@ -6,10 +6,12 @@
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados
 > vive en `docs/HISTORIAL_FRENTES.md`.
 >
-> **Actualización 2026-08-13 (post #332):** RECOVERY-EMAIL-P0, ADMIN-JUNIOR,
-> TESTPHONE-CLEANUP-P0 y **LEGAL-P0** quedaron **CERRADOS**. **No hay frente
-> funcional activo.** El siguiente pendiente es el **Booking E2E real controlado**
-> (§8), que **no se abre sin instrucción del owner**.
+> **Actualización 2026-08-14 (post #335) — PILOTO = GO.** Quedaron **CERRADOS**:
+> RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0 · LEGAL-P0 ·
+> **Booking E2E real** (§8) · safeguard de saldo de Twilio (§5) · higiene de
+> perfiles QA (§9) · **GO/NO-GO final (§7) = GO, con cero FAIL bloqueantes**.
+> **No hay ningún frente funcional abierto** y nada se abre sin instrucción del
+> owner. Todas las deudas vigentes son **WARN no bloqueantes** (§10.1).
 >
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales. Los teléfonos aparecen **solo como
@@ -25,17 +27,18 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD** | **`ae61e8abd23d445d88a9b5545813405036cb2b9c`** |
-| Subject | `feat(legal): version tecnica nueva en el claim y linea legal en la reserva (#332)` |
+| **Último HEAD funcional** (previo a la reconciliación documental) | **`fa0d6ab140ccb08a51f26825a883453c146cfb97`** (#335) |
+| Subject de ese HEAD | `copy(calificar): lenguaje neutral en la pagina de calificacion (#335)` |
+| SHA vigente del repo | consultar con `git rev-parse HEAD` — **cambia con cada PR docs-only y no refleja cambio funcional** |
 | `main == origin/main` | sí |
 | Árbol | limpio |
 | PRs abiertos | **0** |
 | Migraciones | **92 archivos**, versionadas y aplicadas hasta **`s7_71b`** — sin cambios |
-| Vercel producción | deployment de `ae61e8a` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy) |
+| Vercel producción | deployment de `fa0d6ab` = **success**, y el dominio **sirve y ejecuta** ese bundle (verificado contra `lucycare.app`, no solo por el estado del deploy). Los PRs docs-only redespliegan el **mismo bundle funcional** |
 
-**Últimos PRs mergeados:** #332 (integración legal) · #331 (publicación legal) ·
-#330 (cierre documental) · #329 (navegación de `operations_admin`) · #328
-(handoff canónico) · #327 (fix de Auth).
+**Últimos PRs mergeados:** #335 (copy de calificación) · #334 (nombre del paciente
+nuevo en Booking) · #333 (cierre documental de LEGAL-P0) · #332 (integración
+legal) · #331 (publicación legal) · #330 (cierre documental post-#329).
 
 **Deuda menor de performance, registrada y NO urgente:** el bundle principal
 quedó en **~666 kB** porque las dos páginas legales viajan en el chunk inicial,
@@ -262,6 +265,17 @@ por Twilio Verify PASS** · acceso a `/admin` PASS.
 Sus datos asociados quedaron sincronizados por el trigger `s7_34`: `profiles`,
 sus 5 fichas `patients` y sus 2 clínicas.
 
+**Estado vigente (2026-08-14):** **publicado, activo, `verified`, operativo y con
+Booking habilitado.** El owner **actualizó manualmente sus datos públicos** para
+que funcione como perfil demostrativo presentable: su clínica se llama ahora
+**"Clinica Camilo"** —antes figuraba como "Pepe", resto del demo; **esa
+observación está RESUELTA y no es una deuda activa**— con dirección cargada, 3
+servicios activos y horarios disponibles. Es el **único** médico del directorio
+con agenda en línea.
+
+> **No modificar su identidad, Auth ni configuración técnica.** Los cambios de
+> datos públicos los hace el owner desde LucyAdmin.
+
 **Puente `50370007202`:** usado durante el swap, **libre nuevamente**. No es Test
 Phone y no debe serlo.
 
@@ -286,9 +300,34 @@ infalsificable.
   Hook ACTIVO**
 - OTP real de LucyAdmin probado end-to-end
 
-**Pendiente operativo antes de abrir a usuarios reales:** asegurar **saldo,
-alerta de saldo bajo o procedimiento de recarga** de Twilio. Sin saldo no hay
-OTP, y sin OTP no hay acceso.
+### 5.1 Safeguard de saldo — ✅ CLOSED (2026-08-14)
+
+> ⚠️ **Estado reportado y verificado por el owner en la consola de Twilio.** No es
+> medible desde el repositorio: el entorno no tiene credenciales de Twilio.
+
+| Ítem | Estado |
+|---|---|
+| Cuenta | **Paid**, Twilio Verify operativo |
+| Saldo | recargado a **~US$50** para el piloto |
+| Balance notification | **US$25** |
+| **Auto Recharge** | **OFF — decisión deliberada del piloto, no una deuda** |
+| Costo observado | **~US$0.349** por verificación exitosa de un solo SMS (US$0.05 Verify + US$0.299 SMS El Salvador) |
+
+**Vigilancia de saldo = tarea operativa viva durante el piloto.** Sin saldo no
+hay OTP, y el OTP es el **único** camino de alta de pacientes nuevos: el login
+genérico tiene `shouldCreateUser=false` por decisión congelada. Una caída por
+saldo es **silenciosa** para el owner —el paciente solo ve "no pudimos enviarte
+un código"— así que conviene que la alerta llegue a un correo mirado a diario.
+
+**Reevaluar Auto Recharge** si el consumo mensual crece de forma sostenida o si
+entran usuarios sin supervisión; en ese caso, con límite mensual y tope por
+recarga.
+
+**Modelo de consumo (derivado del código):** un paciente consume SMS **una sola
+vez**, al crear su cuenta — la contraseña es obligatoria tras el OTP, y sus
+reservas siguientes entran por `signInWithPhonePassword` sin costo. El gasto
+escala con **pacientes nuevos**, no con reservas. Reenvíos de código y reclamos
+de perfil médico también consumen.
 
 **TESTPHONE-SEC-P0 = CLOSED.** El incidente: `50378056365` era simultáneamente
 teléfono público de soporte, credencial de LucyAdmin y Test Phone con código
@@ -363,15 +402,55 @@ usuario).
 
 ---
 
-## 7. Pilot readiness — pendientes antes del GO con pacientes reales
+## 7. GO/NO-GO del piloto — ✅ CERRADO (2026-08-14): **GO**
 
-1. ~~Cerrar el recovery real de Josué (§1)~~ — **✅ hecho 2026-08-13.**
-2. ~~Retirar el Test Phone de `operations_admin` (§2, §3)~~ — **✅ hecho 2026-08-13.**
-3. ~~Cerrar **LEGAL-P0** (§6)~~ — **✅ hecho 2026-08-13** (#331 + #332).
-4. **Booking E2E real controlado** — diseño congelado, ver §8. **← siguiente**
-5. Safeguard de saldo/recarga de Twilio (§5).
-6. Higiene final de perfiles QA no publicables (§9).
-7. **GO/NO-GO final.**
+**Cero FAIL bloqueantes.** Matriz final:
+
+| Área | Estado |
+|---|---|
+| Repo / main / PRs / migraciones | **PASS** — último HEAD funcional `fa0d6ab` (#335) · 0 PRs abiertos al momento del GO · 92 migraciones hasta `s7_71b` |
+| Producción desplegada | **PASS** |
+| Home / directorio | **PASS** |
+| Perfil público y Booking de Camilo | **PASS** |
+| Auth / login con contraseña | **PASS** |
+| Recuperación por email | **PASS** |
+| OTP real / Twilio Verify | **PASS** |
+| Turnstile | **PASS** |
+| **Booking E2E real** | **PASS** (§8) |
+| "Mis atenciones" | **PASS** |
+| Panel médico / notificaciones | **PASS** |
+| Legal | **PASS** (§6) |
+| Perfiles QA públicos | **PASS** (§9) |
+| Safeguard de saldo Twilio | **PASS** (§5.1) |
+
+Checklist previo, todo cerrado: recovery real de Josué (§1) · retiro del Test
+Phone de `operations_admin` (§2, §3) · LEGAL-P0 (§6) · Booking E2E real (§8) ·
+safeguard de saldo (§5.1) · higiene de perfiles QA (§9).
+
+### 7.1 Aclaración del directorio — comportamiento esperado, NO un hallazgo
+
+**36** médicos con `is_published=true` en la base, **35** visibles en el Home. El
+excluido es **Dr. Abraham Alfredo Amaya Mendoza**
+(`fe7f4f9c-1ffd-4af6-954d-41c9cdc9aa02`): su **clínica no tiene dirección**, y lo
+filtra la regla **D1 de completitud mínima** —`full_name` + especialidad +
+`clinic.name` + `clinic.address`— en `src/services/directory.service.ts`.
+Verificado también con el cliente `anon`: **la RLS no oculta a nadie**, ambos
+clientes ven los mismos 36.
+
+Matiz **intencional**: D1 gobierna el **listado**, no el sitemap.
+`isSitemapEligible` **no exige ubicación**, así que ese perfil sí está indexado y
+es alcanzable por enlace directo, pero no aparece en el directorio propio. Para
+incorporarlo basta **cargarle la dirección de la clínica desde LucyAdmin**, sin
+tocar código. **No se modificó en este ciclo.**
+
+### 7.2 Riesgos a vigilar durante el piloto (no bloqueantes)
+
+- **El SMS es el único camino de alta.** Si Twilio falla se cae la adquisición
+  completa, y el usuario solo ve "no pudimos enviarte un código". La alerta de
+  US$25 cubre el saldo, no una caída del proveedor.
+- **El E2E validó un caso, no una distribución:** un teléfono, un médico, un
+  horario, sin concurrencia. Apropiado para un piloto controlado de 5 médicos;
+  **no es una certificación de escala.**
 
 **Billing automático NO bloquea el piloto. BILLING-P0 = PAUSED**, arquitectura
 definida y persistida en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`, que es la
@@ -379,21 +458,86 @@ definida y persistida en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md`, que es la
 
 ---
 
-## 8. Booking E2E real — diseño congelado, NO ejecutado
+## 8. Booking E2E real — ✅ EJECUTADO Y PASS (2026-08-14). **NO REPETIR**
 
-Falta validar la combinación `booking → auth_creation_grant →
-shouldCreateUser=true → Before User Created Hook → Turnstile → consentimiento →
-Twilio Verify real → auth.users/profile → appointment`. La lógica se validó con
-Test Phones y Twilio Verify se validó por separado; **falta la combinación**.
+Quedó validada **en producción** la cadena completa:
 
-Reglas del diseño: médico **fixture efímero propio** (nunca Camilo, nunca el
-médico QA persistente) · **un único SMS** · ventana mínima · nombre inequívoco de
-QA · denylist antes del cleanup · `auth.users` **solo por Admin API** · cleanup
-ordenado por la cadena de FKs · `otp_consent_events` y `audit_log` **preservados**.
+```
+booking_intent → auth_creation_grant → consentimiento OTP → Turnstile →
+Twilio Verify (SMS real) → Before User Created Hook → auth.user →
+contraseña obligatoria → login → patient → appointment → intent consumido
+```
+
+### 8.1 La ruta del grant, demostrada por descarte
+
+Es lo que el frente existía para probar. En el instante exacto de la creación del
+`auth.user`, de las cinco ramas que `hook_before_user_created` puede usar
+(`s7_65`), **solo el grant estaba disponible**:
+
+| Rama del hook | Estado en ese instante |
+|---|---|
+| **`auth_creation_grants`** | ✅ **vigente** — emitido ~1 s antes por `register_booking_intent` |
+| `patients` | ❌ 0 — el paciente se creó **después**, al completar la reserva |
+| `doctors` | ❌ 0 |
+| `clinic_invitations` | ❌ 0 |
+| `platform_admin_invitations` | ❌ 0 |
+
+**Ninguna otra rama podía autorizar.** Es prueba por descarte, no inferencia.
+
+### 8.2 Ejecución y decisiones que se apartaron del diseño congelado
+
+Autorizadas expresamente por el owner en el momento:
+
+- **Médico destino: Camilo** (override puntual; el diseño original decía "nunca
+  Camilo"). Solo como receptor de la reserva; **su identidad, perfil, clínica,
+  servicios, disponibilidad y configuración no se tocaron**. La reserva creó
+  `patients` y `appointments` **dentro de su clínica** —inherente a elegirlo— y
+  ambos se eliminaron en el cleanup.
+- **Sin ensayo previo** con Test Phone.
+- **Un único SMS real**, desde un teléfono del owner que **no** era Test Phone.
+- Del pedido de código a la cita: **1 min 37 s**, holgado dentro del TTL de 15
+  minutos del intent y del grant.
+
+> ⚠️ **Aprendizaje: el preflight del teléfono es obligatorio.** Un intento previo
+> con otro número falló porque se entró por el **login genérico** (`context='login'`,
+> `shouldCreateUser=false`): GoTrue rechazó con `otp_disabled` **sin enviar SMS**.
+> No fue una falla de Twilio ni del hook. El E2E debe entrar **por la reserva**,
+> con servicio, fecha y horario ya seleccionados.
+
+### 8.3 Cleanup y evidencia
+
+Cleanup en el orden que imponen las FKs —`auth_creation_grants` →
+`booking_intents` → `appointments` → `patients` → identidad **solo por Admin
+API**— con denylist previa de las identidades protegidas. **Cero residuos
+operativos** verificados en las seis superficies.
+
+**Preservados como evidencia:** `otp_consent_events` (1 fila) y `audit_log` (fila
+del INSERT del appointment). `audit_log` es además **imborrable**: tras `s7_71b`,
+`service_role` solo tiene `SELECT`.
 
 > "Cero residuos" = cero **objetos funcionales** de fixture. Las filas de
-> `audit_log` generadas legítimamente por la creación y el cleanup son **trazas
-> esperadas** y se conservan.
+> `otp_consent_events` y `audit_log` son **trazas esperadas** y se conservan.
+
+### 8.4 Hallazgo que produjo el E2E → corregido en PR #334
+
+El paciente creado por OTP nacía con `profiles.full_name` vacío, y la reserva
+caía al fallback `|| user.phone`: **la ficha en la clínica del médico quedaba con
+el número de teléfono como nombre**. Corregido en **#334**, solo `BookingCard`:
+
+- Se pide **"Nombre completo"** *únicamente* cuando el perfil no lo tiene —
+  obligatorio, `trim`, máximo 150 (tope `P009I` de la RPC).
+- Se guarda **primero** con `updateMyProfile()`; **solo si eso pasa** se llama a
+  `createBookingWithIntent` con ese nombre. Si el guardado falla, **no se crea la
+  cita** y el horario sigue vigente para reintentar.
+- Persistirlo en `profiles.full_name` es lo que **evita volver a preguntarlo**:
+  `AuthUser.name` sale de esa columna.
+- **Protecciones añadidas:** el paso se descarta si cambian servicio, fecha u
+  horario (el intent anterior queda obsoleto), y un **guard de concurrencia**
+  impide reservar con un intent obsoleto si la selección cambia mientras
+  `updateMyProfile` está en vuelo.
+- **Sin migración, sin backend nuevo.** La RPC sigue sin sobrescribir la ficha de
+  un paciente existente. `MobileBookingSheet` reutiliza `BookingCard`: móvil
+  cubierto sin segunda implementación.
 
 ---
 
@@ -411,8 +555,25 @@ ordenado por la cadena de FKs · `otp_consent_events` y `audit_log` **preservado
 | `user_metadata.fixture` | `S7_71_QA_DOCTOR` |
 
 **Identidad protegida: no borrar ni modificar sin autorización expresa.** Ya
-**no** necesita estar en Test Phones. Sigue **publicado** en producción y
-**debe despublicarse antes del lanzamiento comercial**.
+**no** necesita estar en Test Phones.
+
+**✅ HIGIENE QA = CLOSED (2026-08-14): fue DESPUBLICADO.** El owner puso
+`is_published=false` desde LucyAdmin. Verificado después:
+
+- **Salió del Home/directorio** y del **sitemap** (37 URLs, sin la suya).
+- La **URL directa** responde `noindex,follow` y **no expone ningún dato** del
+  perfil — ni el nombre ni la clínica aparecen en el HTML servido. Sigue
+  devolviendo HTTP 200 porque es una SPA: eso es lo esperado, no un fallo.
+- **`is_published` fue el ÚNICO campo que cambió.** `lucy_status=claimed`,
+  `is_verified=false`, `booking_enabled=false`, `is_operational=true` y el slug
+  quedaron intactos; médico, profile, clínica y `auth.user` **se conservan**.
+- **0 otros perfiles QA publicados** — barrido de los 36 publicados contra
+  `qa|test|fixture|demo|prueba|dummy|seed|sample|ejemplo|.test` en nombre, email,
+  clínica y slug.
+
+> Seguimiento no bloqueante: estuvo publicado e indexable, así que puede seguir
+> en el índice de Google hasta el próximo rastreo. El `noindex` lo resuelve solo;
+> "Eliminación de URLs" en Search Console lo acelera.
 
 **Katherine `50372608827`:** **JAMÁS usar**, ni siquiera en read-only.
 
@@ -452,6 +613,24 @@ un `auth.user` de paciente creado por el flujo real de reserva el 2026-08-02
 
 ---
 
+## 10.1 Deudas vigentes — todas WARN, ninguna bloqueante
+
+Se documentan **sin resolver**. Ninguna se abre sin instrucción del owner y
+**ninguna debe reclasificarse como bloqueante**.
+
+| Deuda | Nota |
+|---|---|
+| **Mensajes de contraseña de Supabase en inglés** | se muestran crudos al usuario; copy aprobado en el backlog de `CLAUDE.md` (1) |
+| **`NotificationBell` — Escape, foco, a11y** | quedó explícitamente fuera de #311 |
+| **Admin API `listUsers`** | `Database error finding users` persistente en la cola (~15 de ~140 usuarios ilegibles); `?filter=` **no** busca por teléfono y produce **falsos limpios**. No afecta el runtime de Auth, solo scripts de administración. Para buscar un teléfono, usar la búsqueda del Dashboard |
+| **Bundle inicial ~666 kB** | las dos páginas legales viajan en el chunk inicial por la convención del router (rutas públicas/SEO estáticas). El arreglo sería `lazy()` en ambas; **el owner decidió no hacerlo ahora** |
+| **F1-c2 · DROP de `doctors.license_number`** | irreversible, con precondiciones propias (sincronía fresca, respaldo, preflight, autorización). **No tocar** |
+| **Seguimiento SEO / Search Console** | la URL del perfil QA despublicado sale del índice al próximo rastreo |
+| **BILLING-P0** | **PAUSADO**, fuera del piloto, arquitectura definida en `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` |
+| **Auto Recharge de Twilio OFF** | **decisión deliberada del piloto**, no una deuda. Reevaluar si crece el consumo (§5.1) |
+
+---
+
 ## 11. Documentación vigente
 
 | Documento | Rol |
@@ -479,7 +658,7 @@ gh pr list --state open
 Leer en orden: **1)** `CLAUDE.md` · **2)** este handoff.
 
 **INSTRUCCIÓN 0: no iniciar ningún frente ni cambio sin instrucción del owner.**
-**No hay frente funcional activo** (post-#332). El siguiente pendiente es el
-**Booking E2E real controlado** (§8) y **no se abre sin instrucción expresa**.
-**No reabrir Auth/recovery salvo un incidente nuevo con evidencia propia**, ni
-LEGAL-P0, que quedó cerrado en #331/#332 (§6).
+**No hay ningún frente funcional abierto** (post-#335) y el **piloto quedó en GO**
+(§7). **No reabrir** Auth/recovery salvo un incidente nuevo con evidencia propia ·
+**no repetir el Booking E2E** (§8) · LEGAL-P0 cerrado en #331/#332/#333 (§6).
+Las deudas de §10.1 son **WARN** y no se abren sin instrucción.
