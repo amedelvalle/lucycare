@@ -152,7 +152,9 @@ BEGIN
     JOIN pg_class c ON c.oid = con.conrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relname = 'review_tokens' AND con.contype = 'u'
-      AND (SELECT array_agg(att.attname ORDER BY att.attname)
+      -- `att.attname` es de tipo `name`: sin el cast, array_agg devuelve
+      -- `name[]` y no existe el operador `name[] = text[]` (42883).
+      AND (SELECT array_agg(att.attname::text ORDER BY att.attname::text)
            FROM unnest(con.conkey) k
            JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k)
           = ARRAY['token']
@@ -165,7 +167,9 @@ BEGIN
     JOIN pg_class c ON c.oid = con.conrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relname = 'review_tokens' AND con.contype = 'u'
-      AND (SELECT array_agg(att.attname ORDER BY att.attname)
+      -- `att.attname` es de tipo `name`: sin el cast, array_agg devuelve
+      -- `name[]` y no existe el operador `name[] = text[]` (42883).
+      AND (SELECT array_agg(att.attname::text ORDER BY att.attname::text)
            FROM unnest(con.conkey) k
            JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k)
           = ARRAY['appointment_id']

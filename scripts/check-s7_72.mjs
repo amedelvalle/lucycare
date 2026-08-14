@@ -110,6 +110,12 @@ check('el PRE cubre owner, prosecdef, volatility, return y search_path',
 check('el PRE verifica el trigger y su definición',
   /trg_generate_review_token/.test(pre) && /AFTER UPDATE OF status_id/i.test(pre));
 check('el PRE verifica review_tokens.token = text', /review_tokens/.test(pre) && /'text'/.test(pre));
+// `attname` es `name`: comparar array_agg(attname) contra ARRAY['x'] (text[])
+// da 42883 en ejecución. El cast a ::text es obligatorio.
+check('el PRE castea attname a ::text al comparar arrays',
+  (pre.match(/array_agg\(att\.attname::text/g) || []).length === 2);
+check('ningún array_agg(attname) quedó sin cast',
+  /array_agg\(att\.attname\s+ORDER/.test(pre), false);
 check('el PRE toma snapshot de los grants', /set_config\('s7_72\.acl_gen'/.test(pre));
 check('el POST aborta con RAISE EXCEPTION', /RAISE EXCEPTION 's7_72 POST:/.test(post));
 check('el POST comprueba PUBLIC por ACL, no con has_function_privilege',
