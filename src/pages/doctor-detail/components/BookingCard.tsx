@@ -285,7 +285,17 @@ export default function BookingCard({
       setSavingName(false);
       return;
     }
+    // El nombre YA quedó guardado en el perfil: se refleja siempre, aunque la
+    // reserva no llegue a crearse. Así no se vuelve a preguntar.
     setCurrentUser((u) => (u ? { ...u, name: trimmedName } : u));
+    // Guard de concurrencia: durante el await el usuario pudo cambiar
+    // servicio, fecha u horario, y `discardPendingNameStep()` ya invalidó este
+    // intent. Sin esta comprobación se reservaría el slot ANTERIOR, porque el
+    // `intentId` quedó capturado en la clausura antes del await.
+    if (pendingIntentIdRef.current !== intentId) {
+      setSavingName(false);
+      return; // sin cita; el paso ya se cerró y sigue el flujo con la nueva selección
+    }
     pendingIntentIdRef.current = null;
     setNeedsName(false);
     try {
