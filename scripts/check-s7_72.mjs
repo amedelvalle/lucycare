@@ -127,5 +127,16 @@ check('el POST verifica submit_review sin modificar', /submit_review/.test(post)
 check('el POST prueba el generador en caliente', /_review_short_code\(\)/.test(post) && /\^\[0-9A-HJKMNP-TV-Z\]\{20\}\$/.test(post));
 check('NO usa tablas temporales (gotcha del SQL Editor)', /CREATE\s+TEMP/i.test(sql), false);
 
+// ─── 6. Atomicidad ─────────────────────────────────────────────────
+console.log('  — atomicidad —');
+check('abre transacción explícita', /^\s*BEGIN;\s*$/m.test(code));
+check('cierra con COMMIT', /^\s*COMMIT;\s*$/m.test(code));
+check('BEGIN va antes del primer DO', code.indexOf('BEGIN;') < code.indexOf('DO $pre$'));
+check('COMMIT va después del POST', code.lastIndexOf('COMMIT;') > code.indexOf('$post$;'));
+check('los set_config son transaction-local (tercer parámetro true)',
+  (sql.match(/set_config\('s7_72\.[a-z_]+',[^;]*,\s*true\)/g) || []).length === 2);
+check('ningún set_config quedó a nivel de sesión (false)',
+  /set_config\('s7_72\.[a-z_]+',[^;]*,\s*false\)/.test(sql), false);
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} check-s7_72: pass=${pass} fail=${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

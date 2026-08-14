@@ -18,29 +18,43 @@
  */
 import { supabaseAdmin } from './_lib/supabase-admin.mjs';
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, inconcluso = 0;
 function check(nombre, ok, detalle = '') {
   console.log(`  ${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`);
   ok ? pass++ : fail++;
+}
+/** Ni PASS ni FAIL: este script no pudo decidir. La autoridad es otra. */
+function indeciso(nombre, detalle) {
+  console.log(`  ⚠️  ${nombre} — INCONCLUSO: ${detalle}`);
+  inconcluso++;
 }
 
 console.log('\n_smoke-s7_72 — URL corta de calificación (post-aplicación)\n');
 
 // ─── 1. El helper NO debe ser invocable por service_role ────────────
-// Distinguir "no existe" de "sin permiso" es esencial: si la migración no se
-// aplicó, la RPC tampoco existe y un check ingenuo daría un falso PASS.
+//
+// ⚠️ PGRST202 NO prueba nada. Es "Could not find the function" de PostgREST y
+// es AMBIGUO: puede venir de un schema cache desactualizado o de una firma que
+// el proxy no resolvió, no solo de una función inexistente. Tratarlo como
+// "la migración no está aplicada" sería una inferencia indebida desde el
+// proxy, y tratarlo como PASS sería peor todavía.
+//
+// La autoridad sobre si el helper EXISTE y está RESTRINGIDO es el bloque POST
+// de la migración y el smoke del owner contra el catálogo — no este script.
 {
   const { error } = await supabaseAdmin.rpc('_review_short_code');
   const code = error?.code ?? '(sin error)';
   const msg = error?.message ?? '';
 
   if (!error) {
-    check('helper NO invocable por service_role', false, 'la RPC respondió: el REVOKE no está aplicado');
-  } else if (code === 'PGRST202' || /Could not find the function/i.test(msg)) {
     check('helper NO invocable por service_role', false,
-      'la función no existe → la migración s7_72 NO está aplicada todavía');
+      'la RPC respondió: el REVOKE no está aplicado');
   } else if (code === '42501' || /permission denied/i.test(msg)) {
     check('helper NO invocable por service_role', true, `bloqueado con ${code}`);
+  } else if (code === 'PGRST202' || /Could not find the function/i.test(msg)) {
+    indeciso('helper NO invocable por service_role',
+      `PostgREST devolvió ${code}. Ambiguo (schema cache o firma no resuelta): NO decide ` +
+      'si el helper existe. Confirmarlo con el POST de la migración o el smoke del owner');
   } else {
     check('helper NO invocable por service_role', false, `error inesperado ${code}: ${msg}`);
   }
@@ -88,5 +102,12 @@ console.log('\n_smoke-s7_72 — URL corta de calificación (post-aplicación)\n'
   }
 }
 
-console.log(`\n${fail === 0 ? '✅' : '❌'} _smoke-s7_72: pass=${pass} fail=${fail}\n`);
-process.exit(fail === 0 ? 0 : 1);
+// Un inconcluso NO es un PASS: sale con código propio (2) para que no se
+// confunda con "todo verde" en un pipeline ni en una lectura rápida.
+const veredicto = fail > 0 ? '❌ FAIL' : (inconcluso > 0 ? '⚠️  INCONCLUSO' : '✅ PASS');
+console.log(`\n${veredicto} _smoke-s7_72: pass=${pass} fail=${fail} inconcluso=${inconcluso}\n`);
+if (inconcluso > 0 && fail === 0) {
+  console.log('  → Hay aserciones que este script no puede decidir. La autoridad es');
+  console.log('    el bloque POST de s7_72 y docs/OWNER_S7_72_SMOKE.md, contra catálogo.\n');
+}
+process.exit(fail > 0 ? 1 : (inconcluso > 0 ? 2 : 0));

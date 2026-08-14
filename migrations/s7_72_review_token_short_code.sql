@@ -40,9 +40,21 @@
 -- NO se usa `random()` (no criptográfico) ni `gen_random_bytes()` (pgcrypto,
 -- NO habilitada en este proyecto — fue exactamente la causa del fix `s6_02`).
 --
--- ORDEN DE APLICACIÓN: bloque único. Si el PRE no coincide con el snapshot
--- del catálogo, la migración ABORTA sin haber tocado nada.
+-- ATOMICIDAD
+--   TODO corre dentro de UNA sola transacción explícita: PRE → helper →
+--   REVOKE → generate_review_token() → POST. En PostgreSQL el DDL es
+--   transaccional, así que si cualquier guarda lanza excepción el ROLLBACK
+--   es total: NO queda el helper a medias, ni la función reemplazada, ni los
+--   REVOKE aplicados. O entra todo, o no entra nada.
+--
+--   Los snapshots auxiliares usan `set_config(..., true)` = TRANSACTION-LOCAL:
+--   se descartan al cerrar y no dejan estado de sesión residual.
+--
+-- ORDEN DE APLICACIÓN: copiar y pegar el archivo COMPLETO, de una sola vez.
+-- Si el PRE no coincide con el snapshot del catálogo, aborta sin tocar nada.
 -- ═══════════════════════════════════════════════════════════════════════
+
+BEGIN;
 
 -- ─── 1. PRE — guardas bloqueantes contra el estado real ───────────────
 DO $pre$
@@ -164,8 +176,10 @@ BEGIN
   -- 1.10 Snapshot de los grants ACTUALES, para comparar en el POST.
   --      Patrón vigente del repo: NADA de tablas temporales en el SQL Editor
   --      (42P01 por search_path / 3F000 porque pg_temp no resuelve).
-  PERFORM set_config('s7_72.acl_gen', coalesce(array_to_string(p.proacl, '|'), '(null)'), false);
-  PERFORM set_config('s7_72.oid_gen', p.oid::text, false);
+  --      Tercer parámetro `true` = TRANSACTION-LOCAL: al cerrar la transacción
+  --      estos valores desaparecen y no queda estado de sesión residual.
+  PERFORM set_config('s7_72.acl_gen', coalesce(array_to_string(p.proacl, '|'), '(null)'), true);
+  PERFORM set_config('s7_72.oid_gen', p.oid::text, true);
 
   RAISE NOTICE 's7_72 PRE: OK — estado coincide con el snapshot del catálogo';
 END
@@ -436,3 +450,5 @@ BEGIN
   RAISE NOTICE 's7_72 POST: OK — helper creado y acotado, generate_review_token() con atributos y grants intactos, trigger intacto, sin backfill';
 END
 $post$;
+
+COMMIT;
