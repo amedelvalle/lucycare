@@ -6,6 +6,11 @@
  * ampliar. Cualquier cambio sustantivo requiere un documento nuevo del owner
  * y una versión nueva.
  *
+ * ⚠️ ÚNICA divergencia respecto del .md original del owner: la entidad
+ * operadora dice **Divalux** / **Divalux, S.A. de C.V.**, no "Valux"
+ * (LEGAL-ENTITY-RENAME-P0, autorizado por el owner). El .md fuente debe
+ * actualizarse para que no queden desalineados.
+ *
  * Mismo patrón visual que `/privacidad` (página autocontenida, sin layout
  * legal compartido).
  */
@@ -41,7 +46,7 @@ export default function TerminosPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">1. Operador</h2>
             <p>
-              LucyCare es una plataforma tecnológica operada por Valux, S.A. de C.V., sociedad
+              LucyCare es una plataforma tecnológica operada por Divalux, S.A. de C.V., sociedad
               domiciliada en El Salvador.
             </p>
             <p>
@@ -172,7 +177,7 @@ export default function TerminosPage() {
               <li>Administre el perfil;</li>
               <li>Haya sido verificado;</li>
               <li>Tenga agenda en línea;</li>
-              <li>Mantenga relación laboral o societaria con Valux;</li>
+              <li>Mantenga relación laboral o societaria con Divalux;</li>
               <li>Sea recomendado por LucyCare.</li>
             </ul>
             <p>
@@ -370,7 +375,7 @@ export default function TerminosPage() {
             <h2 className="text-lg font-semibold text-gray-900">17. Propiedad intelectual</h2>
             <p>
               LucyCare, sus marcas, logotipos, diseños, software, documentación y contenidos propios
-              pertenecen a Valux, S.A. de C.V. o a sus licenciantes.
+              pertenecen a Divalux, S.A. de C.V. o a sus licenciantes.
             </p>
             <p>
               El uso de LucyCare no concede derechos sobre la marca, código, diseño o

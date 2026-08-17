@@ -6,6 +6,11 @@
  * ampliar. Cualquier cambio sustantivo requiere un documento nuevo del owner
  * y una versión nueva.
  *
+ * ⚠️ ÚNICA divergencia respecto del .md original del owner: la entidad
+ * operadora dice **Divalux, S.A. de C.V.**, no "Valux"
+ * (LEGAL-ENTITY-RENAME-P0, autorizado por el owner). El .md fuente debe
+ * actualizarse para que no queden desalineados.
+ *
  * ⚠️ La versión mostrada acá es DOCUMENTAL. No es la constante
  * `CONSENT_VERSION` de `AffiliationRequestModal`, que versiona el
  * consentimiento LOPD del lead (`doctor_affiliation_requests.consent_version`,
@@ -43,7 +48,7 @@ export default function PrivacidadPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">1. Responsable</h2>
             <p>
-              LucyCare es una plataforma tecnológica operada por Valux, S.A. de C.V., sociedad
+              LucyCare es una plataforma tecnológica operada por Divalux, S.A. de C.V., sociedad
               domiciliada en El Salvador.
             </p>
             <p>
@@ -328,7 +333,7 @@ export default function PrivacidadPage() {
             </h2>
             <p>
               En relación con los datos de cuenta, seguridad, directorio, suscripciones y soporte,
-              Valux, S.A. de C.V. actúa normalmente como responsable del tratamiento.
+              Divalux, S.A. de C.V. actúa normalmente como responsable del tratamiento.
             </p>
             <p>
               Cuando un profesional o una institución utiliza LucyCare para documentar la atención
