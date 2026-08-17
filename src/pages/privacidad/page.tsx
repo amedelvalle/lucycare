@@ -6,11 +6,6 @@
  * ampliar. Cualquier cambio sustantivo requiere un documento nuevo del owner
  * y una versión nueva.
  *
- * ⚠️ ÚNICA divergencia respecto del .md original del owner: la entidad
- * operadora dice **Divalux, S.A. de C.V.**, no "Valux"
- * (LEGAL-ENTITY-RENAME-P0, autorizado por el owner). El .md fuente debe
- * actualizarse para que no queden desalineados.
- *
  * ⚠️ La versión mostrada acá es DOCUMENTAL. No es la constante
  * `CONSENT_VERSION` de `AffiliationRequestModal`, que versiona el
  * consentimiento LOPD del lead (`doctor_affiliation_requests.consent_version`,

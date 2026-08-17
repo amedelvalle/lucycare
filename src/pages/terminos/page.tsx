@@ -6,11 +6,6 @@
  * ampliar. Cualquier cambio sustantivo requiere un documento nuevo del owner
  * y una versión nueva.
  *
- * ⚠️ ÚNICA divergencia respecto del .md original del owner: la entidad
- * operadora dice **Divalux** / **Divalux, S.A. de C.V.**, no "Valux"
- * (LEGAL-ENTITY-RENAME-P0, autorizado por el owner). El .md fuente debe
- * actualizarse para que no queden desalineados.
- *
  * Mismo patrón visual que `/privacidad` (página autocontenida, sin layout
  * legal compartido).
  */
