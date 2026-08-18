@@ -27,9 +27,13 @@ export const SAME_PASSWORD_MESSAGE =
 export const WEAK_PASSWORD_MESSAGE =
   `La contraseña no cumple los requisitos mínimos. Prueba una distinta de al menos ${MIN_PASSWORD_LENGTH} caracteres.`
 
-/** La sesión que autoriza el cambio ya no sirve. */
+/**
+ * La sesión que autoriza el cambio ya no sirve. Redacción deliberadamente
+ * neutral: el helper se consume tanto en CREACIÓN como en RECUPERACIÓN, así
+ * que no puede afirmar "para crear la contraseña" en todos los caminos.
+ */
 export const SESSION_EXPIRED_MESSAGE =
-  'Tu sesión expiró. Refresca la página y vuelve a entrar para crear la contraseña.'
+  'Tu sesión expiró. Refresca la página e inténtalo de nuevo.'
 
 /** Demasiados intentos seguidos contra Auth. */
 export const RATE_LIMIT_MESSAGE =

@@ -199,6 +199,22 @@ check(
 );
 check('ACTUAL: ResetPasswordPage usa el copy genérico del helper', page.includes('GENERIC_PASSWORD_MESSAGE'));
 
+// La página de recuperación no puede mezclar tuteo y voseo: se revisa el
+// archivo COMPLETO, no solo las cadenas que vienen del servicio.
+const LINEAS_VOSEO = page.split('\n').filter((l) => VOSEO.test(l) || /\bquedás\b/.test(l));
+check(
+  'ACTUAL: /reset-password sin voseo en toda la página',
+  LINEAS_VOSEO.length === 0,
+  LINEAS_VOSEO.map((l) => l.trim()).join(' | '),
+);
+
+// El copy de sesión expirada sirve a los DOS caminos (creación y
+// recuperación), así que no puede afirmar que se está "creando" la contraseña.
+check(
+  'ACTUAL: el mensaje de sesión es neutral entre creación y recuperación',
+  !/crear la contraseña/.test(SESSION_EXPIRED_MESSAGE),
+);
+
 console.log(`\n  ${fail === 0 ? '✅' : '❌'} ${pass}/${pass + fail} checks\n`);
 fs.rmSync(outFile, { force: true });
 process.exit(fail === 0 ? 0 : 1);

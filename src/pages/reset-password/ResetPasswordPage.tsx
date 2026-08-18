@@ -144,7 +144,7 @@ export default function ResetPasswordPage() {
           <>
             <h1 className="text-xl font-semibold text-gray-900 mb-3">Link no válido o expirado</h1>
             <p className="text-sm text-gray-600 mb-6">
-              El link de recuperación ya fue usado o venció. Solicitá uno nuevo desde "Iniciar sesión" →
+              El link de recuperación ya fue usado o venció. Solicita uno nuevo desde "Iniciar sesión" →
               "Olvidaste tu contraseña".
             </p>
             <button
@@ -161,7 +161,7 @@ export default function ResetPasswordPage() {
           <>
             <h1 className="text-xl font-semibold text-gray-900 mb-2">Nueva contraseña</h1>
             <p className="text-sm text-gray-600 mb-6">
-              Elegí una contraseña de al menos {MIN_PASSWORD_LENGTH} caracteres. Después de guardarla quedás logueado automáticamente.
+              Elige una contraseña de al menos {MIN_PASSWORD_LENGTH} caracteres. Después de guardarla quedas logueado automáticamente.
             </p>
 
             {error && (
