@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   usePanelNotifications,
@@ -6,16 +6,15 @@ import {
 } from '@/hooks/usePanelNotifications';
 import type { PanelNotification } from '@/services/panelNotifications.service';
 
-/**
- * Id del panel desplegable, para enlazarlo desde `aria-controls`. El componente
- * se monta DOS veces en `PanelLayout` (header móvil + barra desktop), pero solo
- * una queda visible por breakpoint: la otra está bajo `display:none`, así que
- * ni recibe foco ni es expuesta por el lector de pantalla.
- */
-const PANEL_ID = 'notification-bell-panel';
-
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
+  /**
+   * Id POR INSTANCIA, no constante de módulo: `PanelLayout` monta este
+   * componente DOS veces (header móvil + barra desktop) y un id fijo podría
+   * duplicarse en el DOM, dejando `aria-controls` apuntando a un panel ajeno.
+   * `useId` es estable entre renders y consistente con el SSR.
+   */
+  const panelId = `notification-bell-panel-${useId()}`;
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -86,7 +85,7 @@ export default function NotificationBell() {
         // componente no implementa. Con Tab alcanza: el panel se renderiza
         // justo después del botón en el orden del DOM.
         aria-expanded={open}
-        aria-controls={open ? PANEL_ID : undefined}
+        aria-controls={open ? panelId : undefined}
         // El contador era información solo visual: acá entra al nombre
         // accesible para que el lector de pantalla lo anuncie.
         aria-label={
@@ -117,7 +116,7 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          id={PANEL_ID}
+          id={panelId}
           className="absolute right-0 top-full mt-2 w-[min(360px,calc(100vw-2rem))] max-h-[70vh] bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden"
         >
           {/* Header */}
