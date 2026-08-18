@@ -75,7 +75,7 @@ export default function ClaimProfilePromptCard({
             <div className="flex-1">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900">¿Eres este profesional?</h3>
               <p className="text-sm text-gray-700 mt-1">
-                Reclamá tu perfil para confirmar que es tuyo. Después, junto con Lucy, lo dejamos listo para recibir
+                Reclama tu perfil para confirmar que es tuyo. Después, junto con Lucy, lo dejamos listo para recibir
                 pacientes.
               </p>
             </div>
@@ -100,7 +100,7 @@ export default function ClaimProfilePromptCard({
               onClick={() => setOpen(true)}
               className="font-medium text-brand-purple hover:text-brand-purple-dark hover:underline cursor-pointer"
             >
-              Reclamá tu perfil
+              Reclama tu perfil
             </button>
           </div>
         </div>
