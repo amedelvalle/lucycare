@@ -38,16 +38,16 @@ const SUPPORT_EMAIL = 'lucycare.digital@gmail.com';
 
 const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual?: boolean }> = {
   NOT_AUTHENTICATED: {
-    title: 'Iniciá sesión primero',
+    title: 'Inicia sesión primero',
     detail: 'Necesitamos verificar tu teléfono por SMS antes de continuar.',
   },
   DOCTOR_NOT_FOUND: {
     title: 'Perfil no encontrado',
-    detail: 'No pudimos encontrar este perfil de médico. Refrescá la página y volvé a intentar.',
+    detail: 'No pudimos encontrar este perfil de médico. Refresca la página y vuelve a intentar.',
   },
   ALREADY_CLAIMED: {
     title: 'Este perfil ya fue reclamado',
-    detail: 'Si creés que es un error, contactanos para revisión manual.',
+    detail: 'Si crees que es un error, contáctanos para revisión manual.',
     manual: true,
   },
   DOCTOR_NO_PHONE: {
@@ -58,7 +58,7 @@ const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual
   PHONE_MISMATCH: {
     title: 'El teléfono no coincide',
     detail:
-      'El teléfono con el que iniciaste sesión no coincide con el registrado para este perfil. Si sos el profesional, contactanos para revisión manual.',
+      'El teléfono con el que iniciaste sesión no coincide con el registrado para este perfil. Si eres el profesional, contáctanos para revisión manual.',
     manual: true,
   },
   DOCTOR_NO_LICENSE: {
@@ -69,16 +69,16 @@ const ERROR_COPY: Record<ClaimErrorCode, { title: string; detail: string; manual
   LICENSE_MISMATCH: {
     title: 'La licencia no coincide',
     detail:
-      'La licencia/JVPM que ingresaste no coincide con la registrada para este perfil. Verificala y volvé a intentar — si seguís sin poder, contactanos para revisión manual.',
+      'La licencia/JVPM que ingresaste no coincide con la registrada para este perfil. Verifícala y vuelve a intentar — si sigues sin poder, contáctanos para revisión manual.',
   },
   TIMEOUT: {
     title: 'No pudimos confirmar el reclamo',
     detail:
-      'La operación tardó más de lo normal. Refrescá la página: si tu perfil ya aparece reclamado, todo está bien. Si no, volvé a intentar.',
+      'La operación tardó más de lo normal. Refresca la página: si tu perfil ya aparece reclamado, todo está bien. Si no, vuelve a intentar.',
   },
   UNKNOWN: {
     title: 'No pudimos reclamar el perfil',
-    detail: 'Ocurrió un error inesperado. Intentá de nuevo en un momento.',
+    detail: 'Ocurrió un error inesperado. Inténtalo de nuevo en un momento.',
   },
 };
 
@@ -232,7 +232,7 @@ export default function ClaimProfileModal({
         const tok = await getSessionWithTimeout(3000);
         if (!tok) {
           setGenericError(
-            'No pudimos confirmar tu sesión después del código. Refrescá la página e intentá de nuevo.',
+            'No pudimos confirmar tu sesión después del código. Refresca la página e inténtalo de nuevo.',
           );
           return;
         }
@@ -266,7 +266,7 @@ export default function ClaimProfileModal({
         setError({
           code: 'NOT_AUTHENTICATED',
           ...ERROR_COPY.NOT_AUTHENTICATED,
-          detail: 'No pudimos confirmar tu sesión. Cerrá sesión, refrescá la página e intentá de nuevo.',
+          detail: 'No pudimos confirmar tu sesión. Cierra sesión, refresca la página e inténtalo de nuevo.',
         });
         return;
       }
@@ -324,7 +324,7 @@ export default function ClaimProfileModal({
       // motivo que getMyProfileEmail y claimDoctorProfile).
       const tok = sessionToken;
       if (!tok) {
-        setGenericError('No pudimos confirmar tu sesión. Refrescá la página y volvé a intentar.');
+        setGenericError('No pudimos confirmar tu sesión. Refresca la página y vuelve a intentar.');
         return;
       }
       const result = await setPasswordFromClaim(password, tok.accessToken);
@@ -332,7 +332,7 @@ export default function ClaimProfileModal({
         setOutcome('password_set');
         setStep('success');
       } else {
-        setGenericError(result.error || 'No pudimos guardar tu contraseña. Probá de nuevo.');
+        setGenericError(result.error || 'No pudimos guardar tu contraseña. Prueba de nuevo.');
       }
     } catch {
       setGenericError('Error de conexión al guardar la contraseña.');
@@ -468,9 +468,9 @@ export default function ClaimProfileModal({
           {step === 'otp' && !isAuthenticated && (
             <div className="space-y-5">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Verificá tu identidad</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Verifica tu identidad</h3>
                 <p className="text-sm text-gray-600">
-                  Tu cuenta debe estar verificada con el mismo teléfono registrado para este perfil. Si no lo conocés,
+                  Tu cuenta debe estar verificada con el mismo teléfono registrado para este perfil. Si no lo conoces,
                   no vas a poder reclamarlo automáticamente.
                 </p>
               </div>
@@ -561,7 +561,7 @@ export default function ClaimProfileModal({
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Verificación profesional</h3>
                 <p className="text-sm text-gray-600">
-                  Ingresá el número exacto de tu licencia profesional / JVPM tal como figura en tu credencial. Lo
+                  Ingresa el número exacto de tu licencia profesional / JVPM tal como figura en tu credencial. Lo
                   comparamos con el dato que tenemos registrado para este perfil.
                 </p>
               </div>
@@ -626,9 +626,9 @@ export default function ClaimProfileModal({
           {step === 'password' && (
             <div className="space-y-5">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Creá tu contraseña</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Crea tu contraseña</h3>
                 <p className="text-sm text-gray-600">
-                  Listo, tu perfil quedó reclamado. Elegí una de las dos opciones para terminar de activar tu acceso —
+                  Listo, tu perfil quedó reclamado. Elige una de las dos opciones para terminar de activar tu acceso —
                   necesitamos que puedas entrar después aunque no tengas el teléfono a mano.
                 </p>
               </div>
@@ -649,7 +649,7 @@ export default function ClaimProfileModal({
                       <div className="flex-1">
                         <p className="font-semibold text-gray-900">Crear contraseña ahora</p>
                         <p className="text-sm text-gray-600 mt-1">
-                          Recomendado. La definís en este momento y ya quedás listo para entrar con tu email.
+                          Recomendado. La defines en este momento y ya quedas listo para entrar con tu email.
                         </p>
                       </div>
                       <i className="ri-arrow-right-line text-xl text-brand-purple shrink-0 mt-2"></i>
@@ -669,7 +669,7 @@ export default function ClaimProfileModal({
                       <div className="flex-1">
                         <p className="font-semibold text-gray-900">Recibir link por email</p>
                         <p className="text-sm text-gray-600 mt-1">
-                          Te enviamos un link al correo registrado y la creás cuando puedas.
+                          Te enviamos un link al correo registrado y la creas cuando puedas.
                         </p>
                       </div>
                       <i className="ri-arrow-right-line text-xl text-gray-400 shrink-0 mt-2"></i>
@@ -694,12 +694,12 @@ export default function ClaimProfileModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Confirmá la contraseña</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Confirma la contraseña</label>
                     <input
                       type="password"
                       value={passwordConfirm}
                       onChange={(e) => setPasswordConfirm(e.target.value)}
-                      placeholder="Repetí la contraseña"
+                      placeholder="Repite la contraseña"
                       autoComplete="new-password"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-purple text-gray-900"
                     />
@@ -750,7 +750,7 @@ export default function ClaimProfileModal({
                         <span className="font-semibold text-gray-900">{profileEmail}</span>.
                       </p>
                       <p className="text-xs text-gray-500 mt-2">
-                        El link expira en 1 hora. Si el correo no llega en unos minutos, revisá la carpeta de spam.
+                        El link expira en 1 hora. Si el correo no llega en unos minutos, revisa la carpeta de spam.
                       </p>
                     </div>
                   )}
@@ -758,7 +758,7 @@ export default function ClaimProfileModal({
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                       <p className="text-sm font-medium text-amber-900">No encontramos un correo registrado</p>
                       <p className="text-sm text-amber-800 mt-1">
-                        Contactá a soporte para actualizarlo, o elegí <strong>Crear contraseña ahora</strong>.
+                        Contacta a soporte para actualizarlo, o elige <strong>Crear contraseña ahora</strong>.
                       </p>
                     </div>
                   )}
@@ -813,21 +813,21 @@ export default function ClaimProfileModal({
                 <div className="bg-brand-mint/20 border border-brand-mint/40 rounded-lg p-4 mb-4 text-left">
                   <p className="text-sm font-medium text-brand-purple">Contraseña creada</p>
                   <p className="text-sm text-brand-purple mt-1">
-                    Ya podés iniciar sesión con tu email y contraseña la próxima vez.
+                    Ya puedes iniciar sesión con tu email y contraseña la próxima vez.
                   </p>
                 </div>
               )}
               {outcome === 'email_sent' && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-left">
-                  <p className="text-sm font-medium text-blue-900">Revisá tu correo</p>
+                  <p className="text-sm font-medium text-blue-900">Revisa tu correo</p>
                   <p className="text-sm text-blue-800 mt-1">
-                    Te enviamos un link para crear tu contraseña. Si no aparece en unos minutos, revisá la carpeta de
+                    Te enviamos un link para crear tu contraseña. Si no aparece en unos minutos, revisa la carpeta de
                     spam.
                   </p>
                 </div>
               )}
               <p className="text-sm text-gray-500 mb-6">
-                Para activar agenda en línea o publicarlo oficialmente, escribinos: hacemos un onboarding corto y lo
+                Para activar agenda en línea o publicarlo oficialmente, escríbenos: hacemos un onboarding corto y lo
                 dejamos listo.
               </p>
               <a
