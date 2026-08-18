@@ -4,24 +4,24 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-14) — post PR #335. PILOTO = GO.**
-> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`
-> (leer PRIMERO).** Ese handoff es autosuficiente, se mantiene actualizado post-#332
-> y reemplaza al `2026-08-06`, que pasa a **histórico** junto con todos los
-> anteriores. El detalle por PR de los frentes cerrados vive en
-> **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
+> 🟢 **ESTADO VIGENTE (2026-08-18) — post PR #340. PILOTO = GO.**
+> **Punto de entrada canónico: `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md`
+> (leer PRIMERO).** Ese handoff es autosuficiente y reemplaza al `2026-08-12`,
+> que pasa a **histórico** junto con todos los anteriores. El detalle por PR de
+> los frentes cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no
+> lo duplica.
 >
-> **Último HEAD funcional previo a la reconciliación documental:
-> `fa0d6ab140ccb08a51f26825a883453c146cfb97` (#335).** · **PRs funcionales
-> mergeados hasta #335** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
-> · `main == origin/main` · árbol limpio · producción desplegada y
-> **validada** (`https://lucycare.app` sirviendo el bundle de `fa0d6ab`; verificado
-> en el dominio, no solo el estado del deploy).
+> **Último HEAD funcional previo al handoff documental:
+> `4be10118f9e6e6039fea1cbe6fb2e8f4c90270fb` (#340).** · **PRs funcionales
+> mergeados hasta #340** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
+> · `main == origin/main` · árbol limpio · producción desplegada y **validada**
+> contra el dominio · **ningún frente funcional abierto**.
 >
-> ℹ️ **El PR #336 es exclusivamente docs-only:** su merge **cambia el SHA del
-> repositorio** pero **no altera el estado funcional, las migraciones ni la
-> configuración**. El SHA vigente se consulta con `git rev-parse HEAD`; el
-> **estado funcional** sigue siendo el de `fa0d6ab`.
+> **Último cambio funcional:** #340 (entidad operadora). Antes: #338 (`s7_72`)
+> y #337 (copy del login). **#336, #339 y #341 son docs-only**: mueven el SHA
+> del repositorio pero **no** el estado funcional, las migraciones, la DB, la
+> configuración ni producción. **El SHA vigente se consulta con
+> `git rev-parse HEAD`.**
 >
 > **🚀 GO/NO-GO DEL PILOTO = GO (2026-08-14).** **Cero FAIL bloqueantes.** PASS en:
 > producción desplegada · Home/directorio · perfil y Booking de Camilo ·
@@ -129,6 +129,21 @@
 > **✅ TESTPHONE-CLEANUP-P0 = CLOSED (2026-08-13).** `50377507479` retirado de Test
 > Phones; el login posterior de `operations_admin` por email+contraseña = PASS.
 > **Josué ya no depende de ningún Test Phone.** Quedan **exactamente 2**.
+>
+> **⚖️ ENTIDAD OPERADORA = DIVALUX (2026-08-17, PR #340).** La empresa que figura
+> como responsable/operadora de LucyCare es **Divalux**, y donde corresponde la
+> razón social completa, **Divalux, S.A. de C.V.** Se cambiaron las **5
+> referencias user-facing** de `/terminos` y `/privacidad`; verificado en
+> producción: **`Valux` vigente = 0**. **No se tocó `TOS_VERSION`**, aceptaciones,
+> DB, RPC, migraciones ni lógica. **No volver a presentar Valux como entidad
+> vigente.** El trámite societario es del owner y queda fuera del frente técnico.
+>
+> **✅ LOGIN-FIRST-TIME-COPY-P0 = CLOSED (2026-08-14, PR #337).** Cuando el login
+> genérico apunta a un teléfono sin cuenta, GoTrue responde `otp_disabled` y **no
+> envía SMS**. El copy pasó a: *"¿Primera vez en LucyCare? Reserva una cita para
+> crear tu acceso. Si ya tienes cuenta, verifica tu número e inténtalo de nuevo."*
+> Conserva el criterio **anti-enumeración**. `shouldCreateUser=false` intacto,
+> verificado con `check-auth-p1b2a-login-gating` **15/15**.
 >
 > **✅ SECUENCIA HACIA EL PILOTO — COMPLETA.** Booking E2E real ✅ → safeguard de
 > saldo de Twilio ✅ → higiene de perfiles QA publicados ✅ → **GO/NO-GO final ✅ =
@@ -267,7 +282,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **HANDOFF CANÓNICO VIGENTE** (actualizado post-#335, **piloto = GO**). Autosuficiente: RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / LEGAL-P0 / **Booking E2E real** / safeguard Twilio / higiene QA cerrados con su evidencia, matriz GO/NO-GO, `operations_admin`, los 2 Test Phones vigentes, LucyAdmin y Camilo, seguridad, identidades protegidas, deudas WARN y reglas operativas.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md` — **HANDOFF CANÓNICO VIGENTE** (post-#340, **piloto = GO**). Autosuficiente y consolidado: estado del repo y producción, reglas operativas, cierre del piloto, Auth/login, Booking E2E, Twilio, calificaciones (copy + URL corta `s7_72`), Legal + **entidad Divalux**, identidades protegidas y de QA, regla D1 del directorio, SEO/Search Console, pendientes clasificados y estado del piloto operativo.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **histórico** (post-#335: cierre de RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / LEGAL-P0, Booking E2E, safeguard Twilio, higiene QA y matriz del GO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md` — **histórico** (post-#314: AUDIT-SEC-P0 en curso, `s7_71a` aplicada, `s7_71b` bloqueada; su §13 y §14 quedaron actualizados con el cierre de BILLING y TWILIO).
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-03.md` — **histórico** (estado post-#311: eje de cancelación por el paciente #310/`s7_70`+#311, QA manual y sus límites, Turnstile ACTIVO en producción y configurado en Preview).
 - `docs/HISTORIAL_FRENTES.md` — detalle por PR de todos los frentes cerrados (#105–#311) + migraciones. Consultarlo en lugar de duplicar historial en `CLAUDE.md`.
@@ -311,6 +327,8 @@ squash-merge, la rama puede borrarse.
 - **#330–#332** ✅ — cierre documental post-#329 (#330) y **LEGAL-P0 completo**: publicación de `/terminos` y `/privacidad` definitivos (#331) + integración `tos-2026-08-13` en el claim y línea legal en la reserva (#332). Todo frontend/docs, **sin migración** → [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#333–#335** ✅ — cierre documental de LEGAL-P0 (#333), **nombre del paciente nuevo en Booking** (#334, frontend) y **CALIFICACIÓN-COPY-P0** (#335, solo copy). Todo frontend/docs, **sin migración** → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#336–#340** ✅ — cierre documental post-GO (#336), **LOGIN-FIRST-TIME-COPY-P0** (#337, una cadena), **RATING-URL-P0** (#338 `s7_72` + #339 tooling/docs) y **LEGAL-ENTITY-RENAME-P0** (#340, Valux → Divalux) → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**

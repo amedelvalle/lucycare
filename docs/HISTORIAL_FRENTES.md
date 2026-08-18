@@ -2,10 +2,29 @@
 
 > Detalle completo extraído de CLAUDE.md para reducir su tamaño.
 > Para el estado VIGENTE, ver CLAUDE.md y **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`**
-> (punto de entrada canónico, actualizado post PR #335 — **piloto = GO**). Los
-> handoffs `2026-08-06` y anteriores quedan **históricos**.
+> (punto de entrada canónico, post PR #340 — **piloto = GO**). Los handoffs
+> `2026-08-12` y anteriores quedan **históricos**.
 
-## Frentes cerrados — detalle por PR (#105–#335)
+## Frentes cerrados — detalle por PR (#105–#340)
+
+- **⚖️ (#340) LEGAL-ENTITY-RENAME-P0 — entidad operadora Valux → Divalux (LIVE, 2026-08-17):** decisión expresa del owner: la empresa responsable/operadora de LucyCare es **Divalux**, y donde corresponde la razón social completa, **Divalux, S.A. de C.V.**
+  - **Inventario previo, case-insensitive sobre todo el repositorio:** **5 apariciones en 2 archivos**, todas user-facing. **Cero `Luxvalle`.** Cero apariciones en `docs/`, `migrations/`, `scripts/`, `public/`, `CLAUDE.md`, `index.html`, `middleware.ts` ni configuración — es decir, **ninguna referencia histórica que preservar y ninguna en código o constantes**.
+  - **Cambios:** `/terminos` (operador, "relación laboral o societaria con", propiedad intelectual) y `/privacidad` (responsable, responsable del tratamiento). Diff final: **5 insertions, 5 deletions**.
+  - **Verificado en producción:** `Valux` vigente = 0 · `Luxvalle` = 0 · `Divalux` = las 5 referencias legales.
+  - **NO se tocó** `TOS_VERSION` (`tos-2026-08-13`), aceptaciones históricas, DB, RPC, migraciones, lógica, configuración ni la marca **LucyCare**. El trámite societario es responsabilidad del owner y queda fuera del frente técnico.
+
+- **🔗 (#338 + #339) RATING-URL-P0 — URL corta de calificación (`s7_72`, LIVE 2026-08-14):** la URL que recibe el paciente pasó de **64 caracteres hexadecimales** (dos UUIDv4 concatenados) a **20 caracteres Crockford Base32**, por ejemplo `/calificar/GMNSKTKWPKYK2KACEJFW`.
+  - **`s7_72` es la migración 93.** Crea `public._review_short_code()` — 20 caracteres, **100 bits exactos**, desde `gen_random_uuid()`/`pg_strong_random`, descartando los bytes 6 y 8 de cada UUID (bits fijos de version/variant) y mapeando con `byte % 32`, **uniforme por construcción** porque 256 = 8 × 32: sin módulo bias ni rejection sampling. Reemplaza **solo la expresión del token** dentro de `generate_review_token()`.
+  - **El helper queda acotado:** `SECURITY INVOKER`, `search_path = pg_catalog`, ACL `postgres=X/postgres` — **sin EXECUTE** para `PUBLIC`, `anon`, `authenticated` ni `service_role`. Lo invoca `generate_review_token()` bajo su contexto `SECURITY DEFINER`.
+  - **Retrocompatibilidad:** `submit_review` **no se tocó** y sigue comparando `token = p_token` por igualdad exacta. Los enlaces de 64 caracteres siguen canjeables hasta usarse o vencer (7 días). **Sin backfill.** Sin cambios en el esquema o índices de `review_tokens`, el trigger, la ruta, el frontend, el middleware, el SEO ni Analytics.
+  - **Aplicación en transacción explícita** con guardas PRE/POST bloqueantes. Verificación: PRE 16/16 · POST catálogo y permisos 15/15 · **10 000 generaciones, 10 000 únicas**, 32 símbolos, desvío máximo 2.82 % (~2.2σ) · sin backfill · `check-s7_72` **81/81** · `_smoke-s7_72` **5/5**.
+  - **⚠️ Dos defectos propios detectados antes y durante la aplicación:** `SELECT * INTO` sobre un JOIN contra un `pg_proc%ROWTYPE` (corregido a `pr.*`), y `has_function_privilege('public', …)`, que **lanza** porque PUBLIC no es un rol real — además `proacl IS NULL` significa **ACL por defecto, o sea EXECUTE para PUBLIC**, de modo que un chequeo ingenuo habría dado un PASS falso en la aserción de seguridad central. El primer intento de aplicar falló con `42883` (`name[] = text[]`: faltaba `attname::text`); **la transacción explícita hizo rollback total y nada quedó a medias**.
+  - **#339** corrigió `check-s7_72`, que fallaba 61/63 desde `main` porque git entrega los `.md` con **CRLF** y la regex de extracción esperaba `\n`: el defecto era del instrumento, no del documento. El total sano es **81/81** — el `63` era el conteo de la corrida rota, en la que 18 aserciones de los bloques SQL nunca llegaban a ejecutarse.
+  - Guías operativas: `docs/OWNER_S7_72_APPLY.md` (tres pasos con valores esperados) y `docs/OWNER_S7_72_SMOKE.md`.
+
+- **🔑 (#337) LOGIN-FIRST-TIME-COPY-P0 (LIVE, 2026-08-14):** una sola cadena. El login genérico tiene `shouldCreateUser=false` por decisión congelada; cuando apunta a un teléfono sin cuenta, GoTrue responde `otp_disabled` y **no envía SMS**. El copy anterior empezaba con *"No pudimos enviarte un código"*, que se leía como falla de LucyCare, de Twilio o del teléfono del usuario. Nuevo texto: *"¿Primera vez en LucyCare? Reserva una cita para crear tu acceso. Si ya tienes cuenta, verifica tu número e inténtalo de nuevo."* El caso ya estaba **aislado** en `sendOtp`: la rama `otp_disabled` se evalúa después de rate limit y teléfono inválido, y cualquier otro error conserva su propio mensaje. Se preserva el criterio **anti-enumeración**. `check-auth-p1b2a-login-gating` **15/15 PASS**, incluido `login → shouldCreateUser=false`.
+
+- **📄 (#336) Cierre documental post-GO:** reconcilió `CLAUDE.md`, el handoff canónico y este historial con el GO del piloto, el Booking E2E, #334, #335, la higiene de perfiles QA y el safeguard de Twilio. Docs-only.
 
 - **🚀 (2026-08-14) GO/NO-GO DEL PILOTO = GO.** Cero FAIL bloqueantes. PASS en repo/producción, Home/directorio, perfil y Booking de Camilo, Auth con contraseña, recovery por email, OTP real con Twilio Verify, Turnstile, Booking E2E real, "Mis atenciones", panel médico y notificaciones, Legal, perfiles QA públicos y safeguard de saldo de Twilio. Todas las deudas restantes quedaron clasificadas como **WARN no bloqueantes**. **Aclaración del directorio:** 36 `is_published=true` en DB vs 35 en el Home — la diferencia es el Dr. Abraham Alfredo Amaya Mendoza (`fe7f4f9c-…`), cuya clínica no tiene dirección, excluido por la regla **D1 de completitud mínima**; es comportamiento esperado, verificado también con el cliente `anon` (la RLS no oculta a nadie). D1 gobierna el listado pero **no** el sitemap, donde la ubicación es opcional por diseño. Detalle en el handoff §7.
 

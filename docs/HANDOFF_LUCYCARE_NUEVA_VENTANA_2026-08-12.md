@@ -1,6 +1,11 @@
 # HANDOFF LucyCare — nueva ventana (2026-08-12 · actualizado 2026-08-13, post PR #329)
 
-> 🟢 **PUNTO DE ENTRADA CANÓNICO.** Autosuficiente: no asume que la ventana
+> 📕 **HISTÓRICO — NO ES EL HANDOFF VIGENTE.** Fue reemplazado el 2026-08-18 por
+> **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md`**, que es la fuente
+> canónica del estado. Este documento se conserva por trazabilidad: su HEAD, sus
+> conteos de migraciones y sus "frentes siguientes" quedaron **vencidos**.
+
+> 🟢 **PUNTO DE ENTRADA CANÓNICO (al momento de su redacción).** Autosuficiente: no asume que la ventana
 > nueva conozca ninguna conversación anterior. Reemplaza a
 > `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-06.md`, que pasa a **histórico**
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados
