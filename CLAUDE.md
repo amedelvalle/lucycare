@@ -11,16 +11,17 @@
 > los frentes cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no
 > lo duplica.
 >
-> **HEAD vigente `4be10118f9e6e6039fea1cbe6fb2e8f4c90270fb` (#340)** · **PRs
+> **Último HEAD funcional previo al handoff documental:
+> `4be10118f9e6e6039fea1cbe6fb2e8f4c90270fb` (#340).** · **PRs funcionales
 > mergeados hasta #340** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
-> · `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
-> desplegada y **validada** contra el dominio · **ningún frente funcional
-> abierto**.
+> · `main == origin/main` · árbol limpio · producción desplegada y **validada**
+> contra el dominio · **ningún frente funcional abierto**.
 >
 > **Último cambio funcional:** #340 (entidad operadora). Antes: #338 (`s7_72`)
-> y #337 (copy del login). **#336 y #339 fueron docs-only**: mueven el SHA del
-> repositorio pero **no** el estado funcional, las migraciones ni la
-> configuración. El SHA vigente se consulta con `git rev-parse HEAD`.
+> y #337 (copy del login). **#336, #339 y #341 son docs-only**: mueven el SHA
+> del repositorio pero **no** el estado funcional, las migraciones, la DB, la
+> configuración ni producción. **El SHA vigente se consulta con
+> `git rev-parse HEAD`.**
 >
 > **🚀 GO/NO-GO DEL PILOTO = GO (2026-08-14).** **Cero FAIL bloqueantes.** PASS en:
 > producción desplegada · Home/directorio · perfil y Booking de Camilo ·

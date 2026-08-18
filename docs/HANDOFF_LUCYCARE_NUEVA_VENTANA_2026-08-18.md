@@ -20,13 +20,14 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD vigente** | **`4be10118f9e6e6039fea1cbe6fb2e8f4c90270fb`** (#340) |
-| Subject | `copy(legal): la entidad operadora pasa de Valux a Divalux (#340)` |
+| **Último HEAD funcional** (previo al handoff documental) | **`4be10118f9e6e6039fea1cbe6fb2e8f4c90270fb`** (#340) |
+| Subject de ese HEAD | `copy(legal): la entidad operadora pasa de Valux a Divalux (#340)` |
+| **SHA vigente del repo** | consultar con `git rev-parse HEAD` — **cambia con cada PR docs-only y no refleja cambio funcional** |
 | `main == origin/main` | sí |
 | Árbol | limpio |
-| PRs abiertos | **0** |
+| PRs abiertos | **0** al momento del preflight previo a **#341** |
 | **Migraciones** | **93 archivos**, versionadas y aplicadas hasta **`s7_72_review_token_short_code.sql`** |
-| Vercel producción | deployment de `4be1011` = **success**; contenido verificado contra el dominio |
+| Vercel producción | deployment de `4be1011` = **success**; contenido verificado contra el dominio. Los PRs docs-only redespliegan el **mismo bundle funcional** |
 | **Piloto** | **GO** |
 | Frentes funcionales abiertos | **ninguno** |
 
@@ -40,6 +41,12 @@ reciente) y **#337** (copy del login).
 > ⚠️ **Regla de lectura de SHAs:** un PR docs-only cambia el SHA del
 > repositorio pero **no** el estado funcional, las migraciones ni la
 > configuración. El SHA vigente se consulta siempre con `git rev-parse HEAD`.
+>
+> ℹ️ **Este handoff se publicó mediante el PR #341, que es 100% docs-only.** Su
+> merge **cambia el SHA del repositorio** pero **no altera el estado funcional,
+> las migraciones, la DB, la configuración ni producción**. Por eso `4be1011`
+> figura arriba como **último HEAD funcional**, no como SHA vigente: al leer
+> este documento, el SHA del repo ya será posterior.
 
 ---
 
