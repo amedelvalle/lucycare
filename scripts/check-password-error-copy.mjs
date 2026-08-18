@@ -159,11 +159,17 @@ if (baseDisponible()) {
     /* el archivo no existía en esa base */
   }
 }
+// En CI un A/B omitido NO puede pasar por PASS: sería un verde que no probó
+// nada. Local sí puede omitirse, con instrucción de cómo habilitarlo. El
+// script NUNCA hace fetch por su cuenta: solo informa.
+const EN_CI = !!process.env.CI && !['false', '0'].includes(process.env.CI.toLowerCase());
+
 if (!anterior) {
   abOmitido = true;
   console.log(
-    '  ⚠️  A/B OMITIDO: el commit base no está en este historial (clon shallow).\n' +
-      '      Para ejecutarlo: git fetch --deepen=50\n',
+    '  ⚠️  el commit base no está en este historial (checkout shallow).\n' +
+      `      Base esperada: ${BASE_PRE_FRENTE.slice(0, 7)}\n` +
+      '      Para habilitar el A/B: git fetch --deepen=50\n',
   );
 }
 
@@ -176,6 +182,16 @@ const recoveryBody = (src) => {
   return src.slice(i, j < 0 ? undefined : j);
 };
 const FUGA = /error:\s*error\.message/;
+
+if (abOmitido && EN_CI) {
+  // FAIL deliberado: en CI, omitir el A/B equivale a no haberlo corrido.
+  check(
+    'A/B ejecutable en CI (historial suficiente)',
+    false,
+    `falta el commit base ${BASE_PRE_FRENTE.slice(0, 7)} — el checkout debe traer ` +
+      'historial completo (actions/checkout con fetch-depth: 0)',
+  );
+}
 
 if (anterior) {
   // El SHA fijado tiene que ser ANCESTRO de HEAD: si alguien lo cambia por uno
