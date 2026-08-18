@@ -128,51 +128,50 @@ console.log('\n  B) A/B — el bug debe reproducirse en el código anterior y es
 const FILE = 'src/services/auth.service.ts';
 const actual = fs.readFileSync(FILE, 'utf8');
 
-// La referencia del A/B es el código ANTERIOR AL FRENTE. No sirve `HEAD` (una
-// vez commiteado el fix ya es el código corregido) ni el merge-base con
-// `main` (después del merge, `main` YA contiene el fix y la base sería él
-// mismo). Se ancla al commit que introdujo `passwordErrors.ts`: su padre es,
-// por definición, el estado anterior — y eso vale igual en la rama, en `main`
-// post-merge y en cualquier clon futuro.
-const MODULO = 'src/lib/passwordErrors.ts';
-const baseline = () => {
+// La referencia del A/B es el código ANTERIOR AL FRENTE, fijada al SHA del
+// último commit previo a #342. Está en el historial de `main` (es el padre del
+// squash de #342), así que cualquier clon completo de `origin/main` lo tiene.
+//
+// Se fija el SHA en vez de derivarlo. Las derivaciones probadas fallan:
+//   - `HEAD` → después de commitear ya ES el código corregido;
+//   - `merge-base HEAD origin/main` → después del merge es el propio `main`;
+//   - padre del commit que agregó `passwordErrors.ts` → correcto en un clon
+//     completo, pero en un clon `--depth=1` el padre no existe y el fallback
+//     apuntaba a `HEAD`, produciendo fallos falsos.
+const BASE_PRE_FRENTE = '48ec3b007a4898a453365122cfd5c4ead996a934';
+
+const baseDisponible = () => {
   try {
-    const introduccion = execFileSync(
-      'git',
-      ['log', '--diff-filter=A', '--format=%H', '--', MODULO],
-      { encoding: 'utf8' },
-    )
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .pop(); // el más antiguo: la primera vez que apareció el módulo
-    if (introduccion) {
-      return execFileSync('git', ['rev-parse', `${introduccion}^`], { encoding: 'utf8' }).trim();
-    }
+    execFileSync('git', ['cat-file', '-e', `${BASE_PRE_FRENTE}^{commit}`], { stdio: 'pipe' });
+    return true;
   } catch {
-    /* módulo aún sin commitear: cae al merge-base */
+    return false; // historial incompleto (clon shallow)
   }
-  for (const ref of ['origin/main', 'main']) {
-    try {
-      return execFileSync('git', ['merge-base', 'HEAD', ref], { encoding: 'utf8' }).trim();
-    } catch {
-      /* ref ausente: probar la siguiente */
-    }
-  }
-  return '';
 };
 
-const base = baseline();
 let anterior = '';
-if (base) {
+let abOmitido = false;
+if (baseDisponible()) {
   try {
-    anterior = execFileSync('git', ['show', `${base}:${FILE}`], { encoding: 'utf8' });
-    console.log(`  referencia ANTERIOR: ${base.slice(0, 7)} (anterior al frente)\n`);
+    anterior = execFileSync('git', ['show', `${BASE_PRE_FRENTE}:${FILE}`], { encoding: 'utf8' });
+    console.log(`  referencia ANTERIOR: ${BASE_PRE_FRENTE.slice(0, 7)} (commit previo a #342)\n`);
   } catch {
-    /* archivo ausente en la base */
+    /* el archivo no existía en esa base */
   }
 }
-if (!anterior) console.log('  ⚠️  no se pudo resolver el código anterior; el A/B se omite');
+// En CI un A/B omitido NO puede pasar por PASS: sería un verde que no probó
+// nada. Local sí puede omitirse, con instrucción de cómo habilitarlo. El
+// script NUNCA hace fetch por su cuenta: solo informa.
+const EN_CI = !!process.env.CI && !['false', '0'].includes(process.env.CI.toLowerCase());
+
+if (!anterior) {
+  abOmitido = true;
+  console.log(
+    '  ⚠️  el commit base no está en este historial (checkout shallow).\n' +
+      `      Base esperada: ${BASE_PRE_FRENTE.slice(0, 7)}\n` +
+      '      Para habilitar el A/B: git fetch --deepen=50\n',
+  );
+}
 
 // Acotado a `setPasswordFromRecovery`: otros flujos (OTP) también devuelven
 // `error.message` y quedan FUERA del alcance de este frente.
@@ -184,7 +183,27 @@ const recoveryBody = (src) => {
 };
 const FUGA = /error:\s*error\.message/;
 
+if (abOmitido && EN_CI) {
+  // FAIL deliberado: en CI, omitir el A/B equivale a no haberlo corrido.
+  check(
+    'A/B ejecutable en CI (historial suficiente)',
+    false,
+    `falta el commit base ${BASE_PRE_FRENTE.slice(0, 7)} — el checkout debe traer ` +
+      'historial completo (actions/checkout con fetch-depth: 0)',
+  );
+}
+
 if (anterior) {
+  // El SHA fijado tiene que ser ANCESTRO de HEAD: si alguien lo cambia por uno
+  // de otra rama, el A/B dejaría de ser reproducible en un clon de `main`.
+  let esAncestro = false;
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', BASE_PRE_FRENTE, 'HEAD'], { stdio: 'pipe' });
+    esAncestro = true;
+  } catch {
+    /* no es ancestro */
+  }
+  check('ANTERIOR: el commit base pertenece al historial de HEAD', esAncestro);
   check('ANTERIOR: `setPasswordFromRecovery` localizada', recoveryBody(anterior).length > 0);
   check('ANTERIOR: la fuga `error.message` se reproduce', FUGA.test(recoveryBody(anterior)));
   check('ANTERIOR: el copy de contraseña estaba en voseo', VOSEO.test(anterior));
@@ -206,9 +225,18 @@ check(
 // Las cadenas de contraseña de auth.service quedan en tuteo.
 const CADENAS_PWD = actual
   .split('\n')
-  .filter((l) => /error: '.*(contraseña|sesión|link de recuperación|operación)/.test(l));
+  .filter((l) => /error: '.*(contraseña|sesión|enlace de recuperación|operación)/.test(l));
 check(`ACTUAL: ${CADENAS_PWD.length} cadenas de contraseña localizadas`, CADENAS_PWD.length >= 4);
 check('ACTUAL: ninguna de esas cadenas en voseo', !CADENAS_PWD.some((l) => VOSEO.test(l)));
+
+// El mensaje de recuperación vencida se muestra EN `/reset-password`, así que
+// debe decir "enlace" igual que la página. Vive en el servicio, no en el TSX,
+// por eso el guardián de la página no lo alcanza.
+check(
+  'ACTUAL: el mensaje de recuperación vencida dice "enlace", no "link"',
+  actual.includes('Tu enlace de recuperación expiró o no es válido.') &&
+    !/Tu link de recuperación/.test(actual),
+);
 
 // La página de recuperación tampoco muestra el mensaje crudo.
 const PAGE = 'src/pages/reset-password/ResetPasswordPage.tsx';
@@ -282,10 +310,10 @@ check(
 
 // A/B de los guardianes contra la página ANTERIOR, que sí tenía las tres
 // cosas: "Solicitá"/"Elegí"/"Confirmá"/"Repetí", "quedás logueado" y "link".
-if (base) {
+if (!abOmitido) {
   let pageAnterior = '';
   try {
-    pageAnterior = execFileSync('git', ['show', `${base}:${PAGE}`], { encoding: 'utf8' });
+    pageAnterior = execFileSync('git', ['show', `${BASE_PRE_FRENTE}:${PAGE}`], { encoding: 'utf8' });
   } catch {
     /* la página no existía en la base */
   }

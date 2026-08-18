@@ -803,7 +803,7 @@ export async function setPasswordFromRecovery(
   if (!session?.user) {
     return {
       success: false,
-      error: 'Tu link de recuperación expiró o no es válido. Solicita uno nuevo.',
+      error: 'Tu enlace de recuperación expiró o no es válido. Solicita uno nuevo.',
     }
   }
 
