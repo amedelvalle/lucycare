@@ -10,7 +10,7 @@
  *      `check-auth-p1a-phone.mjs`) y corre la matriz señal → copy.
  *
  *   B) A/B DEL INSTRUMENTO — compara el `auth.service.ts` de trabajo contra
- *      el del merge-base con `main` (código ANTERIOR AL FRENTE). El bug tiene
+ *      el del commit anterior al frente. El bug tiene
  *      que REPRODUCIRSE en el anterior y estar ausente en el actual. Un check
  *      que solo pasa "después" no prueba nada.
  *
@@ -128,10 +128,30 @@ console.log('\n  B) A/B — el bug debe reproducirse en el código anterior y es
 const FILE = 'src/services/auth.service.ts';
 const actual = fs.readFileSync(FILE, 'utf8');
 
-// La referencia del A/B es el código ANTERIOR AL FRENTE, no `HEAD`: una vez
-// commiteado el fix, `HEAD` ya es el código corregido y el A/B se volvería
-// vacuo. Se usa el merge-base con `origin/main`, con fallback a `main`.
+// La referencia del A/B es el código ANTERIOR AL FRENTE. No sirve `HEAD` (una
+// vez commiteado el fix ya es el código corregido) ni el merge-base con
+// `main` (después del merge, `main` YA contiene el fix y la base sería él
+// mismo). Se ancla al commit que introdujo `passwordErrors.ts`: su padre es,
+// por definición, el estado anterior — y eso vale igual en la rama, en `main`
+// post-merge y en cualquier clon futuro.
+const MODULO = 'src/lib/passwordErrors.ts';
 const baseline = () => {
+  try {
+    const introduccion = execFileSync(
+      'git',
+      ['log', '--diff-filter=A', '--format=%H', '--', MODULO],
+      { encoding: 'utf8' },
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .pop(); // el más antiguo: la primera vez que apareció el módulo
+    if (introduccion) {
+      return execFileSync('git', ['rev-parse', `${introduccion}^`], { encoding: 'utf8' }).trim();
+    }
+  } catch {
+    /* módulo aún sin commitear: cae al merge-base */
+  }
   for (const ref of ['origin/main', 'main']) {
     try {
       return execFileSync('git', ['merge-base', 'HEAD', ref], { encoding: 'utf8' }).trim();
@@ -147,7 +167,7 @@ let anterior = '';
 if (base) {
   try {
     anterior = execFileSync('git', ['show', `${base}:${FILE}`], { encoding: 'utf8' });
-    console.log(`  referencia ANTERIOR: ${base.slice(0, 7)} (merge-base con main)\n`);
+    console.log(`  referencia ANTERIOR: ${base.slice(0, 7)} (anterior al frente)\n`);
   } catch {
     /* archivo ausente en la base */
   }
