@@ -199,14 +199,87 @@ check(
 );
 check('ACTUAL: ResetPasswordPage usa el copy genérico del helper', page.includes('GENERIC_PASSWORD_MESSAGE'));
 
-// La página de recuperación no puede mezclar tuteo y voseo: se revisa el
-// archivo COMPLETO, no solo las cadenas que vienen del servicio.
-const LINEAS_VOSEO = page.split('\n').filter((l) => VOSEO.test(l) || /\bquedás\b/.test(l));
+// ─── Guardián de copy de /reset-password ────────────────────
+// Se revisa el archivo COMPLETO sin sus comentarios (los comentarios sí
+// pueden decir "link": describen el mecanismo, no son user-facing).
+const sinComentarios = page
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n')
+  .filter((l) => !/^\s*\/\//.test(l))
+  .join('\n');
+
+// Voseo: la lista explícita NO alcanza — la corrida anterior dio un falso PASS
+// porque "Confirmá" y "Repetí" no estaban en ella. Se agrega una heurística
+// sobre la terminación verbal, con allowlist de palabras que no son voseo.
+const NO_VOSEO = new Set([
+  'está', 'acá', 'aquí', 'ahí', 'allí', 'así', 'aún', 'día', 'país', 'café',
+  'qué', 'porqué', 'sesión', 'después', 'además', 'atrás', 'través', 'inglés',
+  'más', 'menú', 'algún', 'ningún',
+]);
+// Se tokeniza a mano: el `\b` de JS no considera las vocales acentuadas como
+// caracteres de palabra, así que dentro de "Después" reconocía "Despué" como
+// palabra completa y producía falsos positivos.
+const LETRAS = /[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+/;
+const TERMINACION_VOSEO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,}(?:á|é|í|ás|és|ís)$/;
+const sospechosasVoseo = (texto) =>
+  texto
+    .split(LETRAS)
+    .filter((w) => TERMINACION_VOSEO.test(w) && !NO_VOSEO.has(w.toLowerCase()));
+
+const hallazgos = (etiqueta, regex) =>
+  sinComentarios
+    .split('\n')
+    .filter((l) => regex.test(l))
+    .map((l) => `${etiqueta}: ${l.trim().slice(0, 80)}`);
+
+const VOSEO_HALLAZGOS = [
+  ...sinComentarios.split('\n').flatMap((l) => sospechosasVoseo(l).map((w) => `voseo?: ${w}`)),
+  ...hallazgos('voseo', VOSEO),
+];
 check(
-  'ACTUAL: /reset-password sin voseo en toda la página',
-  LINEAS_VOSEO.length === 0,
-  LINEAS_VOSEO.map((l) => l.trim()).join(' | '),
+  'ACTUAL: /reset-password sin voseo en ninguna cadena user-facing',
+  VOSEO_HALLAZGOS.length === 0,
+  VOSEO_HALLAZGOS.join(' | '),
 );
+
+const LOGUEADO = hallazgos('logueado', /\bloguead[oa]s?\b/i);
+check('ACTUAL: /reset-password sin "logueado/logueada"', LOGUEADO.length === 0, LOGUEADO.join(' | '));
+
+const LINK = hallazgos('link', /\blinks?\b/i);
+check(
+  'ACTUAL: /reset-password sin "link" como sustantivo visible (se dice "enlace")',
+  LINK.length === 0,
+  LINK.join(' | '),
+);
+
+// Control del instrumento: los tres guardianes tienen que detectar lo suyo.
+check(
+  'los tres guardianes de copy NO son vacuos',
+  sospechosasVoseo('Confirmá la contraseña y repetí').length === 2 &&
+    /\bloguead[oa]s?\b/i.test('quedas logueado') &&
+    /\blinks?\b/i.test('El link expiró'),
+);
+
+// A/B de los guardianes contra la página ANTERIOR, que sí tenía las tres
+// cosas: "Solicitá"/"Elegí"/"Confirmá"/"Repetí", "quedás logueado" y "link".
+if (base) {
+  let pageAnterior = '';
+  try {
+    pageAnterior = execFileSync('git', ['show', `${base}:${PAGE}`], { encoding: 'utf8' });
+  } catch {
+    /* la página no existía en la base */
+  }
+  if (pageAnterior) {
+    const anteriorSinComentarios = pageAnterior
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((l) => !/^\s*\/\//.test(l))
+      .join('\n');
+    check('ANTERIOR: el guardián de voseo dispara', sospechosasVoseo(anteriorSinComentarios).length > 0);
+    check('ANTERIOR: el guardián de "logueado" dispara', /\bloguead[oa]s?\b/i.test(anteriorSinComentarios));
+    check('ANTERIOR: el guardián de "link" dispara', /\blinks?\b/i.test(anteriorSinComentarios));
+  }
+}
 
 // El copy de sesión expirada sirve a los DOS caminos (creación y
 // recuperación), así que no puede afirmar que se está "creando" la contraseña.

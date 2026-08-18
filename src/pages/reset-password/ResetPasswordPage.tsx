@@ -136,15 +136,15 @@ export default function ResetPasswordPage() {
         {state === 'checking' && (
           <div className="text-center py-8">
             <div className="inline-block w-10 h-10 rounded-full border-4 border-gray-200 border-t-emerald-700 animate-spin" />
-            <p className="text-sm text-gray-600 mt-4">Verificando link de recuperación…</p>
+            <p className="text-sm text-gray-600 mt-4">Verificando enlace de recuperación…</p>
           </div>
         )}
 
         {state === 'no_session' && (
           <>
-            <h1 className="text-xl font-semibold text-gray-900 mb-3">Link no válido o expirado</h1>
+            <h1 className="text-xl font-semibold text-gray-900 mb-3">Enlace no válido o expirado</h1>
             <p className="text-sm text-gray-600 mb-6">
-              El link de recuperación ya fue usado o venció. Solicita uno nuevo desde "Iniciar sesión" →
+              El enlace de recuperación ya fue usado o venció. Solicita uno nuevo desde "Iniciar sesión" →
               "Olvidaste tu contraseña".
             </p>
             <button
@@ -161,7 +161,7 @@ export default function ResetPasswordPage() {
           <>
             <h1 className="text-xl font-semibold text-gray-900 mb-2">Nueva contraseña</h1>
             <p className="text-sm text-gray-600 mb-6">
-              Elige una contraseña de al menos {MIN_PASSWORD_LENGTH} caracteres. Después de guardarla quedas logueado automáticamente.
+              Elige una contraseña de al menos {MIN_PASSWORD_LENGTH} caracteres. Después de guardarla, inicias sesión automáticamente.
             </p>
 
             {error && (
@@ -184,14 +184,14 @@ export default function ResetPasswordPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">Confirmá la contraseña</label>
+                <label className="block text-xs font-medium text-gray-700 mb-2">Confirma la contraseña</label>
                 <input
                   type="password"
                   autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-900 text-gray-900"
-                  placeholder="Repetí la contraseña"
+                  placeholder="Repite la contraseña"
                   required
                 />
               </div>
