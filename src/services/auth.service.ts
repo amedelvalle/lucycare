@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabase'
 import { isAuthError, createClient } from '@supabase/supabase-js'
 import { toAuthPhone, toAppPhone } from '../lib/authPhone'
 import { probeSessionState } from '../lib/sessionState'
-import { MIN_PASSWORD_LENGTH } from '../lib/password'
+import { passwordErrorMessage } from '../lib/passwordErrors'
 import { OTP_CONSENT_VERSION, OTP_CONSENT_TEXT_SHA256 } from '../lib/otpConsent'
 import { getMyLucyAdminAccess } from './directoryEditor.service'
 
@@ -725,7 +725,7 @@ async function setPasswordWithFetch(
   if (!accessToken) {
     return {
       success: false,
-      error: 'No pudimos confirmar tu sesión. Refrescá la página y volvé a intentar.',
+      error: 'No pudimos confirmar tu sesión. Refresca la página y vuelve a intentar.',
     }
   }
 
@@ -759,22 +759,13 @@ async function setPasswordWithFetch(
     }
     const code = body.code ?? body.error_code ?? ''
     const msg = body.msg ?? body.message ?? ''
-    if (resp.status === 401 || resp.status === 403) {
-      return {
-        success: false,
-        error: 'Tu sesión expiró. Refrescá la página y volvé a entrar para crear la contraseña.',
-      }
-    }
-    if (resp.status === 422 || /password/i.test(msg)) {
-      return {
-        success: false,
-        error: `La contraseña no cumple los requisitos mínimos. Probá una distinta de al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
-      }
-    }
-    console.warn('[setPasswordWithFetch] HTTP', resp.status, code, msg)
+    // PASSWORD-ERROR-COPY-P0: una sola fuente de copy. Antes TODO 422 caía en
+    // "no cumple los requisitos mínimos", así que un `same_password` se
+    // reportaba como contraseña débil. `msg` solo clasifica: nunca se muestra.
+    console.warn('[setPasswordWithFetch] HTTP', resp.status, code)
     return {
       success: false,
-      error: 'No pudimos guardar tu contraseña. Probá de nuevo en un momento.',
+      error: passwordErrorMessage({ code, status: resp.status, message: msg }),
     }
   } catch (err) {
     clearTimeout(timeoutId)
@@ -782,7 +773,7 @@ async function setPasswordWithFetch(
     if (isAbort) {
       return {
         success: false,
-        error: 'La operación tardó más de lo normal. Probá de nuevo.',
+        error: 'La operación tardó más de lo normal. Prueba de nuevo.',
       }
     }
     console.warn('[setPasswordWithFetch] error:', err)
@@ -812,15 +803,21 @@ export async function setPasswordFromRecovery(
   if (!session?.user) {
     return {
       success: false,
-      error: 'Tu link de recuperación expiró o no es válido. Solicitá uno nuevo.',
+      error: 'Tu link de recuperación expiró o no es válido. Solicita uno nuevo.',
     }
   }
 
   const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) {
+    // PASSWORD-ERROR-COPY-P0: antes se devolvía `error.message` crudo y el
+    // usuario veía inglés de GoTrue (p. ej. "New password should be different
+    // from the old password."). El mensaje del proveedor solo clasifica.
+    const status = (error as { status?: number }).status ?? null
+    const code = (error as { code?: string }).code ?? null
+    console.warn('[setPasswordFromRecovery] error de Auth:', code ?? status ?? 'desconocido')
     return {
       success: false,
-      error: error.message,
+      error: passwordErrorMessage({ code, status, message: error.message }),
     }
   }
 

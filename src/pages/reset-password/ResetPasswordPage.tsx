@@ -20,6 +20,7 @@ import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
 import { destinationAfterLogin, setPasswordFromRecovery } from '@/services/auth.service';
 import { MIN_PASSWORD_LENGTH } from '@/lib/password';
+import { GENERIC_PASSWORD_MESSAGE } from '@/lib/passwordErrors';
 
 type PageState = 'checking' | 'ready' | 'no_session' | 'success';
 
@@ -112,7 +113,10 @@ export default function ResetPasswordPage() {
         navigate(destination);
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error inesperado');
+      // PASSWORD-ERROR-COPY-P0: nunca mostrar el mensaje crudo del proveedor;
+      // podía llegar en inglés desde Auth. El detalle queda solo en consola.
+      console.warn('[ResetPasswordPage] error inesperado:', err);
+      setError(GENERIC_PASSWORD_MESSAGE);
     } finally {
       setLoading(false);
     }
