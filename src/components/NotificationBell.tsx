@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   usePanelNotifications,
@@ -8,21 +8,55 @@ import type { PanelNotification } from '@/services/panelNotifications.service';
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
+  /**
+   * Id POR INSTANCIA, no constante de módulo: `PanelLayout` monta este
+   * componente DOS veces (header móvil + barra desktop) y un id fijo podría
+   * duplicarse en el DOM, dejando `aria-controls` apuntando a un panel ajeno.
+   * `useId` es estable entre renders y consistente con el SSR.
+   */
+  const panelId = `notification-bell-panel-${useId()}`;
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const { notifications, unreadCount, isLoading, markAllAsRead } =
     usePanelNotifications();
   const isUnread = useIsUnread();
 
-  // Cerrar al click fuera
+  /**
+   * Devuelve el foco a la campana. Se usa solo cuando el foco estaba DENTRO
+   * del panel: si el usuario cerró haciendo click en otro lado, moverle el
+   * foco sería peor que no hacer nada.
+   */
+  const focusBell = () => buttonRef.current?.focus();
+  const focoDentroDelPanel = () =>
+    !!panelRef.current && panelRef.current.contains(document.activeElement);
+
+  // Cerrar al click fuera y con Escape. El listener de click sigue siendo
+  // `mousedown`, así que el teclado no lo dispara y no interfiere con Escape.
   useEffect(() => {
     if (!open) return;
     function onClickOutside(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!containerRef.current?.contains(e.target as Node)) {
+        // Sin esto el panel se desmonta con el foco adentro y el foco cae a
+        // <body>: el usuario de teclado pierde su posición en el documento.
+        const devolverFoco = focoDentroDelPanel();
+        setOpen(false);
+        if (devolverFoco) focusBell();
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      focusBell();
     }
     document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   const handleToggle = () => {
@@ -42,9 +76,23 @@ export default function NotificationBell() {
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleToggle}
-        aria-label="Notificaciones"
+        // Patrón "disclosure": el botón revela una región. NO se usa
+        // `aria-haspopup`/`role="menu"` a propósito — eso comprometería
+        // navegación por flechas, Home/End y roving tabindex, que este
+        // componente no implementa. Con Tab alcanza: el panel se renderiza
+        // justo después del botón en el orden del DOM.
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        // El contador era información solo visual: acá entra al nombre
+        // accesible para que el lector de pantalla lo anuncie.
+        aria-label={
+          unreadCount > 0
+            ? `Notificaciones (${unreadCount} sin leer)`
+            : 'Notificaciones'
+        }
         className="relative w-10 h-10 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -56,14 +104,21 @@ export default function NotificationBell() {
           />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center"
+          >
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[min(360px,calc(100vw-2rem))] max-h-[70vh] bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden">
+        <div
+          ref={panelRef}
+          id={panelId}
+          className="absolute right-0 top-full mt-2 w-[min(360px,calc(100vw-2rem))] max-h-[70vh] bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden"
+        >
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">Notificaciones</h3>
