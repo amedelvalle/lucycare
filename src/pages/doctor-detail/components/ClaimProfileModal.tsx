@@ -360,7 +360,7 @@ export default function ClaimProfileModal({
       setOutcome('email_sent');
       setStep('success');
     } catch {
-      setGenericError('Error de conexión al solicitar el link de email.');
+      setGenericError('Error de conexión al solicitar el enlace de email.');
     } finally {
       setLoading(false);
       resetCaptcha();
@@ -595,7 +595,7 @@ export default function ClaimProfileModal({
                 </p>
                 <p className="text-xs text-gray-500">
                   Reclamar no publica tu perfil ni activa agenda en línea. Esos pasos los hacemos contigo después
-                  de un breve onboarding.
+                  de una breve configuración inicial.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
@@ -667,9 +667,9 @@ export default function ClaimProfileModal({
                         <i className="ri-mail-send-line text-xl"></i>
                       </div>
                       <div className="flex-1">
-                        <p className="font-semibold text-gray-900">Recibir link por email</p>
+                        <p className="font-semibold text-gray-900">Recibir enlace por email</p>
                         <p className="text-sm text-gray-600 mt-1">
-                          Te enviamos un link al correo registrado y la creas cuando puedas.
+                          Te enviamos un enlace al correo registrado y la creas cuando puedas.
                         </p>
                       </div>
                       <i className="ri-arrow-right-line text-xl text-gray-400 shrink-0 mt-2"></i>
@@ -746,11 +746,11 @@ export default function ClaimProfileModal({
                   {profileEmailLoaded && profileEmail && (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <p className="text-sm text-gray-700">
-                        Enviaremos un link a{' '}
+                        Enviaremos un enlace a{' '}
                         <span className="font-semibold text-gray-900">{profileEmail}</span>.
                       </p>
                       <p className="text-xs text-gray-500 mt-2">
-                        El link expira en 1 hora. Si el correo no llega en unos minutos, revisa la carpeta de spam.
+                        El enlace expira en 1 hora. Si el correo no llega en unos minutos, revisa la carpeta de spam.
                       </p>
                     </div>
                   )}
@@ -781,7 +781,7 @@ export default function ClaimProfileModal({
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
-                    {loading ? 'Enviando…' : 'Enviar link por email'}
+                    {loading ? 'Enviando…' : 'Enviar enlace por email'}
                   </button>
                   <button
                     type="button"
@@ -821,14 +821,14 @@ export default function ClaimProfileModal({
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-left">
                   <p className="text-sm font-medium text-blue-900">Revisa tu correo</p>
                   <p className="text-sm text-blue-800 mt-1">
-                    Te enviamos un link para crear tu contraseña. Si no aparece en unos minutos, revisa la carpeta de
+                    Te enviamos un enlace para crear tu contraseña. Si no aparece en unos minutos, revisa la carpeta de
                     spam.
                   </p>
                 </div>
               )}
               <p className="text-sm text-gray-500 mb-6">
-                Para activar agenda en línea o publicarlo oficialmente, escríbenos: hacemos un onboarding corto y lo
-                dejamos listo.
+                Para activar agenda en línea o publicarlo oficialmente, escríbenos: hacemos una configuración inicial
+                breve y lo dejamos listo.
               </p>
               <a
                 href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Quiero activar mi agenda en línea')}`}
