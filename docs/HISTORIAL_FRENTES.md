@@ -1,11 +1,36 @@
 # LucyCare — Historial de frentes cerrados
 
 > Detalle completo extraído de CLAUDE.md para reducir su tamaño.
-> Para el estado VIGENTE, ver CLAUDE.md y **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`**
-> (punto de entrada canónico, post PR #340 — **piloto = GO**). Los handoffs
-> `2026-08-12` y anteriores quedan **históricos**.
+> Para el estado VIGENTE, ver CLAUDE.md y **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`**
+> (punto de entrada canónico, post PR #346 — **piloto = GO**). Los handoffs
+> `2026-08-18` y anteriores quedan **históricos**.
 
-## Frentes cerrados — detalle por PR (#105–#340)
+## Frentes cerrados — detalle por PR (#105–#346)
+
+- **🔤 (#346) CLAIM-COPY-HYGIENE-P0 — "enlace" y sin anglicismo en el reclamo (LIVE, 2026-08-20):** solo copy user-facing de `ClaimProfileModal.tsx`. Diff **simétrico 10/10**: sin lógica, JSX ni estilos.
+  - **7 × `link` → `enlace`**, alineado con la decisión de #343 para `/reset-password`: título y descripción de "Recibir enlace por email", destinatario, vigencia de 1 hora, botón de envío, aviso del paso `success` y el error de conexión.
+  - **2 × `onboarding` → "configuración inicial"**, redactadas leyendo la oración completa: *"después de una breve configuración inicial"* (paso `license`) y *"hacemos una configuración inicial breve"* (paso `success`).
+  - **No se tocaron los comentarios técnicos** donde `link` es terminología interna. `ClaimProfilePromptCard` quedó fuera: su única aparición de `link` es un comentario.
+  - QA: cero `link`/`onboarding` user-facing en el flujo; tuteo de #345 intacto; verificado sobre el bundle de producción porque los pasos afectados exigen OTP real.
+
+- **🗣️ (#345) CLAIM-COPY-TUTEO-P0 — tuteo en el flujo de reclamo (LIVE, 2026-08-20):** **28 sustituciones** de copy en `ClaimProfileModal.tsx` (26) y `ClaimProfilePromptCard.tsx` (2). Diff **simétrico 28/28**, sin cambio funcional.
+  - Cubre `ERROR_COPY`, los mensajes de los handlers de sesión y el JSX de los pasos `otp`, `license`, `password` y `success`. El CTA de entrada dice ahora **"Reclama tu perfil"** en sus dos variantes.
+  - **Tres formas que un barrido por terminación `á/é/í` NO detecta** y que sí se corrigieron: el pronombre *"Si **sos** el profesional"* y los imperativos con enclítico *contactanos* (×3), *Verificala* y *escribinos*.
+
+- **♿ (#344) NOTIFICATION-BELL-A11Y-P0 — teclado y foco en la campana (LIVE, 2026-08-20):** un archivo, `src/components/NotificationBell.tsx`. Sin datos, backend, queries, contadores ni lógica de leído/no leído.
+  - **`Escape` cierra** y **devuelve el foco** a la campana. Al cerrar por click fuera con el foco dentro del panel, el foco vuelve al botón — **solo en ese caso**; si el usuario clickeó otro control, ese control lo conserva.
+  - **`aria-expanded` + `aria-controls`** con `id` en el panel, y el contador entra al nombre accesible (*"Notificaciones (2 sin leer)"*), con el badge en `aria-hidden`.
+  - **`useId()` para el `id` del panel:** `PanelLayout` monta el componente **dos veces** (header móvil + barra desktop) y un id fijo podía duplicarse en el DOM. Verificado forzando ambos paneles abiertos: ids distintos, cero duplicados, y la instancia oculta (`display:none`) no recibe foco.
+  - **Deliberadamente sin `role="menu"`/`aria-haspopup`** (obligarían a flechas, Home/End y roving tabindex que el componente no implementa) **ni focus trap** (contradice el patrón de un popover no modal sin overlay).
+  - **Deudas registradas, no abiertas:** `setTimeout(markAllAsRead, 800)` sin cleanup y las dos suscripciones paralelas de `usePanelNotifications`.
+
+- **🔐 (#342 + #343) PASSWORD-ERROR-COPY-P0 — errores de contraseña en español (LIVE, 2026-08-18/20):** **un solo frente funcional.** #343 es el ajuste post-cierre del mismo frente, **no un frente separado**.
+  - **#342 — el frente.** `setPasswordFromRecovery` devolvía `error.message` **crudo de GoTrue**, así que `/reset-password` podía mostrar inglés al usuario (*"New password should be different from the old password."*). `src/lib/passwordErrors.ts` (nuevo) pasa a ser la **fuente única** del copy: clasifica por **`error.code` → HTTP status → `error.message` solo como fallback de clasificación**, y el texto del proveedor **nunca se muestra**. **`same_password` quedó separado de `weak_password`** (antes todo 422 se reportaba como contraseña débil). `/reset-password` quedó en español y tuteo, con `link` → `enlace`.
+  - **#343 — ajuste post-merge.** El A/B del check derivaba su baseline del merge-base con `main`, que **después del merge ya contiene el fix**. Se ancló al SHA fijo **`48ec3b0`** (commit previo a #342), con aserción de que es ancestro de HEAD. **En CI un A/B omitido ya no puede pasar por PASS:** con `CI` seteada y sin historial suficiente el check **falla explícitamente**; en local avisa y lo omite. **El script nunca hace fetch por su cuenta.** Incluyó `Tu link de recuperación…` → `Tu enlace de recuperación…`.
+  - Instrumento: `scripts/check-password-error-copy.mjs` → **40/40 PASS**, con A/B que reproduce el bug contra `48ec3b0`.
+  - **Ninguno de los dos PRs tocó DB, migraciones, Auth ni configuración.**
+
+- **📄 (#341) Handoff canónico `2026-08-18`:** docs-only. Publicó el handoff que hoy es **histórico**, superado por `2026-08-20`.
 
 - **⚖️ (#340) LEGAL-ENTITY-RENAME-P0 — entidad operadora Valux → Divalux (LIVE, 2026-08-17):** decisión expresa del owner: la empresa responsable/operadora de LucyCare es **Divalux**, y donde corresponde la razón social completa, **Divalux, S.A. de C.V.**
   - **Inventario previo, case-insensitive sobre todo el repositorio:** **5 apariciones en 2 archivos**, todas user-facing. **Cero `Luxvalle`.** Cero apariciones en `docs/`, `migrations/`, `scripts/`, `public/`, `CLAUDE.md`, `index.html`, `middleware.ts` ni configuración — es decir, **ninguna referencia histórica que preservar y ninguna en código o constantes**.
