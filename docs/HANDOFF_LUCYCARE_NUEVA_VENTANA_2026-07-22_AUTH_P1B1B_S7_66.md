@@ -1,6 +1,12 @@
 # HANDOFF — Nueva ventana (2026-07-22, AUTH-P1B1B etapa A / `s7_66` APLICADA y VERIFICADA)
 
-> **PUNTO DE ENTRADA VIGENTE.** Leer este primero.
+> 🗂️ **HISTÓRICO — NO ES EL HANDOFF VIGENTE.** La fuente canónica es
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`. Este documento se conserva
+> por trazabilidad y **no debe borrarse**.
+>
+> ---
+>
+> **PUNTO DE ENTRADA VIGENTE** *(al 2026-07-22)*. Leer este primero.
 >
 > **CIERRE (estado final real):** `s7_66` está **aplicada en Supabase, verificada
 > y con PR abierto** (rama `claude/auth-p1b1b-s7-66`). Las 10 correcciones de §E

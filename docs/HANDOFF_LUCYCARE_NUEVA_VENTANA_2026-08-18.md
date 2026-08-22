@@ -1,7 +1,18 @@
 # HANDOFF LucyCare — nueva ventana (2026-08-18)
 
-> 🟢 **PUNTO DE ENTRADA CANÓNICO Y VIGENTE.** Autosuficiente: no asume que la
-> ventana nueva conozca ninguna conversación anterior. Reemplaza a
+> 🗂️ **HISTÓRICO / SUPERSEDED (2026-08-20).** Este documento **ya no es la
+> fuente canónica**: lo reemplaza
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`. Se conserva como registro
+> del estado al 2026-08-18 y **no debe borrarse**. Lo que quedó superado está
+> listado en la §9 del handoff vigente: el HEAD y los PRs (hasta #340 aquí, hasta
+> #346 hoy), el "próximo candidato" **PASSWORD-ERROR-COPY-P0** y la deuda de
+> **`NotificationBell`** —ambos ya CERRADOS— y la cifra del bundle. El resto de
+> este documento sigue siendo correcto.
+>
+> ---
+>
+> 🟢 **PUNTO DE ENTRADA CANÓNICO EN SU MOMENTO** *(2026-08-18; hoy superado)*. Autosuficiente: no
+> asume que la ventana nueva conozca ninguna conversación anterior. Reemplaza a
 > `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`, que pasa a **histórico**
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados vive
 > en `docs/HISTORIAL_FRENTES.md`.
@@ -615,7 +626,8 @@ usar el **médico QA persistente despublicado** (§9.2).
 | Documento | Rol |
 |---|---|
 | `CLAUDE.md` | Guía rápida. Si contradice a `docs/`, mandan los `docs/` |
-| **Este handoff (`2026-08-18`)** | **Fuente canónica del estado** |
+| **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`** | **Fuente canónica del estado** (reemplazó a este documento) |
+| Este handoff (`2026-08-18`) | **Histórico** — ver el banner del encabezado |
 | `docs/HISTORIAL_FRENTES.md` | Detalle por PR de los frentes cerrados |
 | `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` | **Única fuente canónica de BILLING** |
 | `docs/OWNER_S7_72_APPLY.md` · `docs/OWNER_S7_72_SMOKE.md` | Aplicación y verificación de `s7_72` |
