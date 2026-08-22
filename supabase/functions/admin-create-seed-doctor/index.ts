@@ -1,0 +1,242 @@
+/**
+ * admin-create-seed-doctor — Edge Function (Deno).
+ *
+ * ADMIN-DOCTOR-SEED-P0. Crea un perfil médico SEMBRADO: publicable para
+ * prospección, sin identidad utilizable para el médico. Él la obtiene después
+ * por el flujo normal y reclama el perfil con el Claim EXISTENTE.
+ *
+ * ── POR QUÉ EXISTE ESTA FUNCIÓN ──
+ * `public.profiles.id` tiene FK a `auth.users(id)`: un profile sin identidad
+ * Auth es imposible. La fila técnica se crea por **Admin API**, que exige
+ * `service_role`, y `service_role` NUNCA puede vivir en el frontend.
+ *
+ * ── REPARTO DE CREDENCIALES (invariante) ──
+ *   • JWT del admin  → TODAS las RPCs de negocio. Así `auth.uid()` es válido
+ *     y el gate `is_admin()` vive en la base, no acá.
+ *   • service_role   → EXCLUSIVAMENTE `auth.admin.createUser` y el
+ *     `auth.admin.deleteUser` compensatorio. Nada más.
+ *
+ * ── SECRETOS ──
+ * No se configura ninguno: el runtime alojado preaprovisiona SUPABASE_URL y
+ * SUPABASE_SERVICE_ROLE_KEY.
+ */
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+/** Origen permitido: dominio productivo y previews de Vercel del proyecto. */
+const ALLOWED_ORIGINS = [/^https:\/\/lucycare\.app$/, /^https:\/\/lucycare-[a-z0-9-]+\.vercel\.app$/];
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const ok = !!origin && ALLOWED_ORIGINS.some((re) => re.test(origin));
+  return {
+    'Access-Control-Allow-Origin': ok ? origin! : 'null',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, content-type, idempotency-key',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
+/** Códigos tipados. El mensaje crudo del proveedor NUNCA sale de acá. */
+type ErrCode =
+  | 'not_authenticated' | 'not_admin' | 'bad_request' | 'payload_mismatch'
+  | 'in_progress' | 'previously_failed' | 'duplicate_jvpm' | 'duplicate_phone'
+  | 'd1_incomplete' | 'seed_identity_conflict' | 'internal';
+
+const HTTP: Record<ErrCode, number> = {
+  not_authenticated: 401, not_admin: 403, bad_request: 400, payload_mismatch: 409,
+  in_progress: 409, previously_failed: 409, duplicate_jvpm: 409, duplicate_phone: 409,
+  d1_incomplete: 422, seed_identity_conflict: 409, internal: 500,
+};
+
+/** SQLSTATE de la migración s7_73 → código público. */
+function mapPgError(err: { code?: string; message?: string } | null): ErrCode {
+  switch (err?.code) {
+    case 'P0120': return 'not_admin';
+    case 'P0122': return 'payload_mismatch';
+    case 'P0123': return 'previously_failed';
+    case 'P0124':
+    case 'P0125':
+    case 'P0126':
+    case 'P0127': return 'seed_identity_conflict';
+    case 'P0128': return 'duplicate_phone';
+    case 'P0129': return 'd1_incomplete';
+    case 'P0130':
+    case 'P0131': return 'bad_request';
+    case '23505': return 'duplicate_jvpm'; // doctor_credentials_registry_uniq
+    default: return 'internal';
+  }
+}
+
+function json(body: unknown, status: number, origin: string | null): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(origin), 'content-type': 'application/json' },
+  });
+}
+
+const fail = (code: ErrCode, origin: string | null, extra: Record<string, unknown> = {}) =>
+  json({ ok: false, error: code, ...extra }, HTTP[code], origin);
+
+/** Canonicalización estable → el hash NUNCA viene del navegador. */
+function canonical(payload: Record<string, unknown>): string {
+  const keys = Object.keys(payload).sort();
+  const norm: Record<string, unknown> = {};
+  for (const k of keys) {
+    const v = payload[k];
+    norm[k] = typeof v === 'string' ? v.trim() : v ?? null;
+  }
+  return JSON.stringify(norm);
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const seedEmail = (operationId: string) => `seed-${operationId}@doctor-seed.invalid`;
+
+Deno.serve(async (req) => {
+  const origin = req.headers.get('origin');
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
+  if (req.method !== 'POST') return fail('bad_request', origin);
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  if (!authHeader.startsWith('Bearer ')) return fail('not_authenticated', origin);
+
+  const operationId = req.headers.get('Idempotency-Key') ?? '';
+  if (!/^[0-9a-f-]{36}$/i.test(operationId)) return fail('bad_request', origin, { detail: 'idempotency_key' });
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await req.json();
+  } catch {
+    return fail('bad_request', origin, { detail: 'json' });
+  }
+
+  // Cliente de NEGOCIO: JWT del admin. El gate is_admin() vive en la base.
+  const asAdmin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  // Cliente PRIVILEGIADO: solo Admin API. Jamás lógica médica.
+  const asService = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const payloadHash = await sha256Hex(canonical(payload));
+  let seedUserId: string | null = null;
+
+  try {
+    // ── 1. Reclamo atómico de la operación ──
+    const { data: claim, error: claimErr } = await asAdmin.rpc('admin_claim_seed_operation', {
+      p_operation_id: operationId,
+      p_payload_hash: payloadHash,
+    });
+    if (claimErr) return fail(mapPgError(claimErr), origin);
+
+    switch (claim.action) {
+      case 'completed':
+        return json({ ok: true, action: 'completed', ...claim }, 200, origin);
+      case 'in_progress':
+        return fail('in_progress', origin);
+      case 'failed':
+        return fail('previously_failed', origin, { error_code: claim.error_code });
+      case 'resume':
+        seedUserId = claim.seed_user_id ?? null;
+        break;
+      case 'claimed':
+        break;
+      default:
+        return fail('internal', origin);
+    }
+
+    // ── 2. Identidad técnica: recuperar antes de crear ──
+    // Cubre `createUser OK → respuesta perdida → retry`: el email es
+    // determinístico, así que el usuario se recupera sin enumerar.
+    if (!seedUserId) {
+      const { data: found, error: lookErr } = await asAdmin.rpc('admin_lookup_seed_user', {
+        p_operation_id: operationId,
+      });
+      if (lookErr) return fail(mapPgError(lookErr), origin);
+      seedUserId = (found as string | null) ?? null;
+    }
+
+    if (!seedUserId) {
+      const { data: created, error: createErr } = await asService.auth.admin.createUser({
+        email: seedEmail(operationId),
+        email_confirm: false,
+        // sin phone, sin password, y SIN PII real en user_metadata:
+        // el nombre profesional vive en `profiles`, escrito por la RPC.
+        app_metadata: {
+          lucy_seed_doctor: true,
+          seed_operation_id: operationId,
+          seeded_at: new Date().toISOString(),
+        },
+        ban_duration: '876000h',
+      });
+
+      if (createErr) {
+        // Email ya existente ⇒ NO crear otra identidad: recuperar la propia.
+        const already = createErr.status === 422 || /already|exists|registered/i.test(createErr.message ?? '');
+        if (!already) {
+          await asAdmin.rpc('admin_seed_operation_mark_failed', {
+            p_operation_id: operationId, p_error_code: 'create_user_failed',
+          });
+          return fail('internal', origin);
+        }
+        const { data: recovered } = await asAdmin.rpc('admin_lookup_seed_user', {
+          p_operation_id: operationId,
+        });
+        seedUserId = (recovered as string | null) ?? null;
+        // Existe el email pero NO cumple las condiciones del seed → FAIL cerrado.
+        if (!seedUserId) {
+          await asAdmin.rpc('admin_seed_operation_mark_failed', {
+            p_operation_id: operationId, p_error_code: 'seed_identity_conflict',
+          });
+          return fail('seed_identity_conflict', origin);
+        }
+      } else {
+        seedUserId = created.user.id;
+      }
+    }
+
+    // ── 3. Persistir la transición (compare-and-set en la base) ──
+    const { error: setErr } = await asAdmin.rpc('admin_seed_operation_set_auth_created', {
+      p_operation_id: operationId, p_seed_user_id: seedUserId,
+    });
+    if (setErr) return fail(mapPgError(setErr), origin);
+
+    // ── 4. Transacción de negocio, con el JWT del admin ──
+    const { data: result, error: rpcErr } = await asAdmin.rpc('admin_create_seed_doctor', {
+      p_operation_id: operationId,
+      p_seed_user_id: seedUserId,
+      p_payload_hash: payloadHash,
+      p_payload: payload,
+    });
+
+    if (rpcErr) {
+      const code = mapPgError(rpcErr);
+      // Compensación: sin clinic ni doctor (la RPC es atómica), el borrado es
+      // limpio y cascadea el profile por la FK.
+      const { error: delErr } = await asService.auth.admin.deleteUser(seedUserId);
+      await asAdmin.rpc('admin_seed_operation_mark_failed', {
+        p_operation_id: operationId,
+        p_error_code: delErr ? 'compensation_failed' : code,
+      });
+      return fail(code, origin);
+    }
+
+    return json({ ok: true, ...result }, 200, origin);
+  } catch (_e) {
+    // Nunca se propaga el error crudo.
+    try {
+      await asAdmin.rpc('admin_seed_operation_mark_failed', {
+        p_operation_id: operationId, p_error_code: 'unexpected',
+      });
+    } catch { /* la operación queda recuperable por operation_id */ }
+    return fail('internal', origin);
+  }
+});
