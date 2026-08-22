@@ -40,6 +40,14 @@
 -- de: (a) `authenticated` SIN DML directo sobre la tabla, y (b) las RPCs de
 -- transición, que hacen compare-and-set bajo `FOR UPDATE`.
 --
+-- ── OWNERSHIP DEL INTENTO (lease_token) ──
+-- El lease por `updated_at` dice CUÁNDO venció el arriendo, no QUIÉN lo tiene.
+-- `lease_token` cierra ese hueco: se genera en el claim inicial y SE ROTA en
+-- cada resume de una operación abandonada. Las tres RPCs que mutan exigen el
+-- token vigente bajo `FOR UPDATE`; si no coincide, P0132 y no se modifica
+-- nada. Así, un worker congelado que despierta después de que otro retomó la
+-- operación no puede compensarla, marcarla fallida ni completarla.
+--
 -- ── ERRORES TIPADOS ──
 --   P0120 no autorizado
 --   P0121 operación no encontrada
@@ -53,6 +61,7 @@
 --   P0129 publicación pedida sin cumplir D1
 --   P0130 especialidad inexistente
 --   P0131 datos obligatorios faltantes
+--   P0132 lease perdido: otro worker retomó la operación
 -- ═══════════════════════════════════════════════════════════
 
 BEGIN;
@@ -80,6 +89,12 @@ CREATE TABLE IF NOT EXISTS public.admin_seed_operations (
   operation_id  uuid PRIMARY KEY,
   requested_by  uuid NOT NULL REFERENCES public.profiles(id),
   payload_hash  text NOT NULL,
+  -- OWNERSHIP del intento en curso. El lease por `updated_at` dice CUÁNDO
+  -- venció, pero no QUIÉN lo tiene: sin esto, un worker congelado que
+  -- despierta después de que otro retomó la operación podría compensarla o
+  -- marcarla fallida. El token se rota en el claim inicial y en cada resume,
+  -- y toda mutación posterior debe presentarlo.
+  lease_token   uuid NOT NULL DEFAULT gen_random_uuid(),
   status        text NOT NULL DEFAULT 'started',
   seed_user_id  uuid,
   doctor_id     uuid REFERENCES public.doctors(id),
@@ -154,6 +169,7 @@ AS $$
 DECLARE
   v_row   public.admin_seed_operations%ROWTYPE;
   v_stale boolean;
+  v_token uuid;
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'No autorizado' USING ERRCODE = 'P0120';
@@ -162,12 +178,15 @@ BEGIN
     RAISE EXCEPTION 'operation_id y payload_hash son obligatorios' USING ERRCODE = 'P0131';
   END IF;
 
-  INSERT INTO public.admin_seed_operations (operation_id, requested_by, payload_hash)
-  VALUES (p_operation_id, auth.uid(), p_payload_hash)
+  v_token := gen_random_uuid();
+
+  INSERT INTO public.admin_seed_operations (operation_id, requested_by, payload_hash, lease_token)
+  VALUES (p_operation_id, auth.uid(), p_payload_hash, v_token)
   ON CONFLICT (operation_id) DO NOTHING;
 
   IF FOUND THEN
-    RETURN jsonb_build_object('action', 'claimed', 'operation_id', p_operation_id);
+    RETURN jsonb_build_object('action', 'claimed', 'operation_id', p_operation_id,
+                              'lease_token', v_token);
   END IF;
 
   -- Perdimos la carrera (o es un retry): serializamos contra el ganador.
@@ -197,24 +216,22 @@ BEGIN
       'action', 'failed', 'operation_id', p_operation_id, 'error_code', v_row.error_code);
   END IF;
 
-  IF v_row.status = 'auth_created' THEN
-    RETURN jsonb_build_object(
-      'action', 'resume', 'operation_id', p_operation_id, 'seed_user_id', v_row.seed_user_id);
-  END IF;
-
-  -- status = 'started': ¿el worker anterior sigue vivo?
+  -- No terminal ('started' o 'auth_created'): ¿el worker anterior sigue vivo?
+  -- Mismo criterio para ambos: si el arriendo está fresco, NADIE más entra.
   v_stale := (now() - v_row.updated_at) > interval '120 seconds';
   IF NOT v_stale THEN
     RETURN jsonb_build_object('action', 'in_progress', 'operation_id', p_operation_id);
   END IF;
 
-  -- Abandonada: la retomamos y renovamos el arriendo.
+  -- Abandonada: la retomamos. ROTAR el token es lo que expulsa al worker
+  -- viejo: cuando despierte, su token ya no coincide y no podrá mutar nada.
   UPDATE public.admin_seed_operations
-     SET updated_at = now()
+     SET lease_token = v_token, updated_at = now()
    WHERE operation_id = p_operation_id;
 
   RETURN jsonb_build_object('action', 'resume', 'operation_id', p_operation_id,
-                            'seed_user_id', v_row.seed_user_id);
+                            'seed_user_id', v_row.seed_user_id,
+                            'lease_token', v_token);
 END;
 $$;
 
@@ -253,7 +270,8 @@ $$;
 -- el seed_user_id que otro ya persistió.
 CREATE OR REPLACE FUNCTION public.admin_seed_operation_set_auth_created(
   p_operation_id uuid,
-  p_seed_user_id uuid
+  p_seed_user_id uuid,
+  p_lease_token  uuid
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
@@ -273,6 +291,11 @@ BEGIN
   WHERE operation_id = p_operation_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Operación no encontrada' USING ERRCODE = 'P0121';
+  END IF;
+
+  -- OWNERSHIP primero: un worker que perdió el arriendo no modifica NADA.
+  IF v_row.lease_token IS DISTINCT FROM p_lease_token THEN
+    RAISE EXCEPTION 'La operación fue retomada por otro proceso' USING ERRCODE = 'P0132';
   END IF;
 
   -- Terminales: NUNCA se reabren.
@@ -305,7 +328,8 @@ $$;
 -- ─── 7. Transición → failed (compare-and-set) ───────────────
 CREATE OR REPLACE FUNCTION public.admin_seed_operation_mark_failed(
   p_operation_id uuid,
-  p_error_code   text
+  p_error_code   text,
+  p_lease_token  uuid
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
@@ -325,6 +349,11 @@ BEGIN
   WHERE operation_id = p_operation_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Operación no encontrada' USING ERRCODE = 'P0121';
+  END IF;
+
+  -- OWNERSHIP primero: sin arriendo vigente no se marca nada.
+  IF v_row.lease_token IS DISTINCT FROM p_lease_token THEN
+    RAISE EXCEPTION 'La operación fue retomada por otro proceso' USING ERRCODE = 'P0132';
   END IF;
 
   IF v_row.status = 'completed' THEN
@@ -357,7 +386,8 @@ CREATE OR REPLACE FUNCTION public.admin_create_seed_doctor(
   p_operation_id uuid,
   p_seed_user_id uuid,
   p_payload_hash text,
-  p_payload      jsonb
+  p_payload      jsonb,
+  p_lease_token  uuid
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER
@@ -394,6 +424,11 @@ BEGIN
   WHERE operation_id = p_operation_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Operación no encontrada' USING ERRCODE = 'P0121';
+  END IF;
+
+  -- OWNERSHIP primero: si otro worker retomó la operación, este no escribe.
+  IF v_row.lease_token IS DISTINCT FROM p_lease_token THEN
+    RAISE EXCEPTION 'La operación fue retomada por otro proceso' USING ERRCODE = 'P0132';
   END IF;
 
   -- Ya terminada: devolvemos lo existente en vez de volver a crear.
@@ -547,9 +582,9 @@ BEGIN
   FOREACH v_fn IN ARRAY ARRAY[
     'public.admin_claim_seed_operation(uuid, text)',
     'public.admin_lookup_seed_user(uuid)',
-    'public.admin_seed_operation_set_auth_created(uuid, uuid)',
-    'public.admin_seed_operation_mark_failed(uuid, text)',
-    'public.admin_create_seed_doctor(uuid, uuid, text, jsonb)'
+    'public.admin_seed_operation_set_auth_created(uuid, uuid, uuid)',
+    'public.admin_seed_operation_mark_failed(uuid, text, uuid)',
+    'public.admin_create_seed_doctor(uuid, uuid, text, jsonb, uuid)'
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', v_fn);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM anon', v_fn);
@@ -565,9 +600,9 @@ BEGIN
   FOREACH v_missing IN ARRAY ARRAY[
     'public.admin_claim_seed_operation(uuid, text)',
     'public.admin_lookup_seed_user(uuid)',
-    'public.admin_seed_operation_set_auth_created(uuid, uuid)',
-    'public.admin_seed_operation_mark_failed(uuid, text)',
-    'public.admin_create_seed_doctor(uuid, uuid, text, jsonb)',
+    'public.admin_seed_operation_set_auth_created(uuid, uuid, uuid)',
+    'public.admin_seed_operation_mark_failed(uuid, text, uuid)',
+    'public.admin_create_seed_doctor(uuid, uuid, text, jsonb, uuid)',
     'public._seed_doctor_email(uuid)'
   ] LOOP
     IF to_regprocedure(v_missing) IS NULL THEN

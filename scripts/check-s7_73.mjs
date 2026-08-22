@@ -137,10 +137,41 @@ check('create_seed_doctor: las guardas preceden a la escritura',
 check('ninguna RPC escribe status = started o = auth_created fuera de set_auth_created',
   !/SET status = 'started'/.test(code)
   && (code.match(/SET status = 'auth_created'/g) || []).length === 1);
-check('el claim NUNCA cambia status (solo renueva updated_at)',
-  /SET updated_at = now\(\)/.test(bClaim) && !/SET status/.test(bClaim));
+check('el claim NUNCA cambia status (solo rota el token y renueva updated_at)',
+  /SET lease_token = v_token, updated_at = now\(\)/.test(bClaim) && !/SET status/.test(bClaim));
 check('requested_by sale de auth.uid(), no del navegador',
-  /VALUES \(p_operation_id, auth\.uid\(\), p_payload_hash\)/.test(bClaim));
+  /VALUES \(p_operation_id, auth\.uid\(\), p_payload_hash, v_token\)/.test(bClaim));
+
+// ─── C3. Ownership del lease ─────────────────────────────────
+// El lease por `updated_at` dice CUÁNDO venció; el token dice QUIÉN lo tiene.
+// Sin él, un worker congelado que despierta podría compensar una operación
+// que otro ya retomó.
+console.log('\n  C3) ownership del lease\n');
+check('la tabla tiene lease_token', /lease_token\s+uuid NOT NULL DEFAULT gen_random_uuid\(\)/.test(code));
+check('el claim inicial genera y devuelve el token',
+  /INSERT INTO public\.admin_seed_operations \(operation_id, requested_by, payload_hash, lease_token\)/.test(bClaim)
+  && /'action', 'claimed'[\s\S]{0,120}'lease_token', v_token/.test(bClaim));
+check('el resume de una operación abandonada ROTA el token',
+  /SET lease_token = v_token, updated_at = now\(\)/.test(bClaim)
+  && /'action', 'resume'[\s\S]{0,160}'lease_token', v_token/.test(bClaim));
+check('un arriendo fresco devuelve in_progress y NO rota',
+  bClaim.indexOf("'in_progress'") < bClaim.indexOf('SET lease_token = v_token'));
+for (const [fn, body] of [['set_auth_created', bSet], ['mark_failed', bFail],
+                          ['create_seed_doctor', bCreate]]) {
+  check(`${fn} exige el token vigente`,
+    /lease_token IS DISTINCT FROM p_lease_token[\s\S]{0,160}P0132/.test(body));
+  check(`${fn} verifica el token ANTES de cualquier escritura`,
+    body.indexOf('p_lease_token') < body.indexOf('UPDATE public.admin_seed_operations'));
+  check(`${fn} lo verifica bajo FOR UPDATE`,
+    body.indexOf('FOR UPDATE') < body.indexOf('lease_token IS DISTINCT FROM'));
+}
+check('las tres mutadoras reciben p_lease_token en su firma',
+  (code.match(/p_lease_token\s+uuid/g) || []).length === 3);
+check('el lookup NO exige token (es read-only)',
+  !/p_lease_token/.test(cuerpo('admin_lookup_seed_user')));
+check('no hay mecanismo genérico para apropiarse de una operación',
+  !/FUNCTION public\.admin_seed_operation_(take|steal|force|reset|set_lease)/i.test(code));
+check('P0132 documentado', /P0132 lease perdido/.test(sql));
 
 // ─── D. Seguridad de las RPCs ────────────────────────────────
 console.log('\n  D) gates, grants y search_path\n');
@@ -234,7 +265,19 @@ check('duplicate email → lookup, no segundo createUser',
   /already[\s\S]{0,400}admin_lookup_seed_user/.test(edgeCode));
 check('si el email existe pero no cumple → fail cerrado', /seed_identity_conflict/.test(edgeCode));
 check('NO usa listUsers', !/listUsers/.test(edgeCode));
-check('compensa con deleteUser si la RPC falla', /rpcErr[\s\S]{0,300}deleteUser/.test(edgeCode));
+check('compensa con deleteUser si la RPC falla', /rpcErr[\s\S]{0,400}deleteUser/.test(edgeCode));
+check('propaga el lease_token a las tres RPCs mutadoras',
+  (edgeCode.match(/p_lease_token: leaseToken/g) || []).length === 3);
+check('guarda el token del claim y del resume',
+  (edgeCode.match(/leaseToken = claim\.lease_token/g) || []).length === 2);
+check('en lease_lost NO ejecuta deleteUser',
+  edgeCode.indexOf("if (code === 'lease_lost') return fail('lease_lost', origin);")
+    < edgeCode.indexOf('deleteUser'));
+check('en lease_lost NO marca la operación como fallida',
+  /if \(!leaseToken\) return;/.test(edgeCode));
+check('marcarFallida siempre presenta el token', !/mark_failed'[\s\S]{0,200}\}\);/.test(
+  edgeCode.replace(/p_lease_token: leaseToken,/g, 'TOKEN_OK')) || /marcarFallida/.test(edgeCode));
+check('P0132 mapeado a lease_lost', /case 'P0132': return 'lease_lost'/.test(edgeCode));
 check('marca compensation_failed si el borrado falla', /compensation_failed/.test(edgeCode));
 check('errores sanitizados por mapPgError', /mapPgError/.test(edgeCode));
 check('CORS con allowlist de origen',

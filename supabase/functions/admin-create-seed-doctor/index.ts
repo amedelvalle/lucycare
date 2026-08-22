@@ -43,12 +43,12 @@ function corsHeaders(origin: string | null): Record<string, string> {
 type ErrCode =
   | 'not_authenticated' | 'not_admin' | 'bad_request' | 'payload_mismatch'
   | 'in_progress' | 'previously_failed' | 'duplicate_jvpm' | 'duplicate_phone'
-  | 'd1_incomplete' | 'seed_identity_conflict' | 'internal';
+  | 'd1_incomplete' | 'seed_identity_conflict' | 'lease_lost' | 'internal';
 
 const HTTP: Record<ErrCode, number> = {
   not_authenticated: 401, not_admin: 403, bad_request: 400, payload_mismatch: 409,
   in_progress: 409, previously_failed: 409, duplicate_jvpm: 409, duplicate_phone: 409,
-  d1_incomplete: 422, seed_identity_conflict: 409, internal: 500,
+  d1_incomplete: 422, seed_identity_conflict: 409, lease_lost: 409, internal: 500,
 };
 
 /** SQLSTATE de la migración s7_73 → código público. */
@@ -65,6 +65,7 @@ function mapPgError(err: { code?: string; message?: string } | null): ErrCode {
     case 'P0129': return 'd1_incomplete';
     case 'P0130':
     case 'P0131': return 'bad_request';
+    case 'P0132': return 'lease_lost';
     case '23505': return 'duplicate_jvpm'; // doctor_credentials_registry_uniq
     default: return 'internal';
   }
@@ -160,6 +161,23 @@ Deno.serve(async (req) => {
   const normalized = normalizePayload(payload);
   const payloadHash = await sha256Hex(canonical(normalized));
   let seedUserId: string | null = null;
+  /**
+   * Ownership del intento. Sin él, un worker congelado que despierta después
+   * de que otro retomó la operación podría compensarla o marcarla fallida.
+   * Si alguna RPC responde `lease_lost`, esta request ABANDONA: no borra el
+   * auth.user ni marca nada — el worker nuevo es el responsable.
+   */
+  let leaseToken: string | null = null;
+
+  /** Marca la operación como fallida SOLO si seguimos siendo dueños del lease. */
+  const marcarFallida = async (errorCode: string) => {
+    if (!leaseToken) return;
+    await asAdmin.rpc('admin_seed_operation_mark_failed', {
+      p_operation_id: operationId,
+      p_error_code: errorCode,
+      p_lease_token: leaseToken,
+    });
+  };
 
   try {
     // ── 1. Reclamo atómico de la operación ──
@@ -178,8 +196,10 @@ Deno.serve(async (req) => {
         return fail('previously_failed', origin, { error_code: claim.error_code });
       case 'resume':
         seedUserId = claim.seed_user_id ?? null;
+        leaseToken = claim.lease_token ?? null;
         break;
       case 'claimed':
+        leaseToken = claim.lease_token ?? null;
         break;
       default:
         return fail('internal', origin);
@@ -214,9 +234,7 @@ Deno.serve(async (req) => {
         // Email ya existente ⇒ NO crear otra identidad: recuperar la propia.
         const already = createErr.status === 422 || /already|exists|registered/i.test(createErr.message ?? '');
         if (!already) {
-          await asAdmin.rpc('admin_seed_operation_mark_failed', {
-            p_operation_id: operationId, p_error_code: 'create_user_failed',
-          });
+          await marcarFallida('create_user_failed');
           return fail('internal', origin);
         }
         const { data: recovered } = await asAdmin.rpc('admin_lookup_seed_user', {
@@ -225,9 +243,7 @@ Deno.serve(async (req) => {
         seedUserId = (recovered as string | null) ?? null;
         // Existe el email pero NO cumple las condiciones del seed → FAIL cerrado.
         if (!seedUserId) {
-          await asAdmin.rpc('admin_seed_operation_mark_failed', {
-            p_operation_id: operationId, p_error_code: 'seed_identity_conflict',
-          });
+          await marcarFallida('seed_identity_conflict');
           return fail('seed_identity_conflict', origin);
         }
       } else {
@@ -237,8 +253,12 @@ Deno.serve(async (req) => {
 
     // ── 3. Persistir la transición (compare-and-set en la base) ──
     const { error: setErr } = await asAdmin.rpc('admin_seed_operation_set_auth_created', {
-      p_operation_id: operationId, p_seed_user_id: seedUserId,
+      p_operation_id: operationId,
+      p_seed_user_id: seedUserId,
+      p_lease_token: leaseToken,
     });
+    // Perder el lease acá NO es un error funcional: otro worker retomó la
+    // operación y es el responsable de continuar. Abandonamos sin tocar nada.
     if (setErr) return fail(mapPgError(setErr), origin);
 
     // ── 4. Transacción de negocio, con el JWT del admin ──
@@ -247,27 +267,29 @@ Deno.serve(async (req) => {
       p_seed_user_id: seedUserId,
       p_payload_hash: payloadHash,
       p_payload: normalized,
+      p_lease_token: leaseToken,
     });
 
     if (rpcErr) {
       const code = mapPgError(rpcErr);
-      // Compensación: sin clinic ni doctor (la RPC es atómica), el borrado es
-      // limpio y cascadea el profile por la FK.
+      // ⚠️ Si perdimos el lease NO se compensa: borrar el auth.user destruiría
+      // el trabajo del worker que retomó la operación. Se abandona la request.
+      if (code === 'lease_lost') return fail('lease_lost', origin);
+
+      // Seguimos siendo dueños: compensación normal. Sin clinic ni doctor (la
+      // RPC es atómica), el borrado es limpio y cascadea el profile por la FK.
       const { error: delErr } = await asService.auth.admin.deleteUser(seedUserId);
-      await asAdmin.rpc('admin_seed_operation_mark_failed', {
-        p_operation_id: operationId,
-        p_error_code: delErr ? 'compensation_failed' : code,
-      });
+      await marcarFallida(delErr ? 'compensation_failed' : code);
       return fail(code, origin);
     }
 
     return json({ ok: true, ...result }, 200, origin);
   } catch (_e) {
-    // Nunca se propaga el error crudo.
+    // Nunca se propaga el error crudo. `marcarFallida` no hace nada si no
+    // tenemos lease, y la RPC rechaza con P0132 si ya lo perdimos: en ninguno
+    // de los dos casos se pisa el trabajo de otro worker.
     try {
-      await asAdmin.rpc('admin_seed_operation_mark_failed', {
-        p_operation_id: operationId, p_error_code: 'unexpected',
-      });
+      await marcarFallida('unexpected');
     } catch { /* la operación queda recuperable por operation_id */ }
     return fail('internal', origin);
   }

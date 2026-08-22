@@ -59,6 +59,8 @@ const ERROR_COPY: Record<string, string> = {
     'Para publicar hacen falta nombre, especialidad, clínica y dirección. Puedes guardarlo sin publicar.',
   seed_identity_conflict:
     'No pudimos preparar la identidad técnica de este perfil. Vuelve a abrir el formulario.',
+  lease_lost:
+    'Otro proceso retomó esta creación. Espera unos segundos y revisa el listado antes de reintentar.',
   internal: 'No pudimos crear el perfil. Prueba de nuevo en un momento.',
 };
 
