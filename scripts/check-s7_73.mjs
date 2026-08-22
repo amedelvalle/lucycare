@@ -381,19 +381,46 @@ check('marcarFallida devuelve si la base confirmó la persistencia',
   && /return !error;/.test(edgeCode));
 check('sin lease, marcarFallida NO afirma persistencia', /if \(!leaseToken\) return false;/.test(edgeCode));
 check('los códigos de dominio de la RPC solo salen si mark_failed confirmó',
-  /const marcada = await marcarFallida\(/.test(edgeCode)
-  && /return fail\(marcada \? code : 'internal', origin\)/.test(edgeCode));
+  /const marcada = await marcarFallida\(code\);/.test(edgeCode)
+  && /if \(!marcada\) return fail\('internal', origin\);/.test(edgeCode));
 check('seed_identity_conflict solo sale si mark_failed confirmó',
   /const marcadaConflicto = await marcarFallida\('seed_identity_conflict'\)/.test(edgeCode)
   && /return fail\(marcadaConflicto \? 'seed_identity_conflict' : 'internal', origin\)/.test(edgeCode));
 check('3. si mark_failed falla se devuelve internal, que NO rota',
   debeRotarOperationId('internal') === false
-  && (edgeCode.match(/: 'internal', origin\)/g) || []).length === 2);
+  && /if \(!marcada\) return fail\('internal', origin\);/.test(edgeCode)
+  && /marcadaConflicto \? 'seed_identity_conflict' : 'internal'/.test(edgeCode));
 check('4c. previously_failed lo emite el claim leyendo status=failed persistido',
   /IF v_row\.status = 'failed' THEN[\s\S]{0,200}'action', 'failed'/.test(bClaim)
   && /case 'failed':[\s\S]{0,120}previously_failed/.test(edgeCode));
 check('ningún código de dominio se devuelve sin pasar por marcarFallida',
   !/return fail\('(duplicate_jvpm|duplicate_phone|d1_incomplete)'/.test(edgeCode));
+
+// ─── J. Orden de la compensación (TOCTOU) ────────────────────
+// `deleteUser` no conoce el lease: si corriera antes de terminar la operación
+// en la base, un worker congelado podría borrar el seed que otro retomó.
+console.log('\n  J) orden de la compensación\n');
+const bloqueRpcErr = edgeCode.match(/if \(rpcErr\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+check('se localizó el bloque de compensación', bloqueRpcErr.length > 0);
+check('1. mark_failed confirmado ocurre ANTES de deleteUser',
+  bloqueRpcErr.indexOf('await marcarFallida(code)') < bloqueRpcErr.indexOf('deleteUser'));
+check('2. deleteUser es inalcanzable si mark_failed no confirmó',
+  /if \(!marcada\) return fail\('internal', origin\);/.test(bloqueRpcErr)
+  && bloqueRpcErr.indexOf('if (!marcada) return') < bloqueRpcErr.indexOf('deleteUser'));
+check('3. lease_lost retorna antes de cualquier compensación',
+  bloqueRpcErr.indexOf("if (code === 'lease_lost') return") < bloqueRpcErr.indexOf('marcarFallida')
+  && bloqueRpcErr.indexOf("if (code === 'lease_lost') return") < bloqueRpcErr.indexOf('deleteUser'));
+check('4. un mark_failed incierto no borra nada (marcarFallida devuelve false)',
+  /return !error;/.test(edgeCode) && /if \(!leaseToken\) return false;/.test(edgeCode));
+check('5. delete exitoso devuelve el código de dominio',
+  /return fail\(delErr \? 'compensation_failed' : code, origin\)/.test(bloqueRpcErr));
+check('6. delete fallido devuelve compensation_failed, que NO rota la clave',
+  /compensation_failed/.test(bloqueRpcErr)
+  && debeRotarOperationId('compensation_failed') === false);
+check('hay un solo deleteUser en toda la función',
+  (edgeCode.match(/deleteUser\(/g) || []).length === 1);
+check('el orden viejo (borrar y después marcar) ya no existe',
+  !/deleteUser[\s\S]{0,200}await marcarFallida/.test(bloqueRpcErr));
 
 // La UI usa la política real y solo rota en el envío.
 check('la UI importa la política real',

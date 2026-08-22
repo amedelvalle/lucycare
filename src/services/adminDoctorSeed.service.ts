@@ -61,6 +61,8 @@ const ERROR_COPY: Record<string, string> = {
     'No pudimos preparar la identidad técnica de este perfil. Vuelve a abrir el formulario.',
   lease_lost:
     'Otro proceso retomó esta creación. Espera unos segundos y revisa el listado antes de reintentar.',
+  compensation_failed:
+    'No pudimos crear el perfil y quedó un registro técnico sin limpiar. Avisa al equipo antes de reintentar.',
   internal: 'No pudimos crear el perfil. Prueba de nuevo en un momento.',
 };
 

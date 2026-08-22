@@ -43,12 +43,14 @@ function corsHeaders(origin: string | null): Record<string, string> {
 type ErrCode =
   | 'not_authenticated' | 'not_admin' | 'bad_request' | 'payload_mismatch'
   | 'in_progress' | 'previously_failed' | 'duplicate_jvpm' | 'duplicate_phone'
-  | 'd1_incomplete' | 'seed_identity_conflict' | 'lease_lost' | 'internal';
+  | 'd1_incomplete' | 'seed_identity_conflict' | 'lease_lost'
+  | 'compensation_failed' | 'internal';
 
 const HTTP: Record<ErrCode, number> = {
   not_authenticated: 401, not_admin: 403, bad_request: 400, payload_mismatch: 409,
   in_progress: 409, previously_failed: 409, duplicate_jvpm: 409, duplicate_phone: 409,
-  d1_incomplete: 422, seed_identity_conflict: 409, lease_lost: 409, internal: 500,
+  d1_incomplete: 422, seed_identity_conflict: 409, lease_lost: 409,
+  compensation_failed: 500, internal: 500,
 };
 
 /** SQLSTATE de la migración s7_73 → código público. */
@@ -285,14 +287,27 @@ Deno.serve(async (req) => {
       // el trabajo del worker que retomó la operación. Se abandona la request.
       if (code === 'lease_lost') return fail('lease_lost', origin);
 
-      // Seguimos siendo dueños: compensación normal. Sin clinic ni doctor (la
-      // RPC es atómica), el borrado es limpio y cascadea el profile por la FK.
+      // ── ORDEN OBLIGATORIO DE COMPENSACIÓN ──
+      // 1) Terminar la operación en la base, CON el lease. `deleteUser` no
+      //    conoce el arriendo: si lo ejecutáramos primero y el lease hubiera
+      //    rotado mientras tanto, borraríamos el seed que otro worker está
+      //    retomando. No hace falta atomicidad DB+GoTrue; hace falta que la
+      //    operación quede terminal ANTES del efecto externo destructivo.
+      const marcada = await marcarFallida(code);
+
+      // 2) Si la base no confirmó —lease perdido, red, respuesta incierta—,
+      //    NO se borra nada. Fail cerrado: conservar un seed huérfano es
+      //    preferible a destruir una identidad que pudo ser retomada.
+      if (!marcada) return fail('internal', origin);
+
+      // 3) Recién ahora el efecto destructivo. Sin clinic ni doctor (la RPC es
+      //    atómica), el borrado es limpio y cascadea el profile por la FK.
       const { error: delErr } = await asService.auth.admin.deleteUser(seedUserId);
-      const marcada = await marcarFallida(delErr ? 'compensation_failed' : code);
-      // Solo se devuelve el código de dominio si la operación quedó
-      // DEMOSTRABLEMENTE en `failed`. Si `mark_failed` no confirmó, el estado
-      // es incierto → `internal`, y el cliente conserva la operation_id.
-      return fail(marcada ? code : 'internal', origin);
+
+      // Borrado OK → el código de dominio, que sí autoriza estrenar clave.
+      // Borrado fallido → `compensation_failed`: queda un seed huérfano y NO
+      // debe provocar rotación inmediata de la operation_id.
+      return fail(delErr ? 'compensation_failed' : code, origin);
     }
 
     return json({ ok: true, ...result }, 200, origin);
