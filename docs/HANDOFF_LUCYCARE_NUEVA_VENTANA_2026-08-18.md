@@ -11,7 +11,7 @@
 >
 > ---
 >
-> 🟢 **PUNTO DE ENTRADA CANÓNICO Y VIGENTE** *(al 2026-08-18)*. Autosuficiente: no
+> 🟢 **PUNTO DE ENTRADA CANÓNICO EN SU MOMENTO** *(2026-08-18; hoy superado)*. Autosuficiente: no
 > asume que la ventana nueva conozca ninguna conversación anterior. Reemplaza a
 > `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md`, que pasa a **histórico**
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados vive

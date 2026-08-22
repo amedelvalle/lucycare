@@ -11,12 +11,17 @@
 > los frentes cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no
 > lo duplica.
 >
-> **Último HEAD funcional:
-> `159d3b235b631d12873ee492e184c813458d89bf` (#346).** · **PRs funcionales
+> **Último HEAD funcional confirmado:
+> `159d3b235b631d12873ee492e184c813458d89bf` — PR #346.** · **PRs funcionales
 > mergeados hasta #346** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
 > · `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
 > desplegada y **validada** contra el dominio · **ningún frente funcional
 > abierto**.
+>
+> ⚠️ **`159d3b2` es el último HEAD funcional confirmado, NO el tip eterno del
+> repositorio.** Los commits posteriores **exclusivamente documentales no
+> modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
+> consultar Git: `git rev-parse HEAD`.**
 >
 > **Último cambio funcional:** #346 (copy del reclamo). Antes: #345, #344 y
 > #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
@@ -334,7 +339,7 @@ squash-merge, la rama puede borrarse.
 
 - **#336–#340** ✅ — cierre documental post-GO (#336), **LOGIN-FIRST-TIME-COPY-P0** (#337, una cadena), **RATING-URL-P0** (#338 `s7_72` + #339 tooling/docs) y **LEGAL-ENTITY-RENAME-P0** (#340, Valux → Divalux) → [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#341–#346** ✅ — handoff canónico `2026-08-18` (#341, docs-only) y **4 frentes funcionales, todos frontend, sin migración ni configuración**: **PASSWORD-ERROR-COPY-P0** (#342 + #343, este último ajuste post-cierre del mismo frente, **no un frente separado**), **NOTIFICATION-BELL-A11Y-P0** (#344), **CLAIM-COPY-TUTEO-P0** (#345) y **CLAIM-COPY-HYGIENE-P0** (#346) → [detalle](docs/HISTORIAL_FRENTES.md)
+- **#341–#346** ✅ — handoff `2026-08-18` (#341, docs-only; **hoy histórico**, superado por el `2026-08-20`) y **4 frentes funcionales, todos frontend, sin migración ni configuración**: **PASSWORD-ERROR-COPY-P0** (#342 + #343, este último ajuste post-cierre del mismo frente, **no un frente separado**), **NOTIFICATION-BELL-A11Y-P0** (#344), **CLAIM-COPY-TUTEO-P0** (#345) y **CLAIM-COPY-HYGIENE-P0** (#346) → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**

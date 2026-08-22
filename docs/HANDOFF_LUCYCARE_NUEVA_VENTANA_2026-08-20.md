@@ -20,26 +20,34 @@
 | Local | `C:\Users\admic\lucycare` |
 | Dominio productivo | `https://lucycare.app` |
 | Branch | `main` |
-| **HEAD** | **`159d3b235b631d12873ee492e184c813458d89bf`** |
-| Subject de ese HEAD | `copy(claim): CLAIM-COPY-HYGIENE-P0 — "enlace" y sin anglicismo en el reclamo (#346)` |
-| `main == origin/main` | sí |
+| **Último HEAD funcional confirmado** | **`159d3b235b631d12873ee492e184c813458d89bf`** — PR **#346** |
+| Subject de ese commit | `copy(claim): CLAIM-COPY-HYGIENE-P0 — "enlace" y sin anglicismo en el reclamo (#346)` |
+| **Tip vigente de `main`** | **consultar Git** (`git rev-parse HEAD`) — ver la nota de abajo |
+| `main == origin/main` | sí, al momento de escribir este handoff |
 | Árbol | limpio |
-| PRs abiertos | **0** |
+| PRs abiertos | **0**, al momento de escribir este handoff |
 | **Migraciones** | **93 archivos**, versionadas y aplicadas hasta **`s7_72_review_token_short_code.sql`** |
-| Vercel producción | deployment de `159d3b2` = **success**, verificado contra el dominio |
+| Vercel producción | deployment de `159d3b2` (#346) = **success**, verificado contra el dominio |
 | **Piloto** | **GO** |
 | Frentes funcionales abiertos | **ninguno** |
 
 **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales mediante
 5 PRs (#342–#346). Ninguno tocó DB, migraciones ni configuración.**
 
-> ⚠️ **El SHA vigente se consulta siempre con `git rev-parse HEAD`.** Un PR
-> docs-only mueve el SHA del repositorio pero **no** altera el estado funcional,
-> las migraciones, la DB, la configuración ni producción.
+> ⚠️ **`159d3b2` es el último HEAD funcional confirmado, NO el tip eterno del
+> repositorio.** Los commits posteriores **exclusivamente documentales no
+> modifican este baseline funcional**: mueven el SHA de `main` pero no alteran el
+> estado funcional, las migraciones, la DB, la configuración ni producción.
 >
-> ℹ️ **Este handoff se publica mediante un PR 100 % docs-only**, así que al
-> leerlo el SHA del repo ya será posterior a `159d3b2`. Ese sigue siendo el
-> **último HEAD funcional**.
+> **Para el tip exacto vigente de `main`, consultar Git:** `git rev-parse HEAD`.
+> Si ese SHA es posterior a `159d3b2`, verificar qué lo movió: si son PRs
+> docs-only, este handoff sigue describiendo el estado funcional correcto; si hay
+> un PR **funcional** posterior, este documento quedó desactualizado y hay que
+> reconciliarlo.
+>
+> ℹ️ **Este handoff se publica mediante un PR 100 % docs-only**, así que al leerlo
+> el tip de `main` ya será posterior a `159d3b2`. Eso es esperado y no cambia
+> nada de lo descrito acá.
 
 ---
 
@@ -58,7 +66,7 @@ canónica del estado) · **3)** el `docs/ANALISIS_*.md` del eje del día.
 
 **INSTRUCCIÓN 0: no iniciar ningún frente ni cambio sin instrucción del owner.**
 Al momento de escribir este handoff **no hay ningún frente funcional abierto** y
-**no hay un "próximo candidato" comprometido**: el backlog de §5 está clasificado
+**no hay un "próximo candidato" comprometido**: el backlog de §6 está clasificado
 pero **cerrado a la espera de instrucción**.
 
 ---
