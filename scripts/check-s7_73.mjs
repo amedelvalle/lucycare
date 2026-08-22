@@ -94,6 +94,54 @@ check('create_seed_doctor devuelve lo existente si ya está completed',
 check('create_seed_doctor exige estado auth_created',
   /status <> 'auth_created'[\s\S]{0,160}P0123/.test(code));
 
+// ─── C2. Transiciones exactas de la máquina de estados ───────
+// Se afirma sobre el CUERPO de cada RPC. Los CHECK de la tabla validan la
+// FORMA de cada estado; la legalidad de las transiciones la dan estas RPCs
+// más la ausencia de DML de cliente (§E).
+console.log('\n  C2) transiciones, una por una\n');
+const cuerpo = (fn) =>
+  code.match(new RegExp(`FUNCTION public\\.${fn}[\\s\\S]*?\\$\\$;`))?.[0] ?? '';
+
+const bClaim = cuerpo('admin_claim_seed_operation');
+const bSet = cuerpo('admin_seed_operation_set_auth_created');
+const bFail = cuerpo('admin_seed_operation_mark_failed');
+const bCreate = cuerpo('admin_create_seed_doctor');
+
+check('started: lo escribe el claim con DEFAULT', /DEFAULT 'started'/.test(code));
+check('started → auth_created lo hace set_auth_created',
+  /SET status = 'auth_created'/.test(bSet));
+check('→ failed lo hace mark_failed', /SET status = 'failed'/.test(bFail));
+check('auth_created → completed lo hace create_seed_doctor',
+  /SET status = 'completed'/.test(bCreate));
+check('solo esas tres RPCs escriben status',
+  (code.match(/SET status = /g) || []).length === 3);
+check('completed es terminal en set_auth_created', /status IN \('completed', 'failed'\)/.test(bSet));
+check('completed es terminal en mark_failed', /status = 'completed'[\s\S]{0,180}P0123/.test(bFail));
+check('failed es terminal en create_seed_doctor', /status = 'failed'[\s\S]{0,180}P0123/.test(bCreate));
+check('set_auth_created es idempotente con el MISMO uuid',
+  /seed_user_id IS NOT NULL AND v_row\.seed_user_id <> p_seed_user_id/.test(bSet));
+check('mark_failed conserva el primer error_code',
+  /status = 'failed'[\s\S]{0,200}RETURN jsonb_build_object/.test(bFail));
+check('completed devuelve el resultado existente', /already_completed/.test(bCreate));
+// La propiedad real: dentro de cada RPC, la guarda de estado terminal ocurre
+// ANTES de la escritura de `status`. Así no se puede alcanzar el UPDATE sin
+// haberla pasado. (Un regex sobre el archivo completo cruzaría los límites
+// entre funciones y sería vacuo.)
+check('set_auth_created: la guarda terminal precede a la escritura',
+  bSet.indexOf("status IN ('completed', 'failed')") < bSet.indexOf("SET status = 'auth_created'"));
+check('mark_failed: la guarda de completed precede a la escritura',
+  bFail.indexOf("v_row.status = 'completed'") < bFail.indexOf("SET status = 'failed'"));
+check('create_seed_doctor: las guardas preceden a la escritura',
+  bCreate.indexOf("status = 'failed'") < bCreate.indexOf("SET status = 'completed'")
+  && bCreate.indexOf("status <> 'auth_created'") < bCreate.indexOf("SET status = 'completed'"));
+check('ninguna RPC escribe status = started o = auth_created fuera de set_auth_created',
+  !/SET status = 'started'/.test(code)
+  && (code.match(/SET status = 'auth_created'/g) || []).length === 1);
+check('el claim NUNCA cambia status (solo renueva updated_at)',
+  /SET updated_at = now\(\)/.test(bClaim) && !/SET status/.test(bClaim));
+check('requested_by sale de auth.uid(), no del navegador',
+  /VALUES \(p_operation_id, auth\.uid\(\), p_payload_hash\)/.test(bClaim));
+
 // ─── D. Seguridad de las RPCs ────────────────────────────────
 console.log('\n  D) gates, grants y search_path\n');
 const defs = code.match(/CREATE OR REPLACE FUNCTION[\s\S]*?\$\$;/g) || [];
@@ -134,6 +182,29 @@ check('advisory lock por teléfono antes de verificar',
 check('el lock precede a la consulta de duplicado',
   code.indexOf('seed_doctor_phone:') < code.indexOf('INTO v_dup_doctor'));
 check('normaliza con normalize_phone_sv', /public\.normalize_phone_sv/.test(code));
+const bCreateFn = code.match(/FUNCTION public\.admin_create_seed_doctor[\s\S]*?\$\$;/)?.[0] ?? '';
+check('el teléfono se escribe DESPUÉS del lock y del check de duplicado',
+  bCreateFn.indexOf('seed_doctor_phone:') < bCreateFn.indexOf('INTO v_dup_doctor')
+  && bCreateFn.indexOf('INTO v_dup_doctor') < bCreateFn.indexOf('UPDATE public.profiles'));
+check('la búsqueda del duplicado ocurre en la MISMA transacción (advisory xact)',
+  /pg_advisory_xact_lock/.test(bCreateFn));
+check('profiles.phone y clinics.phone son campos distintos',
+  /phone      = coalesce\(v_claim_phone, phone\)/.test(bCreateFn)
+  && /VALUES \(v_clinic_name, v_address, v_clinic_phone/.test(bCreateFn));
+
+// ─── F2. Payload: whitelist, normalización y hash ────────────
+console.log('\n  F2) contrato del payload\n');
+check('existe whitelist explícita de campos', /const ALLOWED_FIELDS = \[/.test(edgeCode));
+check('la normalización ocurre antes del hash',
+  edgeCode.indexOf('normalizePayload(payload)') < edgeCode.indexOf('sha256Hex(canonical('));
+check('el hash se calcula sobre la representación normalizada',
+  /sha256Hex\(canonical\(normalized\)\)/.test(edgeCode));
+check('a la RPC llega esa MISMA representación, no el crudo',
+  /p_payload: normalized/.test(edgeCode) && !/p_payload: payload/.test(edgeCode));
+check('la normalización solo recorre la whitelist',
+  /for \(const k of \[\.\.\.ALLOWED_FIELDS\]\.sort\(\)\)/.test(edgeCode));
+check('los campos desconocidos del navegador no pasan',
+  !/Object\.keys\(payload\)/.test(edgeCode));
 check('el JVPM duplicado lo bloquea el índice único (23505 mapeado en la Edge)',
   /'23505'/.test(edge) && /duplicate_jvpm/.test(edge));
 
@@ -143,7 +214,9 @@ check('service_role solo para Admin API',
   (edgeCode.match(/asService\./g) || []).length === (edgeCode.match(/asService\.auth\.admin\./g) || []).length);
 check('las RPCs de negocio van con el JWT del admin',
   !/asService\.rpc\(/.test(edgeCode) && /asAdmin\.rpc\(/.test(edgeCode));
-check('el payload_hash se calcula server-side', /sha256Hex\(canonical\(payload\)\)/.test(edgeCode));
+check('el payload_hash se calcula server-side (no llega del cliente)',
+  /sha256Hex\(canonical\(normalized\)\)/.test(edgeCode)
+  && !/payload_hash\s*=\s*(payload|body|req)/.test(edgeCode));
 check('NO acepta un hash del cliente', !/payload_hash.*req\.headers|body\.payload_hash/.test(edgeCode));
 check('email técnico determinístico', /seed-\$\{operationId\}@doctor-seed\.invalid/.test(edgeCode));
 

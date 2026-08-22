@@ -80,16 +80,46 @@ function json(body: unknown, status: number, origin: string | null): Response {
 const fail = (code: ErrCode, origin: string | null, extra: Record<string, unknown> = {}) =>
   json({ ok: false, error: code, ...extra }, HTTP[code], origin);
 
-/** Canonicalización estable → el hash NUNCA viene del navegador. */
-function canonical(payload: Record<string, unknown>): string {
-  const keys = Object.keys(payload).sort();
-  const norm: Record<string, unknown> = {};
-  for (const k of keys) {
-    const v = payload[k];
-    norm[k] = typeof v === 'string' ? v.trim() : v ?? null;
+/**
+ * Contrato CERRADO del payload. Cualquier campo que el navegador mande y no
+ * esté acá se DESCARTA: no entra al hash ni llega a la RPC.
+ */
+const ALLOWED_FIELDS = [
+  'bio', 'claim_phone', 'clinic_address', 'clinic_name', 'clinic_phone',
+  'consultation_fee', 'department_id', 'email', 'experience_years',
+  'full_name', 'jvpm', 'municipality_id', 'publish', 'specialty_id',
+] as const;
+
+/**
+ * Normaliza UNA vez sobre la whitelist: `trim`, vacío → null, `publish` a
+ * booleano, correo a minúsculas. Las claves quedan ordenadas.
+ *
+ * La MISMA representación es la que se hashea y la que se envía a la RPC, así
+ * que "mismo hash → datos ejecutados distintos" es imposible: no existen dos
+ * entradas con igual hash y distinta ejecución, porque lo que se ejecuta ES lo
+ * que se hasheó. La normalización específica de dominio (teléfono SV) la sigue
+ * haciendo la RPC, para no duplicar `normalize_phone_sv` en dos lenguajes.
+ */
+function normalizePayload(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of [...ALLOWED_FIELDS].sort()) {
+    const v = raw[k];
+    if (k === 'publish') {
+      out[k] = v === true || v === 'true';
+      continue;
+    }
+    if (typeof v === 'string') {
+      const t = v.trim();
+      out[k] = t === '' ? null : k === 'email' ? t.toLowerCase() : t;
+    } else {
+      out[k] = v ?? null;
+    }
   }
-  return JSON.stringify(norm);
+  return out;
 }
+
+/** Serialización determinista de la representación ya normalizada. */
+const canonical = (normalized: Record<string, unknown>): string => JSON.stringify(normalized);
 
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -126,7 +156,9 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const payloadHash = await sha256Hex(canonical(payload));
+  // Whitelist + normalización ANTES del hash. Lo que se hashea es lo que se ejecuta.
+  const normalized = normalizePayload(payload);
+  const payloadHash = await sha256Hex(canonical(normalized));
   let seedUserId: string | null = null;
 
   try {
@@ -214,7 +246,7 @@ Deno.serve(async (req) => {
       p_operation_id: operationId,
       p_seed_user_id: seedUserId,
       p_payload_hash: payloadHash,
-      p_payload: payload,
+      p_payload: normalized,
     });
 
     if (rpcErr) {
