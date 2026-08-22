@@ -10,6 +10,11 @@
  * El E2E vive en `_smoke-s7_73.mjs` y requiere la migración aplicada.
  */
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import os from 'node:os';
+import path from 'node:path';
 
 const MIG = 'migrations/s7_73_admin_seed_doctor.sql';
 const EDGE = 'supabase/functions/admin-create-seed-doctor/index.ts';
@@ -307,6 +312,80 @@ check('copy en tuteo, sin voseo',
 check('los guardianes de código NO son vacuos',
   /service_role/i.test(svc) && !/service_role/i.test(svcCode)
   && /user_metadata/.test(edge) && !/user_metadata\s*:/.test(edgeCode));
+
+// ─── I. Ciclo de vida de la operation_id (función REAL) ──────
+// Se importa `src/services/seedOperationPolicy.ts` transpilado con el esbuild
+// que ya trae Vite — mismo patrón que `check-auth-p1a-phone.mjs`. Se prueba la
+// función real, no una copia.
+console.log('\n  I) ciclo de vida de la operation_id\n');
+
+const require = createRequire(import.meta.url);
+const esbuildBin = path.join(
+  path.dirname(require.resolve('esbuild/package.json')), 'bin', 'esbuild');
+const outFile = path.join(os.tmpdir(), `seedPolicy-${Date.now()}.mjs`);
+execFileSync(process.execPath, [
+  esbuildBin, 'src/services/seedOperationPolicy.ts',
+  '--bundle', '--platform=neutral', '--format=esm', `--outfile=${outFile}`,
+], { stdio: 'pipe' });
+const { debeRotarOperationId, siguienteOperationId, NO_TERMINALES } =
+  await import(pathToFileURL(outFile).href);
+
+const CLAVE = 'op-original';
+const rota = (code) =>
+  siguienteOperationId(CLAVE, debeRotarOperationId(code), () => 'op-nueva');
+
+// 1–3: el resultado es incierto o la operación sigue viva → MISMA clave.
+check('1. timeout (sin código) → misma key', rota(null) === CLAVE);
+check('2. error de red ambiguo → misma key', rota(undefined) === CLAVE && rota('') === CLAVE);
+check('3. in_progress → misma key', rota('in_progress') === CLAVE);
+check('3b. lease_lost → misma key', rota('lease_lost') === CLAVE);
+check('3c. payload_mismatch → misma key (no se resuelve en silencio)',
+  rota('payload_mismatch') === CLAVE);
+
+// 4: el servidor dejó la operación en `failed` → el próximo intento estrena clave.
+check('4. failed terminal → key distinta', rota('previously_failed') === 'op-nueva');
+for (const code of ['duplicate_jvpm', 'duplicate_phone', 'd1_incomplete',
+                    'seed_identity_conflict', 'internal']) {
+  check(`4b. ${code} → key distinta`, rota(code) === 'op-nueva');
+}
+
+// 5–6: no se rota por clics ni reintentos de la misma operación.
+check('5. éxito: no hay rotación involucrada (nunca se llama con error)',
+  debeRotarOperationId(null) === false);
+check('6. doble clic / retry sin respuesta terminal → NO rota',
+  [null, '', 'in_progress', 'lease_lost', 'payload_mismatch']
+    .every((c) => debeRotarOperationId(c) === false));
+check('la lista de no-terminales es exactamente la esperada',
+  JSON.stringify([...NO_TERMINALES].sort())
+    === JSON.stringify(['in_progress', 'lease_lost', 'payload_mismatch']));
+
+// Control del instrumento: si la política se volviera "nunca rotar" o
+// "siempre rotar", estas dos aserciones lo delatan.
+check('la política NO es trivial',
+  debeRotarOperationId('duplicate_phone') === true && debeRotarOperationId('in_progress') === false);
+
+// La UI usa la política real y solo rota en el envío.
+check('la UI importa la política real',
+  /from '\.\.\/\.\.\/\.\.\/services\/seedOperationPolicy'/.test(uiCode));
+// Tres usos legítimos de randomUUID: valor inicial, apertura del modal
+// (creación nueva consciente) y el generador inyectado, que solo se ejecuta
+// si la política dice rotar. Lo que importa es que el `catch` NO rote.
+const bloqueCatch = uiCode.match(/\} catch \(err\) \{[\s\S]*?\} finally/)?.[0] ?? '';
+check('la UI rota únicamente vía siguienteOperationId, dentro del submit',
+  /operationIdRef\.current = siguienteOperationId\(/.test(uiCode)
+  && (uiCode.match(/operationIdRef\.current = /g) || []).length === 2);
+check('el catch NO genera ni asigna una clave nueva',
+  bloqueCatch.length > 0
+  && !/crypto\.randomUUID/.test(bloqueCatch)
+  && !/operationIdRef\.current =/.test(bloqueCatch));
+check('el catch solo ANOTA si habrá que rotar en el próximo envío',
+  /rotarEnProximoEnvioRef\.current = debeRotarOperationId\(code\)/.test(bloqueCatch));
+check('el servicio conserva el código del servidor',
+  /class SeedDoctorError/.test(svcCode) && /readonly code: string \| null/.test(svcCode));
+check('un fallo sin cuerpo legible propaga null (ambiguo)',
+  /code = typeof body\?\.error === 'string' \? body\.error : null/.test(svcCode));
+
+fs.rmSync(outFile, { force: true });
 
 console.log(`\n  ${fail === 0 ? '✅' : '❌'} ${pass}/${pass + fail} checks\n`);
 process.exit(fail === 0 ? 0 : 1);

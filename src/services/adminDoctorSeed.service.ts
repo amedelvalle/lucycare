@@ -69,6 +69,22 @@ export function seedErrorMessage(code: string | undefined): string {
 }
 
 /**
+ * Error de creación que CONSERVA el código del servidor. El código es lo que
+ * permite decidir si la `operation_id` debe rotarse en el próximo envío
+ * (ver `seedOperationPolicy`). `code === null` significa que no hubo respuesta
+ * interpretable —timeout o error de red—, es decir: **no sabemos** si el
+ * servidor procesó la solicitud.
+ */
+export class SeedDoctorError extends Error {
+  readonly code: string | null;
+  constructor(code: string | null) {
+    super(seedErrorMessage(code ?? undefined));
+    this.name = 'SeedDoctorError';
+    this.code = code;
+  }
+}
+
+/**
  * Crea el perfil sembrado. `operationId` DEBE generarse una sola vez por
  * intento y reutilizarse en cada reintento: es la clave de idempotencia que
  * impide crear dos médicos por un doble clic o un retry del navegador.
@@ -79,7 +95,7 @@ export async function createSeedDoctor(
 ): Promise<SeedDoctorResult> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
-  if (!token) throw new Error(ERROR_COPY.not_authenticated);
+  if (!token) throw new SeedDoctorError('not_authenticated');
 
   const { data, error } = await supabase.functions.invoke('admin-create-seed-doctor', {
     body: payload,
@@ -88,17 +104,19 @@ export async function createSeedDoctor(
 
   if (error) {
     // El cuerpo del error trae el código tipado; el mensaje crudo no se muestra.
-    let code: string | undefined;
+    // Si NO se puede leer un código, el fallo es ambiguo (timeout o red): se
+    // propaga `null` para que el cliente CONSERVE la operation_id.
+    let code: string | null = null;
     try {
       const body = await (error as { context?: Response }).context?.json?.();
-      code = body?.error;
+      code = typeof body?.error === 'string' ? body.error : null;
     } catch {
-      /* sin cuerpo legible → copy genérico */
+      /* sin cuerpo legible → ambiguo */
     }
-    throw new Error(seedErrorMessage(code));
+    throw new SeedDoctorError(code);
   }
 
-  if (!data?.ok) throw new Error(seedErrorMessage(data?.error));
+  if (!data?.ok) throw new SeedDoctorError(typeof data?.error === 'string' ? data.error : null);
 
   return {
     doctor_id: data.doctor_id,

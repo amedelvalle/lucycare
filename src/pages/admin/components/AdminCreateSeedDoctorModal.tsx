@@ -20,9 +20,11 @@ import { getSpecialtiesForAdmin } from '../../../services/admin.service';
 import {
   createSeedDoctor,
   publicDoctorUrl,
+  SeedDoctorError,
   type SeedDoctorPayload,
   type SeedDoctorResult,
 } from '../../../services/adminDoctorSeed.service';
+import { debeRotarOperationId, siguienteOperationId } from '../../../services/seedOperationPolicy';
 
 interface Props {
   isOpen: boolean;
@@ -45,11 +47,21 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
   const [copiado, setCopiado] = useState(false);
 
   /**
-   * Clave de idempotencia: se genera UNA vez por intento y se conserva entre
-   * reintentos. Es lo que impide que un doble clic o un retry creen dos
-   * médicos — la garantía real vive en la PK de `admin_seed_operations`.
+   * Clave de idempotencia. Se CONSERVA mientras el resultado de la operación
+   * sea incierto —request en vuelo, timeout, error de red, `in_progress`,
+   * `lease_lost`, `payload_mismatch`— porque reutilizarla es justamente lo que
+   * impide crear dos médicos. La garantía real vive en la PK de
+   * `admin_seed_operations`.
    */
   const operationIdRef = useRef<string>(crypto.randomUUID());
+  /**
+   * Se enciende cuando el servidor respondió con un error que dejó la
+   * operación en `failed` (estado TERMINAL). Reintentar con la misma clave
+   * chocaría para siempre contra `previously_failed`, así que el PRÓXIMO envío
+   * —y solo entonces, si el usuario decide reintentar— estrena clave.
+   * Nunca se rota por un clic ni por un fallo ambiguo.
+   */
+  const rotarEnProximoEnvioRef = useRef(false);
 
   const especialidadesQ = useQuery({
     queryKey: ['admin-specialties'],
@@ -72,6 +84,7 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
   useEffect(() => {
     if (!isOpen) return;
     operationIdRef.current = crypto.randomUUID();
+    rotarEnProximoEnvioRef.current = false;
     setForm(VACIO);
     setError('');
     setResult(null);
@@ -96,6 +109,15 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
     if (loading) return;
     setError('');
     setLoading(true);
+
+    // Solo acá se rota, y solo si el intento anterior terminó en `failed`.
+    operationIdRef.current = siguienteOperationId(
+      operationIdRef.current,
+      rotarEnProximoEnvioRef.current,
+      () => crypto.randomUUID(),
+    );
+    rotarEnProximoEnvioRef.current = false;
+
     try {
       const r = await createSeedDoctor(operationIdRef.current, {
         ...form,
@@ -104,6 +126,10 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
       setResult(r);
       onCreated();
     } catch (err) {
+      const code = err instanceof SeedDoctorError ? err.code : null;
+      // `null` = fallo ambiguo (timeout/red): NO se rota, se reintenta con la
+      // misma clave para recuperar la operación en vez de duplicarla.
+      rotarEnProximoEnvioRef.current = debeRotarOperationId(code);
       setError(err instanceof Error ? err.message : 'No pudimos crear el perfil.');
     } finally {
       setLoading(false);
