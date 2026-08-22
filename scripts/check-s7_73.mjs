@@ -279,7 +279,7 @@ check('en lease_lost NO ejecuta deleteUser',
   edgeCode.indexOf("if (code === 'lease_lost') return fail('lease_lost', origin);")
     < edgeCode.indexOf('deleteUser'));
 check('en lease_lost NO marca la operación como fallida',
-  /if \(!leaseToken\) return;/.test(edgeCode));
+  /if \(!leaseToken\) return false;/.test(edgeCode));
 check('marcarFallida siempre presenta el token', !/mark_failed'[\s\S]{0,200}\}\);/.test(
   edgeCode.replace(/p_lease_token: leaseToken,/g, 'TOKEN_OK')) || /marcarFallida/.test(edgeCode));
 check('P0132 mapeado a lease_lost', /case 'P0132': return 'lease_lost'/.test(edgeCode));
@@ -327,7 +327,7 @@ execFileSync(process.execPath, [
   esbuildBin, 'src/services/seedOperationPolicy.ts',
   '--bundle', '--platform=neutral', '--format=esm', `--outfile=${outFile}`,
 ], { stdio: 'pipe' });
-const { debeRotarOperationId, siguienteOperationId, NO_TERMINALES } =
+const { debeRotarOperationId, siguienteOperationId, CODIGOS_TERMINALES } =
   await import(pathToFileURL(outFile).href);
 
 const CLAVE = 'op-original';
@@ -342,10 +342,16 @@ check('3b. lease_lost → misma key', rota('lease_lost') === CLAVE);
 check('3c. payload_mismatch → misma key (no se resuelve en silencio)',
   rota('payload_mismatch') === CLAVE);
 
+// `internal` es GENÉRICO: no demuestra que el backend persistiera `failed`.
+check('1b. internal → misma key (genérico, no demuestra terminalidad)',
+  rota('internal') === CLAVE);
+check('otros códigos previos al claim tampoco rotan',
+  ['not_authenticated', 'not_admin', 'bad_request'].every((c) => rota(c) === CLAVE));
+
 // 4: el servidor dejó la operación en `failed` → el próximo intento estrena clave.
-check('4. failed terminal → key distinta', rota('previously_failed') === 'op-nueva');
+check('4. previously_failed → key distinta', rota('previously_failed') === 'op-nueva');
 for (const code of ['duplicate_jvpm', 'duplicate_phone', 'd1_incomplete',
-                    'seed_identity_conflict', 'internal']) {
+                    'seed_identity_conflict']) {
   check(`4b. ${code} → key distinta`, rota(code) === 'op-nueva');
 }
 
@@ -353,16 +359,41 @@ for (const code of ['duplicate_jvpm', 'duplicate_phone', 'd1_incomplete',
 check('5. éxito: no hay rotación involucrada (nunca se llama con error)',
   debeRotarOperationId(null) === false);
 check('6. doble clic / retry sin respuesta terminal → NO rota',
-  [null, '', 'in_progress', 'lease_lost', 'payload_mismatch']
+  [null, '', 'in_progress', 'lease_lost', 'payload_mismatch', 'internal']
     .every((c) => debeRotarOperationId(c) === false));
-check('la lista de no-terminales es exactamente la esperada',
-  JSON.stringify([...NO_TERMINALES].sort())
-    === JSON.stringify(['in_progress', 'lease_lost', 'payload_mismatch']));
+check('la política es una ALLOWLIST de 5 códigos, no una lista negra',
+  JSON.stringify([...CODIGOS_TERMINALES].sort())
+    === JSON.stringify(['d1_incomplete', 'duplicate_jvpm', 'duplicate_phone',
+                        'previously_failed', 'seed_identity_conflict']));
+check('un código desconocido NO rota (default seguro)',
+  debeRotarOperationId('codigo_que_no_existe') === false);
 
 // Control del instrumento: si la política se volviera "nunca rotar" o
 // "siempre rotar", estas dos aserciones lo delatan.
 check('la política NO es trivial',
-  debeRotarOperationId('duplicate_phone') === true && debeRotarOperationId('in_progress') === false);
+  debeRotarOperationId('duplicate_phone') === true && debeRotarOperationId('internal') === false);
+
+// ── Evidencia server-side de cada código que rota ──
+// Cada uno debe tener un camino en la Edge que persista `failed` ANTES de
+// devolverlo; si `mark_failed` no confirma, el código degrada a `internal`.
+check('marcarFallida devuelve si la base confirmó la persistencia',
+  /const marcarFallida = async \(errorCode: string\): Promise<boolean>/.test(edgeCode)
+  && /return !error;/.test(edgeCode));
+check('sin lease, marcarFallida NO afirma persistencia', /if \(!leaseToken\) return false;/.test(edgeCode));
+check('los códigos de dominio de la RPC solo salen si mark_failed confirmó',
+  /const marcada = await marcarFallida\(/.test(edgeCode)
+  && /return fail\(marcada \? code : 'internal', origin\)/.test(edgeCode));
+check('seed_identity_conflict solo sale si mark_failed confirmó',
+  /const marcadaConflicto = await marcarFallida\('seed_identity_conflict'\)/.test(edgeCode)
+  && /return fail\(marcadaConflicto \? 'seed_identity_conflict' : 'internal', origin\)/.test(edgeCode));
+check('3. si mark_failed falla se devuelve internal, que NO rota',
+  debeRotarOperationId('internal') === false
+  && (edgeCode.match(/: 'internal', origin\)/g) || []).length === 2);
+check('4c. previously_failed lo emite el claim leyendo status=failed persistido',
+  /IF v_row\.status = 'failed' THEN[\s\S]{0,200}'action', 'failed'/.test(bClaim)
+  && /case 'failed':[\s\S]{0,120}previously_failed/.test(edgeCode));
+check('ningún código de dominio se devuelve sin pasar por marcarFallida',
+  !/return fail\('(duplicate_jvpm|duplicate_phone|d1_incomplete)'/.test(edgeCode));
 
 // La UI usa la política real y solo rota en el envío.
 check('la UI importa la política real',

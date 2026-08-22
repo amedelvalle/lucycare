@@ -169,14 +169,22 @@ Deno.serve(async (req) => {
    */
   let leaseToken: string | null = null;
 
-  /** Marca la operación como fallida SOLO si seguimos siendo dueños del lease. */
-  const marcarFallida = async (errorCode: string) => {
-    if (!leaseToken) return;
-    await asAdmin.rpc('admin_seed_operation_mark_failed', {
+  /**
+   * Marca la operación como fallida SOLO si seguimos siendo dueños del lease.
+   *
+   * Devuelve `true` **únicamente** si la base persistió `status='failed'`. El
+   * cliente usa esa evidencia para decidir si puede estrenar `operation_id`:
+   * un código de dominio devuelto sin esta confirmación sería ambiguo, porque
+   * la operación podría seguir viva.
+   */
+  const marcarFallida = async (errorCode: string): Promise<boolean> => {
+    if (!leaseToken) return false;
+    const { error } = await asAdmin.rpc('admin_seed_operation_mark_failed', {
       p_operation_id: operationId,
       p_error_code: errorCode,
       p_lease_token: leaseToken,
     });
+    return !error;
   };
 
   try {
@@ -243,8 +251,9 @@ Deno.serve(async (req) => {
         seedUserId = (recovered as string | null) ?? null;
         // Existe el email pero NO cumple las condiciones del seed → FAIL cerrado.
         if (!seedUserId) {
-          await marcarFallida('seed_identity_conflict');
-          return fail('seed_identity_conflict', origin);
+          // Mismo criterio: el código de dominio solo sale si la base lo confirmó.
+          const marcadaConflicto = await marcarFallida('seed_identity_conflict');
+          return fail(marcadaConflicto ? 'seed_identity_conflict' : 'internal', origin);
         }
       } else {
         seedUserId = created.user.id;
@@ -279,8 +288,11 @@ Deno.serve(async (req) => {
       // Seguimos siendo dueños: compensación normal. Sin clinic ni doctor (la
       // RPC es atómica), el borrado es limpio y cascadea el profile por la FK.
       const { error: delErr } = await asService.auth.admin.deleteUser(seedUserId);
-      await marcarFallida(delErr ? 'compensation_failed' : code);
-      return fail(code, origin);
+      const marcada = await marcarFallida(delErr ? 'compensation_failed' : code);
+      // Solo se devuelve el código de dominio si la operación quedó
+      // DEMOSTRABLEMENTE en `failed`. Si `mark_failed` no confirmó, el estado
+      // es incierto → `internal`, y el cliente conserva la operation_id.
+      return fail(marcada ? code : 'internal', origin);
     }
 
     return json({ ok: true, ...result }, 200, origin);

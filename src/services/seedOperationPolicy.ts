@@ -12,16 +12,27 @@
  */
 
 /**
- * Códigos que llegan CON respuesta del servidor pero **no** dejan la operación
- * en un estado terminal. Ante ellos se CONSERVA la clave:
+ * **Allowlist**: los únicos códigos que autorizan estrenar `operation_id`.
  *
- *   - `in_progress`     — otra request de la misma operación sigue viva.
- *   - `lease_lost`      — otro worker la retomó y es el responsable.
- *   - `payload_mismatch`— inconsistencia de operación: cambiar la clave la
- *     "resolvería" en silencio y crearía un segundo médico. Se le muestra al
- *     usuario, no se esconde.
+ * El default es CONSERVAR la clave. Se rota solo con evidencia inequívoca de
+ * que la operación anterior quedó terminalmente en `failed`:
+ *
+ *   - `previously_failed` — el claim leyó `status='failed'` ya persistido.
+ *   - los cuatro de dominio — la Edge Function los devuelve **únicamente**
+ *     cuando `mark_failed` confirmó la persistencia; si no lo confirma,
+ *     degrada a `internal`, que no está en esta lista.
+ *
+ * Todo lo demás conserva la clave, incluido **`internal`**: es genérico y no
+ * demuestra que el backend persistiera `failed`. Rotar ante un estado incierto
+ * es exactamente lo que crearía un segundo médico.
  */
-export const NO_TERMINALES = ['in_progress', 'lease_lost', 'payload_mismatch'] as const;
+export const CODIGOS_TERMINALES = [
+  'previously_failed',
+  'duplicate_jvpm',
+  'duplicate_phone',
+  'd1_incomplete',
+  'seed_identity_conflict',
+] as const;
 
 /** `null` = no hubo respuesta interpretable (timeout, red, error ambiguo). */
 export type SeedErrorCode = string | null;
@@ -29,14 +40,14 @@ export type SeedErrorCode = string | null;
 /**
  * ¿El próximo envío debe llevar una `operation_id` nueva?
  *
- * Solo cuando el servidor respondió **inequívocamente** con un código que deja
- * la operación terminada en `failed`. Sin respuesta interpretable la respuesta
- * es siempre **no**: no sabemos si el servidor procesó la solicitud, y esa
- * incertidumbre es justamente lo que la idempotencia resuelve.
+ * Solo ante evidencia inequívoca de terminalidad. Sin respuesta interpretable
+ * —o con una respuesta genérica— es siempre **no**: no sabemos si el servidor
+ * procesó la solicitud, y esa incertidumbre es justamente lo que la
+ * idempotencia resuelve.
  */
 export function debeRotarOperationId(code: SeedErrorCode): boolean {
-  if (code === null || code === undefined || code === '') return false;
-  return !(NO_TERMINALES as readonly string[]).includes(code);
+  if (!code) return false;
+  return (CODIGOS_TERMINALES as readonly string[]).includes(code);
 }
 
 /**
