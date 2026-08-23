@@ -11,6 +11,11 @@
 > Twilio, Turnstile, Legal, identidades) **no cambió**: sigue descrito en el
 > `2026-08-20`, que se conserva por eso.
 >
+> 📍 **Estado en una línea (2026-08-23):** Edge Function **desplegada y `ACTIVE`
+> (v2)** pero **jamás invocada** · **`s7_73` NO aplicada** · **0 perfiles
+> sembrados** · PR #348 **abierto, sin mergear**. El **Paso 1 del rollout está
+> completado**; la siguiente acción **no está autorizada**. Detalle en la **§J**.
+>
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales.
 
@@ -22,12 +27,12 @@
 |---|---|
 | **PR** | **[#348](https://github.com/amedelvalle/lucycare/pull/348) — OPEN, `MERGEABLE`, NO mergeado** |
 | Rama | **`claude/seed-doctor`** |
-| **HEAD de la rama** (antes del commit documental) | **`b885764163dca8f918ea80c13bec6436025eae64`** |
+| **HEAD de la rama** | **`ee5d08d6c4a8b71596fd0f59c782e22896dbcf6a`** — EDGE-SECRET-KEY-MIGRATION |
 | **`main`** | **`828b021946bf1c7b8ce218bd8dae54ff160a856e`** — sin tocar |
 | Migraciones en el repo | **94 archivos** |
 | **Migraciones aplicadas en producción** | **93** — hasta `s7_72_review_token_short_code.sql` |
 | **`s7_73`** | existe en el repo, **NO aplicada** |
-| **Edge Function** | escrita, **NO desplegada** |
+| **Edge Function** | **DESPLEGADA — `ACTIVE`, versión 2** (2026-08-23). **Nunca invocada** |
 | Perfiles sembrados creados | **ninguno** |
 | Escrituras pendientes por Admin API | **ninguna** |
 | `_smoke-s7_73.mjs` | implementado, **NO ejecutado** |
@@ -36,6 +41,8 @@
 Commits de la rama, del más nuevo al más viejo:
 
 ```
+ee5d08d  fix(admin): la Edge usa la secret key moderna, no las legacy API keys
+1f07e6a  docs: handoff de contexto de ADMIN-DOCTOR-SEED-P0 (PR #348)
 b885764  fix(admin): correcciones de la auditoria final
 4fddbf3  fix(admin): terminar la operacion antes del borrado compensatorio (TOCTOU)
 21bf2b0  fix(admin): rotar la operation_id solo con evidencia de terminalidad
@@ -45,8 +52,13 @@ d08ebbb  fix(admin): payload con whitelist y transiciones verificadas
 75c1098  feat(admin): ADMIN-DOCTOR-SEED-P0 — crear perfil medico sembrado
 ```
 
-> El commit que publica este handoff es **docs-only** y no altera nada de lo
-> anterior. **Para el tip exacto, consultar Git: `git rev-parse HEAD`.**
+> Los commits **docs-only** no alteran nada de lo anterior. **Para el tip exacto,
+> consultar Git: `git rev-parse HEAD`.**
+>
+> **El código desplegado de la Edge Function fue verificado byte a byte contra el
+> del PR #348** (`functions download` a un directorio temporal + comparación de
+> SHA-256): `033ad2c5…` en ambos lados, **idénticos**. Lo desplegado y lo que el
+> PR propone son exactamente lo mismo.
 
 ---
 
@@ -297,21 +309,38 @@ ejecutado** (requirió `git add -f` por la regla `*.sql` del `.gitignore`).
 
 | Verificación | Estado |
 |---|---|
-| `node scripts/check-s7_73.mjs` | **198/198 PASS** |
+| `node scripts/check-s7_73.mjs` | **209/209 PASS** |
 | `npx tsc --noEmit` | **PASS** |
 | `npm run build` | **PASS** — bundle 671,53 kB |
 | `git diff --check` | **PASS** |
 | Árbol de trabajo | **limpio** |
-| Edge Function — **parseo con esbuild** | **PASS** |
-| Edge Function — **runtime Deno** | ⚠️ **NO VALIDADO** |
+| Edge Function — **parseo con esbuild** | **PASS** (instrumento validado A/B) |
+| Edge Function — **bundling y deploy** | ✅ **PASS** — server-side por Supabase |
+| Edge Function — **cold boot / ejecución real** | ⚠️ **AÚN NO VALIDADA** |
 | `_smoke-s7_73.mjs` | **NO ejecutado** |
 
-> ⚠️ **El parseo con esbuild NO es "Deno PASS".** Solo demuestra que el archivo
-> **parsea** tras el type-strip. **No** valida tipos, ni que el import
-> `jsr:@supabase/supabase-js@2` resuelva, ni que las APIs de Deno existan.
-> Localmente **no hay Deno ni Docker**, y la CLI de Supabase no tiene comando de
-> check: `tsc` y `build` **no cubren** esta función. La única validación real es
-> el deploy.
+> Los **209** checks son los **198** originales más **11** nuevos sobre el
+> invariante de credenciales (EDGE-SECRET-KEY-MIGRATION).
+
+### Qué demuestra el deploy, y qué NO
+
+**Sí demuestra** —dos deploys aceptados por Supabase, el segundo con la
+corrección de credenciales—: el archivo **bundlea** en el pipeline real, el
+import **`jsr:@supabase/supabase-js@2` resuelve** y la función queda registrada
+como **`ACTIVE`**. El bundling corrió **server-side** (sin Docker local), que es
+el mismo camino que usa la plataforma.
+
+> ⚠️ **Esto NO es "runtime PASS".** Un deploy aceptado dice que el código
+> **carga**, no que **corre**. Siguen **sin observarse**: el **cold boot** del
+> aislado Deno, la ejecución de `Deno.serve`, la resolución de las variables
+> `SUPABASE_SECRET_KEYS` / `SUPABASE_PUBLISHABLE_KEYS` en el runtime real, y
+> cualquier comportamiento de la función. **La Edge nunca fue invocada.** Eso
+> solo se prueba con `s7_73` aplicada y una llamada autorizada.
+>
+> El **parseo con esbuild** tampoco es Deno: solo demuestra que el archivo
+> parsea tras el type-strip. Su instrumento **sí** fue validado A/B (una copia
+> con un error de sintaxis deliberado falla), pero no valida tipos ni APIs de
+> Deno.
 
 ---
 
@@ -337,37 +366,52 @@ ejecutado** (requirió `git add -f` por la regla `*.sql` del `.gitignore`).
 
 ## J. ⭐ PUNTO EXACTO DE REANUDACIÓN
 
-> ### `ADMIN-DOCTOR-SEED-P0` está **listo para rollout controlado**, pero el owner **TODAVÍA NO autorizó ninguna acción de producción**.
+> ### El **Paso 1 (deploy de la Edge Function) está COMPLETADO**. La siguiente acción **NO está autorizada todavía**.
 
-**Próximo paso previsto, sujeto a autorización explícita del owner:**
+### ✅ Paso 1 — COMPLETADO (2026-08-23)
 
-> **Paso 1 — desplegar ÚNICAMENTE la Edge Function `admin-create-seed-doctor`
-> desde el PR #348, para validar bundling y runtime Deno.**
->
-> Es seguro porque **`s7_73` todavía no está aplicada**: la función no puede
-> superar las RPCs inexistentes y **nunca llega al Admin API** por el flujo
-> normal.
+La Edge Function `admin-create-seed-doctor` está **desplegada y `ACTIVE`**.
+Bundling y deploy = **PASS**. Se desplegó **dos veces**:
+
+1. **v1** — validación de bundling. **PASS**, pero destapó un defecto: la
+   función leía las variables **legacy** `SUPABASE_SERVICE_ROLE_KEY` y
+   `SUPABASE_ANON_KEY`, y este proyecto tiene las **legacy API keys
+   deshabilitadas**. Medido: esos JWT reciben **401** del gateway. La función
+   habría fallado entera —Admin API **y** RPCs— en la primera invocación.
+2. **v2** — EDGE-SECRET-KEY-MIGRATION. Corregido a las credenciales del formato
+   nuevo, con parseo **fail closed**. **PASS**, y su código fue verificado
+   **byte a byte** contra el del PR #348.
+
+**La función nunca fue invocada**, así que el **cold boot sigue sin validarse**
+(ver §H). El defecto de credenciales **no produjo ninguna escritura**: se
+detectó antes de que la función llegara al Admin API.
 
 **Todavía NO, y ninguno sin autorización expresa:**
 
 - ❌ aplicar `s7_73`
+- ❌ **invocar la Edge Function**
 - ❌ ejecutar `_smoke-s7_73.mjs --confirm`
 - ❌ usar el Admin API real
 - ❌ crear ningún perfil sembrado
 - ❌ mergear el PR #348
+- ❌ reactivar las legacy API keys
 
-**Si el deploy da Deno PASS, el orden previsto es:**
+### Orden previsto de aquí en adelante
 
 ```
-Edge runtime PASS
-  → aplicar s7_73
-  → checks + smoke autorizado
+✅ Paso 1 · deploy de la Edge Function          COMPLETADO (ACTIVE v2)
+  → aplicar s7_73                               ← siguiente, SIN autorizar
+  → checks + smoke autorizado                     (primera invocación real:
+                                                   ahí se valida el cold boot)
   → regenerar database.types.ts   (hoy imposible: requiere la migración aplicada)
   → QA controlada en Preview de LucyAdmin
   → merge #348  ← al final, para que la UI no llegue a producción antes que DB y función
 ```
 
-> **Si el deploy falla**, no hay nada que revertir: la función no existía antes.
+> **Revertir la función no acompaña al revert del PR:** el despliegue está
+> desacoplado de Vercel y de Git. Hoy existe una v2 desplegada aunque `s7_73`
+> **no** esté aplicada; es inofensivo, porque sin las RPCs la función no puede
+> pasar del primer paso y **nunca alcanza el Admin API**.
 
 ---
 
