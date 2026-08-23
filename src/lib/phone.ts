@@ -39,9 +39,18 @@ export function normalizePhoneSV(input: string | null | undefined): string | nul
  * técnica: conviene atajarlo en el formulario.
  */
 
-/** Deja solo dígitos y corta en 8, el largo de un número salvadoreño local. */
+/**
+ * Deja solo dígitos y corta en 8, el largo de un número salvadoreño local.
+ *
+ * Si viene el código de país adelante —de pegar `+503 7006-9973` o
+ * `50370069973`, que es justo lo que guarda la base— se descarta ANTES de
+ * cortar. Sin esto, un pegado legítimo se truncaba a los primeros ocho dígitos
+ * y producía un número distinto que además pasaba la validación.
+ */
 export function sanitizeSvLocal(raw: string | null | undefined): string {
-  return (raw ?? '').replace(/\D/g, '').slice(0, 8);
+  let d = (raw ?? '').replace(/\D/g, '');
+  if (d.length > 8 && d.startsWith('503')) d = d.slice(3);
+  return d.slice(0, 8);
 }
 
 /** Máscara visual `0000-0000` sobre los dígitos locales. */
