@@ -55,6 +55,8 @@ const ERROR_COPY: Record<string, string> = {
   previously_failed: 'Este intento ya había fallado. Vuelve a abrir el formulario para empezar de nuevo.',
   duplicate_jvpm: 'Ese número de JVPM ya está registrado para otro médico.',
   duplicate_phone: 'Ese teléfono de verificación ya pertenece a otro perfil médico.',
+  invalid_phone:
+    'El teléfono de verificación no tiene un formato que Auth pueda usar. Ingresa un número de 8 dígitos.',
   d1_incomplete:
     'Para publicar hacen falta nombre, especialidad, clínica y dirección. Puedes guardarlo sin publicar.',
   seed_identity_conflict:

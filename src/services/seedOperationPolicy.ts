@@ -30,6 +30,7 @@ export const CODIGOS_TERMINALES = [
   'previously_failed',
   'duplicate_jvpm',
   'duplicate_phone',
+  'invalid_phone',
   'd1_incomplete',
   'seed_identity_conflict',
 ] as const;

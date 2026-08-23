@@ -68,12 +68,25 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': ok ? origin! : 'null',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    // `x-client-info` lo agrega supabase-js POR SU CUENTA (DEFAULT_HEADERS), no
-    // el llamador. Omitirlo hacía que Chrome respondiera 200 al OPTIONS y aun
-    // así RECHAZARA el preflight, sin llegar a emitir el POST: CORS exige que
-    // TODOS los headers pedidos estén cubiertos. Si se toca esta lista, revisar
-    // antes qué headers adjunta la versión de supabase-js en uso.
-    'Access-Control-Allow-Headers': 'authorization, content-type, idempotency-key, x-client-info',
+    /*
+     * Los CINCO headers que el navegador pide de verdad. Verificado sobre
+     * `supabase-js` 2.57.4 instalado, no por suposición:
+     *
+     *   apikey          → lo INYECTA `fetchWithAuth` (lib/fetch.js) justo antes
+     *                     del fetch real, aunque `FunctionsClient` no lo lleve.
+     *   authorization   → lo pone el servicio a mano (el gate is_admin() lo usa).
+     *                     `fetchWithAuth` NO lo pisa porque ya viene puesto.
+     *   content-type    → lo pone supabase-js porque el body es un objeto.
+     *   idempotency-key → lo pone el servicio: es la clave de idempotencia.
+     *   x-client-info   → lo agrega supabase-js solo (DEFAULT_HEADERS).
+     *
+     * CORS exige que TODOS los headers pedidos estén cubiertos: con uno solo
+     * fuera, el navegador responde 200 al OPTIONS y aun así RECHAZA el
+     * preflight, sin llegar a emitir el POST. Así murieron los dos primeros
+     * intentos de QA. Antes de tocar esta lista, revisar qué headers adjunta
+     * la versión de supabase-js en uso — incluida la capa del `customFetch`.
+     */
+    'Access-Control-Allow-Headers': 'apikey, authorization, content-type, idempotency-key, x-client-info',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -83,13 +96,13 @@ function corsHeaders(origin: string | null): Record<string, string> {
 type ErrCode =
   | 'not_authenticated' | 'not_admin' | 'bad_request' | 'payload_mismatch'
   | 'in_progress' | 'previously_failed' | 'duplicate_jvpm' | 'duplicate_phone'
-  | 'd1_incomplete' | 'seed_identity_conflict' | 'lease_lost'
+  | 'd1_incomplete' | 'seed_identity_conflict' | 'lease_lost' | 'invalid_phone'
   | 'compensation_failed' | 'internal';
 
 const HTTP: Record<ErrCode, number> = {
   not_authenticated: 401, not_admin: 403, bad_request: 400, payload_mismatch: 409,
   in_progress: 409, previously_failed: 409, duplicate_jvpm: 409, duplicate_phone: 409,
-  d1_incomplete: 422, seed_identity_conflict: 409, lease_lost: 409,
+  d1_incomplete: 422, seed_identity_conflict: 409, lease_lost: 409, invalid_phone: 422,
   compensation_failed: 500, internal: 500,
 };
 
@@ -107,6 +120,10 @@ function mapPgError(err: { code?: string; message?: string } | null): ErrCode {
     case 'P0129': return 'd1_incomplete';
     case 'P0130':
     case 'P0131': return 'bad_request';
+    // El teléfono de claim no es utilizable por Auth. Sin este case caía en
+    // `internal`, y un error CORREGIBLE por el usuario se presentaba como un
+    // fallo transitorio del sistema.
+    case 'P0133': return 'invalid_phone';
     case 'P0132': return 'lease_lost';
     case '23505': return 'duplicate_jvpm'; // doctor_credentials_registry_uniq
     default: return 'internal';

@@ -25,6 +25,7 @@ import {
   type SeedDoctorResult,
 } from '../../../services/adminDoctorSeed.service';
 import { debeRotarOperationId, siguienteOperationId } from '../../../services/seedOperationPolicy';
+import { formatSvLocal, isValidSvLocal, normalizePhoneSV, sanitizeSvLocal } from '../../../lib/phone';
 
 interface Props {
   isOpen: boolean;
@@ -101,7 +102,18 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
       !!form.clinic_name.trim() && !!form.clinic_address?.trim(),
     [form],
   );
-  const puedeGuardar = !!form.full_name.trim() && !!form.clinic_name.trim();
+  /*
+   * Teléfonos: el estado guarda los DÍGITOS LOCALES (8), no la máscara ni el
+   * canónico. Vacío es válido —ambos campos son opcionales—, pero informado y
+   * a medias, no: eso terminaba viajando al backend y muriendo en `P0133`
+   * después de haber creado ya la identidad técnica.
+   */
+  const clinicPhoneValido = !form.clinic_phone || isValidSvLocal(form.clinic_phone);
+  const claimPhoneValido = !form.claim_phone || isValidSvLocal(form.claim_phone);
+
+  const puedeGuardar =
+    !!form.full_name.trim() && !!form.clinic_name.trim()
+    && clinicPhoneValido && claimPhoneValido;
   const requiereAsistencia = !form.claim_phone?.trim() || !form.jvpm?.trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -119,8 +131,12 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
     rotarEnProximoEnvioRef.current = false;
 
     try {
+      // Los teléfonos viajan en el canónico que ya espera el backend
+      // (`503XXXXXXXX`), calculado con el ÚNICO normalizador del proyecto.
       const r = await createSeedDoctor(operationIdRef.current, {
         ...form,
+        clinic_phone: normalizePhoneSV(form.clinic_phone),
+        claim_phone: normalizePhoneSV(form.claim_phone),
         publish: form.publish && cumpleD1,
       });
       setResult(r);
@@ -281,11 +297,22 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
                   Teléfono público del consultorio
                 </label>
                 <input
-                  type="tel" value={form.clinic_phone ?? ''}
-                  onChange={(e) => set('clinic_phone', e.target.value || null)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Se muestra en el perfil público"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={9}
+                  placeholder="0000-0000"
+                  value={formatSvLocal(form.clinic_phone)}
+                  onChange={(e) => set('clinic_phone', sanitizeSvLocal(e.target.value) || null)}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                    clinicPhoneValido ? 'border-gray-200' : 'border-red-300 focus:ring-red-200'
+                  }`}
                 />
+                <p className={`text-xs mt-1 ${clinicPhoneValido ? 'text-gray-500' : 'text-red-600'}`}>
+                  {clinicPhoneValido
+                    ? 'Se muestra en el perfil público.'
+                    : 'Ingresa un número de 8 dígitos.'}
+                </p>
               </div>
             </section>
 
@@ -299,10 +326,20 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
                   Teléfono de verificación del reclamo (privado)
                 </label>
                 <input
-                  type="tel" value={form.claim_phone ?? ''}
-                  onChange={(e) => set('claim_phone', e.target.value || null)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={9}
+                  placeholder="0000-0000"
+                  value={formatSvLocal(form.claim_phone)}
+                  onChange={(e) => set('claim_phone', sanitizeSvLocal(e.target.value) || null)}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                    claimPhoneValido ? 'border-gray-200' : 'border-red-300 focus:ring-red-200'
+                  }`}
                 />
+                {!claimPhoneValido && (
+                  <p className="text-xs text-red-600 mt-1">Ingresa un número de 8 dígitos.</p>
+                )}
                 <p className="text-xs text-amber-700 mt-1">
                   Es un campo distinto del teléfono público y no se copia de él.
                   <strong> Quien controle este número podrá intentar verificar el reclamo</strong>,

@@ -427,24 +427,59 @@ check('CORS con allowlist de origen',
  * aun así rechazaba el preflight, sin emitir jamás el POST. CORS exige que
  * TODOS los headers pedidos estén cubiertos: uno solo fuera y no hay petición.
  *
- * Los cuatro son exactamente los que viajan hoy:
+ * Son CINCO, verificados sobre supabase-js 2.57.4 instalado:
+ *   apikey           → lo INYECTA `fetchWithAuth` (lib/fetch.js) justo antes
+ *                      del fetch real, aunque `FunctionsClient` no lo lleve.
+ *                      Mirar solo `FunctionsClient` fue el error que costó el
+ *                      segundo intento de QA: hay que llegar al `customFetch`.
  *   authorization    → lo pone el servicio a mano (el gate is_admin() lo usa)
  *   content-type     → lo pone supabase-js porque el body es un objeto
  *   idempotency-key  → lo pone el servicio: es la clave de idempotencia
- *   x-client-info    → lo pone supabase-js solo
- * `apikey` NO se incluye: functions.invoke no lo envía y no se amplía la
- * allowlist de forma preventiva.
+ *   x-client-info    → lo pone supabase-js solo (DEFAULT_HEADERS)
  */
 const allowHeaders = (edgeCode.match(/'Access-Control-Allow-Headers':\s*'([^']*)'/) || [])[1] ?? '';
-for (const h of ['authorization', 'content-type', 'idempotency-key', 'x-client-info']) {
+for (const h of ['apikey', 'authorization', 'content-type', 'idempotency-key', 'x-client-info']) {
   check(`Allow-Headers incluye '${h}'`, allowHeaders.toLowerCase().includes(h));
 }
-check('Allow-Headers NO amplía con apikey', !allowHeaders.toLowerCase().includes('apikey'));
+check('Allow-Headers no lista nada más que esos cinco',
+  allowHeaders.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).length === 5);
 check('el preflight devuelve los MISMOS CORS que las respuestas POST',
   /if \(req\.method === 'OPTIONS'\) return new Response\('ok', \{ headers: corsHeaders\(origin\) \}\)/.test(edgeCode)
   && /\.\.\.corsHeaders\(origin\)/.test(edgeCode));
 check('Allow-Methods sigue acotado a POST, OPTIONS',
   /'Access-Control-Allow-Methods':\s*'POST, OPTIONS'/.test(edgeCode));
+
+/*
+ * P0133 — teléfono de claim inservible para Auth.
+ *
+ * Sin `case`, caía en `default: internal` y la UI decía "Prueba de nuevo en un
+ * momento" ante un error que el usuario PUEDE corregir. Se mapea a
+ * `invalid_phone`, con copy propio, y cuenta como terminal en la política:
+ * la Edge solo lo emite tras confirmar `mark_failed`.
+ */
+check('P0133 mapeado a invalid_phone', /case 'P0133': return 'invalid_phone'/.test(edgeCode));
+check('invalid_phone es un ErrCode con status propio',
+  /'invalid_phone'/.test(edgeCode) && /invalid_phone:\s*422/.test(edgeCode));
+check('el frontend tiene copy propio para invalid_phone', /invalid_phone:/.test(svcCode));
+check('invalid_phone rota la operation_id (es terminal)',
+  /'invalid_phone',/.test(fs.readFileSync('src/services/seedOperationPolicy.ts', 'utf8')));
+
+// ─── H-bis. Teléfonos del modal ──────────────────────────────
+console.log('\n  H-bis) teléfonos del formulario\n');
+check('reutiliza los helpers de src/lib/phone (sin normalización paralela)',
+  /from '\.\.\/\.\.\/\.\.\/lib\/phone'/.test(uiCode) && /normalizePhoneSV/.test(uiCode));
+check('los inputs de teléfono son numéricos', (uiCode.match(/inputMode="numeric"/g) || []).length === 2);
+check('no aceptan letras: se sanitiza a dígitos',
+  (uiCode.match(/sanitizeSvLocal\(e\.target\.value\)/g) || []).length === 2);
+check('máscara 0000-0000 en ambos', (uiCode.match(/formatSvLocal\(/g) || []).length === 2);
+check('tope de 8 dígitos reales', (uiCode.match(/maxLength=\{9\}/g) || []).length === 2);
+check('un teléfono a medias BLOQUEA el submit',
+  /clinicPhoneValido && claimPhoneValido/.test(uiCode)
+  && /isValidSvLocal\(form\.claim_phone\)/.test(uiCode));
+check('viajan normalizados al canónico del backend',
+  /claim_phone: normalizePhoneSV\(form\.claim_phone\)/.test(uiCode)
+  && /clinic_phone: normalizePhoneSV\(form\.clinic_phone\)/.test(uiCode));
+check('el claim_phone sigue marcado como privado', /privado/.test(ui));
 
 // ─── H. Frontend ─────────────────────────────────────────────
 console.log('\n  H) frontend\n');
@@ -522,10 +557,14 @@ check('5. éxito: no hay rotación involucrada (nunca se llama con error)',
 check('6. doble clic / retry sin respuesta terminal → NO rota',
   [null, '', 'in_progress', 'lease_lost', 'payload_mismatch', 'internal']
     .every((c) => debeRotarOperationId(c) === false));
-check('la política es una ALLOWLIST de 5 códigos, no una lista negra',
+// `invalid_phone` (P0133) entra a la allowlist por el mismo motivo que los
+// otros de dominio: la Edge solo lo emite tras confirmar `mark_failed`, así
+// que la operación quedó terminalmente en `failed` y reusar la clave chocaría
+// para siempre contra `previously_failed`.
+check('la política es una ALLOWLIST de 6 códigos, no una lista negra',
   JSON.stringify([...CODIGOS_TERMINALES].sort())
     === JSON.stringify(['d1_incomplete', 'duplicate_jvpm', 'duplicate_phone',
-                        'previously_failed', 'seed_identity_conflict']));
+                        'invalid_phone', 'previously_failed', 'seed_identity_conflict']));
 check('un código desconocido NO rota (default seguro)',
   debeRotarOperationId('codigo_que_no_existe') === false);
 
