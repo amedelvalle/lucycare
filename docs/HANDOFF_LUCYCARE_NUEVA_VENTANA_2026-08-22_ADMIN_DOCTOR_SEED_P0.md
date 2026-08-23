@@ -85,34 +85,51 @@ Edge Function  admin-create-seed-doctor
   2. normaliza payload (whitelist) y calcula hash  [server-side]
   3. admin_claim_seed_operation                    [JWT] → is_admin() en la BASE
   4. admin_lookup_seed_user  (recuperación)        [JWT]
-  5. auth.admin.createUser   (solo si no existía)  [service_role]
+  5. auth.admin.createUser   (solo si no existía)  [secret key]
   6. admin_seed_operation_set_auth_created         [JWT]
   7. admin_create_seed_doctor                      [JWT] → profile+clinic+doctor+JVPM+audit
-  ✗ compensación: mark_failed → deleteUser         [JWT] → [service_role]
+  ✗ compensación: mark_failed → deleteUser         [JWT] → [secret key]
       ▼
 { doctor_id, clinic_id, slug, is_published, claim_ready }
 ```
 
 **Reparto de credenciales, invariante:**
 
-- **`service_role` se lee y se usa SOLO dentro de la Edge Function**, y
-  **únicamente** en `auth.admin.createUser()` y `auth.admin.deleteUser()`.
+- **La secret key moderna (`sb_secret_…`) se lee y se usa SOLO dentro de la Edge
+  Function**, y **únicamente** en `auth.admin.createUser()` y
+  `auth.admin.deleteUser()`.
 - **Toda la lógica médica va con el JWT real del admin.** No es cosmético: así
   `auth.uid()` es válido y el trigger `audit_profiles_identity` (`s7_32`) puede
-  escribir al actualizar `profiles.full_name`. **Con `service_role`,
-  `auth.uid()` es NULL y ese trigger aborta la fila.**
+  escribir al actualizar `profiles.full_name`. **Con una credencial
+  privilegiada, `auth.uid()` es NULL y ese trigger aborta la fila.**
 - El gate `is_admin()` vive **en la base**, no en la función.
 - **Ningún SQL escribe `auth.users`.** La migración solo la **lee**, en el lookup.
 
 **Por qué existe la Edge Function:** `public.profiles.id` tiene
 `FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE` —verificado en
 el catálogo—, así que **un profile sin identidad Auth es imposible**. La fila
-técnica se crea por Admin API, que exige `service_role`, y `service_role` nunca
-puede vivir en el frontend. **No existía ningún contexto servidor de confianza
-en el proyecto**: es la primera Edge Function y el primer runtime Deno.
+técnica se crea por Admin API, que exige una credencial privilegiada, y esa
+credencial nunca puede vivir en el frontend. **No existía ningún contexto
+servidor de confianza en el proyecto**: es la primera Edge Function y el primer
+runtime Deno.
 
-**Secretos:** ninguno que configurar. El runtime alojado preaprovisiona
-`SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
+**Secretos:** ninguno que configurar a mano. El runtime alojado preaprovisiona
+`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS` y `SUPABASE_SECRET_KEYS`.
+
+> ⚠️ **La Edge NO usa las variables legacy `SUPABASE_ANON_KEY` ni
+> `SUPABASE_SERVICE_ROLE_KEY`** (EDGE-SECRET-KEY-MIGRATION, 2026-08-23). Este
+> proyecto tiene las **legacy API keys deshabilitadas**: esos JWT
+> preaprovisionados existen, pero el gateway los **rechaza con 401** —medido—,
+> así que leerlos era un **defecto que habría roto la función entera**, no una
+> alternativa válida. La versión vigente lee las credenciales del **formato
+> nuevo**, que el runtime entrega como **diccionarios JSON indexados por
+> nombre**, y toma la entrada **`default`**:
+> `SUPABASE_SECRET_KEYS` → `sb_secret_…` (privilegiada, solo Auth Admin API) y
+> `SUPABASE_PUBLISHABLE_KEYS` → `sb_publishable_…` (cliente de negocio, que
+> además viaja con el JWT del admin). El parseo es **fail closed**: si la
+> variable falta, no parsea, no es un diccionario, no trae `default` o el valor
+> no tiene el prefijo esperado, la request muere **antes** de construir cliente
+> alguno y **ninguna escritura es posible**. **No hay fallback a las legacy.**
 
 ---
 
@@ -357,8 +374,12 @@ Edge runtime PASS
 ## K. Salvaguardas permanentes
 
 - **`auth.users`: JAMÁS por SQL.** Siempre Admin API.
-- **`service_role` nunca fuera del perímetro autorizado** — solo dentro de la
-  Edge Function, y solo para `createUser`/`deleteUser`.
+- **La credencial privilegiada nunca fuera del perímetro autorizado** — la
+  secret key moderna vive solo dentro de la Edge Function, y solo alimenta
+  `createUser`/`deleteUser`.
+- **No reactivar las legacy API keys.** Están deshabilitadas y así deben
+  quedarse: el JWT `service_role` legacy estuvo en el historial público del
+  repositorio y volvería a ser válido si se reactivaran.
 - **No mergear, migrar, desplegar, tocar configuración ni producción sin
   autorización explícita** del owner, paso por paso.
 - **No tocar** Test Phones, Twilio, Turnstile ni `hook_before_user_created`.

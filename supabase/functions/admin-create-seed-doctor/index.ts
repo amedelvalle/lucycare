@@ -7,23 +7,58 @@
  *
  * ── POR QUÉ EXISTE ESTA FUNCIÓN ──
  * `public.profiles.id` tiene FK a `auth.users(id)`: un profile sin identidad
- * Auth es imposible. La fila técnica se crea por **Admin API**, que exige
- * `service_role`, y `service_role` NUNCA puede vivir en el frontend.
+ * Auth es imposible. La fila técnica se crea por **Admin API**, que exige una
+ * credencial privilegiada, y esa credencial NUNCA puede vivir en el frontend.
  *
  * ── REPARTO DE CREDENCIALES (invariante) ──
- *   • JWT del admin  → TODAS las RPCs de negocio. Así `auth.uid()` es válido
+ *   • JWT del admin → TODAS las RPCs de negocio. Así `auth.uid()` es válido
  *     y el gate `is_admin()` vive en la base, no acá.
- *   • service_role   → EXCLUSIVAMENTE `auth.admin.createUser` y el
+ *   • secret key     → EXCLUSIVAMENTE `auth.admin.createUser` y el
  *     `auth.admin.deleteUser` compensatorio. Nada más.
  *
  * ── SECRETOS ──
- * No se configura ninguno: el runtime alojado preaprovisiona SUPABASE_URL y
- * SUPABASE_SERVICE_ROLE_KEY.
+ * No se configura ninguno a mano: el runtime alojado preaprovisiona
+ * SUPABASE_URL, SUPABASE_PUBLISHABLE_KEYS y SUPABASE_SECRET_KEYS.
+ *
+ * ⚠️ NO se usan las variables legacy SUPABASE_ANON_KEY ni
+ * SUPABASE_SERVICE_ROLE_KEY. Este proyecto tiene las **legacy API keys
+ * deshabilitadas**: esos JWT preaprovisionados existen, pero el gateway los
+ * rechaza con 401. Las credenciales vigentes son las del formato nuevo
+ * (`sb_publishable_…` / `sb_secret_…`), que el runtime entrega como
+ * diccionarios JSON indexados por nombre. Usamos la entrada `default`.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+/**
+ * Lee una credencial del formato nuevo desde el diccionario JSON que
+ * preaprovisiona el runtime —`{"default":"sb_secret_…"}`— y devuelve la
+ * entrada `default`.
+ *
+ * FAIL CLOSED: lanza si la variable falta, no parsea, no es un diccionario, no
+ * trae `default`, o el valor no tiene el prefijo esperado. Nunca devuelve una
+ * credencial dudosa y JAMÁS cae de vuelta a las variables legacy. El mensaje
+ * nombra la variable, nunca su valor.
+ */
+function runtimeKey(varName: string, prefix: 'sb_publishable_' | 'sb_secret_'): string {
+  const raw = Deno.env.get(varName);
+  if (!raw) throw new Error(`${varName}: ausente`);
+  let dict: unknown;
+  try {
+    dict = JSON.parse(raw);
+  } catch {
+    throw new Error(`${varName}: no parsea como JSON`);
+  }
+  if (typeof dict !== 'object' || dict === null || Array.isArray(dict)) {
+    throw new Error(`${varName}: no es un diccionario`);
+  }
+  const value = (dict as Record<string, unknown>).default;
+  if (typeof value !== 'string' || !value.startsWith(prefix) || value.length <= prefix.length) {
+    throw new Error(`${varName}: entrada 'default' ausente o con formato inesperado`);
+  }
+  return value;
+}
 
 /** Origen permitido: dominio productivo y previews de Vercel del proyecto. */
 const ALLOWED_ORIGINS = [/^https:\/\/lucycare\.app$/, /^https:\/\/lucycare-[a-z0-9-]+\.vercel\.app$/];
@@ -149,13 +184,27 @@ Deno.serve(async (req) => {
     return fail('bad_request', origin, { detail: 'json' });
   }
 
+  /**
+   * Credenciales del runtime, formato nuevo. Se resuelven ANTES de construir
+   * cliente alguno: si algo no cuadra, la request muere acá y ninguna
+   * escritura es posible.
+   */
+  let publishableKey: string;
+  let secretKey: string;
+  try {
+    publishableKey = runtimeKey('SUPABASE_PUBLISHABLE_KEYS', 'sb_publishable_');
+    secretKey = runtimeKey('SUPABASE_SECRET_KEYS', 'sb_secret_');
+  } catch {
+    return fail('internal', origin, { detail: 'key_config' });
+  }
+
   // Cliente de NEGOCIO: JWT del admin. El gate is_admin() vive en la base.
-  const asAdmin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+  const asAdmin = createClient(SUPABASE_URL, publishableKey, {
     global: { headers: { Authorization: authHeader } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   // Cliente PRIVILEGIADO: solo Admin API. Jamás lógica médica.
-  const asService = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  const asService = createClient(SUPABASE_URL, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 

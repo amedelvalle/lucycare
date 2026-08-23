@@ -339,8 +339,43 @@ check('el JVPM duplicado lo bloquea el índice único (23505 mapeado en la Edge)
 
 // ─── G. Edge Function ────────────────────────────────────────
 console.log('\n  G) Edge Function\n');
-check('service_role solo para Admin API',
+check('la credencial privilegiada se usa SOLO para la Auth Admin API',
   (edgeCode.match(/asService\./g) || []).length === (edgeCode.match(/asService\.auth\.admin\./g) || []).length);
+check('la credencial privilegiada alimenta exactamente un cliente',
+  (edgeCode.match(/createClient\(SUPABASE_URL, secretKey/g) || []).length === 1);
+
+/*
+ * Credenciales del runtime — formato NUEVO.
+ *
+ * Las legacy API keys de este proyecto están DESHABILITADAS: los JWT que el
+ * runtime preaprovisiona en SUPABASE_SERVICE_ROLE_KEY y SUPABASE_ANON_KEY
+ * existen, pero el gateway los rechaza con 401. Leerlos sería un defecto, no
+ * una alternativa. Invariante vigente: la secret key vive SOLO dentro de la
+ * Edge Function y SOLO alimenta la Auth Admin API.
+ */
+check('la Edge NO lee ninguna variable legacy de credencial',
+  !/Deno\.env\.get\(\s*'SUPABASE_SERVICE_ROLE_KEY'/.test(edgeCode)
+  && !/Deno\.env\.get\(\s*'SUPABASE_ANON_KEY'/.test(edgeCode));
+check('lee la secret key moderna desde SUPABASE_SECRET_KEYS',
+  /runtimeKey\('SUPABASE_SECRET_KEYS', 'sb_secret_'\)/.test(edgeCode));
+check('lee la publishable moderna desde SUPABASE_PUBLISHABLE_KEYS',
+  /runtimeKey\('SUPABASE_PUBLISHABLE_KEYS', 'sb_publishable_'\)/.test(edgeCode));
+check('parsea el diccionario JSON y toma la entrada default',
+  /JSON\.parse\(raw\)/.test(edgeCode)
+  && /\(dict as Record<string, unknown>\)\.default/.test(edgeCode));
+check('fail closed: variable ausente', /if \(!raw\) throw new Error/.test(edgeCode));
+check('fail closed: JSON inválido', /no parsea como JSON/.test(edgeCode));
+check('fail closed: no es un diccionario',
+  /typeof dict !== 'object' \|\| dict === null \|\| Array\.isArray\(dict\)/.test(edgeCode));
+check('fail closed: falta default o formato inesperado',
+  /typeof value !== 'string' \|\| !value\.startsWith\(prefix\)/.test(edgeCode));
+check('sin credencial válida NO se construye ningún cliente',
+  edgeCode.indexOf("return fail('internal', origin, { detail: 'key_config' })")
+    < edgeCode.indexOf('createClient(SUPABASE_URL, publishableKey'));
+check('ninguna clave hardcodeada en la Edge',
+  !/sb_secret_[A-Za-z0-9]/.test(edgeCode.replace(/'sb_secret_'/g, ''))
+  && !/sb_publishable_[A-Za-z0-9]/.test(edgeCode.replace(/'sb_publishable_'/g, ''))
+  && !/eyJ[A-Za-z0-9_-]{20,}/.test(edge));
 check('las RPCs de negocio van con el JWT del admin',
   !/asService\.rpc\(/.test(edgeCode) && /asAdmin\.rpc\(/.test(edgeCode));
 check('el payload_hash se calcula server-side (no llega del cliente)',
@@ -383,8 +418,11 @@ check('CORS con allowlist de origen',
 
 // ─── H. Frontend ─────────────────────────────────────────────
 console.log('\n  H) frontend\n');
-check('el cliente NO usa service_role (mencionarlo en un comentario es válido)',
-  !/service_role|SERVICE_ROLE/i.test(svcCode) && !/service_role|SERVICE_ROLE/i.test(uiCode));
+check('el frontend NO recibe NINGUNA credencial privilegiada (mencionarla en un comentario es válido)',
+  ![svcCode, uiCode].some((c) =>
+    /service_role|SERVICE_ROLE/i.test(c)
+    || /SECRET_KEYS|sb_secret_/i.test(c)
+    || /eyJ[A-Za-z0-9_-]{20,}/.test(c)));
 check('la Idempotency-Key se genera una vez por intento',
   /operationIdRef\s*=\s*useRef/.test(uiCode) && /crypto\.randomUUID\(\)/.test(uiCode));
 check('se envía como cabecera', /'Idempotency-Key': operationId/.test(svcCode));
