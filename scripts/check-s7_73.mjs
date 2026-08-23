@@ -474,8 +474,32 @@ check('no aceptan letras: se sanitiza a dígitos',
 check('máscara 0000-0000 en ambos', (uiCode.match(/formatSvLocal\(/g) || []).length === 2);
 check('tope de 8 dígitos reales', (uiCode.match(/maxLength=\{9\}/g) || []).length === 2);
 check('un teléfono a medias BLOQUEA el submit',
-  /clinicPhoneValido && claimPhoneValido/.test(uiCode)
-  && /isValidSvLocal\(form\.claim_phone\)/.test(uiCode));
+  /clinicPhoneValido && claimPhoneValido/.test(uiCode));
+
+/*
+ * PÚBLICO vs PRIVADO — reglas DISTINTAS, a propósito.
+ *
+ * `auth_phone_e164` (s7_65) acepta `^503[267][0-9]{7}$`: un fijo `2XXXXXXX`
+ * PASA y no dispara `P0133`. El perfil nacería con `claim_ready = true` y el
+ * reclamo recién fallaría al mandar el SMS —`verifyOtp({ type: 'sms' })`—,
+ * que un fijo no recibe. Por eso el privado NO reutiliza la validación
+ * permisiva del público.
+ */
+check('el teléfono PÚBLICO admite cualquier SV de 8 dígitos (incluido fijo)',
+  /clinicPhoneValido = !form\.clinic_phone \|\| isValidSvLocal\(form\.clinic_phone\)/.test(uiCode));
+check('el teléfono de CLAIM exige móvil (6 o 7)',
+  /claimPhoneValido = !form\.claim_phone \|\| isValidSvMobile\(form\.claim_phone\)/.test(uiCode));
+check('las dos reglas son distintas: el claim NO usa la permisiva',
+  !/isValidSvLocal\(form\.claim_phone\)/.test(uiCode));
+check('el mensaje explica el problema ANTES del submit',
+  /empiece con 6 o 7/.test(ui) && /SMS de verificación/.test(ui));
+
+const phoneLib = fs.readFileSync('src/lib/phone.ts', 'utf8');
+check('isValidSvMobile acota a 6/7 y ocho dígitos', /\^\[67\]\\d\{7\}\$/.test(phoneLib));
+check('isValidSvLocal sigue aceptando ocho dígitos cualesquiera',
+  /\^\\d\{8\}\$/.test(phoneLib));
+check('el pegado con código de país no trunca en silencio',
+  /d\.length > 8 && d\.startsWith\('503'\)/.test(phoneLib));
 check('viajan normalizados al canónico del backend',
   /claim_phone: normalizePhoneSV\(form\.claim_phone\)/.test(uiCode)
   && /clinic_phone: normalizePhoneSV\(form\.clinic_phone\)/.test(uiCode));

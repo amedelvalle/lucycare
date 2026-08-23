@@ -59,7 +59,26 @@ export function formatSvLocal(raw: string | null | undefined): string {
   return d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d;
 }
 
-/** Válido = exactamente 8 dígitos. Vacío NO es válido: usar antes el opcional. */
+/**
+ * Válido = exactamente 8 dígitos. Sirve para un teléfono SV **cualquiera**,
+ * incluido un fijo (`2XXXXXXX`). Es la regla del teléfono PÚBLICO.
+ */
 export function isValidSvLocal(raw: string | null | undefined): boolean {
   return /^\d{8}$/.test(sanitizeSvLocal(raw));
+}
+
+/**
+ * Válido = móvil salvadoreño: 8 dígitos que empiezan en **6 o 7**.
+ *
+ * Regla más estricta que `isValidSvLocal`, y a propósito. `auth_phone_e164`
+ * (`s7_65`) acepta `^503[267][0-9]{7}$`, o sea que un **fijo `2XXXXXXX`
+ * también pasa** y no dispara `P0133`: el perfil quedaría con
+ * `claim_ready = true` y recién fallaría al intentar el OTP, porque el Claim
+ * verifica con `verifyOtp({ type: 'sms' })` y un fijo no recibe SMS.
+ *
+ * Por eso el teléfono PRIVADO del reclamo NO reutiliza la validación
+ * permisiva: el problema se explica en el formulario, no en Twilio.
+ */
+export function isValidSvMobile(raw: string | null | undefined): boolean {
+  return /^[67]\d{7}$/.test(sanitizeSvLocal(raw));
 }

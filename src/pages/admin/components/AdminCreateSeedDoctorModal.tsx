@@ -25,7 +25,13 @@ import {
   type SeedDoctorResult,
 } from '../../../services/adminDoctorSeed.service';
 import { debeRotarOperationId, siguienteOperationId } from '../../../services/seedOperationPolicy';
-import { formatSvLocal, isValidSvLocal, normalizePhoneSV, sanitizeSvLocal } from '../../../lib/phone';
+import {
+  formatSvLocal,
+  isValidSvLocal,
+  isValidSvMobile,
+  normalizePhoneSV,
+  sanitizeSvLocal,
+} from '../../../lib/phone';
 
 interface Props {
   isOpen: boolean;
@@ -109,7 +115,10 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
    * después de haber creado ya la identidad técnica.
    */
   const clinicPhoneValido = !form.clinic_phone || isValidSvLocal(form.clinic_phone);
-  const claimPhoneValido = !form.claim_phone || isValidSvLocal(form.claim_phone);
+  // El PRIVADO exige MÓVIL. auth_phone_e164 también acepta fijos (2XXXXXXX),
+  // así que sin esta regla el perfil nacería con claim_ready = true y el
+  // reclamo recién fallaría al enviar el SMS, que un fijo no recibe.
+  const claimPhoneValido = !form.claim_phone || isValidSvMobile(form.claim_phone);
 
   const puedeGuardar =
     !!form.full_name.trim() && !!form.clinic_name.trim()
@@ -338,7 +347,10 @@ export default function AdminCreateSeedDoctorModal({ isOpen, onClose, onCreated 
                   }`}
                 />
                 {!claimPhoneValido && (
-                  <p className="text-xs text-red-600 mt-1">Ingresa un número de 8 dígitos.</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Ingresa un móvil salvadoreño de 8 dígitos que empiece con 6 o 7:
+                    tiene que poder recibir el SMS de verificación.
+                  </p>
                 )}
                 <p className="text-xs text-amber-700 mt-1">
                   Es un campo distinto del teléfono público y no se copia de él.
