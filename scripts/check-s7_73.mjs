@@ -7,7 +7,10 @@
  * migración, la Edge Function y el frontend. Verifica las invariantes que el
  * owner fijó y que NO deben poder romperse por descuido.
  *
- * El E2E vive en `_smoke-s7_73.mjs` y requiere la migración aplicada.
+ * El E2E vive en `docs/OWNER_S7_73_SMOKE.md` y lo corre el owner en el SQL
+ * Editor. NO es `_smoke-s7_73.mjs`: ese script quedó deprecado porque con
+ * `service_role` no hay `auth.uid()`, así que `is_admin()` es false y las seis
+ * RPCs cierran en P0120.
  */
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
