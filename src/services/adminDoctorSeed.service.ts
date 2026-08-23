@@ -101,7 +101,13 @@ export async function createSeedDoctor(
 
   const { data, error } = await supabase.functions.invoke('admin-create-seed-doctor', {
     body: payload,
-    headers: { 'Idempotency-Key': operationId },
+    headers: {
+      // Explícito a propósito: la Edge Function evalúa `is_admin()` con ESTE
+      // token, así que no se delega en que supabase-js lo adjunte solo. Si esa
+      // conducta implícita cambiara, el flujo entero devolvería 401.
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': operationId,
+    },
   });
 
   if (error) {

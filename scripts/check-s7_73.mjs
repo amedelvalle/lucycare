@@ -65,15 +65,39 @@ const insertDoctors = code.match(/INSERT\s+INTO\s+public\.doctors[\s\S]*?;/i)?.[
 check('hay exactamente un INSERT INTO doctors',
   (code.match(/INSERT\s+INTO\s+public\.doctors/gi) || []).length === 1);
 check('se localizó el INSERT de doctors', insertDoctors.length > 0);
-check('booking_enabled se pasa como literal false',
-  /true,\s*false\s*\)/.test(insertDoctors.replace(/\s+/g, ' ')));
+// Emparejamiento REAL columna↔valor: se parsea la lista de columnas y la de
+// VALUES y se comparan por posición. Un `/true,\s*false\)/` suelto pasaría
+// aunque alguien reordenara las columnas.
+const columnasDoctors = (insertDoctors.match(/INSERT\s+INTO\s+public\.doctors\s*\(([\s\S]*?)\)/i)?.[1] ?? '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const valoresDoctors = (insertDoctors.match(/VALUES\s*\(([\s\S]*?)\)\s*(RETURNING|;)/i)?.[1] ?? '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const valorDe = (col) => {
+  const i = columnasDoctors.indexOf(col);
+  return i >= 0 && i < valoresDoctors.length ? valoresDoctors[i] : null;
+};
+check('la lista de columnas y la de valores tienen el mismo largo',
+  columnasDoctors.length > 0 && columnasDoctors.length === valoresDoctors.length,
+  `${columnasDoctors.length} vs ${valoresDoctors.length}`);
+check('booking_enabled recibe el literal false',
+  valorDe('booking_enabled') === 'false', String(valorDe('booking_enabled')));
+check('is_operational recibe el literal true',
+  valorDe('is_operational') === 'true', String(valorDe('is_operational')));
+check("lucy_status recibe 'listed_only' literal",
+  valorDe('lucy_status') === "'listed_only'::lucy_status", String(valorDe('lucy_status')));
+check('is_published depende de publish AND D1',
+  valorDe('is_published') === '(v_publish AND v_cumple_d1)', String(valorDe('is_published')));
 check('booking_enabled NUNCA sale de un parámetro',
   !/booking_enabled\s*(:?=|=>)\s*(p_|v_publish|v_booking)/i.test(code));
-check("lucy_status es 'listed_only' literal", /'listed_only'::lucy_status/.test(insertDoctors));
-check('is_operational va en la lista de columnas', /is_operational, booking_enabled/.test(insertDoctors));
 check('is_published depende de D1', /v_publish\s+AND\s+v_cumple_d1/.test(code));
 check('NO se crea clinic_members', !/INSERT\s+INTO\s+public\.clinic_members/i.test(code));
-check('NO se escribe doctors.license_number', !/license_number\s*(=|,)/.test(code));
+// Antes: `!/license_number\s*(=|,)/` — no habría detectado la columna al final
+// de una lista, ni un UPDATE con otro espaciado. Ahora se busca el
+// identificador completo en cualquier posición del código.
+check('NO se escribe doctors.license_number (en ninguna forma)',
+  !/\blicense_number\b/.test(code));
+check('license_number tampoco aparece en la lista de columnas del INSERT',
+  !columnasDoctors.includes('license_number'));
 check('la credencial va a doctor_credentials', /INSERT\s+INTO\s+public\.doctor_credentials/i.test(code));
 check("la credencial nace 'pending'", /'JVPM',\s*v_jvpm,\s*'pending'/.test(code));
 
@@ -170,23 +194,92 @@ for (const [fn, body] of [['set_auth_created', bSet], ['mark_failed', bFail],
   check(`${fn} lo verifica bajo FOR UPDATE`,
     body.indexOf('FOR UPDATE') < body.indexOf('lease_token IS DISTINCT FROM'));
 }
-check('las tres mutadoras reciben p_lease_token en su firma',
-  (code.match(/p_lease_token\s+uuid/g) || []).length === 3);
+check('las CUATRO mutadoras reciben p_lease_token en su firma',
+  (code.match(/p_lease_token\s+uuid/g) || []).length === 4);
 check('el lookup NO exige token (es read-only)',
   !/p_lease_token/.test(cuerpo('admin_lookup_seed_user')));
 check('no hay mecanismo genérico para apropiarse de una operación',
   !/FUNCTION public\.admin_seed_operation_(take|steal|force|reset|set_lease)/i.test(code));
 check('P0132 documentado', /P0132 lease perdido/.test(sql));
 
+// ─── C4. Correcciones de la auditoría final ──────────────────
+console.log('\n  C4) hallazgos de la auditoría\n');
+
+// 🟠-1 · teléfono de claim utilizable por Auth
+check('1. el claim phone se valida con auth_phone_e164 (la misma del hook)',
+  /public\.auth_phone_e164\(v_claim_phone\) IS NULL[\s\S]{0,200}P0133/.test(bCreate));
+check('1. la validación precede al advisory lock y a la escritura',
+  bCreate.indexOf('P0133') < bCreate.indexOf('seed_doctor_phone:')
+  && bCreate.indexOf('P0133') < bCreate.indexOf('UPDATE public.profiles'));
+check('1. claim_ready usa auth_phone_e164, no "el campo vino informado"',
+  /v_claim_ready := \(v_claim_phone IS NOT NULL[\s\S]{0,160}auth_phone_e164\(v_claim_phone\) IS NOT NULL[\s\S]{0,80}v_jvpm IS NOT NULL\)/.test(bCreate));
+check('1. clinics.phone NO se valida con auth_phone_e164 (no participa del claim)',
+  !/auth_phone_e164\(v_clinic_phone\)/.test(code));
+check('1. P0133 documentado y en la PRE', /P0133/.test(sql) && /auth_phone_e164\(text\)'\) IS NULL/.test(code));
+
+// 🟠-2 · idempotencia observable
+check('2. el claim reconstruye slug/is_published/claim_ready desde lo persistido',
+  /INTO v_slug, v_published, v_claim_ready/.test(bClaim)
+  && /FROM public\.doctors d/.test(bClaim));
+check('2. el claim NO devuelve seed_user_id en completed',
+  !/'action', 'completed'[\s\S]{0,300}'seed_user_id'/.test(bClaim));
+check('2. la Edge enumera los campos de completed a mano',
+  /action: 'completed',[\s\S]{0,220}claim_ready: !!claim\.claim_ready/.test(edgeCode));
+check('2. la Edge NO reenvía el objeto completo del claim',
+  !/action: 'completed', \.\.\.claim/.test(edgeCode) && !/\{ ok: true, action: 'completed', \.\.\.claim \}/.test(edgeCode));
+check('2. seed_user_id no viaja al cliente en ninguna respuesta',
+  !/(?<!p_)seed_user_id:/.test(edgeCode));
+
+// 🟠-3 · JWT explícito
+check('3. el Authorization se pasa explícitamente en invoke',
+  /Authorization: `Bearer \$\{token\}`/.test(svcCode));
+check('3. el token que se pasa es el de la sesión verificada',
+  svcCode.indexOf('const token = sessionData.session?.access_token') < svcCode.indexOf('Bearer ${token}'));
+
+// 🟠-4 · gate antes de cualquier expresión fallable
+const declareCreate = bCreate.match(/DECLARE([\s\S]*?)BEGIN/)?.[1] ?? '';
+check('4. el DECLARE de create no inicializa NADA desde el payload',
+  declareCreate.length > 0 && !/p_payload/.test(declareCreate));
+check('4. el DECLARE de create no contiene casts fallables',
+  !/::(uuid|numeric|int)\b/.test(declareCreate));
+check('4. is_admin() precede a toda lectura del payload',
+  bCreate.indexOf('IF NOT public.is_admin() THEN') < bCreate.indexOf("p_payload->>'full_name'"));
+check('4. los casts se validan con regex antes de castear',
+  /!~ '\^\[0-9a-fA-F\]\{8\}/.test(bCreate) && /!~ '\^\[0-9\]\+\(\\\.\[0-9\]\+\)\?\$'/.test(bCreate));
+for (const [fn, body] of [['claim', bClaim], ['set_auth_created', bSet],
+                          ['mark_failed', bFail], ['create_seed_doctor', bCreate],
+                          ['flag_compensation_failed', cuerpo('admin_seed_operation_flag_compensation_failed')],
+                          ['lookup', cuerpo('admin_lookup_seed_user')]]) {
+  const decl = body.match(/DECLARE([\s\S]*?)BEGIN/)?.[1] ?? '';
+  check(`4. ${fn}: DECLARE sin expresiones fallables`,
+    !/::(uuid|numeric|int|boolean)\b/.test(decl) && !/p_payload/.test(decl));
+}
+
+// 🟠-5 · compensación diagnosticable
+const bFlag = cuerpo('admin_seed_operation_flag_compensation_failed');
+check('5. existe la RPC estrecha de anotación', bFlag.length > 0);
+check('5. solo actúa sobre status=failed', /status <> 'failed'[\s\S]{0,120}P0123/.test(bFlag));
+check('5. exige el mismo lease', /lease_token IS DISTINCT FROM p_lease_token[\s\S]{0,140}P0132/.test(bFlag));
+check('5. preserva el error original y anexa la marca',
+  /error_code = v_row\.error_code \|\| '\+compensation_failed'/.test(bFlag));
+check('5. es idempotente', /LIKE '%\+compensation_failed'[\s\S]{0,200}already_flagged/.test(bFlag));
+check('5. NO cambia el status ni reabre la operación', !/SET status/.test(bFlag));
+check('5. la Edge la invoca solo si deleteUser falló',
+  /if \(delErr\) \{[\s\S]{0,400}admin_seed_operation_flag_compensation_failed/.test(edgeCode));
+// Que `compensation_failed` no rote la clave se prueba en §I con la función
+// real; acá solo se afirma que ese es el código devuelto.
+check('5. y devuelve compensation_failed en ese camino',
+  /return fail\('compensation_failed', origin\)/.test(edgeCode));
+
 // ─── D. Seguridad de las RPCs ────────────────────────────────
 console.log('\n  D) gates, grants y search_path\n');
 const defs = code.match(/CREATE OR REPLACE FUNCTION[\s\S]*?\$\$;/g) || [];
-check(`${defs.length} funciones definidas`, defs.length === 6);
+check(`${defs.length} funciones definidas`, defs.length === 7);
 check('todas fijan search_path explícito', defs.every((d) => /SET search_path\s*=/.test(d)));
 check('todas las admin_* son SECURITY DEFINER',
   defs.filter((d) => /FUNCTION public\.admin_/.test(d)).every((d) => /SECURITY DEFINER/.test(d)));
-check('las 5 admin_* gatean con is_admin()',
-  (code.match(/IF NOT public\.is_admin\(\) THEN/g) || []).length === 5);
+check('las 6 admin_* gatean con is_admin()',
+  (code.match(/IF NOT public\.is_admin\(\) THEN/g) || []).length === 6);
 check('REVOKE de PUBLIC y anon presente',
   /REVOKE ALL ON FUNCTION %s FROM PUBLIC/.test(code) && /REVOKE ALL ON FUNCTION %s FROM anon/.test(code));
 check('GRANT EXECUTE solo a authenticated', /GRANT EXECUTE ON FUNCTION %s TO authenticated/.test(code));
@@ -271,8 +364,8 @@ check('duplicate email → lookup, no segundo createUser',
 check('si el email existe pero no cumple → fail cerrado', /seed_identity_conflict/.test(edgeCode));
 check('NO usa listUsers', !/listUsers/.test(edgeCode));
 check('compensa con deleteUser si la RPC falla', /rpcErr[\s\S]{0,400}deleteUser/.test(edgeCode));
-check('propaga el lease_token a las tres RPCs mutadoras',
-  (edgeCode.match(/p_lease_token: leaseToken/g) || []).length === 3);
+check('propaga el lease_token a las CUATRO RPCs mutadoras',
+  (edgeCode.match(/p_lease_token: leaseToken/g) || []).length === 4);
 check('guarda el token del claim y del resume',
   (edgeCode.match(/leaseToken = claim\.lease_token/g) || []).length === 2);
 check('en lease_lost NO ejecuta deleteUser',
@@ -412,8 +505,13 @@ check('3. lease_lost retorna antes de cualquier compensación',
   && bloqueRpcErr.indexOf("if (code === 'lease_lost') return") < bloqueRpcErr.indexOf('deleteUser'));
 check('4. un mark_failed incierto no borra nada (marcarFallida devuelve false)',
   /return !error;/.test(edgeCode) && /if \(!leaseToken\) return false;/.test(edgeCode));
+// El código de dominio se devuelve DESPUÉS del bloque `if (delErr)`, es decir
+// solo cuando el borrado salió bien.
 check('5. delete exitoso devuelve el código de dominio',
-  /return fail\(delErr \? 'compensation_failed' : code, origin\)/.test(bloqueRpcErr));
+  bloqueRpcErr.includes('return fail(code, origin);')
+  && bloqueRpcErr.indexOf('if (delErr) {') < bloqueRpcErr.indexOf('return fail(code, origin);')
+  && bloqueRpcErr.indexOf("return fail('compensation_failed', origin);")
+     < bloqueRpcErr.indexOf('return fail(code, origin);'));
 check('6. delete fallido devuelve compensation_failed, que NO rota la clave',
   /compensation_failed/.test(bloqueRpcErr)
   && debeRotarOperationId('compensation_failed') === false);

@@ -20,6 +20,7 @@
 --   4. admin_lookup_seed_user()            — recuperación determinista
 --   5. admin_seed_operation_set_auth_created()  — transición CAS
 --   6. admin_seed_operation_mark_failed()       — transición CAS
+--   6b. admin_seed_operation_flag_compensation_failed() — anota cleanup
 --   7. admin_create_seed_doctor()          — transacción de negocio
 --
 -- ── INVARIANTES FORZADAS SERVER-SIDE ──
@@ -62,6 +63,7 @@
 --   P0130 especialidad inexistente
 --   P0131 datos obligatorios faltantes
 --   P0132 lease perdido: otro worker retomó la operación
+--   P0133 teléfono de claim inservible para Auth (auth_phone_e164 = NULL)
 -- ═══════════════════════════════════════════════════════════
 
 BEGIN;
@@ -74,6 +76,9 @@ BEGIN
   END IF;
   IF to_regprocedure('public.normalize_phone_sv(text)') IS NULL THEN
     RAISE EXCEPTION 'PRE falló: normalize_phone_sv(text) no existe (s7_40)';
+  END IF;
+  IF to_regprocedure('public.auth_phone_e164(text)') IS NULL THEN
+    RAISE EXCEPTION 'PRE falló: auth_phone_e164(text) no existe (s7_65)';
   END IF;
   IF to_regclass('public.doctor_credentials') IS NULL THEN
     RAISE EXCEPTION 'PRE falló: doctor_credentials no existe (s7_61)';
@@ -167,9 +172,12 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_catalog
 AS $$
 DECLARE
-  v_row   public.admin_seed_operations%ROWTYPE;
-  v_stale boolean;
-  v_token uuid;
+  v_row         public.admin_seed_operations%ROWTYPE;
+  v_stale       boolean;
+  v_token       uuid;
+  v_slug        text;
+  v_published   boolean;
+  v_claim_ready boolean;
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'No autorizado' USING ERRCODE = 'P0120';
@@ -205,10 +213,29 @@ BEGIN
   END IF;
 
   IF v_row.status = 'completed' THEN
+    -- Idempotencia OBSERVABLE: un retry debe ver exactamente el mismo
+    -- resultado que la primera respuesta, no una versión empobrecida. Se
+    -- reconstruye desde lo PERSISTIDO (slug, publicación y claim readiness
+    -- con el mismo criterio del claim real).
+    -- `seed_user_id` NO se devuelve: es interno y el cliente no lo necesita.
+    SELECT d.slug,
+           d.is_published,
+           (public.auth_phone_e164(coalesce(p.phone, '')) IS NOT NULL
+            AND EXISTS (SELECT 1 FROM public.doctor_credentials dc
+                         WHERE dc.doctor_id = d.id
+                           AND dc.type = 'JVPM'
+                           AND dc.status <> 'rejected'))
+      INTO v_slug, v_published, v_claim_ready
+    FROM public.doctors d
+    LEFT JOIN public.profiles p ON p.id = d.profile_id
+    WHERE d.id = v_row.doctor_id;
+
     RETURN jsonb_build_object(
       'action', 'completed', 'operation_id', p_operation_id,
       'doctor_id', v_row.doctor_id, 'clinic_id', v_row.clinic_id,
-      'seed_user_id', v_row.seed_user_id);
+      'slug', v_slug,
+      'is_published', coalesce(v_published, false),
+      'claim_ready', coalesce(v_claim_ready, false));
   END IF;
 
   IF v_row.status = 'failed' THEN
@@ -376,6 +403,59 @@ BEGIN
 END;
 $$;
 
+-- ─── 7b. Anotar que el cleanup de Auth quedó pendiente ──────
+-- NO es una transición de estado ni una RPC genérica: la operación ya está en
+-- `failed` y ahí se queda. Solo ANEXA una marca al `error_code`, preservando
+-- el error original, para poder distinguir después:
+--   "falló la creación y el cleanup fue OK"  ← error_code = <motivo>
+--   "falló la creación y quedó un auth.user" ← error_code = <motivo>+compensation_failed
+-- Exige el MISMO lease y `status='failed'`: no reabre nada ni permite takeover.
+CREATE OR REPLACE FUNCTION public.admin_seed_operation_flag_compensation_failed(
+  p_operation_id uuid,
+  p_lease_token  uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  v_row public.admin_seed_operations%ROWTYPE;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'No autorizado' USING ERRCODE = 'P0120';
+  END IF;
+
+  SELECT * INTO v_row FROM public.admin_seed_operations
+  WHERE operation_id = p_operation_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Operación no encontrada' USING ERRCODE = 'P0121';
+  END IF;
+
+  IF v_row.lease_token IS DISTINCT FROM p_lease_token THEN
+    RAISE EXCEPTION 'La operación fue retomada por otro proceso' USING ERRCODE = 'P0132';
+  END IF;
+
+  -- SOLO sobre una operación ya fallida. Nunca reabre `completed` ni `started`.
+  IF v_row.status <> 'failed' THEN
+    RAISE EXCEPTION 'Solo se anota sobre una operación fallida' USING ERRCODE = 'P0123';
+  END IF;
+
+  -- Idempotente: no duplica la marca.
+  IF v_row.error_code LIKE '%+compensation_failed' THEN
+    RETURN jsonb_build_object('action', 'already_flagged', 'operation_id', p_operation_id,
+                              'error_code', v_row.error_code);
+  END IF;
+
+  UPDATE public.admin_seed_operations
+     SET error_code = v_row.error_code || '+compensation_failed',
+         updated_at = now()
+   WHERE operation_id = p_operation_id;
+
+  RETURN jsonb_build_object('action', 'flagged', 'operation_id', p_operation_id,
+                            'error_code', v_row.error_code || '+compensation_failed');
+END;
+$$;
+
 -- ─── 8. Transacción de negocio: auth_created → completed ────
 -- Se invoca con el JWT del admin (NO con service_role): así `auth.uid()` es
 -- válido y el trigger audit_profiles_identity (s7_32) puede escribir su fila
@@ -394,22 +474,32 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, auth, pg_catalog
 AS $$
 DECLARE
+  -- ⚠️ NINGUNA inicialización derivada del payload acá. PL/pgSQL evalúa el
+  -- DECLARE al ENTRAR al bloque, ANTES del BEGIN: un cast fallable (::uuid,
+  -- ::numeric, ::int) lanzaría 22P02 antes del gate `is_admin()`, dando a un
+  -- no-admin un error distinto al de "no autorizado". Todo lo derivado del
+  -- payload se calcula en el cuerpo, después de autorizar.
   v_row          public.admin_seed_operations%ROWTYPE;
-  v_full_name    text := nullif(btrim(coalesce(p_payload->>'full_name', '')), '');
-  v_specialty    uuid := nullif(btrim(coalesce(p_payload->>'specialty_id', '')), '')::uuid;
-  v_clinic_name  text := nullif(btrim(coalesce(p_payload->>'clinic_name', '')), '');
-  v_address      text := nullif(btrim(coalesce(p_payload->>'clinic_address', '')), '');
-  v_clinic_phone text := nullif(regexp_replace(coalesce(p_payload->>'clinic_phone', ''), '\D', '', 'g'), '');
-  v_dept         text := nullif(btrim(coalesce(p_payload->>'department_id', '')), '');
-  v_muni         text := nullif(btrim(coalesce(p_payload->>'municipality_id', '')), '');
-  v_claim_phone  text := public.normalize_phone_sv(coalesce(p_payload->>'claim_phone', ''));
-  v_email        text := nullif(lower(btrim(coalesce(p_payload->>'email', ''))), '');
-  v_bio          text := nullif(btrim(coalesce(p_payload->>'bio', '')), '');
-  v_jvpm         text := nullif(btrim(coalesce(p_payload->>'jvpm', '')), '');
-  v_fee          numeric := nullif(btrim(coalesce(p_payload->>'consultation_fee', '')), '')::numeric;
-  v_years        int := nullif(btrim(coalesce(p_payload->>'experience_years', '')), '')::int;
-  v_publish      boolean := coalesce((p_payload->>'publish')::boolean, false);
+  v_full_name    text;
+  v_specialty    uuid;
+  v_specialty_in text;
+  v_clinic_name  text;
+  v_address      text;
+  v_clinic_phone text;
+  v_dept         text;
+  v_muni         text;
+  v_claim_phone  text;
+  v_claim_e164   text;
+  v_email        text;
+  v_bio          text;
+  v_jvpm         text;
+  v_fee_in       text;
+  v_years_in     text;
+  v_fee          numeric;
+  v_years        int;
+  v_publish      boolean;
   v_cumple_d1    boolean;
+  v_claim_ready  boolean;
   v_clinic_id    uuid;
   v_doctor_id    uuid;
   v_dup_doctor   uuid;
@@ -417,6 +507,45 @@ DECLARE
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'No autorizado' USING ERRCODE = 'P0120';
+  END IF;
+
+  -- ── 8.0 Recién ahora se interpreta el payload ──
+  -- Los valores fallables se VALIDAN antes de castear, así que un dato
+  -- malformado produce un error tipado nuestro y no un 22P02 crudo.
+  v_full_name    := nullif(btrim(coalesce(p_payload->>'full_name', '')), '');
+  v_clinic_name  := nullif(btrim(coalesce(p_payload->>'clinic_name', '')), '');
+  v_address      := nullif(btrim(coalesce(p_payload->>'clinic_address', '')), '');
+  v_clinic_phone := nullif(regexp_replace(coalesce(p_payload->>'clinic_phone', ''), '\D', '', 'g'), '');
+  v_dept         := nullif(btrim(coalesce(p_payload->>'department_id', '')), '');
+  v_muni         := nullif(btrim(coalesce(p_payload->>'municipality_id', '')), '');
+  v_claim_phone  := public.normalize_phone_sv(coalesce(p_payload->>'claim_phone', ''));
+  v_email        := nullif(lower(btrim(coalesce(p_payload->>'email', ''))), '');
+  v_bio          := nullif(btrim(coalesce(p_payload->>'bio', '')), '');
+  v_jvpm         := nullif(btrim(coalesce(p_payload->>'jvpm', '')), '');
+  v_publish      := coalesce(p_payload->>'publish', 'false') = 'true';
+
+  v_specialty_in := nullif(btrim(coalesce(p_payload->>'specialty_id', '')), '');
+  IF v_specialty_in IS NOT NULL THEN
+    IF v_specialty_in !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+      RAISE EXCEPTION 'La especialidad indicada no es válida' USING ERRCODE = 'P0130';
+    END IF;
+    v_specialty := v_specialty_in::uuid;
+  END IF;
+
+  v_fee_in := nullif(btrim(coalesce(p_payload->>'consultation_fee', '')), '');
+  IF v_fee_in IS NOT NULL THEN
+    IF v_fee_in !~ '^[0-9]+(\.[0-9]+)?$' THEN
+      RAISE EXCEPTION 'La tarifa no es un número válido' USING ERRCODE = 'P0131';
+    END IF;
+    v_fee := v_fee_in::numeric;
+  END IF;
+
+  v_years_in := nullif(btrim(coalesce(p_payload->>'experience_years', '')), '');
+  IF v_years_in IS NOT NULL THEN
+    IF v_years_in !~ '^[0-9]{1,3}$' THEN
+      RAISE EXCEPTION 'Los años de experiencia no son un número válido' USING ERRCODE = 'P0131';
+    END IF;
+    v_years := v_years_in::int;
   END IF;
 
   -- ── 8.1 Operación válida y en el estado esperado ──
@@ -479,6 +608,18 @@ BEGIN
   -- modelo). El advisory lock cierra la carrera check→act. Patrón vigente
   -- del repo (s7_66, s7_69).
   IF v_claim_phone IS NOT NULL THEN
+    -- El teléfono de claim DEBE ser utilizable por el hook de Auth. Si
+    -- `auth_phone_e164` lo rechaza, el médico no podría crear su identidad
+    -- (`hook_before_user_created` es fail-closed) y el perfil nacería
+    -- publicado pero IMPOSIBLE de reclamar, en silencio. Se valida con la
+    -- MISMA función que usa el hook, no con una heurística paralela.
+    -- (Es el teléfono PRIVADO de verificación; `clinics.phone` no se valida
+    -- así porque no participa del reclamo.)
+    IF public.auth_phone_e164(v_claim_phone) IS NULL THEN
+      RAISE EXCEPTION 'El teléfono de verificación del reclamo no tiene un formato que Auth pueda usar'
+        USING ERRCODE = 'P0133';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtextextended('seed_doctor_phone:' || v_claim_phone, 0));
 
     SELECT d.id INTO v_dup_doctor
@@ -561,12 +702,20 @@ BEGIN
          updated_at = now()
    WHERE operation_id = p_operation_id;
 
+  -- Claim readiness: MISMO criterio que usa el claim real.
+  --   teléfono utilizable por Auth  +  credencial JVPM utilizable.
+  -- Se calcula con `auth_phone_e164`, no con "el campo vino informado":
+  -- un teléfono presente pero inservible daría un falso positivo.
+  v_claim_ready := (v_claim_phone IS NOT NULL
+                    AND public.auth_phone_e164(v_claim_phone) IS NOT NULL
+                    AND v_jvpm IS NOT NULL);
+
   RETURN jsonb_build_object(
     'action', 'completed', 'operation_id', p_operation_id,
     'doctor_id', v_doctor_id, 'clinic_id', v_clinic_id,
     'slug', v_slug,
     'is_published', (v_publish AND v_cumple_d1),
-    'claim_ready', (v_claim_phone IS NOT NULL AND v_jvpm IS NOT NULL)
+    'claim_ready', v_claim_ready
   );
 END;
 $$;
@@ -584,6 +733,7 @@ BEGIN
     'public.admin_lookup_seed_user(uuid)',
     'public.admin_seed_operation_set_auth_created(uuid, uuid, uuid)',
     'public.admin_seed_operation_mark_failed(uuid, text, uuid)',
+    'public.admin_seed_operation_flag_compensation_failed(uuid, uuid)',
     'public.admin_create_seed_doctor(uuid, uuid, text, jsonb, uuid)'
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', v_fn);
@@ -602,6 +752,7 @@ BEGIN
     'public.admin_lookup_seed_user(uuid)',
     'public.admin_seed_operation_set_auth_created(uuid, uuid, uuid)',
     'public.admin_seed_operation_mark_failed(uuid, text, uuid)',
+    'public.admin_seed_operation_flag_compensation_failed(uuid, uuid)',
     'public.admin_create_seed_doctor(uuid, uuid, text, jsonb, uuid)',
     'public._seed_doctor_email(uuid)'
   ] LOOP

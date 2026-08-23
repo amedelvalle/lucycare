@@ -199,7 +199,18 @@ Deno.serve(async (req) => {
 
     switch (claim.action) {
       case 'completed':
-        return json({ ok: true, action: 'completed', ...claim }, 200, origin);
+        // Idempotencia observable: el retry ve exactamente el mismo resultado
+        // que la primera respuesta. Se enumeran los campos a mano para que
+        // `seed_user_id` —interno— nunca llegue al cliente.
+        return json({
+          ok: true,
+          action: 'completed',
+          doctor_id: claim.doctor_id,
+          clinic_id: claim.clinic_id,
+          slug: claim.slug ?? null,
+          is_published: !!claim.is_published,
+          claim_ready: !!claim.claim_ready,
+        }, 200, origin);
       case 'in_progress':
         return fail('in_progress', origin);
       case 'failed':
@@ -304,10 +315,21 @@ Deno.serve(async (req) => {
       //    atómica), el borrado es limpio y cascadea el profile por la FK.
       const { error: delErr } = await asService.auth.admin.deleteUser(seedUserId);
 
+      if (delErr) {
+        // 4) Quedó un auth.user huérfano. Se ANOTA en la operación —que sigue
+        //    en `failed`, sin reabrirse ni cambiar de dueño— para poder
+        //    distinguir después "cleanup OK" de "cleanup pendiente". Sin esta
+        //    marca, ambos casos serían indistinguibles en la base.
+        await asAdmin.rpc('admin_seed_operation_flag_compensation_failed', {
+          p_operation_id: operationId,
+          p_lease_token: leaseToken,
+        });
+        // No provoca rotación inmediata de la operation_id.
+        return fail('compensation_failed', origin);
+      }
+
       // Borrado OK → el código de dominio, que sí autoriza estrenar clave.
-      // Borrado fallido → `compensation_failed`: queda un seed huérfano y NO
-      // debe provocar rotación inmediata de la operation_id.
-      return fail(delErr ? 'compensation_failed' : code, origin);
+      return fail(code, origin);
     }
 
     return json({ ok: true, ...result }, 200, origin);
