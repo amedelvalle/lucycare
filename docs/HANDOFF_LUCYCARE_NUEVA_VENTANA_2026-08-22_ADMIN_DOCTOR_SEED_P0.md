@@ -12,9 +12,11 @@
 > `2026-08-20`, que se conserva por eso.
 >
 > 📍 **Estado en una línea (2026-08-23):** Edge Function **desplegada y `ACTIVE`
-> (v2)** pero **jamás invocada** · **`s7_73` NO aplicada** · **0 perfiles
-> sembrados** · PR #348 **abierto, sin mergear**. El **Paso 1 del rollout está
-> completado**; la siguiente acción **no está autorizada**. Detalle en la **§J**.
+> (v2)** pero **jamás invocada** · **`s7_73` y `s7_74` APLICADAS y verificadas** ·
+> **DB smoke = PASS / CLOSED** · **0 perfiles sembrados** · **0 llamadas al Admin
+> API** · PR #348 **abierto, sin mergear**. Los pasos 1–3 del rollout están
+> completos; **lo único que falta es la QA real de la Edge**, que **no está
+> autorizada**. Detalle en la **§J**.
 >
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales.
@@ -27,16 +29,19 @@
 |---|---|
 | **PR** | **[#348](https://github.com/amedelvalle/lucycare/pull/348) — OPEN, `MERGEABLE`, NO mergeado** |
 | Rama | **`claude/seed-doctor`** |
-| **HEAD de la rama** | **`ee5d08d6c4a8b71596fd0f59c782e22896dbcf6a`** — EDGE-SECRET-KEY-MIGRATION |
+| **HEAD de la rama** | **`fb5cdbc23040069629a2196d8c944eb0b1152d6b`** — smoke SQL oficial |
 | **`main`** | **`828b021946bf1c7b8ce218bd8dae54ff160a856e`** — sin tocar |
-| Migraciones en el repo | **94 archivos** |
-| **Migraciones aplicadas en producción** | **93** — hasta `s7_72_review_token_short_code.sql` |
-| **`s7_73`** | existe en el repo, **NO aplicada** |
+| Migraciones en el repo | **95 archivos** |
+| **Migraciones aplicadas en producción** | **95** — hasta `s7_74_seedops_policy_hardening.sql` |
+| **`s7_73`** | ✅ **APLICADA y verificada** (2026-08-23) |
+| **`s7_74`** | ✅ **APPLIED / PASS / CLOSED** (2026-08-23) — **no volver a aplicar** |
 | **Edge Function** | **DESPLEGADA — `ACTIVE`, versión 2** (2026-08-23). **Nunca invocada** |
+| **DB smoke** | ✅ **PASS / CLOSED** — ejecutado por el owner. **No repetir** |
 | Perfiles sembrados creados | **ninguno** |
-| Escrituras pendientes por Admin API | **ninguna** |
-| `_smoke-s7_73.mjs` | implementado, **NO ejecutado** |
-| Rollback `docs/rollbacks/s7_73_rollback.sql` | preparado, **NO ejecutado** |
+| Llamadas al Admin API | **ninguna** |
+| `_smoke-s7_73.mjs` | ⛔ **DEPRECADO — NO EJECUTAR** (ver §H) |
+| Smoke oficial | **`docs/OWNER_S7_73_SMOKE.md`** — SQL, lo corre el owner |
+| Rollbacks `s7_73` / `s7_74` | preparados, **NO ejecutados** |
 
 Commits de la rama, del más nuevo al más viejo:
 
@@ -298,10 +303,11 @@ duplicados, payload/privacidad, UI, runtime, migración/rollback e instrumentos.
 | 4 | **Casts antes de `is_admin()`**: el `DECLARE` inicializaba `::uuid/::numeric/::int` desde el payload, y PL/pgSQL lo evalúa antes del `BEGIN` → `22P02` antes del gate | Casts movidos al cuerpo, **validados con regex antes de castear**. Verificado en las **seis** RPCs |
 | 5 | **Cleanup fallido no diagnosticable**: con el orden seguro, un borrado fallido era indistinguible de uno exitoso | RPC estrecha `flag_compensation_failed`: solo sobre `failed`, mismo lease, **sin** cambiar `status`, anexa preservando el motivo, idempotente |
 
-Además: **`seed_user_id` ya no llega al cliente** en ninguna respuesta;
-**`_smoke-s7_73.mjs` está implementado** (18 casos) pero **NO ejecutado**; y el
-**rollback `docs/rollbacks/s7_73_rollback.sql`** está preparado y **NO
-ejecutado** (requirió `git add -f` por la regla `*.sql` del `.gitignore`).
+Además: **`seed_user_id` ya no llega al cliente** en ninguna respuesta; el
+**smoke oficial es `docs/OWNER_S7_73_SMOKE.md`** —SQL, ejecutado por el owner,
+**PASS / CLOSED**— y **`_smoke-s7_73.mjs` quedó DEPRECADO, NO EJECUTAR** (§H); y
+los **rollbacks `s7_73` / `s7_74`** están preparados y **NO ejecutados** (ambos
+requirieron `git add -f` por la regla `*.sql` del `.gitignore`).
 
 ---
 
@@ -310,6 +316,8 @@ ejecutado** (requirió `git add -f` por la regla `*.sql` del `.gitignore`).
 | Verificación | Estado |
 |---|---|
 | `node scripts/check-s7_73.mjs` | **209/209 PASS** |
+| `node scripts/check-s7_74.mjs` | **28/28 PASS** (instrumento validado A/B) |
+| **DB smoke `docs/OWNER_S7_73_SMOKE.md`** | ✅ **PASS / CLOSED** — ver abajo |
 | `npx tsc --noEmit` | **PASS** |
 | `npm run build` | **PASS** — bundle 671,53 kB |
 | `git diff --check` | **PASS** |
@@ -317,10 +325,46 @@ ejecutado** (requirió `git add -f` por la regla `*.sql` del `.gitignore`).
 | Edge Function — **parseo con esbuild** | **PASS** (instrumento validado A/B) |
 | Edge Function — **bundling y deploy** | ✅ **PASS** — server-side por Supabase |
 | Edge Function — **cold boot / ejecución real** | ⚠️ **AÚN NO VALIDADA** |
-| `_smoke-s7_73.mjs` | **NO ejecutado** |
+| `_smoke-s7_73.mjs` | ⛔ **DEPRECADO — NO EJECUTAR** |
 
 > Los **209** checks son los **198** originales más **11** nuevos sobre el
 > invariante de credenciales (EDGE-SECRET-KEY-MIGRATION).
+
+### DB smoke — ✅ PASS / CLOSED (2026-08-23). **No repetir**
+
+Ejecutado por el **owner** en el SQL Editor, según
+**`docs/OWNER_S7_73_SMOKE.md`**:
+
+| Resultado | Valor |
+|---|---|
+| Controles PASS | **33 / 33** |
+| `casos_fallidos` | **0** |
+| BLOQUE 2 · `filas_residuales` | **0** |
+| Seeds persistentes | **0** |
+| Llamadas al Admin API | **0** |
+| Edge Function | **`ACTIVE` v2, nunca invocada** |
+
+Cubrió: gate `is_admin()` con identidad real · idempotencia del claim ·
+`P0122` · **`P0132` en las CUATRO RPCs mutadoras** · **lease vencido →
+`resume`, rotación del token y expulsión del worker viejo** · `P0123` ·
+`P0125` · `P0131` · preservación del primer `error_code` ·
+`+compensation_failed` idempotente · privilegios de tabla · la policy de
+`s7_74`. Todo dentro de `BEGIN … ROLLBACK`, con el admin **explícito** y
+**jamás modificado**.
+
+**NO cubrió** —y sigue sin cubrirse—: concurrencia real de dos sesiones ·
+el camino completo de `admin_create_seed_doctor` (exige `auth.users` por
+Admin API) · el cold boot de la Edge.
+
+> ⛔ **`scripts/_smoke-s7_73.mjs` quedó DEPRECADO.** Usaba `service_role` sin
+> JWT de usuario: `auth.uid()` es NULL, `is_admin()` es false y las seis RPCs
+> cierran en **`P0120`**; además `requested_by` es `NOT NULL` y habría dado
+> `23502`. Sus 18 casos **no podían pasar**, y el fallo se habría leído como
+> "las RPCs están rotas". El archivo se conserva como **fail-fast informativo**:
+> sin imports, sin red, sin credenciales, `exit 1` y puntero al smoke oficial.
+> Su cabecera original afirmaba que `SECURITY DEFINER` "bypassa `is_admin()`" —
+> **era falso**: cambia los privilegios SQL del cuerpo, no fabrica un
+> `auth.uid()`.
 
 ### Qué demuestra el deploy, y qué NO
 
@@ -366,9 +410,9 @@ el mismo camino que usa la plataforma.
 
 ## J. ⭐ PUNTO EXACTO DE REANUDACIÓN
 
-> ### El **Paso 1 (deploy de la Edge Function) está COMPLETADO**. La siguiente acción **NO está autorizada todavía**.
+> ### Pasos 1–3 **COMPLETADOS**. Falta **solo la QA real de la Edge**, que **NO está autorizada todavía**.
 
-### ✅ Paso 1 — COMPLETADO (2026-08-23)
+### ✅ Paso 1 — deploy de la Edge Function — COMPLETADO (2026-08-23)
 
 La Edge Function `admin-create-seed-doctor` está **desplegada y `ACTIVE`**.
 Bundling y deploy = **PASS**. Se desplegó **dos veces**:
@@ -386,13 +430,30 @@ Bundling y deploy = **PASS**. Se desplegó **dos veces**:
 (ver §H). El defecto de credenciales **no produjo ninguna escritura**: se
 detectó antes de que la función llegara al Admin API.
 
+### ✅ Paso 2 — `s7_73` aplicada y verificada (2026-08-23)
+
+Aplicada por el owner en el SQL Editor. Verificado read-only: tabla creada · **6
+RPCs + helper** existentes y con `anon` denegado (`42501`) · firmas exactas ·
+`prosecdef` y `search_path` correctos · **0 filas**.
+
+### ✅ Paso 3 — `s7_74` aplicada · DB smoke PASS (2026-08-23)
+
+El LIVE CATALOG VERIFY destapó que `s7_73` creó la policy **sin cláusula `TO`**,
+lo que en PostgreSQL equivale a `TO PUBLIC`. **No hubo exposición** —`anon`
+choca antes con el `REVOKE ALL`, y el `USING` exige `is_admin()`—, pero se cerró
+por defensa en profundidad con `s7_74` (`ALTER POLICY … TO authenticated`).
+**`s7_74` = APPLIED / PASS / CLOSED: no volver a aplicar.**
+
+El **DB smoke** quedó **PASS / CLOSED**: 33/33 controles, `casos_fallidos=0`,
+`filas_residuales=0`. Detalle en la **§H**. **No repetir.**
+
 **Todavía NO, y ninguno sin autorización expresa:**
 
-- ❌ aplicar `s7_73`
-- ❌ **invocar la Edge Function**
-- ❌ ejecutar `_smoke-s7_73.mjs --confirm`
+- ❌ **invocar la Edge Function** — sigue sin validarse el cold boot
 - ❌ usar el Admin API real
 - ❌ crear ningún perfil sembrado
+- ❌ ejecutar `_smoke-s7_73.mjs` (deprecado) ni repetir el smoke SQL (cerrado)
+- ❌ volver a aplicar `s7_73` o `s7_74`
 - ❌ mergear el PR #348
 - ❌ reactivar las legacy API keys
 
@@ -400,13 +461,18 @@ detectó antes de que la función llegara al Admin API.
 
 ```
 ✅ Paso 1 · deploy de la Edge Function          COMPLETADO (ACTIVE v2)
-  → aplicar s7_73                               ← siguiente, SIN autorizar
-  → checks + smoke autorizado                     (primera invocación real:
-                                                   ahí se valida el cold boot)
-  → regenerar database.types.ts   (hoy imposible: requiere la migración aplicada)
-  → QA controlada en Preview de LucyAdmin
+✅ Paso 2 · aplicar s7_73 + verificación         COMPLETADO
+✅ Paso 3 · s7_74 + DB smoke                     COMPLETADO (33/33, 0 residuos)
+  → QA REAL de la Edge                          ← siguiente, SIN autorizar
+     (primera invocación: ahí se validan el cold boot, la resolución de
+      SUPABASE_SECRET_KEYS/PUBLISHABLE_KEYS, el Admin API y el seed completo)
+  → regenerar database.types.ts   (ya es posible: la migración está aplicada)
   → merge #348  ← al final, para que la UI no llegue a producción antes que DB y función
 ```
+
+**El plan de esa QA está escrito y sin ejecutar** en
+**`docs/OWNER_S7_73_QA_PLAN.md`**: fixtures sintéticas, pasos, criterios
+PASS/FAIL, evidencia esperada y estrategia de cleanup con su orden de FKs.
 
 > **Revertir la función no acompaña al revert del PR:** el despliegue está
 > desacoplado de Vercel y de Git. Hoy existe una v2 desplegada aunque `s7_73`
