@@ -1,7 +1,7 @@
 # HANDOFF — Nueva ventana (2026-07-22, AUTH-P1B1B etapa A / `s7_66` APLICADA y VERIFICADA)
 
 > 🗂️ **HISTÓRICO — NO ES EL HANDOFF VIGENTE.** La fuente canónica es
-> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`. Este documento se conserva
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`. Este documento se conserva
 > por trazabilidad y **no debe borrarse**.
 >
 > ---

@@ -3,7 +3,7 @@
 > 📕 **HISTÓRICO — NO ES EL HANDOFF VIGENTE.** Fue reemplazado el 2026-08-18 por
 > **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md`** — que a su vez fue
 > reemplazado el 2026-08-20. **La fuente canónica vigente es
-> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`.** Lo que sigue era la fuente
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`.** Lo que sigue era la fuente
 > canónica del estado. Este documento se conserva por trazabilidad: su HEAD, sus
 > conteos de migraciones y sus "frentes siguientes" quedaron **vencidos**.
 
