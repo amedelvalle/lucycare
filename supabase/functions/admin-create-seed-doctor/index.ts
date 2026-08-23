@@ -68,7 +68,12 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': ok ? origin! : 'null',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, content-type, idempotency-key',
+    // `x-client-info` lo agrega supabase-js POR SU CUENTA (DEFAULT_HEADERS), no
+    // el llamador. Omitirlo hacía que Chrome respondiera 200 al OPTIONS y aun
+    // así RECHAZARA el preflight, sin llegar a emitir el POST: CORS exige que
+    // TODOS los headers pedidos estén cubiertos. Si se toca esta lista, revisar
+    // antes qué headers adjunta la versión de supabase-js en uso.
+    'Access-Control-Allow-Headers': 'authorization, content-type, idempotency-key, x-client-info',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };

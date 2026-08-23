@@ -419,6 +419,33 @@ check('errores sanitizados por mapPgError', /mapPgError/.test(edgeCode));
 check('CORS con allowlist de origen',
   /ALLOWED_ORIGINS/.test(edgeCode) && /Access-Control-Allow-Origin/.test(edgeCode));
 
+/*
+ * CORS · Access-Control-Allow-Headers — NO-REGRESIÓN.
+ *
+ * La primera QA real murió acá: faltaba `x-client-info`, que supabase-js
+ * adjunta POR SU CUENTA (DEFAULT_HEADERS). Chrome respondía 200 al OPTIONS y
+ * aun así rechazaba el preflight, sin emitir jamás el POST. CORS exige que
+ * TODOS los headers pedidos estén cubiertos: uno solo fuera y no hay petición.
+ *
+ * Los cuatro son exactamente los que viajan hoy:
+ *   authorization    → lo pone el servicio a mano (el gate is_admin() lo usa)
+ *   content-type     → lo pone supabase-js porque el body es un objeto
+ *   idempotency-key  → lo pone el servicio: es la clave de idempotencia
+ *   x-client-info    → lo pone supabase-js solo
+ * `apikey` NO se incluye: functions.invoke no lo envía y no se amplía la
+ * allowlist de forma preventiva.
+ */
+const allowHeaders = (edgeCode.match(/'Access-Control-Allow-Headers':\s*'([^']*)'/) || [])[1] ?? '';
+for (const h of ['authorization', 'content-type', 'idempotency-key', 'x-client-info']) {
+  check(`Allow-Headers incluye '${h}'`, allowHeaders.toLowerCase().includes(h));
+}
+check('Allow-Headers NO amplía con apikey', !allowHeaders.toLowerCase().includes('apikey'));
+check('el preflight devuelve los MISMOS CORS que las respuestas POST',
+  /if \(req\.method === 'OPTIONS'\) return new Response\('ok', \{ headers: corsHeaders\(origin\) \}\)/.test(edgeCode)
+  && /\.\.\.corsHeaders\(origin\)/.test(edgeCode));
+check('Allow-Methods sigue acotado a POST, OPTIONS',
+  /'Access-Control-Allow-Methods':\s*'POST, OPTIONS'/.test(edgeCode));
+
 // ─── H. Frontend ─────────────────────────────────────────────
 console.log('\n  H) frontend\n');
 check('el frontend NO recibe NINGUNA credencial privilegiada (mencionarla en un comentario es válido)',
