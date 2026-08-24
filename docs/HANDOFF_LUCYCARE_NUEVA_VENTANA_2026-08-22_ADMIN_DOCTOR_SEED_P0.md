@@ -11,12 +11,12 @@
 > Twilio, Turnstile, Legal, identidades) **no cambió**: sigue descrito en el
 > `2026-08-20`, que se conserva por eso.
 >
-> 📍 **Estado en una línea (2026-08-23):** Edge Function **desplegada y `ACTIVE`
-> (v2)** pero **jamás invocada** · **`s7_73` y `s7_74` APLICADAS y verificadas** ·
-> **DB smoke = PASS / CLOSED** · **0 perfiles sembrados** · **0 llamadas al Admin
-> API** · PR #348 **abierto, sin mergear**. Los pasos 1–3 del rollout están
-> completos; **lo único que falta es la QA real de la Edge**, que **no está
-> autorizada**. Detalle en la **§J**.
+> 📍 **Estado en una línea (2026-08-23):** **frente FUNCIONALMENTE COMPLETO.**
+> Edge Function **`ACTIVE` v4** · **`s7_73`, `s7_74` y `s7_75` APLICADAS** (96
+> migraciones) · **DB smoke PASS/CLOSED** · **E2E real PASS/CLOSED** · **cleanup
+> A→B→C→D PASS/CLOSED** · **0 seeds persistentes, 0 residuos operativos**,
+> auditoría conservada · PR #348 **abierto**. **Lo único pendiente es el cierre
+> Git/merge.** Detalle en la **§J**.
 >
 > **Este documento no contiene** OTPs, contraseñas, tokens, `service_role`,
 > claves ni enlaces con credenciales.
@@ -29,19 +29,23 @@
 |---|---|
 | **PR** | **[#348](https://github.com/amedelvalle/lucycare/pull/348) — OPEN, `MERGEABLE`, NO mergeado** |
 | Rama | **`claude/seed-doctor`** |
-| **HEAD de la rama** | **`fb5cdbc23040069629a2196d8c944eb0b1152d6b`** — smoke SQL oficial |
+| **HEAD de la rama** | **`b9906730ee4e82de05981744b6a313b9dc3a841d`** — `s7_75` |
 | **`main`** | **`828b021946bf1c7b8ce218bd8dae54ff160a856e`** — sin tocar |
-| Migraciones en el repo | **95 archivos** |
-| **Migraciones aplicadas en producción** | **95** — hasta `s7_74_seedops_policy_hardening.sql` |
-| **`s7_73`** | ✅ **APLICADA y verificada** (2026-08-23) |
+| Migraciones en el repo | **96 archivos** |
+| **Migraciones aplicadas en producción** | **96** — hasta `s7_75_seed_claim_phone_sms_capable.sql` |
+| **`s7_73`** | ✅ **APPLIED / PASS** (2026-08-23) |
 | **`s7_74`** | ✅ **APPLIED / PASS / CLOSED** (2026-08-23) — **no volver a aplicar** |
-| **Edge Function** | **DESPLEGADA — `ACTIVE`, versión 2** (2026-08-23). **Nunca invocada** |
-| **DB smoke** | ✅ **PASS / CLOSED** — ejecutado por el owner. **No repetir** |
-| Perfiles sembrados creados | **ninguno** |
-| Llamadas al Admin API | **ninguna** |
+| **`s7_75`** | ✅ **APPLIED / PASS** (2026-08-23) — **no volver a aplicar** |
+| **Edge Function** | ✅ **`ACTIVE`, versión 4** (2026-08-23) — desplegada y **ejercitada en POST real** |
+| **DB smoke** | ✅ **PASS / CLOSED** — 33/33. **No repetir** |
+| **E2E real (creación)** | ✅ **PASS / CLOSED** — 2026-08-23. **No repetir** |
+| **Cleanup A→B→C→D** | ✅ **PASS / CLOSED** |
+| Perfiles sembrados persistentes | **ninguno** — la fixture se creó y se eliminó |
+| Residuos operativos | **ninguno** · `audit_log` **conservado** como evidencia |
 | `_smoke-s7_73.mjs` | ⛔ **DEPRECADO — NO EJECUTAR** (ver §H) |
 | Smoke oficial | **`docs/OWNER_S7_73_SMOKE.md`** — SQL, lo corre el owner |
-| Rollbacks `s7_73` / `s7_74` | preparados, **NO ejecutados** |
+| Plan de QA | **`docs/OWNER_S7_73_QA_PLAN.md`** — ✅ **EJECUTADO / CERRADO** |
+| Rollbacks `s7_73` / `s7_74` / `s7_75` | preparados, **NO ejecutados** |
 
 Commits de la rama, del más nuevo al más viejo:
 
@@ -238,10 +242,31 @@ Helper privado `_seed_doctor_email(uuid)` — sin grant para nadie.
   cualquier cadena de dígitos, pero el **hook** decide con `auth_phone_e164`, que
   devuelve NULL para lo que no encaje. Sin esta validación, un seed podía nacer
   **publicado e imposible de reclamar, en silencio**. Se rechaza con **`P0133`**.
-- **`claim_ready`** usa **ese mismo criterio**: teléfono utilizable por Auth
-  **+** JVPM presente. No "el campo vino informado", que daba falso positivo.
+- **`claim_ready`** usa **ese mismo criterio**, endurecido por `s7_75` (ver
+  abajo). No "el campo vino informado", que daba falso positivo.
+
+> ### Definición vigente de `claim_ready = true`
+>
+> **Móvil salvadoreño con formato compatible con el flujo OTP/SMS actualmente
+> habilitado**, más credencial JVPM presente y no rechazada.
+>
+> **No significa que el aparato vaya a recibir el mensaje** — eso depende de la
+> línea, del operador y del saldo de Twilio. Es una afirmación sobre el
+> **formato** y su compatibilidad con el flujo vigente, nada más.
+>
+> `s7_75` lo hizo cierto: `auth_phone_e164` (`s7_65`) acepta `^503[267]…`, así
+> que un **fijo `2XXXXXXX` pasaba** y el perfil nacía publicado con
+> `claim_ready = true`, para fallar recién al pedir el código —el Claim envía
+> con `verifyOtp({ type: 'sms' })`—. El helper privado
+> `_seed_claim_phone_e164` reusa `auth_phone_e164` y le suma
+> `^\+503[67][0-9]{7}$`. Las **tres** lecturas del teléfono de claim lo usan,
+> incluida la reconstrucción del retry `completed`, así que no pueden divergir.
+> **`auth_phone_e164` NO se tocó**: Claim, login y booking quedan igual.
 
 **Errores tipados:** `P0120`–`P0133`. Listados en la cabecera de la migración.
+`P0133` mapea a **`invalid_phone`** en la Edge, con copy propio: sin ese mapeo
+caía en `internal` y un error corregible por el usuario se presentaba como un
+fallo transitorio del sistema.
 
 ---
 
@@ -315,16 +340,18 @@ requirieron `git add -f` por la regla `*.sql` del `.gitignore`).
 
 | Verificación | Estado |
 |---|---|
-| `node scripts/check-s7_73.mjs` | **209/209 PASS** |
+| `node scripts/check-s7_73.mjs` | **236/236 PASS** |
 | `node scripts/check-s7_74.mjs` | **28/28 PASS** (instrumento validado A/B) |
+| `node scripts/check-s7_75.mjs` | **67/67 PASS** (tres instrumentos validados A/B) |
 | **DB smoke `docs/OWNER_S7_73_SMOKE.md`** | ✅ **PASS / CLOSED** — ver abajo |
+| **E2E real + cleanup** | ✅ **PASS / CLOSED** — ver abajo |
 | `npx tsc --noEmit` | **PASS** |
 | `npm run build` | **PASS** — bundle 671,53 kB |
 | `git diff --check` | **PASS** |
 | Árbol de trabajo | **limpio** |
 | Edge Function — **parseo con esbuild** | **PASS** (instrumento validado A/B) |
 | Edge Function — **bundling y deploy** | ✅ **PASS** — server-side por Supabase |
-| Edge Function — **cold boot / ejecución real** | ⚠️ **AÚN NO VALIDADA** |
+| Edge Function — **cold boot / ejecución real** | ✅ **PASS** — POST funcional real (v4) |
 | `_smoke-s7_73.mjs` | ⛔ **DEPRECADO — NO EJECUTAR** |
 
 > Los **209** checks son los **198** originales más **11** nuevos sobre el
@@ -366,30 +393,84 @@ Admin API) · el cold boot de la Edge.
 > **era falso**: cambia los privilegios SQL del cuerpo, no fabrica un
 > `auth.uid()`.
 
-### Qué demuestra el deploy, y qué NO
+### E2E real — ✅ PASS / CLOSED (2026-08-23). **No repetir**
 
-**Sí demuestra** —dos deploys aceptados por Supabase, el segundo con la
-corrección de credenciales—: el archivo **bundlea** en el pipeline real, el
-import **`jsr:@supabase/supabase-js@2` resuelve** y la función queda registrada
-como **`ACTIVE`**. El bundling corrió **server-side** (sin Docker local), que es
-el mismo camino que usa la plataforma.
+**Primera y única invocación funcional de la Edge Function.** Un solo submit
+desde el Preview del PR, con fixture 100 % sintética y `publish=true`. La cadena
+completa corrió en **680 ms**:
 
-> ⚠️ **Esto NO es "runtime PASS".** Un deploy aceptado dice que el código
-> **carga**, no que **corre**. Siguen **sin observarse**: el **cold boot** del
-> aislado Deno, la ejecución de `Deno.serve`, la resolución de las variables
-> `SUPABASE_SECRET_KEYS` / `SUPABASE_PUBLISHABLE_KEYS` en el runtime real, y
-> cualquier comportamiento de la función. **La Edge nunca fue invocada.** Eso
-> solo se prueba con `s7_73` aplicada y una llamada autorizada.
->
-> El **parseo con esbuild** tampoco es Deno: solo demuestra que el archivo
-> parsea tras el type-strip. Su instrumento **sí** fue validado A/B (una copia
-> con un error de sintaxis deliberado falla), pero no valida tipos ni APIs de
-> Deno.
+```
+claim → createUser (Admin API) → set_auth_created → create_seed_doctor
+```
+
+Con eso quedaron validados **de una sola vez**: **cold boot real de Deno** ·
+resolución de **`SUPABASE_SECRET_KEYS['default']`** (probada porque `createUser`
+funcionó) · resolución de **`SUPABASE_PUBLISHABLE_KEYS['default']`** (probada
+porque las RPCs respondieron) · **JWT real de LucyAdmin** · **Admin API**.
+
+Invariantes preclaim comprobados en la base: `lucy_status='listed_only'` ·
+`booking_enabled=false` · `is_operational=true` · `is_published=true` ·
+`claim_ready=true` · `profiles.role='patient'` · JVPM en `pending` ·
+**0 `clinic_members`** · **0 `appointments`** · `audit_log.user_id` = **el admin
+ejecutor, no NULL** —prueba de que la cadena corrió con el JWT real y el trigger
+de identidad de `s7_32` pudo escribir—. Identidad técnica verificada por
+`getUserById`: email `.invalid` determinístico, baneada, sin teléfono, sin
+contraseña, sin PII.
+
+### Cleanup — ✅ PASS / CLOSED
+
+Orden **A → B → C → D**: dry-run de Auth **antes** del SQL · bloque
+transaccional fail-closed (`admin_seed_operations → doctor_credentials →
+doctors → clinics`) con guardas de ownership y `ROW_COUNT` · `deleteUser`
+**después** del `COMMIT` · post-check.
+
+Resultado: **conteos vueltos al baseline exacto** (`admin_seed_operations` 0 ·
+doctors 115 · clinics 116 · doctor_credentials 115), fixture inexistente objeto
+por objeto, profile técnico cascadeado por la FK, `getUserById` confirmando que
+la identidad no existe, y el slug fuera del perfil público y del **sitemap**
+(37 URLs).
+
+**`audit_log` se conserva** — inmutable desde `s7_71b`, sobrevive al borrado del
+`record_id` al que apunta. **Es la evidencia, no un residuo.**
+
+### Historial del deploy — dos defectos de CORS que costaron dos intentos
+
+La primera QA murió **antes de llegar a la función**: `OPTIONS 200` y aun así
+network error, sin POST. La lista `Access-Control-Allow-Headers` enumeraba solo
+los headers que el código pone a mano y **omitía los que `supabase-js` agrega
+solo**. Se corrigió en dos pasos —`x-client-info` (v3) y `apikey` (v4)— porque
+la primera vez el análisis se detuvo en `FunctionsClient` y concluyó, mal, que
+`apikey` no se enviaba: lo **inyecta `fetchWithAuth`** (`lib/fetch.js`) en el
+`customFetch`, justo antes del fetch real.
+
+**CORS final, los cinco headers efectivos:**
+
+```
+apikey, authorization, content-type, idempotency-key, x-client-info
+```
+
+> ⚠️ Antes de tocar esa lista hay que revisar qué headers adjunta la versión de
+> `supabase-js` en uso — **incluida la capa del `customFetch`**. CORS exige que
+> **todos** los headers pedidos estén cubiertos: con uno solo fuera, el
+> navegador responde 200 al `OPTIONS` y **igual rechaza el preflight**.
 
 ---
 
 ## I. Deudas aceptadas — 🟡, NO bloqueantes
 
+- **`database.types.ts` desactualizado desde mucho antes de este frente.**
+  Regenerarlo desde el esquema live agrega **+8 tablas, +3 vistas y +61
+  funciones**, y **no elimina nada**; `tsc` compila con **0 errores**. La
+  mayoría del diff **no** viene de `s7_73`/`s7_74`/`s7_75`, sino de migraciones
+  anteriores cuyos tipos nunca se regeneraron. Queda **sin commitear**, a la
+  espera de decisión del owner. Nota lateral: la regeneración también incluye
+  los helpers **privados** (`_seed_claim_phone_e164`, `_seed_doctor_email`) —
+  son solo tipos, se borran al compilar y sus nombres ya están en el repo
+  público, pero conviene saberlo.
+- **`ClaimProfileModal` admite un fijo para OTP.** Valida solo
+  `phoneRaw.length === 8`, así que un `2XXXXXXX` puede intentar el reclamo y
+  fallar al recibir el SMS. `s7_75` cerró esa puerta **solo para el seed**;
+  el Claim general sigue igual. **Frente separado.**
 - **Ubicación** (`department_id` / `municipality_id`) todavía **no expuesta por la
   UI del seed**: los perfiles sembrados no aparecerán en los filtros por
   departamento/municipio del Home.
@@ -410,7 +491,7 @@ el mismo camino que usa la plataforma.
 
 ## J. ⭐ PUNTO EXACTO DE REANUDACIÓN
 
-> ### Pasos 1–3 **COMPLETADOS**. Falta **solo la QA real de la Edge**, que **NO está autorizada todavía**.
+> ### El frente está **FUNCIONALMENTE COMPLETO**. Lo único pendiente es el **cierre Git / merge del PR #348**.
 
 ### ✅ Paso 1 — deploy de la Edge Function — COMPLETADO (2026-08-23)
 
@@ -460,24 +541,34 @@ El **DB smoke** quedó **PASS / CLOSED**: 33/33 controles, `casos_fallidos=0`,
 ### Orden previsto de aquí en adelante
 
 ```
-✅ Paso 1 · deploy de la Edge Function          COMPLETADO (ACTIVE v2)
+✅ Paso 1 · deploy de la Edge Function          COMPLETADO (llegó a ACTIVE v4)
 ✅ Paso 2 · aplicar s7_73 + verificación         COMPLETADO
 ✅ Paso 3 · s7_74 + DB smoke                     COMPLETADO (33/33, 0 residuos)
-  → QA REAL de la Edge                          ← siguiente, SIN autorizar
-     (primera invocación: ahí se validan el cold boot, la resolución de
-      SUPABASE_SECRET_KEYS/PUBLISHABLE_KEYS, el Admin API y el seed completo)
-  → regenerar database.types.ts   (ya es posible: la migración está aplicada)
-  → merge #348  ← al final, para que la UI no llegue a producción antes que DB y función
+✅ Paso 4 · CORS v3/v4 + UX del teléfono + s7_75 COMPLETADO
+✅ Paso 5 · QA REAL de la Edge                   COMPLETADO (PASS)
+✅ Paso 6 · cleanup A→B→C→D                      COMPLETADO (0 residuos)
+  → regenerar database.types.ts                 ← ver la advertencia de abajo
+  → merge #348  ← lo único que falta
 ```
 
-**El plan de esa QA está escrito y sin ejecutar** en
-**`docs/OWNER_S7_73_QA_PLAN.md`**: fixtures sintéticas, pasos, criterios
-PASS/FAIL, evidencia esperada y estrategia de cleanup con su orden de FKs.
+**`docs/OWNER_S7_73_QA_PLAN.md` quedó EJECUTADO y CERRADO**: fixture sintética,
+creación, verificación de invariantes y cleanup completo, todo con la evidencia
+registrada.
+
+> ⚠️ **`database.types.ts` — regeneración pendiente de decisión.** El archivo
+> versionado quedó **desactualizado mucho antes de este frente**: regenerarlo
+> desde el esquema live agrega **8 tablas, 3 vistas y 61 funciones**, casi todas
+> ajenas a `s7_73`/`s7_74`/`s7_75` (`waitlist_entries`, `otp_consent_events`,
+> `doctor_affiliation_requests`, `is_admin`, `claim_doctor_profile`…). **No
+> elimina nada** y **`tsc` pasa con 0 errores**, pero es un diff enorme y de
+> alcance mayor al del frente. Se dejó **sin commitear** a la espera de decisión
+> del owner. Detalle en la §I.
 
 > **Revertir la función no acompaña al revert del PR:** el despliegue está
-> desacoplado de Vercel y de Git. Hoy existe una v2 desplegada aunque `s7_73`
-> **no** esté aplicada; es inofensivo, porque sin las RPCs la función no puede
-> pasar del primer paso y **nunca alcanza el Admin API**.
+> desacoplado de Vercel y de Git. La **v4 desplegada seguiría viva** aunque se
+> revirtiera el PR, y las tres migraciones ya están aplicadas. Hoy es
+> inofensivo, porque sin la UI mergeada nadie puede invocarla salvo desde el
+> Preview con sesión de LucyAdmin.
 
 ---
 
