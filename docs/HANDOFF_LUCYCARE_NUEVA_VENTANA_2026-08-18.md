@@ -2,7 +2,7 @@
 
 > 🗂️ **HISTÓRICO / SUPERSEDED (2026-08-20).** Este documento **ya no es la
 > fuente canónica**: lo reemplaza
-> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`. Se conserva como registro
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`. Se conserva como registro
 > del estado al 2026-08-18 y **no debe borrarse**. Lo que quedó superado está
 > listado en la §9 del handoff vigente: el HEAD y los PRs (hasta #340 aquí, hasta
 > #346 hoy), el "próximo candidato" **PASSWORD-ERROR-COPY-P0** y la deuda de
@@ -626,7 +626,7 @@ usar el **médico QA persistente despublicado** (§9.2).
 | Documento | Rol |
 |---|---|
 | `CLAUDE.md` | Guía rápida. Si contradice a `docs/`, mandan los `docs/` |
-| **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`** | **Fuente canónica del estado** (reemplazó a este documento) |
+| **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`** | **Fuente canónica del estado** (reemplazó a este documento) |
 | Este handoff (`2026-08-18`) | **Histórico** — ver el banner del encabezado |
 | `docs/HISTORIAL_FRENTES.md` | Detalle por PR de los frentes cerrados |
 | `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` | **Única fuente canónica de BILLING** |

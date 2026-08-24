@@ -1,9 +1,14 @@
 # LucyCare — Historial de frentes cerrados
 
 > Detalle completo extraído de CLAUDE.md para reducir su tamaño.
-> Para el estado VIGENTE, ver CLAUDE.md y **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md`**
-> (punto de entrada canónico, post PR #346 — **piloto = GO**). Los handoffs
-> `2026-08-18` y anteriores quedan **históricos**.
+> Para el estado VIGENTE, ver CLAUDE.md y
+> **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`**
+> (punto de entrada canónico). Los handoffs `2026-08-20` y anteriores quedan
+> **históricos**.
+>
+> ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
+> (PR #348) NO está acá porque sigue ABIERTO**: su estado vive en el handoff
+> vigente.
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 

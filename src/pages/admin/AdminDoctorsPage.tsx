@@ -12,6 +12,7 @@ import {
 import { adminWaitlistPendingCountByDoctor } from '../../services/waitlist.service';
 import { useLucyAdminAccess } from '../../hooks/useLucyAdminAccess';
 import DirectoryDoctorsList from './components/DirectoryDoctorsList';
+import AdminCreateSeedDoctorModal from './components/AdminCreateSeedDoctorModal';
 
 const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
   { value: 'listed_only', label: 'Solo listado' },
@@ -55,6 +56,8 @@ export default function AdminDoctorsPage() {
 
 function OwnerDoctorsView() {
   const qc = useQueryClient();
+  // ADMIN-DOCTOR-SEED-P0: creación anticipada de perfiles para prospección.
+  const [crearAbierto, setCrearAbierto] = useState(false);
 
   // ─── Filtros + paginación ────────────────────────────────
   const [searchInput, setSearchInput] = useState('');
@@ -140,7 +143,8 @@ function OwnerDoctorsView() {
 
   return (
     <div>
-      <header className="mb-5">
+      <header className="mb-5 flex items-start justify-between gap-4">
+        <div>
         <h1 className="text-2xl font-bold text-gray-900">Médicos</h1>
         <p className="text-sm text-gray-500 mt-1">
           Ejes independientes — <strong>publicar</strong> (visible en directorio),
@@ -148,7 +152,21 @@ function OwnerDoctorsView() {
           y <strong> lucy_status</strong> (etapa comercial; "Verificado" se deriva
           automáticamente de <code>lucy_status='verified'</code>).
         </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCrearAbierto(true)}
+          className="shrink-0 px-4 py-2 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer whitespace-nowrap"
+        >
+          Crear perfil
+        </button>
       </header>
+
+      <AdminCreateSeedDoctorModal
+        isOpen={crearAbierto}
+        onClose={() => setCrearAbierto(false)}
+        onCreated={() => qc.invalidateQueries({ queryKey: ['admin-doctors'] })}
+      />
 
       {/* ─── Buscador + filtros ─────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">

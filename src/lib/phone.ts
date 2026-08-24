@@ -25,3 +25,60 @@ export function normalizePhoneSV(input: string | null | undefined): string | nul
   if (/^\d{8}$/.test(digits)) return '503' + digits;
   return digits;
 }
+
+/**
+ * Entrada de teléfono salvadoreño en formato LOCAL de 8 dígitos.
+ *
+ * Estos tres helpers son solo la capa de INTERFAZ: la normalización canónica
+ * sigue siendo `normalizePhoneSV`, que es la única que decide el formato que
+ * viaja al backend. No hay una segunda normalización en paralelo.
+ *
+ * Motivo: los campos de teléfono del alta de perfiles sembrados aceptaban
+ * texto libre, así que llegaba a viajar una cadena que no era un número. El
+ * backend la rechaza (`P0133`), pero recién después de crear la identidad
+ * técnica: conviene atajarlo en el formulario.
+ */
+
+/**
+ * Deja solo dígitos y corta en 8, el largo de un número salvadoreño local.
+ *
+ * Si viene el código de país adelante —de pegar `+503 7006-9973` o
+ * `50370069973`, que es justo lo que guarda la base— se descarta ANTES de
+ * cortar. Sin esto, un pegado legítimo se truncaba a los primeros ocho dígitos
+ * y producía un número distinto que además pasaba la validación.
+ */
+export function sanitizeSvLocal(raw: string | null | undefined): string {
+  let d = (raw ?? '').replace(/\D/g, '');
+  if (d.length > 8 && d.startsWith('503')) d = d.slice(3);
+  return d.slice(0, 8);
+}
+
+/** Máscara visual `0000-0000` sobre los dígitos locales. */
+export function formatSvLocal(raw: string | null | undefined): string {
+  const d = sanitizeSvLocal(raw);
+  return d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d;
+}
+
+/**
+ * Válido = exactamente 8 dígitos. Sirve para un teléfono SV **cualquiera**,
+ * incluido un fijo (`2XXXXXXX`). Es la regla del teléfono PÚBLICO.
+ */
+export function isValidSvLocal(raw: string | null | undefined): boolean {
+  return /^\d{8}$/.test(sanitizeSvLocal(raw));
+}
+
+/**
+ * Válido = móvil salvadoreño: 8 dígitos que empiezan en **6 o 7**.
+ *
+ * Regla más estricta que `isValidSvLocal`, y a propósito. `auth_phone_e164`
+ * (`s7_65`) acepta `^503[267][0-9]{7}$`, o sea que un **fijo `2XXXXXXX`
+ * también pasa** y no dispara `P0133`: el perfil quedaría con
+ * `claim_ready = true` y recién fallaría al intentar el OTP, porque el Claim
+ * verifica con `verifyOtp({ type: 'sms' })` y un fijo no recibe SMS.
+ *
+ * Por eso el teléfono PRIVADO del reclamo NO reutiliza la validación
+ * permisiva: el problema se explica en el formulario, no en Twilio.
+ */
+export function isValidSvMobile(raw: string | null | undefined): boolean {
+  return /^[67]\d{7}$/.test(sanitizeSvLocal(raw));
+}

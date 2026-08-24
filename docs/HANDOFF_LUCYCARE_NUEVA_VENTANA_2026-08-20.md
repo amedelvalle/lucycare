@@ -1,7 +1,19 @@
 # HANDOFF LucyCare — nueva ventana (2026-08-20)
 
-> 🟢 **PUNTO DE ENTRADA CANÓNICO Y VIGENTE.** Autosuficiente: no asume que la
-> ventana nueva conozca ninguna conversación anterior. Reemplaza a
+> 🗂️ **HISTÓRICO / SUPERSEDED (2026-08-22).** La fuente canónica es
+> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`, que
+> además cubre el frente **abierto** `ADMIN-DOCTOR-SEED-P0` (PR #348). Este
+> documento **no debe borrarse**: sigue siendo la mejor descripción del **estado
+> general del producto** —piloto, Auth, Booking, Twilio, Turnstile, Legal,
+> identidades, regla D1, SEO y backlog—, que **no cambió**. Lo único superado es
+> su §0 ("ningún frente funcional abierto") y su §6, donde el backlog no
+> contemplaba este frente.
+>
+> ---
+>
+> 🟢 **PUNTO DE ENTRADA CANÓNICO EN SU MOMENTO** *(2026-08-20; hoy superado)*.
+> Autosuficiente: no asume que la ventana nueva conozca ninguna conversación
+> anterior. Reemplaza a
 > `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md`, que pasa a **histórico**
 > junto con todos los anteriores. El detalle por PR de los frentes cerrados vive
 > en `docs/HISTORIAL_FRENTES.md`.
