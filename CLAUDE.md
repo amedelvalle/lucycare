@@ -4,18 +4,30 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-22) — post PR #346 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-24) — post PR #348 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
-> `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`
-> (leer PRIMERO).** Reemplaza al `2026-08-20`, que pasa a **histórico** junto con
-> todos los anteriores. El detalle por PR de los frentes cerrados vive en
-> **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
+> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`
+> (leer PRIMERO).** Reemplaza al `2026-08-22_ADMIN_DOCTOR_SEED_P0`, que pasa a
+> **histórico** junto con todos los anteriores. El detalle por PR de los frentes
+> cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
-> ⚠️ **HAY UN FRENTE FUNCIONAL ABIERTO: `ADMIN-DOCTOR-SEED-P0`, en PR #348**
-> (rama `claude/seed-doctor`). **`s7_73` existe en el repo pero NO está
-> aplicada**, la Edge Function **NO está desplegada** y el PR **NO está
-> mergeado**. El punto exacto de reanudación y el orden de rollout están en la
-> **§J** del handoff vigente. **Nada de producción sin autorización del owner.**
+> ✅ **`ADMIN-DOCTOR-SEED-P0` = CLOSED.** PR **#348 mergeado** (2026-08-24);
+> `main` quedó en **`b9edf91d135c74404711c2b8f9bffebdc0ad497e`** ·
+> **96 migraciones aplicadas** (hasta `s7_75`) · Edge Function
+> `admin-create-seed-doctor` **`ACTIVE` v4** · E2E real y cleanup **PASS** ·
+> **0 seeds en producción**.
+>
+> ⚠️ **FRENTE ABIERTO: `PATIENT-CRM-P0`** (rama `claude/patient-crm-p0`,
+> **sin PR**). Su **backend ya está en producción**: `s7_76` (migración **97**)
+> y `s7_77` (**98**) = **APPLIED / VERIFIED / CLOSED**, con PRE, POST de
+> catálogo y POST funcional en **0 FAIL**. **Ninguna se vuelve a aplicar.**
+> Lo que queda por decidir es el **PR**: el frontend está commiteado en la rama
+> pero sin mergear. Evidencia en `docs/OWNER_S7_76_APPLY.md` y
+> `docs/OWNER_S7_77_APPLY.md`. **Nada de producción sin autorización del owner.**
+>
+> ℹ️ **`TYPES-RECONCILIATION-P0` es un frente aparte, no iniciado.**
+> `src/types/database.types.ts` está desactualizado desde antes de estos frentes
+> y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
 > `159d3b235b631d12873ee492e184c813458d89bf` — PR #346.** · **PRs funcionales
@@ -296,7 +308,9 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` — **HANDOFF CANÓNICO VIGENTE**. Cubre el frente **abierto** `ADMIN-DOCTOR-SEED-P0` (PR #348): estado Git, objetivo e invariantes, arquitectura, resultado del AUTH-SEED-PROBE, `s7_73`, idempotencia y compensación, auditoría integral, checks, deudas aceptadas y **§J con el punto exacto de reanudación y el orden de rollout**.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **HANDOFF CANÓNICO VIGENTE**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. La **§R** marca el punto exacto de reanudación: falta decidir el PR.
+- `docs/ANALISIS_PATIENT_CRM.md` — **análisis vivo de `PATIENT-CRM-P0`**: diagnóstico completo, arquitectura, UX, allowlists, y el detalle de P1–P5. Lo referencia el handoff vigente.
+- `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` — **histórico** (frente `ADMIN-DOCTOR-SEED-P0`, cerrado en PR #348): AUTH-SEED-PROBE, `s7_73`/`s7_74`/`s7_75`, Edge v4, idempotencia y compensación, DB smoke, E2E real y cleanup.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md` — **histórico** (post-#346, **piloto = GO**). Sigue siendo la mejor descripción del **estado general del producto**: reglas operativas, piloto, Auth/Booking/Twilio/Turnstile, calificaciones (`s7_72`), Legal + entidad **Divalux**, identidades protegidas y de QA, regla D1, SEO y backlog clasificado.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-18.md` — **histórico** (post-#340, **piloto = GO**). Autosuficiente y consolidado: estado del repo y producción, reglas operativas, cierre del piloto, Auth/login, Booking E2E, Twilio, calificaciones (copy + URL corta `s7_72`), Legal + **entidad Divalux**, identidades protegidas y de QA, regla D1 del directorio, SEO/Search Console, pendientes clasificados y estado del piloto operativo.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-12.md` — **histórico** (post-#335: cierre de RECOVERY-EMAIL-P0 / ADMIN-JUNIOR / TESTPHONE-CLEANUP-P0 / LEGAL-P0, Booking E2E, safeguard Twilio, higiene QA y matriz del GO).
@@ -703,6 +717,9 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_76`–`s7_77` PATIENT-CRM-P0: fundación de datos del CRM (4 tablas, RLS,
+  índices, auditoría) y RPCs de lectura (vista canónica de identidad, listado
+  paginado, pendientes de identificar, métricas y exportación CSV auditada).
 - `s7_72` RATING-URL-P0: helper `_review_short_code()` (20 caracteres Crockford Base32, 100 bits) y token corto en `generate_review_token()`. Sin backfill; los enlaces de 64 caracteres siguen válidos hasta vencer.
 
 > Detalle completo de cada migración en `docs/HISTORIAL_FRENTES.md`.

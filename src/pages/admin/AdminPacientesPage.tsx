@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSessionWithTimeout } from '../../lib/session';
+import PatientsCrmTab from './components/PatientsCrmTab';
+import UnlinkedPatientsTab from './components/UnlinkedPatientsTab';
 import {
   listMergeCandidates,
   mergePatientsPreflight,
@@ -83,7 +85,13 @@ interface Analysis {
   targetId: string;
 }
 
-export default function AdminPacientesPage() {
+/**
+ * Consola de FUSIÓN DE FICHAS. Pasó a ser una pestaña dentro de
+ * `/admin/pacientes` sin que su lógica cambiara: sigue siendo la misma
+ * herramienta de deduplicación, con su preflight, su confirmación por frase
+ * tecleada y su reversa formal.
+ */
+function MergeFichasTab() {
   // Gate de auth-ready (mismo patrón que AdminLayout): el primer fetch con sesión.
   const [authReady, setAuthReady] = useState(false);
   useEffect(() => {
@@ -236,10 +244,9 @@ export default function AdminPacientesPage() {
   return (
     <div className="max-w-5xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Pacientes — Fusión de fichas</h1>
-        <p className="text-sm text-gray-600 mt-1">
+        <p className="text-sm text-gray-600">
           Fichas duplicadas de la <b>misma persona</b> (mismo perfil Lucy) dentro de una clínica.
-          Analizá el par con el dry-run y, si es elegible, fusionalas con motivo y confirmación
+          Analiza el par con el dry-run y, si es elegible, fusiónalas con motivo y confirmación
           explícita. La ficha fuente se desactiva y su historia pasa al destino.
         </p>
       </div>
@@ -1140,6 +1147,80 @@ function UnmergeSuccess({
           Cerrar
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * PATIENT-CRM-P0 — contenedor de pestañas.
+ *
+ * `/admin/pacientes` pasa de ser una consola de deduplicación a ser el CRM de
+ * pacientes, sin perder nada: la consola vive intacta en su propia pestaña.
+ *
+ *   Base de pacientes        → identidad global LucyCare (la unidad del CRM)
+ *   Pendientes de identificar → fichas locales sin identidad (NO se suman)
+ *   Fusión de fichas          → lo que ya existía, sin cambios de lógica
+ *
+ * El gate de auth-ready se resuelve acá y baja a las dos pestañas nuevas.
+ * `MergeFichasTab` conserva el suyo propio: no se le tocó una línea, y
+ * duplicar ese gate es preferible a modificar código de fusión que ya está
+ * probado en producción.
+ * ═══════════════════════════════════════════════════════════ */
+
+type TabId = 'base' | 'pendientes' | 'fusion';
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'base', label: 'Base de pacientes' },
+  { id: 'pendientes', label: 'Pendientes de identificar' },
+  { id: 'fusion', label: 'Fusión de fichas' },
+];
+
+export default function AdminPacientesPage() {
+  const [tab, setTab] = useState<TabId>('base');
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tok = await getSessionWithTimeout(3000);
+      if (!cancelled && tok) setAuthReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
+        <p className="text-sm text-gray-600 mt-1">
+          Base de pacientes de LucyCare. La unidad es la identidad de la persona, no cada
+          ficha de clínica.
+        </p>
+      </div>
+
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="flex gap-1" aria-label="Secciones de pacientes">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id ? 'page' : undefined}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px cursor-pointer ${
+                tab === t.id
+                  ? 'border-emerald-700 text-emerald-800'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {tab === 'base' && <PatientsCrmTab authReady={authReady} />}
+      {tab === 'pendientes' && <UnlinkedPatientsTab authReady={authReady} />}
+      {tab === 'fusion' && <MergeFichasTab />}
     </div>
   );
 }
