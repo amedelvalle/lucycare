@@ -2,13 +2,12 @@
 
 > Detalle completo extraído de CLAUDE.md para reducir su tamaño.
 > Para el estado VIGENTE, ver CLAUDE.md y
-> **`docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md`**
-> (punto de entrada canónico). Los handoffs `2026-08-20` y anteriores quedan
+> **`docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`**
+> (punto de entrada canónico). Los handoffs `2026-08-22` y anteriores quedan
 > **históricos**.
 >
 > ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
-> (PR #348) NO está acá porque sigue ABIERTO**: su estado vive en el handoff
-> vigente.
+> (PR #348) y `PATIENT-CRM-P0` (PR #349) ya están cerrados** y figuran abajo.
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 
@@ -147,6 +146,63 @@
 - **Dominio público:** `https://lucycare.app` ✅ live en producción desde 2026-05-26 (PR #48). DNS gestionado en Cloudflare. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar). Previews siguen en `lucycare-git-*.vercel.app`.
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
+
+## Frentes cerrados 2026-08 (PRs #348–#349)
+
+- **ADMIN-DOCTOR-SEED-P0 — #348** ✅ **CLOSED (2026-08-24).** Creación de perfil
+  médico sembrado desde LucyAdmin: `s7_73`/`s7_74`/`s7_75` (migraciones 94–96) +
+  Edge Function `admin-create-seed-doctor` **`ACTIVE` v4**, con idempotencia y
+  compensación. E2E real y cleanup **PASS**; **0 seeds en producción**. `main`
+  quedó en `b9edf91d135c74404711c2b8f9bffebdc0ad497e`.
+- **PATIENT-CRM-P0 — #349** ✅ **CLOSED (2026-08-25).** CRM de pacientes dentro de
+  LucyAdmin, **en producción**, con separación estricta del expediente clínico.
+  `/admin/pacientes` pasó de ser solo una consola de deduplicación a **tres
+  pestañas**: «Base de pacientes» (nueva; la unidad es la **identidad global** de
+  `profiles`), «Pendientes de identificar» (nueva; fichas **sin identidad**, donde
+  quedan los **walk-ins**, que **no se suman** al universo del CRM) y «Fusión de
+  fichas» (**la que ya existía, intacta** — ninguna de sus RPCs de merge, unmerge,
+  preflight o rechazos fue modificada).
+
+  **Backend:** `s7_76` (migración **97**, fundación de datos: 4 tablas colgando de
+  `profiles`, RLS, 7 índices —incluido `idx_patients_profile_id`, el JOIN central
+  que no existía— y auditoría por trigger) y `s7_77` (**98**, vista canónica + 3
+  helpers privados + 4 RPCs `SECURITY DEFINER` gateadas con `is_admin()`). Ambas
+  **APPLIED / VERIFIED / CLOSED el 2026-08-24**, con PRE, POST de catálogo y POST
+  funcional en **0 FAIL**. **Entraron al PR solo como registro versionado: el
+  merge no las ejecutó** —el repositorio no tiene ningún automatismo que las
+  aplique—.
+
+  **Corrección central de P0:** el orden de operaciones del listado es
+  `universo + búsqueda → agregados → FILTRO por estado → TOTAL → PAGINACIÓN`. La
+  primera versión filtraba **después** de paginar, lo que rompía el total,
+  escondía coincidencias fuera de la primera página y mutilaba la exportación.
+  Hay guardas POST y checks estáticos que lo prohíben.
+
+  **Alcance CONGELADO:** búsqueda server-side · filtro por estado · paginación
+  **25/50** · exportación **CSV** (UTF-8 con BOM) del conjunto filtrado. Orden por
+  defecto `profiles.created_at DESC` con desempate estable por ID; **`Nuevo`** =
+  30 días salvo prioridad superior; prioridad `Bloqueado → En seguimiento →
+  Recurrente → Nuevo → Activo → Inactivo`.
+
+  **Validación:** `check-s7_76` **353/353** · `_qa-crm-paginacion` **35/35** ·
+  `tsc --noEmit` y `npm run build` **PASS** · **smoke del Preview PASS** ·
+  **Vercel Production PASS** · **smoke autenticado de producción PASS** con la
+  **consola sin errores**. Todos los smokes fueron **read-only**: sin «Exportar
+  CSV», sin merge/unmerge/rechazos, **sin ninguna escritura**. El hostname
+  temporal del Preview se **retiró** de Cloudflare Turnstile el mismo día, con
+  `lucycare.app` intacto. Merge por **squash**; `main` en
+  `38fa67c18efbf760c1a8a18d7beccb58b75b81b3`.
+
+  **Frentes/deudas que dejó registrados, ninguno iniciado:**
+  `PATIENT-CRM-FILTERS-P1` (filtros y orden; **regla vinculante**: filtros,
+  conteo, paginación y exportación comparten la MISMA lógica server-side, y el
+  CSV respeta exactamente los filtros activos) · `QA-PATIENT-DATA-CLEANUP-P0`
+  (limpiar datos QA ficticios antes de medir pacientes reales; PRE de inventario,
+  nunca `auth.users` por SQL, POST de residuos) · `COPY-TUTEO-LOGIN` (voseo
+  **preexistente** en `LoginModal` y otras superficies; **no lo introdujo este
+  PR**) · `CRM-SEARCH-TRGM` (`pg_trgm` no instalada; el `ILIKE` cae en scan, no
+  bloqueante) · `ADMIN-DOCTOR-EXPORT` · `TYPES-RECONCILIATION-P0` · **ventana
+  efímera B→C del Seed**.
 
 ## Frentes cerrados 2026-08 (PRs #313–#327)
 

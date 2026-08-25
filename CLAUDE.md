@@ -4,7 +4,7 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-24) — post PR #348 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-25) — post PR #349 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`
 > (leer PRIMERO).** Reemplaza al `2026-08-22_ADMIN_DOCTOR_SEED_P0`, que pasa a
@@ -17,21 +17,45 @@
 > `admin-create-seed-doctor` **`ACTIVE` v4** · E2E real y cleanup **PASS** ·
 > **0 seeds en producción**.
 >
-> ⚠️ **FRENTE ABIERTO: `PATIENT-CRM-P0`** (rama `claude/patient-crm-p0`,
-> **sin PR**). Su **backend ya está en producción**: `s7_76` (migración **97**)
-> y `s7_77` (**98**) = **APPLIED / VERIFIED / CLOSED**, con PRE, POST de
-> catálogo y POST funcional en **0 FAIL**. **Ninguna se vuelve a aplicar.**
-> Lo que queda por decidir es el **PR**: el frontend está commiteado en la rama
-> pero sin mergear. Evidencia en `docs/OWNER_S7_76_APPLY.md` y
-> `docs/OWNER_S7_77_APPLY.md`. **Nada de producción sin autorización del owner.**
+> ✅ **`PATIENT-CRM-P0` = CLOSED (2026-08-25).** CRM de pacientes en LucyAdmin,
+> **en producción**. PR **#349 MERGED** por **squash and merge**; `main` quedó en
+> **`38fa67c18efbf760c1a8a18d7beccb58b75b81b3`**. `s7_76` (migración **97**) y
+> `s7_77` (**98**) = **APPLIED / VERIFIED / CLOSED** desde el 2026-08-24, con PRE,
+> POST de catálogo y POST funcional en **0 FAIL**; **entraron al PR solo como
+> registro versionado y no se ejecutaron con el merge**. **Ninguna se vuelve a
+> aplicar.** Evidencia en `docs/OWNER_S7_76_APPLY.md` y
+> `docs/OWNER_S7_77_APPLY.md`.
+>
+> **Validación:** QA local **PASS** · **smoke del Preview PASS** (owner) ·
+> **Vercel Production PASS / desplegado** · **smoke autenticado de producción
+> PASS** (owner): «Base de pacientes», búsqueda, los **6** estados, selector
+> **25/50**, «Pendientes de identificar» y «Fusión de fichas» **OK**, **consola
+> sin errores**. Durante los smokes **no se pulsó «Exportar CSV»**, no se ejecutó
+> **merge/unmerge/rechazos** y **no hubo ninguna escritura**.
+>
+> **Turnstile:** el hostname temporal del Preview quedó **REMOVED** (retirado por
+> el owner el 2026-08-25) y **`lucycare.app` permanece autorizado**. No queda
+> ningún cambio de configuración vivo de este frente.
+>
+> **Decisiones de producto vigentes:** orden por defecto
+> `profiles.created_at DESC` con **desempate estable por ID** (la identidad
+> LucyCare más reciente primero, **no** la fecha de la ficha) · **`Nuevo`** =
+> identidad creada en los **últimos 30 días**, salvo que aplique antes un estado
+> de mayor prioridad · **prioridad**
+> `Bloqueado → En seguimiento → Recurrente → Nuevo → Activo → Inactivo` (es el
+> orden de evaluación del `CASE` de `_crm_estado`; **`Nuevo` gana sobre
+> `Activo`**) · **P0 CONGELADO** en búsqueda · filtro por estado · paginación
+> **25/50** · exportación **CSV** del conjunto filtrado · los **walk-ins**
+> permanecen **separados** como fichas **sin identidad global vinculada**, en la
+> pestaña «Pendientes de identificar», y **no se suman** al universo del CRM.
 >
 > ℹ️ **`TYPES-RECONCILIATION-P0` es un frente aparte, no iniciado.**
 > `src/types/database.types.ts` está desactualizado desde antes de estos frentes
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
-> `159d3b235b631d12873ee492e184c813458d89bf` — PR #346.** · **PRs funcionales
-> mergeados hasta #346** · **migraciones aplicadas hasta `s7_72`** (93 archivos)
+> `38fa67c18efbf760c1a8a18d7beccb58b75b81b3` — PR #349.** · **PRs funcionales
+> mergeados hasta #349** · **98 migraciones aplicadas** (hasta `s7_77`)
 > · `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
 > desplegada y **validada** contra el dominio · **ningún frente funcional
 > abierto**.
@@ -41,8 +65,8 @@
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> **Último cambio funcional:** #346 (copy del reclamo). Antes: #345, #344 y
-> #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
+> **Último cambio funcional:** #349 (CRM de pacientes en LucyAdmin). Antes: #348
+> (seed de médico) y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
 > mediante 5 PRs (#342–#346), ninguno con migración ni cambio de
 > configuración** — ver §5 del handoff vigente. Los PRs docs-only mueven el SHA
 > del repositorio pero **no** el estado funcional, las migraciones, la DB, la
@@ -308,7 +332,7 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **HANDOFF CANÓNICO VIGENTE**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. La **§R** marca el punto exacto de reanudación: falta decidir el PR.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **HANDOFF CANÓNICO VIGENTE**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. Cierra el frente: PR #349 **MERGED**, producción **PASS**.
 - `docs/ANALISIS_PATIENT_CRM.md` — **análisis vivo de `PATIENT-CRM-P0`**: diagnóstico completo, arquitectura, UX, allowlists, y el detalle de P1–P5. Lo referencia el handoff vigente.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` — **histórico** (frente `ADMIN-DOCTOR-SEED-P0`, cerrado en PR #348): AUTH-SEED-PROBE, `s7_73`/`s7_74`/`s7_75`, Edge v4, idempotencia y compensación, DB smoke, E2E real y cleanup.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md` — **histórico** (post-#346, **piloto = GO**). Sigue siendo la mejor descripción del **estado general del producto**: reglas operativas, piloto, Auth/Booking/Twilio/Turnstile, calificaciones (`s7_72`), Legal + entidad **Divalux**, identidades protegidas y de QA, regla D1, SEO y backlog clasificado.
@@ -361,6 +385,8 @@ squash-merge, la rama puede borrarse.
 - **#336–#340** ✅ — cierre documental post-GO (#336), **LOGIN-FIRST-TIME-COPY-P0** (#337, una cadena), **RATING-URL-P0** (#338 `s7_72` + #339 tooling/docs) y **LEGAL-ENTITY-RENAME-P0** (#340, Valux → Divalux) → [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#341–#346** ✅ — handoff `2026-08-18` (#341, docs-only; **hoy histórico**, superado por el `2026-08-20`) y **4 frentes funcionales, todos frontend, sin migración ni configuración**: **PASSWORD-ERROR-COPY-P0** (#342 + #343, este último ajuste post-cierre del mismo frente, **no un frente separado**), **NOTIFICATION-BELL-A11Y-P0** (#344), **CLAIM-COPY-TUTEO-P0** (#345) y **CLAIM-COPY-HYGIENE-P0** (#346) → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#347–#349** ✅ — handoff canónico post-#346 (#347, docs-only), **ADMIN-DOCTOR-SEED-P0** (#348, `s7_73`–`s7_75` + Edge Function `admin-create-seed-doctor` v4) y **PATIENT-CRM-P0** (#349, `s7_76`/`s7_77` **ya aplicadas antes del PR**, CRM de pacientes en LucyAdmin con las tres pestañas). Ambos frentes **CLOSED** y validados en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**

@@ -1,12 +1,13 @@
-# HANDOFF LucyCare — `PATIENT-CRM-P0` (cierre de ventana, 2026-08-25)
+# HANDOFF LucyCare — `PATIENT-CRM-P0` · **FRENTE CERRADO** (2026-08-25)
 
-> 🟢 **PUNTO DE ENTRADA CANÓNICO Y VIGENTE.** Autosuficiente: no asume que la
-> ventana nueva conozca ninguna conversación anterior.
+> 🔵 **DOCUMENTO DE CIERRE.** `PATIENT-CRM-P0` está **CLOSED**. Autosuficiente:
+> no asume que la ventana nueva conozca ninguna conversación anterior.
 >
-> **Estado en una línea:** el **backend está cerrado y verificado en
-> producción**; el frontend está **commiteado y pusheado**; el **smoke real del
-> Preview está CERRADO en PASS por el owner**; el **PR #349 sigue abierto y
-> mergeable, esperando únicamente la decisión de merge**.
+> **Estado en una línea: `PATIENT-CRM-P0` = CLOSED.** Backend cerrado y
+> verificado · **PR #349 MERGED** (squash) · `main` en
+> **`38fa67c18efbf760c1a8a18d7beccb58b75b81b3`** · **Vercel Production PASS** ·
+> **smoke del Preview PASS** y **smoke autenticado de producción PASS**, ambos
+> del owner · **frontend del CRM EN PRODUCCIÓN**.
 >
 > ✅ **Sin pendientes operativos.** El hostname temporal del Preview fue
 > **REMOVED / RETIRADO por el owner el 2026-08-25** del widget de Cloudflare
@@ -40,12 +41,14 @@
 | Ítem | Valor |
 |---|---|
 | PR | **#349** — https://github.com/amedelvalle/lucycare/pull/349 |
-| Estado | **OPEN · MERGEABLE · NO MERGED** |
+| Estado | **MERGED** — 2026-08-25T20:52:40Z |
+| Método | **Squash and merge** |
 | Base ← head | `main` ← `claude/patient-crm-p0` |
-| Commits | **1** |
-| Archivos | **16** (+8 700 / −16) |
+| Commits del PR | **2** — `579b3f6` (funcional) + `feaab7c` (documental) |
+| `main` tras el merge | **`38fa67c18efbf760c1a8a18d7beccb58b75b81b3`** |
+| Archivos | **16** (+8 826 / −16) |
 | Checks | **Vercel PASS** · *Vercel Preview Comments* PASS · estado combinado **success** |
-| Preview | **Ready** |
+| Vercel Production | **PASS / desplegado** |
 
 **No hay GitHub Actions**: el repositorio no tiene `.github/`, así que esos dos
 checks de Vercel son los únicos.
@@ -408,6 +411,28 @@ Contexto observado antes del cierre: login de Owner Admin funciona tras autoriza
 el hostname del Preview, y el universo CRM era de **24 identidades** en ese
 momento.
 
+### Smoke autenticado en PRODUCCIÓN — ✅ PASS (2026-08-25, post-merge)
+
+Tras el merge y el despliegue, el owner repitió la revisión **contra
+`lucycare.app`** y la declaró correcta:
+
+> «Base, búsqueda, 6 estados, 25/50, Pendientes y Fusión OK. Consola sin
+> errores.»
+
+| Verificación en producción | Resultado |
+|---|---|
+| «Base de pacientes» | **PASS** |
+| Búsqueda | **PASS** |
+| Los **6** filtros de estado | **PASS** |
+| Selector **25/50** | **PASS** |
+| «Pendientes de identificar» | **PASS** |
+| «Fusión de fichas» | **PASS** |
+| Consola del navegador | **sin errores** |
+
+> **También en producción el smoke fue READ-ONLY.** **No** se pulsó «Exportar
+> CSV», **no** se ejecutó merge, unmerge ni resolución de rechazos, y **no hubo
+> ninguna escritura**.
+
 ### Turnstile — hostname temporal REMOVED / RETIRADO
 
 Para autenticarse en el Preview fue necesario **autorizar temporalmente el
@@ -441,9 +466,9 @@ dashboard las ejecuta el owner**.
 
 ---
 
-## L · PR #349 — reglas hasta el merge
+## L · PR #349 — MERGED. Lo que sigue vigente
 
-- PR **abierto y mergeable**. **NO MERGE todavía.**
+- PR **MERGED** por **squash and merge** el 2026-08-25.
 - **El backend YA está aplicado: no ejecutar `s7_76` ni `s7_77` durante el review
   ni con el merge.** Entran al PR como registro versionado.
 - **El repositorio no tiene ningún automatismo que las ejecute.** Verificado
@@ -571,29 +596,45 @@ medir pacientes reales sobre el CRM. Mientras existan, las métricas de
 ## O · ⭐ ESTADO EXACTO AL ENTREGAR ESTE HANDOFF
 
 ```
-PATIENT-CRM-P0
+PATIENT-CRM-P0 ............ CLOSED
 
-  Backend .................. CLOSED
-  QA local del frontend .... PASS
-  Commit ................... DONE      579b3f6…
-  Push ..................... DONE      --force-with-lease
-  PR #349 .................. OPEN / MERGEABLE
-  Vercel Preview ........... READY
-  Smoke real del Preview ... PASS      cerrado por el owner, 2026-08-25
-  Turnstile temporal ....... REMOVED   retirado por el owner, 2026-08-25
-  Merge .................... PENDIENTE DE AUTORIZACIÓN DEL OWNER
-  Producción frontend ...... NO TODAVÍA
+  s7_76 / migración 97 .... APPLIED / VERIFIED / CLOSED
+  s7_77 / migración 98 .... APPLIED / VERIFIED / CLOSED
+  Backend ................. CLOSED
+  QA local del frontend ... PASS
+  Smoke real del Preview .. PASS      owner, 2026-08-25
+  Smoke de PRODUCCIÓN ..... PASS      autenticado, owner, 2026-08-25
+  Consola en el smoke ..... SIN ERRORES
+  PR #349 ................. MERGED    squash and merge, 2026-08-25
+  main .................... 38fa67c18efbf760c1a8a18d7beccb58b75b81b3
+  Vercel Production ....... PASS / desplegado
+  Turnstile temporal ...... REMOVED   retirado por el owner, 2026-08-25
+  lucycare.app (Turnstile)  AUTORIZADO — intacto
+  Frontend del CRM ........ EN PRODUCCIÓN
 
-  Próximo paso: decisión de merge del PR #349.
+  No queda ningún paso pendiente del frente.
 ```
 
-**El frente está listo para la decisión de merge.** No quedan pruebas pendientes
-del Preview **ni pendientes operativos**: el hostname temporal de Turnstile fue
-**REMOVED / RETIRADO por el owner el 2026-08-25**, con `lucycare.app` confirmado
-como autorizado.
+**El frente está CERRADO.** No quedan pruebas pendientes, ni decisiones abiertas,
+ni pendientes operativos: el hostname temporal de Turnstile fue **REMOVED /
+RETIRADO por el owner el 2026-08-25**, con `lucycare.app` confirmado como
+autorizado, y el frontend del CRM **está en producción**.
 
-**Lo único que falta es la autorización de merge del owner.** El frontend **no
-está en producción** y no lo estará hasta ese merge.
+### Decisiones de producto que quedan vigentes
+
+- **Orden por defecto:** `profiles.created_at DESC`, con **desempate estable por
+  ID**. La identidad LucyCare registrada más recientemente aparece primero —
+  **no** es la fecha de creación de la ficha.
+- **`Nuevo`:** identidad creada en los **últimos 30 días**, salvo que aplique
+  antes un estado de mayor prioridad.
+- **Prioridad:** `Bloqueado → En seguimiento → Recurrente → Nuevo → Activo →
+  Inactivo`. Es el orden de evaluación del `CASE` de `_crm_estado`; **`Nuevo`
+  gana sobre `Activo`**.
+- **P0 CONGELADO:** búsqueda · filtro por estado · paginación **25/50** ·
+  exportación **CSV** del conjunto filtrado.
+- **Walk-ins:** permanecen **separados**, como fichas **sin identidad global
+  vinculada**, en «Pendientes de identificar». **No se suman** al universo del
+  CRM, cuya unidad es la identidad global.
 
 ### Frentes registrados y NO implementados
 

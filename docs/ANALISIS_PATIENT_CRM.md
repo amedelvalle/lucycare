@@ -1696,9 +1696,11 @@ reescribía historial publicado, el push fue **`--force-with-lease` con el SHA
 explícito**, y solo después de verificar con `git ls-remote` que el remoto seguía
 exactamente donde se esperaba.
 
-**PR [#349](https://github.com/amedelvalle/lucycare/pull/349)** — OPEN ·
-MERGEABLE · **sin mergear**. 1 commit, 16 archivos, checks de Vercel en PASS,
-Preview **Ready**. Los dos rollbacks entraron con `git add -f` y están tracked.
+**PR [#349](https://github.com/amedelvalle/lucycare/pull/349)** — **MERGED** por
+**squash and merge** el 2026-08-25. Cerró con **2 commits** (`579b3f6` funcional +
+`feaab7c` documental), 16 archivos y checks de Vercel en PASS; `main` quedó en
+**`38fa67c18efbf760c1a8a18d7beccb58b75b81b3`**. Los dos rollbacks entraron con
+`git add -f` y están tracked.
 
 **No hay automatismo que reaplique las migraciones**: el repositorio no tiene
 `.github/`, `vercel.json` solo define rewrites y cabeceras, `build` es
@@ -1806,20 +1808,44 @@ universo observado de 24 identidades incluye datos de QA.
 **No bloquea** el merge de `PATIENT-CRM-P0` y **no se abre** sin instrucción
 explícita del owner.
 
-## Estado del frente al cerrar el smoke
+## Estado final del frente — CLOSED
 
 ```
+PATIENT-CRM-P0 ........... CLOSED
+
+s7_76 / migración 97 ..... APPLIED / VERIFIED / CLOSED
+s7_77 / migración 98 ..... APPLIED / VERIFIED / CLOSED
 Backend .................. CLOSED
 QA local ................. PASS
 Smoke real Preview ....... PASS      (owner, 2026-08-25)
-PR #349 .................. OPEN / MERGEABLE
+Smoke producción (auth) .. PASS      (owner, 2026-08-25)
+Consola en el smoke ...... SIN ERRORES
+PR #349 .................. MERGED    (squash and merge)
+main ..................... 38fa67c18efbf760c1a8a18d7beccb58b75b81b3
+Vercel Production ........ PASS / desplegado
 Turnstile temporal ....... REMOVED   (retirado por el owner, 2026-08-25)
-Merge .................... PENDIENTE DE AUTORIZACIÓN DEL OWNER
-Frontend en producción ... NO TODAVÍA
+lucycare.app en Turnstile  AUTORIZADO (intacto)
+Frontend del CRM ......... EN PRODUCCIÓN
 ```
 
-**`PATIENT-CRM-P0` queda listo para la decisión de merge**, sin pendientes
-operativos ni residuos de configuración.
+El smoke de producción del owner: «Base, búsqueda, 6 estados, 25/50, Pendientes
+y Fusión OK. Consola sin errores.» **Fue read-only**: no se pulsó «Exportar
+CSV», no se ejecutó merge/unmerge/rechazos y **no hubo ninguna escritura**.
+
+**`PATIENT-CRM-P0` está CERRADO**, sin pendientes operativos ni residuos de
+configuración.
+
+### Decisiones de producto vigentes
+
+- Orden por defecto `profiles.created_at DESC` con **desempate estable por ID**.
+- **`Nuevo`** = identidad creada en los **últimos 30 días**, salvo prioridad
+  superior.
+- Prioridad `Bloqueado → En seguimiento → Recurrente → Nuevo → Activo →
+  Inactivo`.
+- **P0 congelado**: búsqueda · estado · **25/50** · **CSV** del conjunto
+  filtrado.
+- **Walk-ins separados**: viven en «Pendientes de identificar» como fichas **sin
+  identidad global vinculada** y **no se suman** al universo del CRM.
 
 Frentes **registrados y no implementados**, ninguno abierto sin instrucción del
 owner: `COPY-TUTEO-LOGIN` · `PATIENT-CRM-FILTERS-P1` ·
