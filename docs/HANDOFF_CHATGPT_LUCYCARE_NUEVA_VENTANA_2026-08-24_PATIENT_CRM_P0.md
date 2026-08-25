@@ -1,634 +1,612 @@
-# HANDOFF LucyCare — nueva ventana (2026-08-24) · `PATIENT-CRM-P0`
+# HANDOFF LucyCare — `PATIENT-CRM-P0` (cierre de ventana, 2026-08-25)
 
 > 🟢 **PUNTO DE ENTRADA CANÓNICO Y VIGENTE.** Autosuficiente: no asume que la
 > ventana nueva conozca ninguna conversación anterior.
 >
-> ✅ **El BACKEND de `PATIENT-CRM-P0` está APLICADO y VERIFICADO** — `s7_76`
-> (97) y `s7_77` (98), ambas CLOSED con 0 FAIL. **Lo que sigue abierto es el
-> frontend, todavía sin commitear.** Ver la **§R** para el punto exacto de
-> reanudación.
+> **Estado en una línea:** el **backend está cerrado y verificado en
+> producción**; el frontend está **commiteado y pusheado**; el **smoke real del
+> Preview está CERRADO en PASS por el owner**; el **PR #349 sigue abierto y
+> mergeable, esperando únicamente la decisión de merge**.
+>
+> ✅ **Sin pendientes operativos.** El hostname temporal del Preview fue
+> **REMOVED / RETIRADO por el owner el 2026-08-25** del widget de Cloudflare
+> Turnstile, y el hostname productivo `lucycare.app` **permanece autorizado**.
+> No queda ningún cambio de configuración vivo del frente. Ver **§K**.
 >
 > **Este documento no contiene** PII de pacientes, OTPs, contraseñas, tokens,
 > `service_role`, claves ni enlaces con credenciales.
 
 ---
 
-## A · Baseline del proyecto
+## A · Baseline, repositorio y PR
 
 | Ítem | Valor |
 |---|---|
 | Proyecto | **LucyCare** — directorio médico y agenda, El Salvador |
 | Repositorio | `github.com/amedelvalle/lucycare` (**público**) |
-| Proyecto Supabase | `kvrsfmzlrmmmavillpuj` · nombre **lucycare** · East US (Ohio) |
-| **Baseline de `main`** | **`b9edf91d135c74404711c2b8f9bffebdc0ad497e`** |
-| **Rama de trabajo** | **`claude/patient-crm-p0`** — creada desde ese `main` |
-| HEAD de la rama | **`cefe0376054f34185d2120060fcdb76a595a0d70`** — checkpoint **docs-only** del cambio de ventana, un commit por encima del baseline. El trabajo funcional sigue **sin commitear** |
-| PRs abiertos al iniciar el frente | **0** |
+| Proyecto Supabase | `kvrsfmzlrmmmavillpuj` · nombre **lucycare** · East US (Ohio) · **PostgreSQL 17.6** |
+| Frente actual | **`PATIENT-CRM-P0`** |
+| Rama | **`claude/patient-crm-p0`** |
+| `main` == `origin/main` | **`b9edf91d135c74404711c2b8f9bffebdc0ad497e`** |
+| HEAD local == remoto de la rama | **`579b3f6093724014ba93accd237940849484b7e5`** |
+| `main..HEAD` | **1 commit** |
+| Árbol antes de este paso documental | **limpio** |
 
-### Frente anterior — cerrado
+> Comprobar siempre los SHA con `git rev-parse main` y `git rev-parse HEAD`, no
+> copiarlos de este documento.
 
-**`ADMIN-DOCTOR-SEED-P0` = CLOSED.** PR **#348 mergeado** (squash) el
-2026-08-24; su merge commit **es** el baseline `b9edf91`. Rama
-`claude/seed-doctor` **borrada** local y remotamente.
+### PR
 
-De ese frente quedó vigente en producción:
+| Ítem | Valor |
+|---|---|
+| PR | **#349** — https://github.com/amedelvalle/lucycare/pull/349 |
+| Estado | **OPEN · MERGEABLE · NO MERGED** |
+| Base ← head | `main` ← `claude/patient-crm-p0` |
+| Commits | **1** |
+| Archivos | **16** (+8 700 / −16) |
+| Checks | **Vercel PASS** · *Vercel Preview Comments* PASS · estado combinado **success** |
+| Preview | **Ready** |
 
-- **96 migraciones aplicadas**, hasta `s7_75_seed_claim_phone_sms_capable.sql`.
-- **Edge Function `admin-create-seed-doctor`, `ACTIVE` versión 4.**
-- **Cero seeds QA en producción**: la fixture del E2E se creó y se eliminó por
-  completo (`admin_seed_operations` = 0, doctors 115, clinics 116).
-- `audit_log` de esa QA **conservado** como evidencia — es inmutable desde
-  `s7_71b`, no es un residuo.
+**No hay GitHub Actions**: el repositorio no tiene `.github/`, así que esos dos
+checks de Vercel son los únicos.
 
-### Frente hermano, NO tocar acá
+### Cómo quedó el historial
 
-> **`TYPES-RECONCILIATION-P0` es OTRO frente.** `src/types/database.types.ts`
-> está desactualizado desde mucho antes de este trabajo: regenerarlo agrega **+8
-> tablas, +3 vistas y +61 funciones** sin eliminar nada, y `tsc` pasa con 0
-> errores — pero es un diff de alcance mucho mayor.
-> **En `PATIENT-CRM-P0` NO se toca `database.types.ts`.**
+La rama había sido publicada antes con un checkpoint **docs-only**,
+`cefe0376054f34185d2120060fcdb76a595a0d70`. Se **consolidó localmente** con
+`git reset --soft main` + recommit del mismo mensaje, de modo que el frente es
+**un solo commit** sobre `main`; el hash del árbol quedó idéntico
+(`83c92794f81817b709dce1078eb73e88be2985f7`), o sea que no se reconstruyó nada.
+
+Como eso reescribió el historial publicado, el push se hizo con
+**`--force-with-lease` con el SHA explícito** —nunca `--force` desnudo— y
+**después** de verificar con `git ls-remote` que el remoto seguía exactamente en
+`cefe037…`. `cefe037` ya no es alcanzable desde la rama; su contenido vive dentro
+del commit único.
 
 ---
 
-## B · Objetivo de `PATIENT-CRM-P0`
+## B · Qué es este frente
 
-Construir dentro de **LucyAdmin** un **CRM de pacientes** con dos funciones:
-**operativa** y **comercial**, manteniendo **separación estricta del expediente
-clínico**.
+Un **CRM de pacientes** dentro de LucyAdmin, con función **operativa** y
+**comercial**, manteniendo **separación estricta del expediente clínico**.
+
+`/admin/pacientes` era **solo una consola de deduplicación** —título literal
+«Pacientes — Fusión de fichas», sin buscador, sin listado, sin métricas—. Ahora
+son **tres pestañas**:
+
+1. **Base de pacientes** — nueva. La unidad es la identidad global.
+2. **Pendientes de identificar** — nueva. Fichas sin identidad.
+3. **Fusión de fichas** — **la que ya existía, intacta**.
 
 ### Principios vinculantes
 
-1. La unidad principal es la **identidad global LucyCare** (`profiles`), no la
-   ficha local.
-2. **No duplicar PII ni fuentes de verdad** existentes.
-3. Las fichas `patients` son **relaciones clínicas/operativas** de esa
-   identidad.
-4. Los **walk-ins no vinculados** se manejan **aparte**.
-5. **Paginación y filtros server-side.**
-6. **Evitar N+1.**
-7. **Bajo impacto en Supabase.**
+1. La unidad es la **identidad global LucyCare** (`profiles`), no la ficha.
+2. **No duplicar PII ni fuentes de verdad.**
+3. Las fichas `patients` son **relaciones locales** de esa identidad.
+4. Los **walk-ins** se manejan **aparte**.
+5. **Búsqueda, filtro, orden y paginación server-side.**
+6. **Cero N+1.**
+7. Bajo impacto en Supabase.
 8. **Sin campañas ni mensajería en P0.**
-9. CRM **restringido al nivel administrativo ya autorizado** para
-   `/admin/pacientes`.
+9. Acceso restringido al nivel administrativo ya autorizado para
+   `/admin/pacientes` (**Owner Admin**).
 10. **La información clínica nunca se convierte en información comercial.**
 
-### ⚠️ Naturaleza de los datos actuales
-
-> **Todos los pacientes y fichas que hoy existen en producción son datos de
-> prueba/QA.** No representan pacientes reales ni métricas comerciales de
-> LucyCare.
-
-Sus cantidades sirven **únicamente** para validar estructura, cardinalidades y
-QA. **No** son una base de clientes y **ninguna decisión comercial** se deriva
-de sus porcentajes. El diseño se orienta al comportamiento esperado **cuando
-ingresen pacientes reales**.
+> ⚠️ **Los datos que hoy existen en producción son de prueba/QA.** No son una
+> base de clientes y **ninguna decisión comercial** sale de sus porcentajes.
 
 ---
 
-## C · Diagnóstico inicial de `/admin/pacientes`
+## C · Backend — estado definitivo
 
-> ### Hoy `/admin/pacientes` **NO es una lista de pacientes**. Es una consola de deduplicación.
+### `s7_76_patient_crm_foundation.sql` — migración 97
 
-Su título literal es **«Pacientes — Fusión de fichas»**. Medido sobre el código:
-**6** llamadas a servicios de merge/rechazos y **0** a cualquier listado de
-pacientes. No hay buscador, paginación, filtros, ficha ni métricas.
+**APPLIED / VERIFIED / CLOSED.** No se vuelve a aplicar.
 
-Contiene: **candidatos de duplicados** · **merge** · **unmerge** · **vínculos
-rechazados** · **historial de fusiones**, con preflight, confirmación por frase
-tecleada y reversa formal.
+Fundación del CRM: **`patient_crm`** (PK = FK a `profiles`; único estado
+persistido, el bloqueo, con trazabilidad de motivo/actor/fecha al bloquear y al
+levantar) · **`patient_crm_tags`** · **`patient_crm_followups`** ·
+**`patient_crm_notes`**. Todas cuelgan de `profiles`, **ninguna de
+`patients(id)`**.
 
-> **Esa lógica se conserva íntegra.** El CRM no es una evolución de esa
-> pantalla: es una pantalla nueva **junto** a ella.
+Además: **RLS activa** en las cuatro, **una** policy por tabla
+(`SELECT` / `TO authenticated` / `USING (is_admin())`, sin `WITH CHECK`),
+`REVOKE` de `PUBLIC` y `anon`, **sin DML de cliente**, **7 índices** —entre ellos
+**`idx_patients_profile_id`**, el JOIN central que no existía— y **auditoría por
+trigger** (`audit_patient_crm()`, `SECURITY DEFINER`, `search_path` fijo).
 
-### Arquitectura UX aprobada — tres pestañas
+POST de aplicación: **39 PASS · 0 FAIL**. Evidencia en
+`docs/OWNER_S7_76_APPLY.md`.
 
-1. **Base de pacientes** (nueva)
-2. **Pendientes de identificar** (nueva)
-3. **Fusión de fichas** — conserva la implementación existente
+### `s7_77_patient_crm_read_rpcs.sql` — migración 98
 
-**RPCs y tablas existentes que hay que respetar:**
-`admin_list_patient_merge_candidates` · `admin_merge_patients_preflight` ·
-`admin_merge_patients` · `admin_unmerge_patients_preflight` ·
-`admin_unmerge_patients` · `admin_list_patient_link_rejections` ·
-`admin_resolve_link_rejection` · `find_patient_match_candidates` · tabla
-`patient_merge_log`.
+**APPLIED / VERIFIED / CLOSED.** No se vuelve a aplicar.
 
----
+Vista canónica + tres helpers privados + cuatro RPCs `SECURITY DEFINER` gateadas
+con `is_admin()` (`P0140`).
 
-## D · Modelo observado (agregados, sin PII)
+**Evidencia live final:**
 
-| Métrica | Valor |
+| Paso | Resultado |
 |---|---|
-| `patients` (fichas QA) | **31** |
-| fichas **vinculadas** (`profile_id` no nulo) | **9** |
-| fichas **sin `profile_id`** (walk-in) | **22** |
-| identidades globales distintas con ficha | **4** |
-| `profiles` con `role='patient'` | **25** |
-| **de esos 25, con CERO fichas** | **22** |
-| `role='patient'` que **también es doctor** | **≥ 1** |
-| `role='patient'` que **también es `clinic_member`** | **≥ 1** |
-| `appointments` | 92 · futuras 4 · `manual` 64 / `lucy_directorio` 28 |
+| PRE | **29 PASS · 0 FAIL · 2 INFO** |
+| Apply | **`Success. No rows returned`** |
+| POST catálogo (final) | **57 PASS · 0 FAIL · 3 INFO** |
+| POST funcional | **22 PASS · 0 FAIL · 4 INFO** |
+| Prueba negativa de `_crm_status_norm(...)` | **`P0147`**, y el mensaje **no repite el valor recibido** |
+| `audit_log` · `patient_crm_export` tras el rechazo | **0 filas** |
 
-> ### Conclusión: `profiles.role='patient'` NO es por sí solo un discriminador suficiente.
+### Dos correcciones — del INSTRUMENTO, nunca de la migración
 
-El approve con `reuse_patient` (`s7_42`) crea el médico sobre el profile del
-paciente y **no toca `role`**; las identidades técnicas del seed (`s7_73`) nacen
-con `role='patient'` porque así las crea `handle_new_user`. Y con `patients`
-como raíz, **22 de 25 identidades serían invisibles**.
+El POST de catálogo falló dos veces por defectos **de la consulta de
+verificación**, no del SQL aplicado:
 
-### Estados de cita disponibles
+1. **`ERROR 42725: operator is not unique: "char" || unknown`.**
+   `pg_proc.provolatile` es del tipo interno `"char"`, que no tiene cast
+   implícito a `text`: concatenarlo dejaba `||` ambiguo. Corregido con `::text`
+   explícito.
+2. **Cuatro falsos positivos** (controles 122, 152, 153, 154) por inspeccionar
+   **`prosrc` crudo**, que incluye los comentarios de la propia migración — y
+   esos comentarios nombran a propósito lo prohibido («ni allergies, ni
+   blood_type», «por un `SELECT *`», «aceptar 'xlsx' sería peor que inútil»).
+   Corregido con una CTE `ejecutable` que quita comentarios de bloque y de línea.
 
-`programada`(1) · `confirmada`(2) · `en_sala`(3) · **`atendida`(4, final)** ·
-`cancelada`(5, final) · `no_asistio`(6, final). **`atendida` es la señal
-confiable de atención completada** — existe, no hubo que inventarla.
+> **`s7_77` no se reaplicó ni se modificó después del apply.** Verificado con
+> `cmp` contra el snapshot previo: idéntica byte a byte. El `s7_76` del commit
+> conserva su sha256 `f94f33c2…b892fbf24`, el mismo que se entregó para aplicar.
 
----
-
-## E · Decisiones D1–D5 — APROBADAS y vinculantes
-
-**D1 · Entidad CRM.** La identidad global `profiles` es el paciente del CRM. Los
-`patients` vinculados son fichas/relaciones locales. Los
-`patients.profile_id IS NULL` van aparte como **«Pendientes de identificar»**, y
-**los dos conteos NO se suman** bajo «Pacientes totales».
-
-**D2 · Estados.** `Nuevo` · `Activo` · `En seguimiento` · `Recurrente` ·
-`Inactivo` · `Bloqueado/restringido`.
-
-Umbrales P0: **Nuevo** ≤ 30 días · **Recurrente** ≥ **2** citas `atendida` ·
-**Activo** cita futura o actividad ≤ 90 días · **Inactivo** sin cita futura y
-> 180 días · **En seguimiento** con follow-up abierto · **Bloqueado**
-persistido.
-
-Prioridad visual:
-`bloqueado > en_seguimiento > recurrente > nuevo > activo > inactivo`.
-
-> **Los estados derivados NO se persisten.** Persistirlos exigiría un job de
-> recálculo y quedarían desincronizados al primer cambio de cita.
-
-**D3 · Persistencia.** Solo metadata CRM **no derivable**: bloqueo · tags ·
-follow-ups · notas administrativas. **No duplicar** nombre, teléfono, correo,
-citas, médicos ni clínicas. El bloqueo lleva trazabilidad completa —motivo,
-actor y fecha— **tanto al bloquear como al levantar**.
-
-**D4 · Notas administrativas.** Solo LucyAdmin. **No visibles al médico.** No
-reutilizan campos clínicos.
-
-**D5 · Walk-ins.** Sección separada · sin creación automática de Auth · sin
-campañas · sin SMS/WhatsApp/correo · **no son base comercial LucyCare hasta la
-vinculación válida**. Se reutilizan las herramientas de linking y deduplicación
-existentes.
+Ambos defectos dejaron **guarda estática** en `check-s7_76`, validada A/B.
 
 ---
 
-## F · Frontera clínica — regla de seguridad
+## D · Modelo canónico de paciente CRM
 
-> **No basta con esconder la información clínica en React. Las RPCs del CRM no
-> deben seleccionarla ni transportarla al navegador.**
+> ### La unidad del CRM es la IDENTIDAD GLOBAL (`profiles`), no la ficha local `patients`.
 
-Prohibido devolver, entre otros: `allergies` · `blood_type` · `patients.notes` ·
-`internal_notes` · `reason_id` cuando transporte semántica clínica ·
-`cancel_reason_id` · `price` · `payment_status` · `emergency_contact_*` ·
-diagnósticos · recetas · consultas · medicamentos · resultados · antecedentes ·
-signos vitales · cualquier información asistencial equivalente.
+`crm_patient_identity` es el **predicado canónico** y devuelve **una sola
+columna: `profile_id`**. Dice *quién pertenece*, no describe a nadie: el nombre,
+el teléfono y el correo se piden a `profiles` con un `JOIN` explícito dentro de
+`_crm_patients_json`, que es el único lugar donde se decide qué viaja al
+navegador.
 
-**El check estático protege esta frontera** verificando 16 columnas prohibidas
-**sobre el texto de la migración**, no sobre el JSX.
+### Exclusiones DURAS — siempre fuera, tengan ficha o no
+
+- cuenta inactiva (`profiles.is_active = false`);
+- **Owner Admin** (`profiles.role = 'admin'`);
+- **`operations_admin` / `directory_editor`** con `lucyadmin_access` **activo**;
+- **identidad técnica del Seed** (`s7_73`).
+
+### Exclusiones BLANDAS — solo si NO hay relación real de paciente
+
+Médico, staff de clínica o dueño de clínica quedan fuera **únicamente si no
+tienen ficha `patients` vinculada**.
+
+> **Si un médico o un asistente además tiene ficha de paciente, SÍ pertenece al
+> CRM como paciente.** La evidencia fuerte de relación de paciente es la ficha.
+> Un médico puede ser paciente de otro médico; el predicado no lo niega.
+
+Motivo por el que `role='patient'` **no alcanza** como criterio: el approve con
+`reuse_patient` (`s7_42`) crea el médico sobre el profile del paciente y no toca
+`role`; un asistente puede tener `role='patient'`; y las identidades técnicas del
+seed nacen con `role='patient'` porque así las crea `handle_new_user`.
+
+### Walk-ins — `patients.profile_id IS NULL`
+
+- viven en la pestaña **«Pendientes de identificar»**, separada;
+- **no se suman** a `pacientes_totales`;
+- **no son base comercial global** todavía;
+- **P0 no crea Auth automáticamente** ni los usa para campañas, SMS, WhatsApp ni
+  correo. Se vinculan con las herramientas que ya existen: el reclamo del
+  paciente con teléfono verificado, o la fusión de fichas si es un duplicado.
 
 ---
 
-## G · Timeline
+## E · Estados CRM — reglas definitivas de P0
 
-> **`audit_log` NO es el event store general del CRM.**
+### Prioridad implementada
 
-Fuentes de verdad prioritarias: `profiles` · `patients` · `appointments` ·
-follow-ups CRM. `audit_log` puede aportar **eventos administrativos concretos
-mediante allowlist estricta**. **Nunca** devolver `old_data`/`new_data`
-completos al frontend.
+```
+Bloqueado → En seguimiento → Recurrente → Nuevo → Activo → Inactivo
+```
 
----
+No está escrita como una lista aparte: **es el orden de evaluación del `CASE`**
+de `_crm_estado`, que devuelve la primera coincidencia.
 
-## H · Performance
-
-- Página inicial **25**, máximo UI **50**.
-- Búsqueda, filtros y orden **server-side**.
-- `LEFT JOIN LATERAL` **sobre la página**, no sobre toda la base.
-- **Cero N+1.**
-- **`patients(profile_id)` es el JOIN central y HOY NO EXISTE** — el único
-  índice de `patients` es funcional, sobre el teléfono (`s7_65`).
-- **No reutilizar `getPatientsList`**: es del panel médico, filtra por
-  `clinic_id` y trae `appointments(start_time)` **embebido y sin límite**.
-
----
-
-## I · Implementación actual
-
-> ### ✅ SUPERADO (2026-08-24): **el BACKEND del frente está APLICADO y VERIFICADO.**
->
-> | Migración | Estado |
-> |---|---|
-> | **`s7_76`** · fundación de datos (97) | **APPLIED / PASS / CLOSED** — POST 39 PASS · 0 FAIL |
-> | **`s7_77`** · RPCs de lectura (98) | **APPLIED / VERIFIED / CLOSED** — PRE 29 PASS · POST catálogo 57 PASS · POST funcional 22 PASS · 0 FAIL en los tres |
->
-> **Ninguna de las dos se vuelve a aplicar.** Detalle y evidencia en
-> `docs/OWNER_S7_76_APPLY.md` y `docs/OWNER_S7_77_APPLY.md`.
->
-> Verificado en vivo, entre otras cosas: el orden **filtro → conteo →
-> paginación** (los seis estados particionan el universo, el total no cambia al
-> paginar, el filtro recorre todo el conjunto); la **allowlist cerrada** de
-> `p_status`, que rechazó una entrada con forma de PII con **`P0147`** sin
-> repetir el valor y **sin escribir en `audit_log`**; la vista canónica de una
-> sola columna con `security_invoker = true`; y el **mínimo privilegio** —ni
-> `PUBLIC`, ni `anon`, ni `authenticated`, ni `service_role`— sobre la vista y
-> los tres helpers privados.
->
-> Datos del entorno que quedaron medidos: **PostgreSQL 17.6** · **`pg_trgm` NO
-> instalada**, así que los dos índices trigram del buscador no se crearon
-> (deuda `CRM-SEARCH-TRGM`, no bloqueante).
->
-> ### ⚠️ LO QUE SIGUE ABIERTO ES EL **FRONTEND**.
->
-> `PatientsCrmTab.tsx`, `UnlinkedPatientsTab.tsx`, `patientCrm.service.ts`,
-> `src/lib/csv.ts` y la modificación de `AdminPacientesPage.tsx` están
-> **locales, sin commitear y sin PR**. También `scripts/check-s7_76.mjs`
-> (353/353) y `scripts/_qa-crm-paginacion.mjs` (35/35).
->
-> El resto de esta sección describe el estado **anterior** al apply y se
-> conserva como contexto.
-
-### Nombres exactos, extraídos del código
-
-**Cuatro tablas CRM** (`s7_76`), todas con FK a `profiles`:
-
-- `patient_crm` — **PK = FK** a `profiles(id)`; único estado persistido: el
-  bloqueo (`blocked_at`, `blocked_reason`, `blocked_by`, `unblocked_at`,
-  `unblocked_reason`, `unblocked_by`)
-- `patient_crm_tags`
-- `patient_crm_followups`
-- `patient_crm_notes`
-
-**Índices** (`s7_76`):
-
-- `patient_crm_tags_uniq` *(único, `profile_id` + `lower(btrim(tag))`)*
-- `idx_patient_crm_followups_abiertos` *(parcial, `status='abierto'`)*
-- `idx_patient_crm_notes_profile`
-- **`idx_patients_profile_id`** *(parcial, el JOIN central)*
-- `idx_patients_sin_identidad` *(parcial, `profile_id IS NULL`)*
-- `idx_appointments_patient_start`
-- `idx_appointments_patient_status`
-- `idx_profiles_full_name_trgm` y `idx_patients_full_name_trgm`
-  *(condicionales: solo si `pg_trgm` está instalada)*
-
-**Auditoría** (`s7_76`): función `audit_patient_crm()` + un trigger por tabla,
-nombrado `audit_<tabla>`. Policies: una por tabla, nombrada
-`<tabla>_select_admin`.
-
-**Vista, helpers y RPCs** (`s7_77`):
-
-| Objeto | Rol |
+| Estado | Regla |
 |---|---|
-| **`crm_patient_identity`** *(VIEW)* | **predicado canónico** de identidad de paciente. `FROM` raíz de todo el CRM |
-| `_crm_estado(boolean, int, int, timestamptz, timestamptz, timestamptz, timestamptz)` | umbrales de los estados derivados. **Privada** |
-| `_crm_patients_json(text, text, int, int)` | **núcleo compartido** por listado y exportación. **Privada** |
-| `admin_list_patients_crm(text, text, int, int)` | listado paginado |
-| `admin_list_unlinked_patients(text, int, int)` | «Pendientes de identificar» |
-| `admin_patients_crm_stats()` | métricas superiores |
-| `admin_export_patients_crm(text, text, text)` | exportación (P5) |
+| **Bloqueado** | estado administrativo explícito vigente (`blocked_at` sin `unblocked_at`) |
+| **En seguimiento** | al menos **1** follow-up CRM abierto |
+| **Recurrente** | al menos **2** citas con estado **`atendida`** |
+| **Nuevo** | identidad LucyCare creada en los **últimos 30 días**, siempre que no haya aplicado una prioridad superior |
+| **Activo** | tiene próxima cita, o actividad relevante en los últimos **90 días** |
+| **Inactivo** | sin próxima cita y sin actividad relevante por más de **180 días** |
 
-**Códigos de error definidos:** `P0140` (no autorizado) · `P0141` · `P0142` ·
-`P0143` · `P0144` · `P0145` · `P0146` (excede el tope de exportación).
+> ### ⚠️ Matiz que sorprende al mirar la tabla: `Nuevo` gana sobre `Activo`.
+>
+> Una identidad creada recientemente que **ya tiene una próxima cita** se sigue
+> mostrando como **`Nuevo`**, salvo que esté bloqueada, en seguimiento o sea
+> recurrente.
+
+**Los estados derivados NO se persisten.** Se calculan en cada lectura.
+Persistirlos exigiría un job de recálculo y quedarían desincronizados al primer
+cambio de cita. El único estado guardado es el **bloqueo**.
+
+`_crm_estado` recibe **`p_ahora timestamptz`** como argumento y **no lee el
+reloj adentro**: por eso puede ser `IMMUTABLE` legítimamente.
 
 ---
 
-## J · Seguridad propuesta — leída del SQL local
+## F · Orden del listado — comprobado contra el código
 
-### Las cuatro tablas
+**Por defecto: `profiles.created_at DESC`, con desempate estable por ID.**
 
-| Aspecto | Valor |
+Es decir, **la identidad LucyCare registrada más recientemente aparece primero**.
+**No** es la fecha de creación de la ficha: el `base` del núcleo hace
+`JOIN public.profiles p ON p.id = ci.profile_id` y toma `p.created_at`.
+
+El mismo orden aparece en las tres etapas donde importa —`candidatos`, `pagina` y
+el `jsonb_agg` final—, siempre como `created_at DESC, id`. El desempate por `id`
+es lo que lo hace estable: sin él, dos identidades con idéntico `created_at`
+podrían intercambiarse entre páginas y aparecer duplicadas o desaparecer.
+
+**El frontend no reordena las filas.** No hay `.sort()`, `.reverse()` ni
+`localeCompare` en la pestaña: pinta lo que devuelve la RPC.
+
+### Orden de operaciones del listado (la corrección central de P0)
+
+```
+universo + búsqueda
+  → agregados (LATERAL) y estado derivado
+    → FILTRO por estado
+      → TOTAL del conjunto filtrado
+        → PAGINACIÓN
+```
+
+La primera versión filtraba **después** de paginar. Rompía tres cosas: el `total`
+contaba el universo sin filtrar, una coincidencia en la posición 26 no aparecía
+nunca en su propio filtro, y la exportación heredaba el defecto. **No volver a
+introducirlo**: hay guardas POST en la migración y checks estáticos que lo
+prohíben.
+
+Hay una **ruta rápida** cuando `p_status IS NULL` —ahí el filtro es un no-op y
+los `LATERAL` vuelven a tocar 25-50 filas—, pero **vive en la misma consulta**,
+como dos `CASE` en los `LIMIT`, no en dos consultas que podrían divergir.
+
+---
+
+## G · Alcance de P0 — CONGELADO
+
+`PATIENT-CRM-P0` queda limitado exactamente a:
+
+- **búsqueda server-side** (nombre, teléfono, correo o ID);
+- **filtro por estado** (los seis);
+- **paginación 25/50**;
+- **exportación CSV del conjunto filtrado**;
+- pestaña **«Pendientes de identificar»**;
+- **preservación de «Fusión de fichas»**.
+
+> ### No agregar más filtros dentro de P0. Todo lo demás es `PATIENT-CRM-FILTERS-P1`.
+
+---
+
+## H · Exportación
+
+- **CSV UTF-8 con BOM** — el BOM no es decorativo: sin él Excel en Windows rompe
+  tildes y eñes. **Compatible con Excel**, se abre con doble clic.
+- **Máximo 5000 filas** (`MAX_EXPORT`), con `P0146` si se supera. Subir el tope
+  exige rediseñar el mecanismo —streaming o generación asíncrona—, no cambiar la
+  constante.
+- **Misma identidad, misma consulta y mismos filtros que el listado**: export y
+  listado comparten el núcleo `_crm_patients_json`. Una guarda POST lo exige.
+- Exporta el **conjunto filtrado completo**, no la página visible. La pantalla
+  sigue paginada.
+- **Fórmula CSV neutralizada**: toda celda que empiece por `=`, `+`, `-`, `@`,
+  tabulador, retorno de carro o salto de línea se antepone con un apóstrofo.
+  Entrecomillar no alcanza: Excel evalúa igual.
+- **Sin campos clínicos** y **sin notas CRM administrativas** en P0.
+- **Auditoría**: actor (`auth.uid()`), fecha, formato, cantidad y contexto **no
+  PII** —`con_busqueda` como **booleano** y el filtro de estado ya normalizado—.
+  **Nunca el término buscado**, ni nombre, teléfono, correo ni contenido de filas.
+- **`p_status` con allowlist cerrada** de seis valores, validada **antes de
+  consultar y antes de auditar**; cualquier otra cosa muere con **`P0147`** y el
+  mensaje **no repite el valor recibido**.
+- **Solo formato `csv`.** El backend rechaza cualquier otro con `P0142`. El
+  `.xlsx` real es mejora posterior; `package.json` no se tocó.
+
+---
+
+## I · Frontera clínica — REGLA VINCULANTE
+
+> **El CRM administrativo no debe exponer ni usar como información
+> CRM/comercial:** diagnósticos · recetas · resultados · alergias · tipo de
+> sangre · medicamentos · consultas · signos vitales · historias · notas
+> clínicas · razón clínica · `patients.notes` · ni ningún dato clínico
+> equivalente.
+
+**La exclusión está protegida en el BACKEND.** No depende de esconder campos en
+la interfaz: las RPCs **enumeran a mano cada columna** que devuelven —sin
+`SELECT *`, sin `row_to_json`, sin `to_jsonb` de fila entera— y ninguna es
+asistencial. Verificado en vivo sobre la fuente **ejecutable** de las funciones,
+y protegido por check estático sobre el texto de la migración.
+
+---
+
+## J · QA local del frontend — PASS
+
+Hecha con un **harness temporal** que montaba los componentes reales con la
+caché de React Query pre-cargada y las queries deshabilitadas: **datos
+sintéticos y cero llamadas de red**. El harness se **borró** al terminar; 0
+residuos verificados.
+
+| Pestaña | Resultado |
 |---|---|
-| Owner | el de la migración (`postgres` en el SQL Editor) |
-| RLS | **activa** en las cuatro |
-| Policies | **exactamente una** por tabla: `<tabla>_select_admin`, `FOR SELECT`, **`TO authenticated`**, `USING (public.is_admin())`, sin `WITH CHECK` |
-| GRANT | `SELECT` a `authenticated`, nada más |
-| REVOKE | `ALL` de `PUBLIC` y `anon` |
-| DML de cliente | **ninguno** |
+| **Base de pacientes** | **PASS** |
+| **Pendientes de identificar** | **PASS** |
+| **Fusión de fichas** | **protegida por diff**: no se modificó ninguna de sus RPCs de merge, unmerge, preflight ni rechazos |
 
-> La cláusula **`TO authenticated` es explícita**: omitirla equivale a
-> `TO PUBLIC` — exactamente el defecto que `s7_74` tuvo que corregir en el
-> frente anterior.
+### Dos defectos encontrados y corregidos antes del commit
 
-### Vista y helpers privados
+1. **Un correo largo comprimía la columna Paciente** —se quedaba con 439 px
+   contra 112 px del nombre— y **las píldoras de estado se partían en dos
+   líneas**.
+2. **Faltaba el selector 25/50**: ambas pestañas tenían la página fija en 25 y
+   `CRM_PAGE_SIZE_MAX` era un export muerto.
 
-`crm_patient_identity`, `_crm_estado` y `_crm_patients_json`: **`REVOKE ALL` de
-`PUBLIC`, `anon` y `authenticated`**. Solo los alcanzan las RPCs
-`SECURITY DEFINER`, que corren como owner.
+**Correcciones aplicadas:** `whitespace-nowrap` en las píldoras · mínimo de ancho
+en la columna Paciente · Contacto y Clínica truncados con `title` · **selector
+25/50 en ambas pestañas**.
 
-La vista aplica **`security_invoker = true` condicionalmente**, solo si
-`server_version_num >= 150000` (en PostgreSQL 14 la opción no existe y el
-`ALTER` abortaría la migración). **La versión live del motor no se pudo
-determinar** desde el entorno de trabajo.
+### Observación menor aceptada, NO corregir en P0
 
-### Las RPCs
+«Fusión de fichas» conserva `max-w-5xl` mientras las pestañas nuevas usan
+`max-w-6xl`, así que el ancho salta un poco al cambiar de pestaña. **No se toca**
+para no alterar el layout histórico.
 
-| Aspecto | Valor |
+### Checks finales locales
+
+| Check | Resultado |
 |---|---|
-| Modo | **`SECURITY DEFINER`** |
-| Volatilidad | **`STABLE`** las tres de lectura · **`VOLATILE`** la de exportación (escribe auditoría) |
-| `search_path` | **`public, pg_catalog`** explícito |
-| EXECUTE | solo `authenticated`; `REVOKE` de `PUBLIC` y `anon` |
-| Gate | **`is_admin()` como primera instrucción**, error `P0140` |
-
-### Acceso administrativo — fuente autoritativa (`s7_57`)
-
-| Nivel | Dónde vive |
-|---|---|
-| **`owner_admin`** | **`profiles.role = 'admin'`** — *no* está en la tabla |
-| `operations_admin` | `lucyadmin_access` con `is_active = true` |
-| `directory_editor` | `lucyadmin_access` con `is_active = true` |
-
-`is_admin()` = `role='admin'` = **Owner Admin**, que es **exactamente** el
-criterio de `RequireOwnerAdmin`, el guard que hoy protege `/admin/pacientes`.
-
-> **`RequireOwnerAdmin` y las RPCs deben permanecer alineados. No se desea
-> ampliar el acceso** a `operations_admin`, `directory_editor` ni médicos.
-
----
-
-## K · P1 y P1.1 — evolución del predicado
-
-### El error de diseño original
-
-La primera versión excluía a **cualquiera** con fila en `doctors` o
-`clinic_members`. **Eso eliminaba del CRM a personas que simultáneamente pueden
-ser pacientes**: un médico puede ser paciente de otro médico; un asistente
-también.
-
-### Solución vigente — exclusiones asimétricas
-
-**DURAS — siempre OUT, tengan ficha o no:**
-
-1. profile inactivo (`is_active = false`);
-2. acceso administrativo vigente (`role='admin'` **o** `lucyadmin_access` con
-   `is_active = true`);
-3. identidad seed/técnica.
-
-**BLANDAS — OUT solo si NO hay evidencia real de relación de paciente:**
-médico · staff de clínica · dueño de clínica.
-
-**Evidencia fuerte:** `EXISTS patients WHERE patients.profile_id = profile.id`.
-
-### Casos cubiertos
-
-| # | Caso | Resultado |
-|---|---|---|
-| 1 | patient, 0 fichas | **IN** |
-| 2 | patient + ficha | **IN** |
-| 3 | doctor puro | **OUT** |
-| 4 | **doctor + ficha de paciente** | **IN** |
-| 5 | staff puro | **OUT** |
-| 6 | **staff + ficha** | **IN** |
-| 7 | owner admin | **OUT** |
-| 8 | operations_admin | **OUT** |
-| 9 | directory_editor | **OUT** |
-| 10 | seed | **OUT** |
-| 11 | inactive | **OUT** |
-
-Más dos refuerzos: **admin + ficha → OUT** y **seed + ficha → OUT**, porque esas
-exclusiones son duras.
-
-> **Instrumento validado A/B:** al convertir la rama del `OR` en un `AND` —el
-> error original— los checks cayeron a **166/170** señalando exactamente que la
-> relación de paciente había dejado de ser una alternativa. Restaurado, 170/170.
-
----
-
-## L · P2 — `_crm_estado` · **CLOSED conceptualmente**
-
-**Defecto descubierto:** la función estaba declarada `IMMUTABLE` **y usaba
-`now()`**. Es una mentira al planificador: PostgreSQL puede cachear el
-resultado, plegarla en tiempo de planificación o usarla en un índice, y devolver
-estados congelados.
-
-**Estado actual local:** recibe **`p_ahora timestamptz`** explícito · **no usa
-reloj internamente** · quien la llama pasa `now()` · puede permanecer
-`IMMUTABLE` legítimamente. El **check estático** y una **guarda POST** validan
-la ausencia de `now()`, `current_date`, `current_timestamp`, `clock_timestamp`,
-`localtimestamp`, `transaction_timestamp` y `statement_timestamp`, y que
-`provolatile = 'i'`.
-
-**P2 = CLOSED conceptualmente. Nada aplicado live.**
-
----
-
-## M · P3 — canal · **CLOSED conceptualmente**
-
-> **`appointments.source` NO equivale a adquisición comercial.**
-
-Semántica P0: **«Canal 1.ª cita»**. Valores actuales: **Directorio LucyCare**
-(`lucy_directorio`) y **Alta del médico** (`manual`).
-
-**`acquisition_source` queda RESERVADO** para evidencia futura demostrable —UTM,
-referral, campaña, captura administrativa u otras—, y se agregará como columna
-propia, **no reinterpretando este campo**. No se inventan canales tipo Google o
-referido.
-
-**P3 = CLOSED conceptualmente.**
-
----
-
-## N · P4 — rollback · **CLOSED conceptualmente**
-
-`s7_76_rollback.sql` era inicialmente **destructivo**. Ahora es **fail-closed**:
-
-- cuenta las **cuatro** tablas antes de tocar nada;
-- si existe metadata CRM real, **ABORTA** indicando cuántas filas hay en cada
-  una;
-- **no hace `DROP` silencioso** de notas, tags, follow-ups ni bloqueos.
-
-> Esa metadata **no tiene otra fuente de verdad**: no se reconstruye desde
-> `profiles`, `patients` ni `appointments`.
-
-Una reversión **posterior a uso real** requerirá backup, migración,
-preservación o estrategia `_deprecated`, **decidida explícitamente por el
-owner**. Está documentado que **deliberadamente no se automatiza**.
-
-`s7_77_rollback.sql` es **no destructivo para los datos** (solo elimina
-funciones y la vista). Ambos son **autosuficientes** y están marcados
-**NO EJECUTAR**.
-
-**P4 = CLOSED conceptualmente.**
-
----
-
-## O · P5 — exportación
-
-**Requisito de producto:** LucyAdmin deberá poder **exportar tablas
-administrativas**. En este frente, **solo pacientes**.
-
-> **Deuda registrada: `ADMIN-DOCTOR-EXPORT`** — aplicar el mismo patrón seguro a
-> la tabla de médicos. **No se implementa en este frente.**
-
-### Estado local actual
-
-- Exportación construida **sobre el mismo núcleo backend que el listado**
-  (`_crm_patients_json`) — **no** una consulta paralela.
-- Respeta la búsqueda y los filtros vigentes.
-- Exporta el **conjunto filtrado completo**, no solo la página visible.
-- **`MAX_EXPORT = 5000`**, con `P0146` si se supera.
-- **10 000 requiere diseño posterior** (streaming o generación asíncrona); no se
-  resuelve subiendo la constante.
-- **Walk-ins no se mezclan** en el export comercial.
-- **Notas administrativas no se exportan** en P0.
-- **Ninguna información clínica puede salir**: la consulta que alimenta el
-  archivo es la misma del listado, que no recupera esas columnas.
-- La pantalla **sigue paginada** en 25/50: exportar no relaja esa protección.
-
-### Dependencia
-
-**`xlsx@^0.18.5` ya existe en `devDependencies`** y hoy la usan **únicamente
-scripts de Node** (importadores y catálogos). **No está en el bundle del
-navegador.** **`package.json` NO se modificó.**
-
-La implementación local actual usa **CSV UTF-8 con BOM** (el BOM evita que Excel
-en Windows rompa tildes y eñes), sin dependencia nueva.
-
-> ⚠️ **La decisión final del owner sobre mantener P0 solo con CSV, o incorporar
-> `xlsx` al frontend, se dará en la siguiente ventana. NO hacer cambios ahora.**
-> La propuesta pendiente de decisión era: mover `xlsx` a `dependencies` y
-> cargarla con `import()` dinámico, para que el bundle inicial no crezca.
-
-### Auditoría de exportación propuesta
-
-Actor (`auth.uid()`) · fecha · formato · cantidad de registros · filtros **no
-PII** · **`con_busqueda` booleano** · **nunca el texto buscado** · **nunca
-nombre, teléfono ni correo**.
-
-La RPC de export **puede ser `VOLATILE`** precisamente por esta escritura de
-auditoría, y una guarda POST lo exige.
-
----
-
-## P · Estado de checks
-
-| Verificación | Resultado |
-|---|---|
-| **`check-s7_76`** | **170/170 PASS** |
-| `check-s7_73` | **236/236 PASS** |
-| `check-s7_74` | **28/28 PASS** |
-| `check-s7_75` | **67/67 PASS** |
-| `tsc --noEmit` | **PASS** |
-| `npm run build` | **PASS** |
+| `node scripts/check-s7_76.mjs` | **353/353** |
+| `node scripts/_qa-crm-paginacion.mjs` | **35/35** |
+| `npx tsc --noEmit` | **PASS** |
+| `npm run build` | **PASS** (bundle principal 671,53 kB, sin cambio) |
 | `git diff --check` | **PASS** |
 
-Confirmado además:
-
-- **`database.types.ts` intacto**;
-- **`package.json` intacto**;
-- **0 migraciones anteriores modificadas**;
-- **0 PII en la documentación**;
-- **sin SQL live · sin deploy · sin Auth · sin Edge · sin merge**.
-
 ---
 
-## Q · 🔴 PUNTOS TODAVÍA NO RESUELTOS
+## K · QA real en el Preview — ✅ PASS
 
-> **NO resolverlos por iniciativa propia. Están documentados como próximos
-> pasos; la instrucción exacta llegará del owner.**
+**Preview del PR #349:**
+`lucycare-git-claude-patient-crm-p0-amedelvalles-projects.vercel.app` — **Ready**.
 
-### F1 · Seed exclusion
+### Cerrado por el owner el 2026-08-25
 
-Falta **demostrar** si `profiles.email` de una identidad seed contiene realmente
-el correo técnico `@doctor-seed.invalid` **durante la ventana de cleanup B→C**
-—cuando la fila de `admin_seed_operations` ya se borró pero el `auth.user`
-todavía existe—.
+El owner completó la revisión visual y funcional del Preview y la declaró
+correcta. **`Smoke real Preview = PASS`.**
 
-Debe verificarse **sin imprimir PII ni el correo completo**.
-
-### F2 · Vista mínima
-
-Falta revisar que **`crm_patient_identity` exponga únicamente lo indispensable**
-—preferentemente `profile_id`— y no PII innecesaria.
-
-**Estado actual:** la vista expone `id, full_name, phone, email, created_at`.
-
-### Export audit
-
-Falta **confirmación final** de: `auth.uid()` como actor · cero texto buscado ·
-cero PII · únicamente filtros no sensibles y cantidad.
-
-### CSV / XLSX
-
-Falta **recibir la decisión final del owner**, que llegará en la siguiente
-instrucción.
-
----
-
-## R · ⭐ PUNTO EXACTO DE REANUDACIÓN
-
-> ### El BACKEND de `PATIENT-CRM-P0` está **APLICADO, VERIFICADO y CERRADO**.
->
-> `s7_76` (97) y `s7_77` (98) están en producción, con PRE, POST de catálogo y
-> POST funcional en **0 FAIL**. **Ninguna se vuelve a aplicar.**
->
-> ### Lo que sigue abierto es el **FRONTEND**, y sigue **sin commitear**.
-
-Archivos locales del frente, ninguno en Git todavía:
-
-| Archivo | Qué es |
+| Verificación reportada por el owner | Resultado |
 |---|---|
-| `src/pages/admin/components/PatientsCrmTab.tsx` | pestaña «Base de pacientes» |
-| `src/pages/admin/components/UnlinkedPatientsTab.tsx` | pestaña «Pendientes de identificar» |
-| `src/services/patientCrm.service.ts` | servicio de lectura + export CSV |
-| `src/lib/csv.ts` | serializador CSV seguro para Excel |
-| `src/pages/admin/AdminPacientesPage.tsx` | **modificado**: contenedor de tres pestañas |
-| `scripts/check-s7_76.mjs` | verificación estática, **353/353** |
-| `scripts/_qa-crm-paginacion.mjs` | QA de regresión del filtro, **35/35** |
-| `migrations/s7_76_*.sql` · `migrations/s7_77_*.sql` | las dos migraciones, ya aplicadas |
-| `docs/OWNER_S7_76_APPLY.md` · `docs/OWNER_S7_77_APPLY.md` | evidencia de los dos rollouts |
-| `docs/rollbacks/s7_76_rollback.sql` · `s7_77_rollback.sql` | **NO EJECUTAR**; ignorados por `.gitignore`, requieren `git add -f` |
+| `/admin/pacientes` carga correctamente | **PASS** |
+| «Base de pacientes» funciona | **PASS** |
+| Búsqueda | **PASS** |
+| Filtro por estados | **PASS** |
+| Selector **25/50** | **PASS** |
+| «Pendientes de identificar» funciona y **permanece separado del universo global** | **PASS** |
+| «Fusión de fichas» abre correctamente | **PASS** |
+| Comportamiento visual general | **ACEPTADO** |
 
-**La siguiente instrucción del owner decidirá qué hacer con ese frontend:**
-validación visual, commit, PR, o ajustes previos. **Nada se commitea, se mergea
-ni se despliega sin esa instrucción.**
+> ### Alcance exacto de este PASS
+>
+> Es **lo que el owner reportó, ni más ni menos**. No se ejecutaron pruebas
+> adicionales ni se infiere ningún resultado que el owner no haya declarado.
+> Durante el smoke **no se pulsó «Exportar CSV»** —la única acción de la pantalla
+> que escribe— ni se ejecutó merge, unmerge o resolución de rechazos:
+> **ninguna escritura**.
 
-### Deuda registrada en el camino
+Contexto observado antes del cierre: login de Owner Admin funciona tras autorizar
+el hostname del Preview, y el universo CRM era de **24 identidades** en ese
+momento.
 
-- **`CRM-SEARCH-TRGM`** — `pg_trgm` no está instalada, así que los dos índices
-  trigram del buscador no se crearon. No bloqueante al volumen actual; instalar
-  una extensión es decisión del owner y va por migración propia.
-- **`ADMIN-DOCTOR-EXPORT`** — aplicar el mismo patrón seguro de exportación a la
-  tabla de médicos.
-- **F1 · ventana B→C del seed** — el email `.invalid` es defensa **parcial**;
-  la alternativa de raíz vive en el frente del seed, no acá.
+### Turnstile — hostname temporal REMOVED / RETIRADO
 
-### Estado esperado del árbol
+Para autenticarse en el Preview fue necesario **autorizar temporalmente el
+hostname exacto del Preview** en Cloudflare Turnstile. **No** se autorizó
+`vercel.app` de forma genérica.
 
-Es **esperado y deliberado** que el working tree esté *dirty*: la
-implementación local de P0 permanece **sin commitear**. Solo se commiteó
-documentación.
+El retiro lo **ejecutó el owner** en el dashboard de Cloudflare el **2026-08-25**,
+al terminar el smoke. No era ejecutable desde el repositorio —sin `wrangler`, sin
+token de API de Cloudflare, sin conector; el repo solo referencia
+`VITE_TURNSTILE_SITE_KEY` como variable de build, nunca credenciales de gestión—,
+así que se hizo por la vía correcta: la convención vigente es que **las tareas de
+dashboard las ejecuta el owner**.
+
+> ### ✅ REMOVED / RETIRADO por el owner el 2026-08-25
+>
+> Hostname retirado del widget:
+> `lucycare-git-claude-patient-crm-p0-amedelvalles-projects.vercel.app`
+>
+> **Confirmado por el owner:** el hostname productivo de LucyCare
+> (`lucycare.app`) **permanece autorizado**. No se modificó ninguna otra
+> configuración de Cloudflare/Turnstile: ni la Site Key, ni la Secret Key, ni el
+> modo del widget, ni el enforcement en Supabase.
+>
+> Era el **único cambio de configuración vivo del frente**. Con esto,
+> `PATIENT-CRM-P0` **no deja residuos de configuración** y su cierre
+> administrativo está completo.
+>
+> **Consecuencia esperada:** el Preview del PR ya no puede autenticarse. Es
+> correcto — el smoke terminó. Volver a probarlo exigiría autorizar el hostname
+> de nuevo, y eso requiere autorización explícita del owner.
 
 ---
 
-## Salvaguardas permanentes del proyecto
+## L · PR #349 — reglas hasta el merge
 
-- **No aplicar SQL, migrar, desplegar, tocar configuración ni producción sin
-  autorización explícita** del owner, paso por paso. **El owner aplica el SQL**
-  en el SQL Editor de Supabase; el dev corre los `check`/`smoke`.
-- **`auth.users`: JAMÁS por SQL.** Siempre Admin API.
-- **`service_role` / secret key requieren autorización explícita, incluso
-  read-only.**
-- **No tocar** Test Phones, Twilio, Turnstile ni `hook_before_user_created`.
-- **No reactivar las legacy API keys** (el JWT `service_role` legacy estuvo en
-  el historial público del repositorio).
-- **No modificar identidades protegidas**: el médico demo Camilo, LucyAdmin y
-  `operations_admin`. **Jamás Katherine.** Los teléfonos concretos están en
-  `CLAUDE.md`; no se repiten acá para no propagarlos.
-- **No usar datos reales de pacientes para QA**, ni en read-only.
-- **Copy en tuteo, nunca voseo.** Español, sin anglicismos.
+- PR **abierto y mergeable**. **NO MERGE todavía.**
+- **El backend YA está aplicado: no ejecutar `s7_76` ni `s7_77` durante el review
+  ni con el merge.** Entran al PR como registro versionado.
+- **El repositorio no tiene ningún automatismo que las ejecute.** Verificado
+  read-only: sin `.github/`, `vercel.json` solo con rewrites y cabeceras de
+  caché, `build` = `vite build` sin `postinstall`, y **sin `supabase/migrations/`**
+  (la CLI no tendría nada que aplicar aunque alguien la corriera).
+- El **Preview** puede desplegarse automáticamente por Vercel, pero **no es
+  producción**.
+- La **Edge Function del seed (`ACTIVE` v4) no se despliega por este PR**: su
+  despliegue está desacoplado de Git.
+- **No tocar Cloudflare/Turnstile.** El hostname temporal del Preview ya fue
+  **retirado por el owner** (§K); no queda nada pendiente ahí.
+- **No alterar el PR** salvo decisión explícita del owner.
+
+---
+
+## M · Deuda y frentes futuros — NO iniciar
+
+### `PATIENT-CRM-FILTERS-P1` — registrado, no iniciado
+
+Alcance aprobado conceptualmente:
+
+- fecha de registro **desde/hasta**;
+- **última actividad**;
+- **con/sin próxima cita** y **rango** de próxima cita;
+- **canal de primera cita**;
+- **médico relacionado**;
+- **clínica relacionada**;
+- **con ficha / sin ficha**;
+- más adelante: **tags** y **seguimientos abiertos**;
+- **selector de orden**: registro reciente · última actividad · próxima cita ·
+  nombre A–Z.
+
+> ### Regla obligatoria de P1
+>
+> **Filtros, conteo, paginación y exportación deben usar la MISMA lógica
+> server-side.** El CSV debe respetar **exactamente** los filtros activos.
+> **Nunca implementar filtros únicamente en el navegador.** Es la lección que ya
+> costó una corrección en P0.
+
+### `QA-PATIENT-DATA-CLEANUP-P0` — registrado, NO iniciado
+
+Registrado el **2026-08-25**. **No ejecutar ninguna limpieza ahora.**
+
+**Objetivo futuro:** inventariar y eliminar de forma controlada los pacientes,
+fichas, citas y relaciones **QA ficticias** acumuladas, **antes** de empezar a
+medir pacientes reales sobre el CRM. Mientras existan, las métricas de
+«Base de pacientes» mezclan universo real y universo de prueba.
+
+**Reglas vinculantes del frente:**
+
+- **PRE de inventario antes de borrar nada.** Primero se enumera y se clasifica;
+  recién después se decide qué se elimina.
+- **No asumir que toda identidad es eliminable.** Puede haber identidades
+  ficticias con dependencias reales, o mixtas.
+- **No tocar `auth.users` mediante SQL.** Siempre Admin API — regla vigente del
+  proyecto, sin excepción para este frente.
+- **Preservar la evidencia de auditoría cuando corresponda.** `audit_log` es
+  inmutable desde `s7_71b`: sus filas no son residuos.
+- **Mantener, si se decide, un número mínimo de fixtures QA claramente
+  identificados** — con marca explícita, no adivinables por nombre.
+- **POST de residuos después de cualquier limpieza**, con verificación de cero
+  residuales sobre lo que se declaró eliminable.
+
+> Este frente **no bloquea** el merge de `PATIENT-CRM-P0` y **no se abre** sin
+> instrucción explícita del owner.
+
+### Otras deudas ya registradas
+
+- **`CRM-SEARCH-TRGM`** — `pg_trgm` **no está instalada**, así que los dos
+  índices trigram del buscador no se crearon y el `ILIKE` cae en scan. **No
+  bloqueante** al volumen actual. Instalar una extensión es decisión del owner y
+  va por migración propia.
+- **`ADMIN-DOCTOR-EXPORT`** — aplicar el mismo patrón seguro de exportación
+  (núcleo compartido + allowlist + gate + auditoría sin PII + tope) a la tabla de
+  médicos.
+- **Ventana efímera B→C del Seed** — cuando el seed técnico recibió un correo
+  comercial, el predicado del `.invalid` no lo reconoce. El email es defensa
+  **parcial**, no garantía; la defensa estructural es `admin_seed_operations`
+  mientras su fila exista. La corrección de raíz vive en el frente del seed, no
+  acá.
+- **`TYPES-RECONCILIATION-P0`** — `src/types/database.types.ts` sigue
+  desactualizado. **Otro frente**; no se toca desde `PATIENT-CRM-P0`.
+- **`COPY-TUTEO-LOGIN`** — **deuda PREEXISTENTE de tuteo**, verificada
+  read-only el 2026-08-25. `Ingresá con tu email`
+  (`src/pages/doctor-detail/components/LoginModal.tsx:804`) es **voseo** y
+  existe **idéntico en `main`**: el blob del archivo es el mismo en `main` y en
+  el HEAD del PR (`bf4f1cd5…`), y **el PR #349 no toca ese archivo**. Entró en
+  `5c09a4a` (2026-05-25, PR #39). **No la introdujo este frente y no se corrige
+  dentro de él.** Alcanza también a `Revisá tu correo`, `Podés`, `Elegí`,
+  `Seleccioná`, `Confirmá`, `Escribí` y otras, repartidas por `LoginModal`,
+  `ChangePhoneModal`, `WaitlistModal`, `AffiliationRequestModal`, `BookingCard`,
+  `PanelLayout` y varias páginas del panel. Los frentes de copy ya cerrados
+  (#342/#343, #345, #346) cubrieron el reclamo, `/reset-password` y los errores
+  de contraseña, **no** el login público.
+
+---
+
+## N · Reglas operativas que la ventana nueva hereda
+
 - **Un solo frente funcional a la vez.**
+- **No SQL de escritura sin orden del owner.** El owner aplica el SQL en el SQL
+  Editor; el dev corre los `check`/`smoke`.
+- **No nuevas migraciones sin autorización.**
+- **No merge sin autorización.**
+- **No tocar producción, configuración, hooks ni secretos sin autorización.**
+- **`auth.users`: JAMÁS por SQL.** Siempre Admin API.
+- **`service_role` requiere autorización explícita, incluso read-only.**
+- **No reactivar las legacy API keys.**
+- **No tocar** Test Phones, Twilio, Turnstile ni `hook_before_user_created`. El
+  hostname temporal de la §K **ya fue retirado**: no queda excepción vigente.
+- **No modificar identidades protegidas**: Camilo, LucyAdmin, `operations_admin`.
+  **Jamás Katherine.**
+- **No usar datos reales de pacientes para QA**, ni en read-only.
 - **No inventar QA ni resultados.** No afirmar que una prueba corrió si solo se
   leyó el código.
-- **Validar el instrumento, no solo el fix:** correr la misma medición contra el
-  código anterior (A/B). Un test que solo pasa "después" no prueba nada.
+- **Validar el instrumento, no solo el fix** (A/B contra el código anterior).
+- **Copy en tuteo, nunca voseo.** Español, sin anglicismos.
+- **Cambios pequeños y reversibles.**
+- **No reabrir `s7_76` ni `s7_77`.**
+- **No alterar el PR #349** salvo decisión explícita del owner.
+
+---
+
+## O · ⭐ ESTADO EXACTO AL ENTREGAR ESTE HANDOFF
+
+```
+PATIENT-CRM-P0
+
+  Backend .................. CLOSED
+  QA local del frontend .... PASS
+  Commit ................... DONE      579b3f6…
+  Push ..................... DONE      --force-with-lease
+  PR #349 .................. OPEN / MERGEABLE
+  Vercel Preview ........... READY
+  Smoke real del Preview ... PASS      cerrado por el owner, 2026-08-25
+  Turnstile temporal ....... REMOVED   retirado por el owner, 2026-08-25
+  Merge .................... PENDIENTE DE AUTORIZACIÓN DEL OWNER
+  Producción frontend ...... NO TODAVÍA
+
+  Próximo paso: decisión de merge del PR #349.
+```
+
+**El frente está listo para la decisión de merge.** No quedan pruebas pendientes
+del Preview **ni pendientes operativos**: el hostname temporal de Turnstile fue
+**REMOVED / RETIRADO por el owner el 2026-08-25**, con `lucycare.app` confirmado
+como autorizado.
+
+**Lo único que falta es la autorización de merge del owner.** El frontend **no
+está en producción** y no lo estará hasta ese merge.
+
+### Frentes registrados y NO implementados
+
+Ninguno se abre sin instrucción explícita del owner:
+
+| Frente | Estado |
+|---|---|
+| `COPY-TUTEO-LOGIN` | registrado · no iniciado — deuda **preexistente**, no la introdujo este PR |
+| `PATIENT-CRM-FILTERS-P1` | registrado · no iniciado — alcance cerrado por el owner |
+| `QA-PATIENT-DATA-CLEANUP-P0` | registrado · no iniciado |
+| `CRM-SEARCH-TRGM` | registrado · no iniciado — `pg_trgm` no instalada, no bloqueante |
+| `ADMIN-DOCTOR-EXPORT` | registrado · no iniciado |
+| `TYPES-RECONCILIATION-P0` | registrado · no iniciado — frente aparte |
 
 ---
 
@@ -636,10 +614,12 @@ documentación.
 
 | Documento | Rol |
 |---|---|
+| **Este handoff** | **Fuente canónica del estado del frente** |
+| `docs/ANALISIS_PATIENT_CRM.md` | Análisis completo: diagnóstico, D1–D5, arquitectura, UX, P1–P5, F1–F6, las correcciones del filtro y del instrumento POST |
+| `docs/OWNER_S7_76_APPLY.md` | Rollout de `s7_76`: PRE, SQL en línea y POST read-only. **Aplicada** |
+| `docs/OWNER_S7_77_APPLY.md` | Rollout de `s7_77`: PRE, SQL en línea, POST de catálogo, POST funcional y prueba negativa. **Aplicada** |
 | `CLAUDE.md` | Guía rápida. Si contradice a `docs/`, mandan los `docs/` |
-| **Este handoff** | **Fuente canónica del estado**, con el frente abierto |
-| **`docs/ANALISIS_PATIENT_CRM.md`** | **Análisis completo de `PATIENT-CRM-P0`**: diagnóstico, D1–D5, arquitectura, UX, P1–P5 y backlog por bloques |
-| `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` | **Histórico.** Frente anterior, cerrado |
+| `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` | **Histórico.** Frente anterior, cerrado con PR #348 |
 | `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md` | **Histórico.** Mejor descripción del **estado general del producto**: piloto = GO, Auth, Booking, Twilio, Legal, identidades, SEO |
 | `docs/HISTORIAL_FRENTES.md` | Detalle por PR de los frentes cerrados |
-| `docs/rollbacks/s7_76_rollback.sql` · `s7_77_rollback.sql` | **NO EJECUTAR** |
+| `docs/rollbacks/s7_76_rollback.sql` · `s7_77_rollback.sql` | **NO EJECUTAR.** El de `s7_76` es fail-closed: aborta si hay metadata CRM real |

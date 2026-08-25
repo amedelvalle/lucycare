@@ -1679,3 +1679,149 @@ Ambos dejaron **guarda estática** en `check-s7_76`, validada A/B.
 `UnlinkedPatientsTab`, `patientCrm.service.ts`, `lib/csv.ts` y la modificación
 de `AdminPacientesPage` siguen **locales, sin commitear y sin PR**. Nada se
 commitea ni se despliega sin instrucción del owner.
+
+---
+
+# CIERRE DE VENTANA (2026-08-25) — commit, PR y smoke cerrado
+
+## Historial y PR
+
+El frente quedó en **un solo commit** sobre `main`:
+**`579b3f6093724014ba93accd237940849484b7e5`**, 16 archivos, +8 700 / −16.
+
+Antes había un checkpoint docs-only, `cefe037…`, ya publicado en el remoto. Se
+consolidó con `git reset --soft main` + recommit del mismo mensaje: el **hash del
+árbol quedó idéntico** (`83c92794…`), así que no se reconstruyó nada. Como eso
+reescribía historial publicado, el push fue **`--force-with-lease` con el SHA
+explícito**, y solo después de verificar con `git ls-remote` que el remoto seguía
+exactamente donde se esperaba.
+
+**PR [#349](https://github.com/amedelvalle/lucycare/pull/349)** — OPEN ·
+MERGEABLE · **sin mergear**. 1 commit, 16 archivos, checks de Vercel en PASS,
+Preview **Ready**. Los dos rollbacks entraron con `git add -f` y están tracked.
+
+**No hay automatismo que reaplique las migraciones**: el repositorio no tiene
+`.github/`, `vercel.json` solo define rewrites y cabeceras, `build` es
+`vite build` sin `postinstall`, y no existe `supabase/migrations/`.
+
+## Smoke real sobre el Preview — ✅ PASS (2026-08-25)
+
+El owner completó la revisión visual y funcional del Preview y la declaró
+correcta. **`Smoke real Preview = PASS`**, cerrado por el owner.
+
+Validado y reportado por él: `/admin/pacientes` carga correctamente ·
+«Base de pacientes» funciona · **búsqueda** funciona · **filtro por estados**
+funciona · **selector 25/50** funciona · «Pendientes de identificar» funciona y
+**permanece separado del universo global** · «Fusión de fichas» abre
+correctamente · **comportamiento visual general aceptado**.
+
+**Ese es el alcance exacto del PASS.** No se ejecutaron pruebas adicionales ni se
+infiere ningún resultado que el owner no haya declarado. Durante el smoke no se
+pulsó «Exportar CSV» —la única acción de la pantalla que escribe, y que generaría
+una fila de auditoría—, no se ejecutó merge/unmerge/rechazos y **no hubo ninguna
+escritura**. Contexto observado antes del cierre: el universo CRM era de **24
+identidades**.
+
+### Turnstile — hostname temporal REMOVED / RETIRADO
+
+Para autenticarse en el Preview hubo que **autorizar temporalmente ese hostname
+exacto en Cloudflare Turnstile**. No se autorizó `vercel.app` de forma genérica.
+
+**REMOVED / RETIRADO por el owner el 2026-08-25.** Al terminar el smoke, el owner
+retiró del widget el hostname
+`lucycare-git-claude-patient-crm-p0-amedelvalles-projects.vercel.app` y **confirmó
+que el hostname productivo `lucycare.app` permanece autorizado**. No se modificó
+ninguna otra configuración de Cloudflare/Turnstile: ni Site Key, ni Secret Key, ni
+modo del widget, ni el enforcement en Supabase.
+
+No era ejecutable desde el repositorio —sin `wrangler`, sin token de API, sin
+conector; el repo solo referencia `VITE_TURNSTILE_SITE_KEY` como variable de
+build, nunca credenciales de gestión—, así que lo hizo el owner en el dashboard,
+como manda la convención vigente.
+
+Era el **único cambio de configuración vivo del frente**: `PATIENT-CRM-P0`
+**no deja residuos de configuración**. Consecuencia esperada y correcta: el
+Preview del PR ya no puede autenticarse.
+
+## Decisión de producto que cierra el alcance
+
+`PATIENT-CRM-P0` queda congelado en **búsqueda · filtro por estado · paginación
+25/50 · exportación CSV del conjunto filtrado**, más la pestaña de pendientes y
+la preservación de la consola de fusión. Todo lo demás —los ocho filtros nuevos,
+tags, seguimientos abiertos y el selector de orden— es **`PATIENT-CRM-FILTERS-P1`**,
+registrado y **no iniciado**, con la regla vinculante de que filtros, conteo,
+paginación y exportación usen la misma lógica server-side y de que el CSV respete
+exactamente los filtros activos.
+
+Confirmado contra el código aplicado, sin cambiar nada: el orden por defecto es
+`profiles.created_at DESC` con desempate por ID —la identidad LucyCare más
+reciente primero, **no** la fecha de la ficha—, `Nuevo` son 30 días salvo
+prioridad superior, y la prioridad es el orden de evaluación del `CASE` de
+`_crm_estado`. **`Nuevo` gana sobre `Activo`**: una identidad recién creada con
+próxima cita se muestra como `Nuevo`.
+
+## Deuda de copy detectada durante el smoke — PREEXISTENTE, fuera de este PR
+
+En el Preview se observó `Ingresá con tu email`, que es **voseo** y contradice la
+regla de tuteo del proyecto. Verificación read-only, `main` contra el HEAD del
+PR #349:
+
+- vive en `src/pages/doctor-detail/components/LoginModal.tsx:804` y **existe
+  idéntico en `origin/main`**, en la misma línea;
+- el blob del archivo es **el mismo** en ambos lados: `bf4f1cd5…`;
+- **el PR #349 no toca ese archivo** — sus 16 archivos no lo incluyen;
+- entró en `5c09a4a` (2026-05-25), *"feat(auth): email + password + reset por
+  email (Fase 4 PR-A) (#39)"*.
+
+**Conclusión: deuda preexistente de tuteo. NO la introdujo `PATIENT-CRM-P0` y no
+es bloqueante del PR #349.** No se corrige dentro de este frente —sería mezclar
+un frente de copy con uno de CRM—. Queda registrada como **`COPY-TUTEO-LOGIN`**,
+con alcance a definir: el mismo `LoginModal` arrastra además `Revisá tu correo` y
+`Ingresá tu email y… un link` (este último con el anglicismo `link`), y el voseo
+se repite en `ChangePhoneModal`, `WaitlistModal`, `AffiliationRequestModal`,
+`BookingCard`, `PanelLayout` y varias páginas del panel.
+
+## `QA-PATIENT-DATA-CLEANUP-P0` — frente futuro, registrado y NO iniciado
+
+Registrado el **2026-08-25**. **No se ejecuta ninguna limpieza ahora.**
+
+**Objetivo:** inventariar y eliminar de forma controlada pacientes, fichas, citas
+y relaciones **QA ficticias** antes de empezar a medir pacientes reales sobre el
+CRM. Mientras existan, «Base de pacientes» mezcla universo real y de prueba —el
+universo observado de 24 identidades incluye datos de QA.
+
+**Reglas vinculantes:**
+
+1. **PRE de inventario antes de borrar.** Enumerar y clasificar primero.
+2. **No asumir que toda identidad es eliminable** — puede haber ficticias con
+   dependencias reales, o mixtas.
+3. **No tocar `auth.users` mediante SQL.** Siempre Admin API.
+4. **Preservar la evidencia de auditoría cuando corresponda** — `audit_log` es
+   inmutable desde `s7_71b`; sus filas no son residuos.
+5. **Mantener, si se decide, un número mínimo de fixtures QA claramente
+   identificados**, con marca explícita.
+6. **POST de residuos después de cualquier limpieza**, con verificación de cero
+   residuales sobre lo declarado eliminable.
+
+**No bloquea** el merge de `PATIENT-CRM-P0` y **no se abre** sin instrucción
+explícita del owner.
+
+## Estado del frente al cerrar el smoke
+
+```
+Backend .................. CLOSED
+QA local ................. PASS
+Smoke real Preview ....... PASS      (owner, 2026-08-25)
+PR #349 .................. OPEN / MERGEABLE
+Turnstile temporal ....... REMOVED   (retirado por el owner, 2026-08-25)
+Merge .................... PENDIENTE DE AUTORIZACIÓN DEL OWNER
+Frontend en producción ... NO TODAVÍA
+```
+
+**`PATIENT-CRM-P0` queda listo para la decisión de merge**, sin pendientes
+operativos ni residuos de configuración.
+
+Frentes **registrados y no implementados**, ninguno abierto sin instrucción del
+owner: `COPY-TUTEO-LOGIN` · `PATIENT-CRM-FILTERS-P1` ·
+`QA-PATIENT-DATA-CLEANUP-P0` · `CRM-SEARCH-TRGM` · `ADMIN-DOCTOR-EXPORT` ·
+`TYPES-RECONCILIATION-P0`.
