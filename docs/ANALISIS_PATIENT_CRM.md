@@ -385,7 +385,13 @@ una pestaña. La lógica de fusión no se toca.
 **`s7_77`** — RPCs de lectura: `admin_list_patients_crm`,
 `admin_patients_crm_stats`, `admin_get_patient_crm_360`,
 `admin_get_patient_crm_timeline`.
-**`s7_78`** — RPCs de escritura: etiquetas, notas, seguimientos, bloqueo.
+**Migración futura (TBD)** — RPCs de escritura: etiquetas, notas, seguimientos,
+bloqueo.
+
+> ⚠️ **El número NO está reservado.** Este documento decía `s7_78`, pero ese
+> identificador lo tomó **`ADMIN-DOCTOR-EXPORT`** el 2026-08-26, que llegó
+> primero. No se reservan números para frentes no iniciados: se asigna el
+> siguiente libre en el momento de escribir el archivo.
 
 Separadas a propósito: `s7_76` es inerte sin las RPCs, y las de lectura no
 pueden romper nada.
@@ -401,7 +407,7 @@ pueden romper nada.
 | B2 | `s7_77`: RPCs de lectura | B1 |
 | B3 | UI lista + pestañas (sin escritura) | B2 |
 | B4 | Ficha 360 read-only | B2 |
-| B5 | `s7_78`: RPCs de escritura | B1 |
+| B5 | migración futura (TBD): RPCs de escritura | B1 |
 | B6 | UI de administración (etiquetas, notas, seguimientos) | B5 |
 | B7 | Timeline desde `audit_log` | B2 |
 | B8 | Métricas superiores | B2 |
@@ -751,7 +757,7 @@ rollback que borra datos en silencio es peor que no tenerlo.
 | Policies | **exactamente una** por tabla: `<tabla>_select_admin`, `FOR SELECT`, **`TO authenticated`**, `USING (public.is_admin())`, sin `WITH CHECK` |
 | GRANT | `SELECT` a `authenticated`. **Nada más** |
 | REVOKE | `ALL` de `PUBLIC` y de `anon` |
-| DML de cliente | **ninguno** — se muta solo por las RPCs de `s7_78` |
+| DML de cliente | **ninguno** — se muta solo por las RPCs de escritura, en una migración futura (TBD) |
 | Auditoría | trigger `AFTER INSERT/UPDATE/DELETE` → `audit_log`, marcado `edited_via: 'crm'` |
 
 La cláusula **`TO authenticated` es explícita**: omitirla equivale a `TO PUBLIC`,
@@ -1141,7 +1147,7 @@ Tres caminos, de menor a mayor costo:
 | Opción | Qué es | Costo | Cobertura |
 |---|---|---|---|
 | **A · runbook** | Ejecutar C inmediatamente después de B, en la misma sesión, y dejar dicho que durante esa ventana la lista puede mostrar la identidad técnica | cero | procedimental |
-| **B · raíz** | Que `admin_create_seed_doctor` **deje de sobrescribir** `profiles.email` con el correo comercial: el correo de contacto del médico no es la identidad técnica del profile | **migración nueva `s7_78`** sobre una RPC ya aplicada, en OTRO frente | completa y barata en tiempo de ejecución |
+| **B · raíz** | Que `admin_create_seed_doctor` **deje de sobrescribir** `profiles.email` con el correo comercial: el correo de contacto del médico no es la identidad técnica del profile | **migración nueva (número TBD)** sobre una RPC ya aplicada, en OTRO frente | completa y barata en tiempo de ejecución |
 | **C · audit_log** | Excluir por la fila inmutable que deja el seed (`edited_via = 'admin_create_seed_doctor'`, `new_data->>'seed_user_id'`) | índice de expresión sobre una tabla endurecida; contradice «`audit_log` no es el event store del CRM» | completa, pero cara |
 
 **Recomendación: A ahora, B cuando se reabra el frente del seed.** Ninguna de
@@ -1679,6 +1685,30 @@ Ambos dejaron **guarda estática** en `check-s7_76`, validada A/B.
 `UnlinkedPatientsTab`, `patientCrm.service.ts`, `lib/csv.ts` y la modificación
 de `AdminPacientesPage` siguen **locales, sin commitear y sin PR**. Nada se
 commitea ni se despliega sin instrucción del owner.
+
+---
+
+## Nota sobre la numeración de migraciones (2026-08-26)
+
+Este documento reservaba `s7_78` para dos cosas distintas: las **RPCs de
+escritura** del CRM y el **fix del correo del seed**. Ninguno de los dos
+frentes se inició, y el identificador lo tomó **`ADMIN-DOCTOR-EXPORT`**, que
+llegó primero. Las referencias de arriba pasaron a **«migración futura (TBD)»**
+sin asignarles otro número: **no se reservan identificadores para frentes no
+iniciados**, porque una reserva que nadie consume solo produce huecos y
+colisiones.
+
+**Dos menciones a `s7_78` quedan DELIBERADAMENTE sin corregir**, y no son un
+olvido:
+
+- `migrations/s7_76_patient_crm_foundation.sql` (líneas 41 y 177);
+- `docs/OWNER_S7_76_APPLY.md` (línea 258), dentro del SQL reproducido en línea.
+
+Ese archivo de migración **ya se aplicó en producción** y su contenido es el
+registro de lo que se ejecutó; su guía reproduce ese mismo SQL. Editarlos
+rompería la correspondencia entre el repositorio y lo aplicado —incluida la
+huella sha256 que se documentó al aplicarlo— a cambio de corregir un
+comentario. **El registro histórico manda sobre la prolijidad.**
 
 ---
 
