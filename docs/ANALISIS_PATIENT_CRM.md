@@ -1052,6 +1052,12 @@ auditoría — no una casilla en esta.
 compartido + allowlist + gate + auditoría sin PII + tope técnico) a la tabla de
 médicos. **No se implementa en este frente.**
 
+> ✅ **CERRADO el 2026-08-26** como `ADMIN-DOCTOR-EXPORT-P0`, PR **#351**,
+> migración **`s7_78`**. El patrón se aplicó tal cual: núcleo compartido —la RPC
+> **reutiliza `admin_list_doctors`** en vez de repetir su predicado—, allowlist
+> explícita de 15 columnas, gate `is_admin()`/`P0140`, auditoría sin PII y tope
+> técnico de 10 000 con `P0146`. Detalle en `docs/HISTORIAL_FRENTES.md`.
+
 ---
 
 ## Checks tras P1.1 y P5
@@ -1879,5 +1885,7 @@ configuración.
 
 Frentes **registrados y no implementados**, ninguno abierto sin instrucción del
 owner: `COPY-TUTEO-LOGIN` · `PATIENT-CRM-FILTERS-P1` ·
-`QA-PATIENT-DATA-CLEANUP-P0` · `CRM-SEARCH-TRGM` · `ADMIN-DOCTOR-EXPORT` ·
-`TYPES-RECONCILIATION-P0`.
+`QA-PATIENT-DATA-CLEANUP-P0` · `CRM-SEARCH-TRGM` · `TYPES-RECONCILIATION-P0`.
+
+**`ADMIN-DOCTOR-EXPORT` ya NO está en esa lista:** se cerró el 2026-08-26 como
+`ADMIN-DOCTOR-EXPORT-P0` (PR #351, `s7_78`), reutilizando este mismo patrón.

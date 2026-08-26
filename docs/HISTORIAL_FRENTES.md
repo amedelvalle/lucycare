@@ -7,8 +7,8 @@
 > **históricos**.
 >
 > ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
-> (PR #348), `PATIENT-CRM-P0` (PR #349) y `CRM-CSV-FECHAS-P0` (PR #350) ya
-> están cerrados** y figuran abajo.
+> (PR #348), `PATIENT-CRM-P0` (PR #349), `CRM-CSV-FECHAS-P0` (PR #350) y
+> `ADMIN-DOCTOR-EXPORT-P0` (PR #351) ya están cerrados** y figuran abajo.
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 
@@ -147,6 +147,107 @@
 - **Dominio público:** `https://lucycare.app` ✅ live en producción desde 2026-05-26 (PR #48). DNS gestionado en Cloudflare. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar). Previews siguen en `lucycare-git-*.vercel.app`.
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
+
+## Frentes cerrados 2026-08 (PR #351)
+
+- **ADMIN-DOCTOR-EXPORT-P0 — #351** ✅ **CLOSED (2026-08-26).** Exportación CSV
+  de la base administrativa de médicos desde `/admin/medicos`, **en producción**.
+  `main` quedó en `61da06e372ecb5c8a4f602492f04ce77a72020f4`.
+
+  **Backend:** `s7_78` = **migración 99**, **APPLIED / VERIFIED / CLOSED**,
+  aplicada por el owner el 2026-08-26 **antes** del PR; entró como registro
+  versionado y **no se ejecutó con el merge**. Crea **una sola función**,
+  `admin_export_doctors`: no crea tablas, no altera nada existente y no migra
+  datos. Su único efecto sobre datos es la fila de auditoría de cada export.
+
+  **La decisión de diseño central:** en vez de repetir el `WHERE` del listado,
+  **invoca `admin_list_doctors`** —que es `RETURNS TABLE` y por eso se puede usar
+  en un `FROM`— y solo **enriquece por `id`** las cuatro columnas que esa RPC no
+  devuelve: correo, dirección, departamento y municipio. Así el predicado de
+  búsqueda y filtros vive en **un solo lugar** (`s7_04`) y **listado y export no
+  pueden divergir**. Copiarlo habría creado dos definiciones que se separan al
+  primer cambio, con un síntoma silencioso: un CSV que no coincide con lo que el
+  admin ve. Verificado antes de escribirlo: `admin_list_doctors` aplica
+  `LIMIT GREATEST(p_limit, 1)`, un **piso sin techo**, sin `LEAST` ni clamp, así
+  que acepta `MAX_EXPORT + 1 = 10001`. La migración **comprueba ese supuesto en
+  su POST** y abortaría si algún día adquiere un límite superior.
+
+  **Orden:** el `ORDER BY` va **dentro de `jsonb_agg`**, la única construcción
+  que PostgreSQL garantiza para un agregado; uno en la subconsulta no obliga a
+  nada y el `ORDER BY` interno de la función invocada no sobrevive al JOIN. El
+  desempate por `id` lo hace determinista entre corridas.
+
+  **15 columnas:** Nombre · Especialidad · Teléfono · Correo · Clínica ·
+  Dirección de clínica · Departamento · Municipio · Estado LucyCare · **Perfil
+  reclamado** · **Verificado en LucyCare** · Publicado · Agenda habilitada ·
+  Operativo · **Fecha de alta en LucyCare**. Los dos booleanos se derivan
+  **exclusivamente de `lucy_status`**; los encabezados son explícitos porque
+  «Verificado» a secas se confunde con la verificación de la credencial JVPM,
+  que es **otro eje**. Fechas en `DD/MM/YYYY HH:mm` con `America/El_Salvador`
+  fijada explícitamente. CSV UTF-8 con BOM, CRLF y la protección contra formula
+  injection de `src/lib/csv.ts`, reutilizada sin tocarla.
+
+  **Seguridad:** `SECURITY DEFINER` · `VOLATILE` (audita) · `search_path` fijo ·
+  gate `is_admin()` con **`P0140`**. Privilegios **explícitos de los cuatro
+  roles**, sin heredar defaults: `REVOKE` de `PUBLIC`, `anon` y `service_role`;
+  `GRANT` **solo** a `authenticated`. **`directory_editor` es `authenticated`,
+  recibe el GRANT y aun así obtiene `P0140`** — autenticado sí, autorizado no —
+  y el botón vive solo en `OwnerDoctorsView`. **`MAX_EXPORT = 10000`**: se piden
+  10 001 para distinguir «cabe» de «no cabe» y por encima **aborta con `P0146`**.
+  **No trunca**: un CSV recortado en silencio es peor que un error, porque quien
+  lo recibe no puede notar lo que falta.
+
+  **Auditoría solo de metadata**, escrita **después** de las tres validaciones:
+  actor, formato, nº de registros, **si hubo búsqueda (booleano, nunca el
+  texto)** y los filtros normalizados. Cero nombres, correos, teléfonos o filas.
+  Los **5** eventos generados en los smokes se verificaron uno por uno.
+
+  **Validación:** `check-s7_78` **115/115** (estático, con A/B del instrumento) ·
+  `check-admin-doctor-csv` **50/50** (**conductual**: el servicio real
+  transpilado con esbuild y `buildDoctorsCsv` ejecutado sobre filas sintéticas —
+  15 columnas, fechas incluido UTC que cruza el día y medianoche `00:15`, NULL,
+  tildes y eñes, inyección de fórmulas, BOM en bytes, **10 000 filas en 342 ms**)
+  · `check-crm-csv-fechas` **33/33** sin regresión · `_qa-crm-paginacion`
+  **35/35** · `tsc` y `build` **PASS** · **Vercel Production PASS**.
+
+  **Smokes del owner:** Preview **PASS** con 3 CSV revisados que **particionan el
+  universo** —36 publicados + 2 no publicados/operativos + 77 no publicados/no
+  operativos = **115**, sin solapes ni huecos— y producción **PASS**. El POST de
+  producción confirmó la creación por contraste: la RPC pasó de `PGRST202` a
+  **`42501 permission denied`**, que prueba a la vez que existe y que
+  `service_role` y `anon` **no** pueden ejecutarla.
+
+  **Turnstile:** el hostname temporal del Preview quedó **REMOVED** y
+  `lucycare.app` **permanece autorizado**.
+
+  **Decisiones cerradas:** **CSV en P0, no XLSX** —no hay formato condicional,
+  varias hojas ni fórmulas que justifiquen una librería nueva en un bundle que ya
+  arrastra un aviso de tamaño— · **sin `license_number` ni JVPM**, protegido por
+  RLS **por fila** (`s7_61`) y con su columna en `doctors` en retiro lógico ·
+  **sin citas, atenciones, última actividad, próxima cita ni rating** ·
+  **fecha de reclamación, de verificación y de afiliación OMITIDAS por no existir
+  fuente canónica fiable**, verificado dato a dato: `doctors.claimed_at` **no
+  existe** —el `claimed_at` de `s7_13` vive dentro del payload de `audit_log`,
+  no es una columna—, `tos_accepted_at` cubre **1/115**,
+  `doctor_credentials.verified_at` está en **0/115** porque las 115 credenciales
+  son `pending` (y el CHECK impide fecha sin verificación), y
+  `clinic_members.joined_at` cubre **15/115**, todas con rol `owner`, que es
+  titularidad y no afiliación · **Departamento y Municipio pueden salir vacíos**:
+  solo **20/115** clínicas los tienen. Es **dato faltante, no defecto**.
+
+  **Deuda separada, registrada y NO corregida:** `admin_list_doctors` ordena por
+  `created_at DESC` **sin desempate**, así que dos médicos creados en el mismo
+  instante pueden intercambiarse entre páginas **de la pantalla** — es un defecto
+  de la paginación existente, no del export, que aplica su propio orden ·
+  **`ADMIN-DOCTOR-EXPORT-P1`**: actividad y rating, si alguna vez se piden ·
+  **`ADMIN-DOCTOR-EXPORT-P2`**: exportación asíncrona o por streaming, **solo si
+  el volumen supera razonablemente los 10 000**.
+
+  **Numeración:** `s7_78` estaba **reservado especulativamente** para dos frentes
+  nunca iniciados; esas referencias pasaron a «migración futura (TBD)». Dos
+  menciones quedan **deliberadamente sin tocar** dentro de
+  `migrations/s7_76_patient_crm_foundation.sql` y su guía, porque ese archivo ya
+  se aplicó y su contenido es el registro de lo ejecutado.
 
 ## Frentes cerrados 2026-08 (PR #350)
 

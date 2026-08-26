@@ -4,7 +4,7 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-26) — post PR #350 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-26) — post PR #351 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`
 > (leer PRIMERO).** Reemplaza al `2026-08-22_ADMIN_DOCTOR_SEED_P0`, que pasa a
@@ -82,25 +82,85 @@
 > `hourCycle: 'h23'` y no `hour12: false`: este último puede rendir `24:15`
 > para la medianoche.
 >
+> ✅ **`ADMIN-DOCTOR-EXPORT-P0` = CLOSED (2026-08-26).** Exportación CSV de la
+> base de médicos desde LucyAdmin, **en producción**. PR **#351 MERGED** por
+> **squash and merge**; `main` quedó en
+> **`61da06e372ecb5c8a4f602492f04ce77a72020f4`**. **`s7_78` = migración 99,
+> APPLIED / VERIFIED / CLOSED** (aplicada por el owner el 2026-08-26, ANTES del
+> PR; entró como registro versionado y **no se ejecutó con el merge**).
+>
+> **Qué hace:** desde `/admin/medicos`, el **Owner Admin** descarga los médicos
+> que cumplen **exactamente los filtros activos** —búsqueda, publicado,
+> operativo, `lucy_status`—, **no la página visible de 25**. La RPC
+> `admin_export_doctors` **reutiliza `admin_list_doctors`** para resolver el
+> universo, así que el predicado vive en **un solo lugar** y listado y export no
+> pueden divergir; solo enriquece por `id` el correo, la dirección, el
+> departamento y el municipio. El array JSON se ordena **dentro de `jsonb_agg`**
+> por `created_at DESC, id`.
+>
+> **15 columnas:** Nombre · Especialidad · Teléfono · Correo · Clínica ·
+> Dirección · Departamento · Municipio · Estado LucyCare · **Perfil reclamado** ·
+> **Verificado en LucyCare** · Publicado · Agenda habilitada · Operativo ·
+> **Fecha de alta en LucyCare**. Fechas en **`DD/MM/YYYY HH:mm`** con
+> `America/El_Salvador` fijada explícitamente. CSV UTF-8 con BOM, CRLF y la
+> protección contra formula injection de `src/lib/csv.ts`, reutilizada tal cual.
+>
+> **Seguridad:** `SECURITY DEFINER` · `VOLATILE` · `search_path` fijo · gate
+> `is_admin()` con **`P0140`** · privilegios **explícitos** de los cuatro roles
+> (`REVOKE` de `PUBLIC`, `anon` y `service_role`; `GRANT` solo a
+> `authenticated`). **`directory_editor` recibe el GRANT y aun así obtiene
+> `P0140`**: autenticado sí, autorizado no. El botón vive solo en
+> `OwnerDoctorsView`. **`MAX_EXPORT = 10000`**: se piden 10 001 para detectar el
+> exceso y por encima **aborta con `P0146` en vez de truncar**.
+>
+> **Auditoría no-PII**, escrita **después** de las tres validaciones: actor,
+> formato, nº de registros, **si hubo búsqueda (booleano, nunca el texto)** y los
+> filtros normalizados. Cero nombres, correos, teléfonos o filas exportadas.
+>
+> **Validación:** `check-s7_78` **115/115** (con A/B del instrumento) ·
+> `check-admin-doctor-csv` **50/50** (**conductual**: el servicio real
+> transpilado con esbuild) · `tsc` y `build` **PASS** · **Vercel Production
+> PASS** · **smoke del Preview PASS** (owner, 3 CSV revisados que particionan el
+> universo: **36 + 2 + 77 = 115**) · **smoke autenticado de producción PASS**.
+> Los **5** eventos de `audit_log` verificados: solo metadata aprobada, cero PII.
+>
+> **Turnstile:** el hostname temporal del Preview quedó **REMOVED** (retirado por
+> el owner) y **`lucycare.app` permanece autorizado**. Sin pendientes de
+> Cloudflare.
+>
+> **Decisiones vigentes:** **CSV en P0, no XLSX** (no hay formato condicional,
+> hojas ni fórmulas que justifiquen una librería nueva) · **sin `license_number`
+> ni JVPM** —protegido por RLS por fila en `s7_61`, y la columna de `doctors`
+> está en retiro lógico— · **sin citas, atenciones, última actividad, próxima
+> cita ni rating**, que exigirían agregaciones sobre tablas que crecen con el uso
+> · **fecha de reclamación, de verificación y de afiliación OMITIDAS**: se
+> verificó que **no existe fuente canónica fiable** (`doctors.claimed_at` no
+> existe —el `claimed_at` de `s7_13` vive dentro del payload de `audit_log`—,
+> `tos_accepted_at` cubre 1/115, `doctor_credentials.verified_at` está en 0/115
+> porque las 115 credenciales son `pending`, y `clinic_members.joined_at` cubre
+> 15/115 y todas con rol `owner`) · **Departamento y Municipio pueden salir
+> vacíos**: solo 20/115 clínicas los tienen cargados. Es **dato faltante, no
+> defecto del export**.
+>
 > ℹ️ **`TYPES-RECONCILIATION-P0` es un frente aparte, no iniciado.**
 > `src/types/database.types.ts` está desactualizado desde antes de estos frentes
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
-> `7f802d3ce1b3fe2c5b4278d063021ee8fd3b0181` — PR #350.** · **PRs funcionales
-> mergeados hasta #350** · **98 migraciones aplicadas** (hasta `s7_77`; #350 no
-> tocó la base) · `main == origin/main` · árbol limpio · **0 PRs abiertos** ·
-> producción desplegada y **validada** contra el dominio · **ningún frente
-> funcional abierto**.
+> `61da06e372ecb5c8a4f602492f04ce77a72020f4` — PR #351.** · **PRs funcionales
+> mergeados hasta #351** · **99 migraciones aplicadas** (hasta `s7_78`) ·
+> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
+> desplegada y **validada** contra el dominio · **ningún frente funcional
+> abierto**.
 >
-> ⚠️ **`7f802d3` es el último HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`61da06e` es el último HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> **Último cambio funcional:** #350 (fechas legibles en el export CSV del CRM).
-> Antes: #349 (CRM de pacientes en LucyAdmin), #348 (seed de médico) y #346,
-> #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
+> **Último cambio funcional:** #351 (exportación CSV de la base de médicos,
+> `s7_78`). Antes: #350 (fechas del export CSV del CRM), #349 (CRM de pacientes),
+> #348 (seed de médico) y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
 > mediante 5 PRs (#342–#346), ninguno con migración ni cambio de
 > configuración** — ver §5 del handoff vigente. Los PRs docs-only mueven el SHA
 > del repositorio pero **no** el estado funcional, las migraciones, la DB, la
@@ -423,6 +483,8 @@ squash-merge, la rama puede borrarse.
 - **#347–#349** ✅ — handoff canónico post-#346 (#347, docs-only), **ADMIN-DOCTOR-SEED-P0** (#348, `s7_73`–`s7_75` + Edge Function `admin-create-seed-doctor` v4) y **PATIENT-CRM-P0** (#349, `s7_76`/`s7_77` **ya aplicadas antes del PR**, CRM de pacientes en LucyAdmin con las tres pestañas). Ambos frentes **CLOSED** y validados en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#350** ✅ — **CRM-CSV-FECHAS-P0**: las tres columnas de fecha/hora del export CSV del CRM pasan de timestamp ISO crudo a `DD/MM/YYYY HH:mm` en hora de El Salvador. **Frontend-only, sin migración ni backend.** CSV validado por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#351** ✅ — **ADMIN-DOCTOR-EXPORT-P0**: exportación CSV de la base de médicos desde `/admin/medicos`, solo para Owner Admin. `s7_78` (**migración 99**, aplicada antes del PR) crea `admin_export_doctors`, que **reutiliza `admin_list_doctors`** para el universo filtrado. 15 columnas, tope 10 000, auditoría no-PII. CSV validado por el owner en Preview y en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
@@ -780,6 +842,13 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_78` ADMIN-DOCTOR-EXPORT-P0: RPC `admin_export_doctors` (`SECURITY
+  DEFINER`, `VOLATILE`, gate `is_admin()`/`P0140`, solo `csv`/`P0142`, tope
+  10 000/`P0146`). **Reutiliza `admin_list_doctors`** para el universo filtrado
+  y enriquece por `id`; ordena **dentro de `jsonb_agg`** por `created_at DESC,
+  id`. Privilegios explícitos: `REVOKE` de `PUBLIC`, `anon` y `service_role`,
+  `GRANT` solo a `authenticated`. Auditoría **no-PII**. No crea tablas ni altera
+  nada existente.
 - `s7_76`–`s7_77` PATIENT-CRM-P0: fundación de datos del CRM (4 tablas, RLS,
   índices, auditoría) y RPCs de lectura (vista canónica de identidad, listado
   paginado, pendientes de identificar, métricas y exportación CSV auditada).
