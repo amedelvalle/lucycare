@@ -209,11 +209,69 @@ const EXPORT_COLUMNS: { key: keyof CrmPatientRow; header: string }[] = [
   { key: 'tags', header: 'Etiquetas' },
 ];
 
+/**
+ * Zona horaria de El Salvador, fijada EXPLÍCITAMENTE.
+ *
+ * Sin `timeZone`, `Intl` usa el reloj del navegador: un admin conectado desde
+ * otro huso vería el mismo registro con otra hora, y el archivo dejaría de ser
+ * comparable entre quien lo exporta. El Salvador no aplica horario de verano,
+ * así que la conversión es estable todo el año.
+ *
+ * `src/utils/date.ts` tiene la misma constante pero SIN exportar, así que no
+ * se puede reutilizar sin ampliar el alcance de este cambio.
+ */
+const CSV_TIMEZONE = 'America/El_Salvador';
+
+/** Las tres columnas de fecha/hora del export. El resto se serializa igual que antes. */
+const CSV_COLUMNAS_FECHA: ReadonlySet<keyof CrmPatientRow> = new Set([
+  'created_at',
+  'ultima_actividad',
+  'proxima_cita',
+]);
+
+/**
+ * `DD/MM/YYYY HH:mm` en hora de El Salvador — solo para el CSV.
+ *
+ * Se ensambla con `formatToParts` en vez de `toLocaleString` por dos motivos
+ * que no se ven hasta que se prueba:
+ *
+ *   · `es-SV` es un locale de 12 horas, así que sin `hourCycle` devolvería
+ *     `01:49 p. m.`;
+ *   · `toLocaleString` intercala una COMA entre fecha y hora (`02/08/2026,
+ *     13:49`). No rompería el archivo —`csvCell` entrecomillaría la celda—
+ *     pero no es el formato pedido.
+ *
+ * `hourCycle: 'h23'` y no `hour12: false`: este último puede rendir `24:15`
+ * para la medianoche en algunos motores.
+ *
+ * Una fecha ilegible devuelve el valor ORIGINAL, no `Invalid Date`: ante un
+ * dato inesperado es preferible un ISO crudo a perder la información.
+ */
+const CSV_FECHA_FMT = new Intl.DateTimeFormat('es-SV', {
+  timeZone: CSV_TIMEZONE,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function fechaCsv(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
+  for (const parte of CSV_FECHA_FMT.formatToParts(d)) p[parte.type] = parte.value;
+  if (!p.day || !p.month || !p.year || !p.hour || !p.minute) return iso;
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
+}
+
 function celda(row: CrmPatientRow, key: keyof CrmPatientRow): string {
   const v = row[key];
   if (v === null || v === undefined) return '';
   if (Array.isArray(v)) return v.join(' | ');
   if (key === 'crm_status') return CRM_STATUS_LABEL[v as CrmStatus] ?? String(v);
+  if (CSV_COLUMNAS_FECHA.has(key)) return fechaCsv(String(v));
   return String(v);
 }
 
