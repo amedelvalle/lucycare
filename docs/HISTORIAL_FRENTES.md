@@ -7,7 +7,8 @@
 > **históricos**.
 >
 > ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
-> (PR #348) y `PATIENT-CRM-P0` (PR #349) ya están cerrados** y figuran abajo.
+> (PR #348), `PATIENT-CRM-P0` (PR #349) y `CRM-CSV-FECHAS-P0` (PR #350) ya
+> están cerrados** y figuran abajo.
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 
@@ -146,6 +147,56 @@
 - **Dominio público:** `https://lucycare.app` ✅ live en producción desde 2026-05-26 (PR #48). DNS gestionado en Cloudflare. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar). Previews siguen en `lucycare-git-*.vercel.app`.
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
+
+## Frentes cerrados 2026-08 (PR #350)
+
+- **CRM-CSV-FECHAS-P0 — #350** ✅ **CLOSED (2026-08-26).** Las tres columnas de
+  fecha/hora del **export CSV** del CRM de pacientes —`Fecha de registro`
+  (`created_at`), `Última actividad` (`ultima_actividad`) y `Próxima cita`
+  (`proxima_cita`)— se escribían como timestamps ISO crudos
+  (`2026-08-02T13:49:49.181225-06:00`), ilegibles al abrir el archivo. Ahora
+  salen como **`02/08/2026 13:49`**.
+
+  **Frontend-only: sin SQL, sin migraciones, sin backend, sin configuración.**
+  El CSV se genera **en el navegador**; la RPC `admin_export_patients_crm` solo
+  devuelve filas JSON y no se tocó. Un único archivo de producto,
+  `src/services/patientCrm.service.ts` (**+58 / −0**), más el check nuevo
+  `scripts/check-crm-csv-fechas.mjs`.
+
+  **Lo que NO cambió:** las otras **11 columnas quedan byte-equivalentes**, la
+  visualización **en pantalla** sigue igual (`PatientsCrmTab` usa su propio
+  formateador) y **`src/lib/csv.ts` no se tocó** — la protección contra
+  CSV/formula injection y el escape RFC 4180 se aplican igual, porque el valor
+  formateado sigue pasando por `csvCell`, y el BOM sigue presente. **NULL y
+  `undefined` siguen dando celda vacía**; una fecha ilegible **conserva el valor
+  original** en vez de escribir `Invalid Date`.
+
+  **Dos detalles que solo aparecen al probarlo**, y que explican la
+  implementación: se ensambla con `Intl.DateTimeFormat().formatToParts()` y no
+  con `toLocaleString`, porque **`es-SV` es un locale de 12 horas** —sin
+  `hourCycle` devolvería `01:49 p. m.`— y porque **`toLocaleString` intercala
+  una coma** entre fecha y hora (`02/08/2026, 13:49`), que no rompería el
+  archivo pero no es el formato pedido. Se usa **`hourCycle: 'h23'`** y no
+  `hour12: false`: este último puede rendir `24:15` para la medianoche. La zona
+  **`America/El_Salvador` se fija explícitamente** porque sin ella `Intl` usa el
+  reloj del navegador y un admin conectado desde otro huso vería horas distintas
+  para el mismo registro. `SV_TIMEZONE` de `src/utils/date.ts` **no está
+  exportada**, así que reutilizarla habría ampliado el alcance.
+
+  **Validación:** `check-crm-csv-fechas` **33/33** —prueba **conductual**: el
+  servicio real transpilado con esbuild y `buildPatientsCsv` ejecutado sobre
+  filas sintéticas, no inspección de texto—, cubriendo microsegundos con offset,
+  UTC convertido a El Salvador (incluido el caso en que **cambia el día**),
+  medianoche, NULL, fecha inválida, las 14 columnas y la protección de
+  inyección. **Validado A/B**: la versión anterior devuelve el ISO crudo.
+  Además `tsc` y `build` **PASS**, `_qa-crm-paginacion` **35/35**, **Vercel
+  Production PASS** y **CSV descargado y validado por el owner en producción**.
+  `main` quedó en `7f802d3ce1b3fe2c5b4278d063021ee8fd3b0181`.
+
+  **Deuda PREEXISTENTE registrada, no corregida:** `check-s7_76` da `329/353`
+  por incompatibilidad con **CRLF en Windows** (`core.autocrlf=true` frente a
+  regex anclados en `;\n`). Demostrado A/B contra el archivo original: **no es
+  regresión de este PR** y no afecta a producción.
 
 ## Frentes cerrados 2026-08 (PRs #348–#349)
 

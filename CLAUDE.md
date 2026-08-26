@@ -4,7 +4,7 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-25) — post PR #349 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-26) — post PR #350 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`
 > (leer PRIMERO).** Reemplaza al `2026-08-22_ADMIN_DOCTOR_SEED_P0`, que pasa a
@@ -49,24 +49,58 @@
 > permanecen **separados** como fichas **sin identidad global vinculada**, en la
 > pestaña «Pendientes de identificar», y **no se suman** al universo del CRM.
 >
+> ✅ **`CRM-CSV-FECHAS-P0` = CLOSED (2026-08-26).** PR **#350 MERGED** por
+> **squash and merge**; `main` quedó en
+> **`7f802d3ce1b3fe2c5b4278d063021ee8fd3b0181`**. Las tres columnas de
+> fecha/hora del **export CSV** del CRM —`Fecha de registro`,
+> `Última actividad` y `Próxima cita`— se escribían como timestamps ISO
+> crudos (`2026-08-02T13:49:49.181225-06:00`) y ahora salen como
+> **`02/08/2026 13:49`**, con la zona **`America/El_Salvador` fijada
+> explícitamente** para que no dependa del reloj del navegador.
+>
+> **Frontend-only: sin SQL, sin Supabase, sin migraciones, sin backend, sin
+> configuración.** Un solo archivo de producto,
+> `src/services/patientCrm.service.ts` (+58/−0), más el check nuevo
+> `scripts/check-crm-csv-fechas.mjs`. Las otras **11 columnas quedan
+> byte-equivalentes**, la **visualización en pantalla no cambia** y
+> `src/lib/csv.ts` **no se tocó**: la protección contra CSV/formula injection
+> y el escape RFC 4180 se aplican igual, porque el valor formateado sigue
+> pasando por `csvCell`. **NULL sigue dando celda vacía** y una fecha ilegible
+> **conserva el valor original** en vez de escribir `Invalid Date`.
+>
+> **Validación:** `check-crm-csv-fechas` **33/33** (prueba **conductual**: el
+> servicio real transpilado con esbuild, no inspección de texto) · `tsc` y
+> `build` **PASS** · `_qa-crm-paginacion` **35/35** · **Vercel Production
+> PASS** · **CSV descargado y validado por el owner en producción**: formato
+> correcto en las tres columnas, sin `T`, sin microsegundos, sin offset, y las
+> celdas vacías siguen vacías.
+>
+> Detalle de implementación: se ensambla con
+> `Intl.DateTimeFormat().formatToParts()` y **no** con `toLocaleString`,
+> porque `es-SV` es un locale de **12 horas** (daría `01:49 p. m.`) y
+> `toLocaleString` **intercala una coma** entre fecha y hora. Se usa
+> `hourCycle: 'h23'` y no `hour12: false`: este último puede rendir `24:15`
+> para la medianoche.
+>
 > ℹ️ **`TYPES-RECONCILIATION-P0` es un frente aparte, no iniciado.**
 > `src/types/database.types.ts` está desactualizado desde antes de estos frentes
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
-> `38fa67c18efbf760c1a8a18d7beccb58b75b81b3` — PR #349.** · **PRs funcionales
-> mergeados hasta #349** · **98 migraciones aplicadas** (hasta `s7_77`)
-> · `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
-> desplegada y **validada** contra el dominio · **ningún frente funcional
-> abierto**.
+> `7f802d3ce1b3fe2c5b4278d063021ee8fd3b0181` — PR #350.** · **PRs funcionales
+> mergeados hasta #350** · **98 migraciones aplicadas** (hasta `s7_77`; #350 no
+> tocó la base) · `main == origin/main` · árbol limpio · **0 PRs abiertos** ·
+> producción desplegada y **validada** contra el dominio · **ningún frente
+> funcional abierto**.
 >
-> ⚠️ **`159d3b2` es el último HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`7f802d3` es el último HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> **Último cambio funcional:** #349 (CRM de pacientes en LucyAdmin). Antes: #348
-> (seed de médico) y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
+> **Último cambio funcional:** #350 (fechas legibles en el export CSV del CRM).
+> Antes: #349 (CRM de pacientes en LucyAdmin), #348 (seed de médico) y #346,
+> #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
 > mediante 5 PRs (#342–#346), ninguno con migración ni cambio de
 > configuración** — ver §5 del handoff vigente. Los PRs docs-only mueven el SHA
 > del repositorio pero **no** el estado funcional, las migraciones, la DB, la
@@ -388,6 +422,8 @@ squash-merge, la rama puede borrarse.
 
 - **#347–#349** ✅ — handoff canónico post-#346 (#347, docs-only), **ADMIN-DOCTOR-SEED-P0** (#348, `s7_73`–`s7_75` + Edge Function `admin-create-seed-doctor` v4) y **PATIENT-CRM-P0** (#349, `s7_76`/`s7_77` **ya aplicadas antes del PR**, CRM de pacientes en LucyAdmin con las tres pestañas). Ambos frentes **CLOSED** y validados en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#350** ✅ — **CRM-CSV-FECHAS-P0**: las tres columnas de fecha/hora del export CSV del CRM pasan de timestamp ISO crudo a `DD/MM/YYYY HH:mm` en hora de El Salvador. **Frontend-only, sin migración ni backend.** CSV validado por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
@@ -402,6 +438,7 @@ squash-merge, la rama puede borrarse.
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
 - **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
+- **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).
