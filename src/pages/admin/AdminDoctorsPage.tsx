@@ -6,6 +6,9 @@ import {
   setDoctorPublished,
   setDoctorOperational,
   setDoctorLucyStatus,
+  fetchDoctorsForExport,
+  buildDoctorsCsv,
+  doctorsExportFileName,
   type AdminDoctorRow,
   type LucyStatus,
 } from '../../services/admin.service';
@@ -119,6 +122,39 @@ function OwnerDoctorsView() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-doctors'] });
 
+  // ─── Exportación CSV ─────────────────────────────────────
+  // El archivo NO sale de las filas visibles: se pide al servidor el conjunto
+  // que cumple los MISMOS filtros activos, con su propio tope. La tabla sigue
+  // paginada de 25 en 25 y no se carga con el universo del export.
+  const [exportando, setExportando] = useState(false);
+  const [errorExport, setErrorExport] = useState<string | null>(null);
+
+  const exportarCsv = async () => {
+    // Guarda contra doble clic: sin esto, dos pulsaciones rápidas lanzan dos
+    // exportaciones y dejan dos filas de auditoría por una sola intención.
+    if (exportando) return;
+    setExportando(true);
+    setErrorExport(null);
+    try {
+      const filas = await fetchDoctorsForExport({
+        search: search || undefined,
+        published: triToBool(published),
+        operational: triToBool(operational),
+        lucyStatus: lucy || null,
+      });
+      const url = URL.createObjectURL(buildDoctorsCsv(filas));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doctorsExportFileName('csv');
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErrorExport(e instanceof Error ? e.message : 'No se pudo exportar.');
+    } finally {
+      setExportando(false);
+    }
+  };
+
   const mPublished = useMutation({
     mutationFn: ({ id, v }: { id: string; v: boolean }) => setDoctorPublished(id, v),
     onSuccess: invalidate,
@@ -153,14 +189,34 @@ function OwnerDoctorsView() {
           automáticamente de <code>lucy_status='verified'</code>).
         </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCrearAbierto(true)}
-          className="shrink-0 px-4 py-2 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer whitespace-nowrap"
-        >
-          Crear perfil
-        </button>
+        <div className="shrink-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={exportarCsv}
+            disabled={exportando}
+            aria-busy={exportando}
+            className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+          >
+            {exportando ? 'Preparando CSV…' : 'Exportar CSV'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCrearAbierto(true)}
+            className="px-4 py-2 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 cursor-pointer whitespace-nowrap"
+          >
+            Crear perfil
+          </button>
+        </div>
       </header>
+
+      {errorExport && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          {errorExport}
+        </div>
+      )}
 
       <AdminCreateSeedDoctorModal
         isOpen={crearAbierto}

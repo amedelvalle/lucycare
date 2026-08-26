@@ -1,3 +1,4 @@
+import { buildCsv } from '@/lib/csv';
 import { supabase } from '@/lib/supabase';
 
 export interface PlatformStats {
@@ -282,4 +283,166 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     reviewsAvgScore:
       r.reviews_avg_score == null ? null : Number(r.reviews_avg_score),
   };
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * ADMIN-DOCTOR-EXPORT-P0 · exportación de la base de médicos
+ * ═══════════════════════════════════════════════════════════ */
+
+/** Tope técnico, espejo del que aplica la RPC. Por encima, se pide acotar. */
+export const DOCTOR_EXPORT_MAX = 10000;
+
+/** Fila del export. Espejo EXACTO de la allowlist de `admin_export_doctors`. */
+export interface AdminDoctorExportRow {
+  full_name: string | null;
+  specialty: string | null;
+  phone: string | null;
+  email: string | null;
+  clinic_name: string | null;
+  clinic_address: string | null;
+  department: string | null;
+  municipality: string | null;
+  lucy_status: LucyStatus;
+  reclamado: boolean;
+  verificado: boolean;
+  publicado: boolean;
+  agenda: boolean;
+  operativo: boolean;
+  created_at: string;
+}
+
+const EXPORT_ERRORES: Record<string, string> = {
+  P0140: 'No tenés permiso para exportar la base de médicos.',
+  P0142: 'Ese formato de exportación no está disponible.',
+  P0146:
+    'La exportación es demasiado grande. Afina la búsqueda o el filtro e inténtalo de nuevo.',
+};
+
+function traducirExport(error: { code?: string; message?: string }): Error {
+  const code = error.code ?? '';
+  return new Error(EXPORT_ERRORES[code] ?? error.message ?? 'No se pudo exportar.');
+}
+
+/**
+ * Trae el conjunto FILTRADO COMPLETO, no la página visible.
+ *
+ * La RPC reutiliza `admin_list_doctors` para resolver el universo, así que
+ * hereda su búsqueda y sus filtros: es imposible que el archivo y la pantalla
+ * discrepen. El archivo se genera EN EL NAVEGADOR a partir de esta respuesta;
+ * no se sube nada a Supabase ni se crea ningún bucket.
+ */
+export async function fetchDoctorsForExport(
+  filters: AdminDoctorsFilters = {}
+): Promise<AdminDoctorExportRow[]> {
+  const { data, error } = await supabase.rpc('admin_export_doctors', {
+    p_search: filters.search?.trim() || null,
+    p_published: filters.published ?? null,
+    p_operational: filters.operational ?? null,
+    p_lucy_status: filters.lucyStatus ?? null,
+    p_formato: 'csv',
+  });
+  if (error) throw traducirExport(error);
+  const payload = (data ?? {}) as { rows?: AdminDoctorExportRow[] };
+  return payload.rows ?? [];
+}
+
+/** Estado LucyCare en español. El CSV no debe exponer el enum crudo. */
+const LUCY_STATUS_LABEL: Record<LucyStatus, string> = {
+  listed_only: 'Solo listado',
+  claimed: 'Reclamado',
+  booking_enabled: 'Con agenda',
+  verified: 'Verificado',
+};
+
+/**
+ * Zona horaria de El Salvador, fijada EXPLÍCITAMENTE.
+ *
+ * Sin `timeZone`, `Intl` usa el reloj del navegador: un admin conectado desde
+ * otro huso vería el mismo registro con otra fecha de alta. El Salvador no
+ * aplica horario de verano, así que la conversión es estable todo el año.
+ */
+const CSV_TIMEZONE = 'America/El_Salvador';
+
+/**
+ * `DD/MM/YYYY HH:mm` — solo para el CSV.
+ *
+ * Se ensambla con `formatToParts` y no con `toLocaleString` por dos motivos que
+ * no se ven hasta que se prueba: `es-SV` es un locale de 12 horas (devolvería
+ * `01:49 p. m.`) y `toLocaleString` intercala una COMA entre fecha y hora.
+ * `hourCycle: 'h23'` y no `hour12: false`: este último puede rendir `24:15`
+ * para la medianoche.
+ *
+ * Duplicado a propósito del formateador de `patientCrm.service.ts`: ese export
+ * acaba de cerrarse y validarse en producción, y no se toca para compartir
+ * quince líneas.
+ */
+const CSV_FECHA_FMT = new Intl.DateTimeFormat('es-SV', {
+  timeZone: CSV_TIMEZONE,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function fechaCsv(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
+  for (const parte of CSV_FECHA_FMT.formatToParts(d)) p[parte.type] = parte.value;
+  if (!p.day || !p.month || !p.year || !p.hour || !p.minute) return iso;
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
+}
+
+const siNo = (v: boolean | null | undefined): string => (v ? 'Sí' : 'No');
+
+/**
+ * Las 15 columnas del archivo, en orden. Es un SUBCONJUNTO de la allowlist del
+ * backend: el export no puede inventar campos, solo elegir cuáles de los que ya
+ * vienen escribe.
+ */
+const DOCTOR_EXPORT_COLUMNS: {
+  header: string;
+  value: (r: AdminDoctorExportRow) => string;
+}[] = [
+  { header: 'Nombre', value: (r) => r.full_name ?? '' },
+  { header: 'Especialidad', value: (r) => r.specialty ?? '' },
+  { header: 'Teléfono', value: (r) => r.phone ?? '' },
+  { header: 'Correo', value: (r) => r.email ?? '' },
+  { header: 'Clínica', value: (r) => r.clinic_name ?? '' },
+  { header: 'Dirección de clínica', value: (r) => r.clinic_address ?? '' },
+  { header: 'Departamento de clínica', value: (r) => r.department ?? '' },
+  { header: 'Municipio de clínica', value: (r) => r.municipality ?? '' },
+  { header: 'Estado LucyCare', value: (r) => LUCY_STATUS_LABEL[r.lucy_status] ?? String(r.lucy_status ?? '') },
+  // Encabezados explícitos: «Reclamado» a secas es ambiguo en una hoja de
+  // cálculo —¿reclamado por quién, de qué?— y «Verificado» se confunde con la
+  // verificación de la credencial JVPM, que es OTRO eje y hoy está en `pending`
+  // para los 115. Ambos se derivan solo de `lucy_status`; el backend no cambia.
+  { header: 'Perfil reclamado', value: (r) => siNo(r.reclamado) },
+  { header: 'Verificado en LucyCare', value: (r) => siNo(r.verificado) },
+  { header: 'Publicado', value: (r) => siNo(r.publicado) },
+  { header: 'Agenda habilitada', value: (r) => siNo(r.agenda) },
+  { header: 'Operativo', value: (r) => siNo(r.operativo) },
+  { header: 'Fecha de alta en LucyCare', value: (r) => (r.created_at ? fechaCsv(r.created_at) : '') },
+];
+
+/**
+ * CSV UTF-8 **con BOM**, generado con el serializador único de `lib/csv`.
+ *
+ * Ese serializador hace dos cosas que este archivo NO debe reimplementar:
+ * neutraliza las celdas que Excel leería como fórmula (`=`, `+`, `-`, `@`,
+ * tabulador, retorno de carro) y escapa según RFC 4180. Encabezados y datos
+ * pasan por la misma función: una sola ruta, sin excepciones.
+ */
+export function buildDoctorsCsv(rows: AdminDoctorExportRow[]): Blob {
+  const cabecera = DOCTOR_EXPORT_COLUMNS.map((c) => c.header);
+  const cuerpo = rows.map((r) => DOCTOR_EXPORT_COLUMNS.map((c) => c.value(r)));
+  return new Blob([buildCsv(cabecera, cuerpo)], { type: 'text/csv;charset=utf-8;' });
+}
+
+export function doctorsExportFileName(ext: 'csv'): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `lucycare-medicos-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.${ext}`;
 }
