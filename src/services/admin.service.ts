@@ -309,6 +309,8 @@ export interface AdminDoctorExportRow {
   agenda: boolean;
   operativo: boolean;
   created_at: string;
+  /** Valor canónico de `doctors.slug`. NULL mientras el médico nunca se publicó. */
+  slug: string | null;
 }
 
 const EXPORT_ERRORES: Record<string, string> = {
@@ -398,6 +400,40 @@ function fechaCsv(iso: string): string {
 const siNo = (v: boolean | null | undefined): string => (v ? 'Sí' : 'No');
 
 /**
+ * Dominio público de LucyCare, literal a propósito.
+ *
+ * NO se usa `window.location.origin`: exportar desde un Preview produciría
+ * enlaces `…vercel.app` que fallan en cuanto el archivo sale del navegador que
+ * lo generó, y el error sería invisible hasta que alguien hiciera clic. El
+ * archivo describe producción, así que el dominio es el de producción.
+ *
+ * No hay una constante canónica en `src/` que reutilizar —solo scripts la
+ * definen localmente— y abrir ese refactor excede este cambio.
+ */
+const LUCYCARE_PUBLIC_ORIGIN = 'https://lucycare.app';
+
+/**
+ * URL pública del perfil, o cadena vacía.
+ *
+ * Se llena SOLO si hay slug **y** el perfil está publicado. `fetchDoctorDetail`
+ * filtra por `is_published = true`, así que la URL de un médico no publicado
+ * renderiza «Médico no encontrado»: una columna llamada «URL pública» no debe
+ * contener enlaces muertos.
+ *
+ * El caso existe de verdad: el trigger `trg_set_doctor_slug` asigna el slug al
+ * publicar y **nunca lo reescribe**, así que un médico despublicado conserva su
+ * slug. Ese slug SÍ se exporta —es el valor canónico— pero su URL queda vacía.
+ *
+ * La ruta `/doctor/<slug>` es la canónica: el resolver de `directory.service`
+ * acepta UUID o slug, y la página reescribe la barra al slug cuando existe.
+ */
+function urlPublica(row: AdminDoctorExportRow): string {
+  const slug = row.slug?.trim();
+  if (!slug || !row.publicado) return '';
+  return `${LUCYCARE_PUBLIC_ORIGIN}/doctor/${slug}`;
+}
+
+/**
  * Las 15 columnas del archivo, en orden. Es un SUBCONJUNTO de la allowlist del
  * backend: el export no puede inventar campos, solo elegir cuáles de los que ya
  * vienen escribe.
@@ -425,6 +461,10 @@ const DOCTOR_EXPORT_COLUMNS: {
   { header: 'Agenda habilitada', value: (r) => siNo(r.agenda) },
   { header: 'Operativo', value: (r) => siNo(r.operativo) },
   { header: 'Fecha de alta en LucyCare', value: (r) => (r.created_at ? fechaCsv(r.created_at) : '') },
+  // ADMIN-DOCTOR-EXPORT-URL-P0. El slug se escribe TAL CUAL: nunca se
+  // reconstruye desde el nombre — quien los asigna es el trigger de `s7_52`.
+  { header: 'Slug', value: (r) => r.slug ?? '' },
+  { header: 'URL pública', value: urlPublica },
 ];
 
 /**
