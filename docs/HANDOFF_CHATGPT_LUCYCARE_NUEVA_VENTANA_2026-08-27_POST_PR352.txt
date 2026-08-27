@@ -1,0 +1,783 @@
+================================================================================
+HANDOFF LUCYCARE — NUEVA VENTANA DE CONTEXTO
+Fecha: 2026-08-27  ·  Post PR #352  ·  PUNTO DE ENTRADA CANÓNICO Y VIGENTE
+================================================================================
+
+Este documento es AUTOSUFICIENTE. No asume que conozcas ninguna conversación
+anterior. Léelo entero antes de proponer, diagnosticar o tocar nada.
+
+NO contiene: PII de pacientes, OTPs, contraseñas, tokens, hashes, claves,
+`service_role`, ni enlaces con credenciales. No los pidas ni los generes.
+
+Reconciliado read-only contra el repositorio y contra producción el 2026-08-27.
+
+
+================================================================================
+0 · LO PRIMERO QUE DEBES SABER
+================================================================================
+
+  · NINGÚN frente funcional está abierto. No hay trabajo a medias.
+  · El PILOTO está en GO desde el 2026-08-14.
+  · El owner decide; el dev ejecuta. Un solo frente funcional a la vez.
+  · NO abras `DOCTOR-OWNER-NOTIFICATIONS-P0` (§16). Fue conversado con el owner
+    pero TODAVÍA NO se entregó al dev. Espera su instrucción explícita.
+  · Los conteos de médicos, slugs y eventos de auditoría de este documento son
+    "última observación / baseline dinámico", NUNCA invariantes. La base se
+    mueve sola. No los hardcodees en checks ni en código.
+
+
+================================================================================
+1 · BASELINE GIT — verificado read-only el 2026-08-27
+================================================================================
+
+  rama actual .............. main
+  HEAD = origin/main ....... 291bf8afa172ab2944e5ee395d40d505a8666877
+  subject de HEAD .......... docs: close ADMIN-DOCTOR-EXPORT-URL-P0
+  último cambio FUNCIONAL .. f7213d29af0b61ea6104da8a962597bb005e658b  (PR #352)
+  árbol .................... limpio
+  PRs abiertos ............. 0
+  PR #352 .................. MERGED
+  PR #351 .................. MERGED
+  rama claude/admin-doctor-export-url-p0 ... eliminada (0 local · 0 remota)
+
+  Repositorio: github.com/amedelvalle/lucycare  (PÚBLICO)
+  Proyecto Supabase: kvrsfmzlrmmmavillpuj · "lucycare" · East US (Ohio) · PG 17.6
+
+  ⚠️ STASH PROTEGIDO — NO TOCAR NUNCA
+      stash@{0}: WIP on claude/admin-fase-a: 35c250e
+      No lo borres, no lo apliques, no lo inspecciones. Y NO uses `git stash`
+      en este repositorio: crear un stash propio reindexa ese stash protegido.
+      Ya pasó una vez; se restauró, pero no debe repetirse. Para aislar cambios
+      usa `git checkout -b`, que preserva el working tree.
+
+  ⚠️ `f7213d2` es el último HEAD FUNCIONAL confirmado, no el tip eterno del
+      repositorio. Los commits posteriores exclusivamente documentales NO
+      modifican el estado funcional. Para el tip vigente: `git rev-parse HEAD`.
+
+  Hay ~26 ramas `claude/*` antiguas en local, de sprints previos. NO las toques
+  sin autorización rama por rama.
+
+  Identidad de git en este repo: amedelvalle / lucycare.digital@gmail.com
+
+
+================================================================================
+2 · PRODUCCIÓN Y DESPLIEGUE
+================================================================================
+
+  Dominio: https://lucycare.app  (Vercel + Supabase; DNS en Cloudflare)
+
+  Últimos deployments de Production:
+    6125779790 · sha 291bf8af · success   ← commit documental de cierre
+    6125658489 · sha f7213d29 · success   ← PR #352, el cambio funcional
+
+  ── APRENDIZAJE OPERATIVO IMPORTANTE (incidente del PR #352) ──
+
+  Tras mergear #352, el webhook GitHub → Vercel tardó ~30 MINUTOS. Durante ese
+  tiempo el commit mostraba:
+      statuses = 0 · check-runs = 0 · ningún deployment · producción sirviendo
+      el bundle ANTERIOR
+  Se verificó que Git estaba conectado, Production Branch = `main` y
+  `lucycare.app` correctamente asignado. Finalmente el owner ejecutó desde
+  Vercel: Create Deployment → main → commit f7213d2 → Deploy to Production, y
+  quedó Ready.
+
+  NO fue un defecto del código.
+
+  Si vuelve a pasar:
+    1. Comprueba QUÉ COMMIT está realmente desplegado antes de concluir nada.
+    2. NO hagas `Redeploy` a ciegas sobre un deployment viejo: redesplegaría el
+       commit anterior y parecería que "no funcionó".
+    3. No des por caído un despliegue solo porque tarde.
+
+  ── VERIFICAR EL BUNDLE EN PRODUCCIÓN: cómo hacerlo bien ──
+
+  El código minificado publica la URL así:
+
+      const b = "https://lucycare.app";
+      function y(e){const t=e.slug?.trim();return!t||!e.publicado?"":`${b}/doctor/${t}`}
+
+  Por lo tanto, buscar la cadena literal `https://lucycare.app/doctor/` dentro
+  del bundle da FALSO NEGATIVO: se arma con template literal y nunca existe
+  concatenada. Verifica los componentes por separado (`https://lucycare.app` y
+  `/doctor/`).
+
+  Además, el código del servicio y el de la página viven en CHUNKS DISTINTOS
+  (`admin.service-*.js` y `AdminDoctorsPage-*.js`). Buscar todo en uno solo da
+  "ausente" para lo que está en el otro. Y las referencias a chunks dentro del
+  bundle principal aparecen en dos formas: `assets/Nombre-hash.js` y
+  `./Nombre-hash.js`; una expresión que solo capture la primera se pierde
+  chunks enteros.
+
+  REGLA GENERAL, aprendida a golpes en esta ventana: incluye siempre un CONTROL
+  DE SANIDAD — busca algo que con certeza SÍ está. Si el control también sale
+  "ausente", el defecto está en tu sonda, no en producción.
+
+
+================================================================================
+3 · MIGRACIONES
+================================================================================
+
+  Migraciones aplicadas en producción: 100
+  Última: migrations/s7_79_admin_doctor_export_slug.sql
+
+  s7_78_admin_doctor_export.sql ....... APPLIED · VERIFIED · CLOSED · NO REAPLICAR
+  s7_79_admin_doctor_export_slug.sql .. APPLIED · VERIFIED · CLOSED · NO REAPLICAR
+
+  Ambas fueron aplicadas por el OWNER en el SQL Editor ANTES de su PR, y
+  entraron al repositorio solo como REGISTRO VERSIONADO. El merge NO las
+  ejecuta: el repositorio no tiene ningún automatismo que aplique migraciones
+  (sin `.github/`, `vercel.json` solo con rewrites y cabeceras, `build` =
+  `vite build` sin `postinstall`, y sin `supabase/migrations/`).
+
+  ── s7_79: qué hace exactamente ──
+  `CREATE OR REPLACE` de `admin_export_doctors` que añade UNA SOLA clave a la
+  allowlist: `'slug', d.slug`. Nada más. `doctors d` ya estaba unido, así que no
+  hay JOIN nuevo ni cambio en el plan de ejecución. Verificado con A/B
+  estructural: quitando esa clave, el cuerpo es IDÉNTICO al de s7_78.
+
+  s7_79 NO GENERA SLUGS. Solo expone `doctors.slug`.
+
+  Quien genera slugs es el trigger canónico `trg_set_doctor_slug` (s7_52), cuyo
+  WHEN es:
+      WHEN (NEW.is_published = true AND NEW.slug IS NULL)
+  Es decir: se asigna AL PUBLICAR, y NUNCA se reescribe. El slug queda
+  CONGELADO. Consecuencia real: un médico despublicado conserva su slug.
+
+  Convención de numeración (decisión del owner, 2026-08-26): NO se reservan
+  números de migración para frentes no iniciados. Se asigna el siguiente libre
+  al escribir el archivo. La próxima sería `s7_80`.
+
+  ⚠️ NUNCA edites una migración ya aplicada. Es el registro de lo que se
+  ejecutó. En `migrations/s7_76_patient_crm_foundation.sql` y en
+  `docs/OWNER_S7_76_APPLY.md` quedan dos menciones a `s7_78` que ya no
+  corresponden; se dejaron DELIBERADAMENTE sin corregir por esta regla.
+
+
+================================================================================
+4 · ADMIN-DOCTOR-EXPORT-P0 — CLOSED (PR #351, s7_78)
+================================================================================
+
+  Exportación CSV de la base administrativa de médicos desde `/admin/medicos`,
+  SOLO para Owner Admin. En producción.
+
+  ── Arquitectura, y la decisión central ──
+  La RPC `admin_export_doctors` REUTILIZA `admin_list_doctors` para resolver el
+  universo filtrado, invocándola en el `FROM` (es `RETURNS TABLE`), y solo
+  ENRIQUECE por `id` las columnas que esa RPC no devuelve: correo, dirección,
+  departamento y municipio.
+
+  Por qué importa: el predicado de búsqueda y filtros vive en UN SOLO LUGAR
+  (`s7_04`). Copiarlo habría creado dos definiciones que se separan al primer
+  cambio, con un síntoma SILENCIOSO — un CSV que no coincide con lo que el admin
+  ve en pantalla. NO vuelvas a duplicarlo.
+
+  `admin_list_doctors` aplica `LIMIT GREATEST(p_limit, 1)`: un PISO de 1 SIN
+  TECHO, sin `LEAST` ni clamp. Por eso acepta `MAX_EXPORT + 1 = 10001`. La
+  migración verifica ese supuesto en su POST y abortaría si algún día adquiere
+  un límite superior.
+
+  ── Seguridad ──
+  SECURITY DEFINER · VOLATILE (audita) · search_path fijo · gate `is_admin()`
+  con P0140 · solo formato `csv`, cualquier otro → P0142 · MAX_EXPORT = 10000:
+  se piden 10001 para detectar el exceso y por encima ABORTA con P0146 en vez de
+  truncar (un CSV recortado en silencio es peor que un error).
+
+  Privilegios EXPLÍCITOS de los cuatro roles, sin heredar defaults:
+      REVOKE de PUBLIC, anon y service_role · GRANT solo a authenticated.
+  `directory_editor` ES `authenticated`, recibe el GRANT y AUN ASÍ obtiene
+  P0140: autenticado sí, autorizado no. El botón vive solo en OwnerDoctorsView.
+
+  ── Auditoría, NO-PII ──
+  `audit_log.table_name = 'admin_doctor_export'`, escrita DESPUÉS de las tres
+  validaciones. Registra: actor, formato, nº de registros, SI HUBO BÚSQUEDA
+  (booleano, NUNCA el texto) y los filtros normalizados.
+  Cero nombres, correos, teléfonos, slug, URL, filas exportadas o texto buscado.
+  `audit_log` es INMUTABLE desde s7_71b: lo que entre ahí no se corrige.
+
+  ── Formato ──
+  CSV UTF-8 con BOM · CRLF · protección contra CSV/formula injection y escape
+  RFC 4180 reutilizando `src/lib/csv.ts` SIN modificarlo · fechas
+  `DD/MM/YYYY HH:mm` con zona `America/El_Salvador` FIJADA EXPLÍCITAMENTE.
+
+  ── Las 15 columnas originales ──
+     1. Nombre                      9. Estado LucyCare
+     2. Especialidad               10. Perfil reclamado
+     3. Teléfono                   11. Verificado en LucyCare
+     4. Correo                     12. Publicado
+     5. Clínica                    13. Agenda habilitada
+     6. Dirección de clínica       14. Operativo
+     7. Departamento de clínica    15. Fecha de alta en LucyCare
+     8. Municipio de clínica
+
+  "Perfil reclamado" y "Verificado en LucyCare" se derivan EXCLUSIVAMENTE de
+  `lucy_status`. Los encabezados son explícitos a propósito: "Verificado" a
+  secas se confunde con la verificación de la credencial JVPM, que es OTRO EJE.
+
+  ── DECISIONES CERRADAS (no reabrir sin instrucción) ──
+   · CSV en P0, NO XLSX. No hay formato condicional, hojas ni fórmulas que
+     justifiquen una librería nueva en un bundle que ya arrastra un aviso de
+     tamaño (~671 kB).
+   · SIN `license_number` / JVPM. Está protegido por RLS POR FILA (s7_61) y la
+     columna de `doctors` está en retiro lógico (F1-c1). Un CSV lo sacaría de
+     ese control.
+   · SIN citas, atenciones, última actividad, próxima cita ni rating. Exigirían
+     agregaciones sobre tablas que crecen con el uso.
+   · Fecha de reclamación, de verificación y de afiliación OMITIDAS por NO
+     existir fuente canónica fiable. Verificado dato a dato:
+        - `doctors.claimed_at` NO EXISTE. El `claimed_at` de s7_13 vive dentro
+          del payload jsonb de `audit_log`, no es una columna.
+        - `doctors.tos_accepted_at` cubre 1 de 115.
+        - `doctor_credentials.verified_at` cubre 0 de 115: las 115 credenciales
+          están en `pending`, y un CHECK impide fecha sin verificación.
+        - `clinic_members.joined_at` cubre 15 de 115 y TODAS con rol `owner`:
+          es titularidad, no afiliación.
+     NO uses `audit_log` como fuente funcional para reconstruirlas.
+     NO tomes el `created_at` de otra entidad y lo llames "afiliación".
+   · Departamento y Municipio PUEDEN VENIR VACÍOS: solo ~20 de 115 clínicas los
+     tienen cargados. Es CALIDAD DE DATO, no defecto del export.
+
+
+================================================================================
+5 · ADMIN-DOCTOR-EXPORT-URL-P0 — CLOSED (PR #352, s7_79)
+================================================================================
+
+  Follow-up del anterior. El CSV pasa de 15 a 17 columnas:
+
+     16. Slug
+     17. URL pública
+
+  ── REGLAS CANÓNICAS ──
+
+  Slug
+    Fuente única: `doctors.slug`.
+    NO se reconstruye desde el nombre. NO se inventa. NO se genera durante el
+    export. NULL o vacío → celda vacía.
+
+  URL pública
+    Se llena ÚNICAMENTE cuando:  slug existe  AND  is_published = true
+    Formato: https://lucycare.app/doctor/<slug>
+
+    Casos:
+      publicado + slug ......... Slug lleno · URL llena
+      NO publicado + slug ...... Slug lleno · URL VACÍA
+      sin slug ................. ambas vacías
+
+    POR QUÉ la URL exige `publicado`: `fetchDoctorDetail` filtra por
+    `is_published = true`, así que la URL de un médico no publicado renderiza
+    "Médico no encontrado". Una columna llamada "URL pública" NO debe contener
+    enlaces muertos. El caso existe de verdad porque el trigger congela el slug
+    (§3), de modo que un médico despublicado conserva el suyo.
+
+  ── DOMINIO ──
+    `https://lucycare.app` como CONSTANTE LITERAL en el servicio.
+    NO uses `window.location.origin`: exportar desde un Preview produciría
+    enlaces `vercel.app` que fallan en cuanto el archivo sale del navegador que
+    lo generó, y el error sería INVISIBLE hasta que alguien hiciera clic.
+    La URL se arma en el FRONTEND porque el dominio es PRESENTACIÓN, NO DATO:
+    guardarlo en la base obligaría a una migración para cambiarlo.
+
+  ── Ruta canónica del perfil público ──
+    La ruta declarada es `/doctor/:id`, pero el resolver es DUAL
+    (`directory.service.ts`): si el parámetro parece UUID busca por `id`, si no
+    por `slug`. La página canonicaliza la barra al slug cuando existe. La forma
+    canónica es `https://lucycare.app/doctor/<slug>`.
+
+  ── Sin cambios ──
+    Filtros, paginación, auditoría, MAX_EXPORT 10000, P0140/P0142/P0146, gate
+    `is_admin()`, grants, orden dentro de `jsonb_agg`, fechas, BOM, CRLF y
+    protección de inyección. El bloque de auditoría es IDÉNTICO al de s7_78,
+    comprobado por A/B.
+
+  ── Validación ──
+    Smoke Preview = PASS · Smoke Production = PASS · URL real abierta
+    manualmente por el owner en Internet = PASS.
+
+
+================================================================================
+6 · BASELINE DINÁMICO DE MÉDICOS — NO USAR COMO INVARIANTE
+================================================================================
+
+  Baseline HISTÓRICO del smoke (2026-08-26/27):
+      total 115 · publicados 36 · con slug 39 · publicados con slug 36
+      no publicados con slug 3 · sin slug 76
+
+  Posteriormente el owner PUBLICÓ médicos desde LucyAdmin. Última lectura
+  reportada (2026-08-27, read-only):
+      total 115 · publicados 43 · con slug 44 · publicados con slug 43
+      no publicados con slug 1 · publicados sin slug 0 · sin slug 71
+
+  Hubo 7 publicaciones: 5 médicos recibieron slug NUEVO (el trigger se lo
+  asignó al publicar) y 2 ya tenían slug histórico congelado y simplemente
+  volvieron a publicarse. La aritmética cuadra: 43 + 1 + 71 = 115.
+
+  ⚠️ NO HARDCODEES estos números en checks, código ni documentación como estado
+  permanente. Son observaciones fechadas. Si necesitas un baseline, CÁPTURALO
+  FRESCO justo antes de la comparación (patrón usado en `_smoke-s7_78.mjs`:
+  `--pre` guarda un baseline con marca de tiempo y lo rechaza si es viejo).
+
+
+================================================================================
+7 · AUDITORÍA DEL EXPORT — actividad creciente, NO invariante
+================================================================================
+
+  `admin_doctor_export` funciona correctamente. La documentación de los "5/6/7
+  eventos" corresponde a SMOKES HISTÓRICOS distintos; después hubo más descargas
+  legítimas del owner.
+
+  Última lectura reportada: 10 eventos. Entre ellos:
+      #8  = export con Publicado=true, 37 registros
+      #9  = búsqueda activa, 11 registros
+      #10 = Publicado=true + búsqueda activa, 10 registros
+
+  TODOS verificados: metadata no-PII, sin nombres, emails, teléfonos, slug, URL
+  pública, texto de búsqueda ni filas exportadas.
+
+  ⚠️ NO uses el número de eventos como invariante. Crece con el uso normal.
+
+
+================================================================================
+8 · MÉDICO CON SEÑAL QA PUBLICADO DURANTE LAS PRUEBAS
+================================================================================
+
+  Durante las pruebas se detectó que uno de los médicos publicados tenía señal
+  QA por email: "Dr. Miguel Ángel Flores".
+
+  La cronología coincide fuertemente con el médico que el owner publicó
+  DELIBERADAMENTE para probar la cadena publicación → slug → URL → dashboard.
+
+  Por tanto:
+    · NO lo trates automáticamente como anomalía nueva.
+    · Probablemente corresponde al ensayo del owner.
+    · Si sigue siendo únicamente QA, puede despublicarlo el owner manualmente.
+    · NO lo modifiques automáticamente. Verifica solo si el owner lo pide.
+
+  ── HIGIENE QA: principio vigente ──
+  No publicar perfiles QA como parte del directorio real, salvo prueba
+  controlada del owner. PERO: no despubliques nada automáticamente por
+  heurísticas de nombre o email. Cualquier acción debe ser EXPLÍCITA del owner y
+  preferiblemente desde LucyAdmin.
+
+
+================================================================================
+9 · PATIENT-CRM-P0 — CLOSED (PR #349, s7_76 + s7_77)
+================================================================================
+
+  CRM de pacientes dentro de LucyAdmin, en producción, con separación estricta
+  del expediente clínico. `/admin/pacientes` tiene TRES pestañas:
+
+    1. Base de pacientes ....... nueva. La unidad es la IDENTIDAD GLOBAL
+                                 (`profiles`), no la ficha local.
+    2. Pendientes de identificar nueva. Fichas con `patients.profile_id IS NULL`
+                                 (ahí viven los walk-ins). NO se suman al
+                                 universo del CRM.
+    3. Fusión de fichas ........ la que ya existía, INTACTA. Ninguna de sus RPCs
+                                 de merge/unmerge/preflight/rechazos se tocó.
+
+  ── Estados CRM, por prioridad ──
+      Bloqueado → En seguimiento → Recurrente → Nuevo → Activo → Inactivo
+  No es una lista aparte: ES el orden de evaluación del CASE de `_crm_estado`,
+  que devuelve la primera coincidencia.
+      Bloqueado ...... estado administrativo explícito vigente
+      En seguimiento . ≥1 follow-up CRM abierto
+      Recurrente ..... ≥2 citas 'atendida'
+      Nuevo .......... identidad creada en los últimos 30 días, salvo que
+                       aplique antes una prioridad superior
+      Activo ......... próxima cita, o actividad en los últimos 90 días
+      Inactivo ....... sin próxima cita y sin actividad por más de 180 días
+
+  ⚠️ MATIZ QUE SORPRENDE: `Nuevo` GANA sobre `Activo`. Una identidad reciente
+  que ya tiene próxima cita se muestra como `Nuevo`.
+  Los estados derivados NO se persisten: se calculan en cada lectura. El único
+  estado guardado es el bloqueo.
+
+  ── Orden de operaciones del listado (la corrección central de P0) ──
+      universo + búsqueda → agregados (LATERAL) y estado derivado
+        → FILTRO por estado → TOTAL del conjunto filtrado → PAGINACIÓN
+  La primera versión filtraba DESPUÉS de paginar. Rompía tres cosas: el total
+  contaba el universo sin filtrar, una coincidencia en la posición 26 no
+  aparecía nunca en su propio filtro, y la exportación heredaba el defecto.
+  NO VUELVAS A INTRODUCIRLO: hay guardas POST y checks estáticos que lo
+  prohíben.
+
+  ── Alcance CONGELADO de P0 ──
+  Búsqueda server-side (nombre, teléfono, correo o ID) · filtro por estado (los
+  seis) · paginación 25/50 · exportación CSV del conjunto filtrado · pestaña de
+  pendientes · preservación de la consola de fusión.
+  Orden por defecto: `profiles.created_at DESC` con DESEMPATE ESTABLE POR ID —
+  la identidad LucyCare más reciente primero, NO la fecha de la ficha.
+
+  ── Deudas vigentes de este frente ──
+   · CRM-SEARCH-TRGM — `pg_trgm` NO está instalada, así que los índices trigram
+     del buscador no se crearon y el ILIKE cae en scan. No bloqueante al volumen
+     actual. Instalar una extensión es decisión del owner y va por migración.
+   · PATIENT-CRM-FILTERS-P1 — filtros y orden adicionales. REGLA VINCULANTE:
+     filtros, conteo, paginación y exportación deben usar la MISMA lógica
+     server-side, y el CSV debe respetar EXACTAMENTE los filtros activos. Nunca
+     filtrar solo en el navegador.
+   · Desempate estable de paginación donde aplique (ver §11).
+
+
+================================================================================
+10 · CRM-CSV-FECHAS-P0 — CLOSED (PR #350)
+================================================================================
+
+  Las tres columnas de fecha/hora del export CSV del CRM — Fecha de registro,
+  Última actividad y Próxima cita — pasaron de timestamp ISO crudo a
+  `DD/MM/YYYY HH:mm` en hora de El Salvador. Frontend-only, sin migración.
+
+  ── Detalle que se repite en los dos exports, y conviene entender ──
+  Se ensambla con `Intl.DateTimeFormat().formatToParts()` y NO con
+  `toLocaleString`, por dos motivos que solo aparecen al probarlo:
+     · `es-SV` es un locale de 12 HORAS: sin `hourCycle` devuelve "01:49 p. m."
+     · `toLocaleString` INTERCALA UNA COMA entre fecha y hora ("02/08/2026,
+       13:49"), que no rompe el archivo pero no es el formato pedido.
+  Se usa `hourCycle: 'h23'` y NO `hour12: false`: este último puede rendir
+  "24:15" para la medianoche.
+  La zona `America/El_Salvador` se fija EXPLÍCITAMENTE; sin ella `Intl` usa el
+  reloj del navegador y un admin en otro huso vería horas distintas.
+
+  El formateador está DUPLICADO a propósito en `patientCrm.service.ts` y en
+  `admin.service.ts`. NO refactorices el export de pacientes para compartir
+  quince líneas: está cerrado y validado en producción.
+
+
+================================================================================
+11 · DEUDAS TÉCNICAS VIGENTES — no son frentes hasta que el owner lo diga
+================================================================================
+
+  · TYPES-RECONCILIATION-P0 — `src/types/database.types.ts` está desactualizado
+    desde antes de estos frentes.
+  · COPY-TUTEO-LOGIN — voseo PREEXISTENTE en `LoginModal` ("Ingresá con tu
+    email", "Revisá tu correo") y en `ChangePhoneModal`, `WaitlistModal`,
+    `AffiliationRequestModal`, `BookingCard`, `PanelLayout` y varias páginas del
+    panel. Verificado: existe idéntico en `main` desde el PR #39 (2026-05-25).
+    NO lo introdujo ningún frente reciente.
+  · CRM-SEARCH-TRGM — ver §9.
+  · PATIENT-CRM-FILTERS-P1 — ver §9.
+  · ORDEN SIN DESEMPATE en `admin_list_doctors` — ordena por `created_at DESC`
+    SIN tie-breaker, así que dos médicos creados en el mismo instante pueden
+    intercambiarse entre PÁGINAS de la pantalla. Es un defecto de la paginación
+    existente, NO del export (que aplica su propio orden determinista dentro de
+    `jsonb_agg`).
+  · ADMIN-DOCTOR-EXPORT-P1 — actividad, atenciones, última actividad, próxima
+    cita y rating en el export de médicos.
+  · ADMIN-DOCTOR-EXPORT-P2 — exportación asíncrona o por streaming, SOLO si el
+    volumen supera razonablemente los 10 000.
+  · check-s7_76 incompatible con CRLF en Windows — da 329/353. Deuda
+    PREEXISTENTE, demostrada A/B contra el archivo original. Causa:
+    `core.autocrlf=true` deja los `.sql` con CRLF en el working tree y los
+    regex del check anclan en `;\n`. En git el blob está en LF. NO afecta a
+    producción y NO se corrigió. NO la trates como fallo de un PR nuevo.
+  · `.gitignore` y `docs/rollbacks/` — la regla `*.sql` (línea 32) solo exceptúa
+    `!migrations/*.sql`, así que TODO rollback nuevo requiere `git add -f` y
+    puede quedarse fuera de un PR EN SILENCIO. Ya ocurrió en #321.
+  · Bundle principal ~671 kB porque las dos páginas legales viajan en el chunk
+    inicial. El arreglo sería `lazy()`. No bloqueante; el owner decidió no
+    hacerlo ahora.
+  · Tres funciones `_func` huérfanas y ocho funciones escritoras de `audit_log`
+    sin `SET search_path`. Código muerto / deuda documentada, no vector.
+  · Admin API `listUsers` no enumera todo el padrón (~15 de ~140 ilegibles) y
+    `filter=` no filtra por teléfono. Solo afecta a scripts, no al runtime.
+  · Pasarela de pago de LucyCare Médicos — pendiente (BILLING-P0 PAUSADO).
+  · Seguimiento SEO / Search Console (§14).
+
+  NO conviertas ninguna de estas deudas en frente automáticamente.
+
+
+================================================================================
+12 · QA-PATIENT-DATA-CLEANUP-P0 — DEFERRED / NO CHANGES
+================================================================================
+
+  El owner decidió NO segregar ni purgar el histórico QA por ahora: el beneficio
+  no justifica la complejidad estructural.
+
+  · NO apliques diseños previos de segregación. Se diseñó una tabla
+    `patient_data_origin_marks` (s7_78 candidata) y se DESCARTÓ; todos sus
+    archivos fueron eliminados a propósito para que nadie los aplique por error.
+  · NO purgues el dataset histórico.
+  · NO toques consultas firmadas. Hay 16 consultas FIRMADAS colgando de fichas
+    sin identidad; son inmutables desde s7_28.
+  · Mantén los datos QA/demo hasta que haya una necesidad operacional concreta.
+
+  Contexto útil si se reabre: el dataset demo de Camilo (21 fichas sin
+  `profile_id`, con citas y consultas firmadas) está PROTEGIDO por
+  `docs/CUENTA_DEMO_CAMILO.md`. Y su clínica NO puede excluirse en bloque: la
+  cuenta está `verified`, `is_published=true` y `booking_enabled=true`, así que
+  un paciente REAL puede reservar ahí.
+
+
+================================================================================
+13 · AUTH / TWILIO / SEGURIDAD — estado vigente
+================================================================================
+
+  · Twilio Verify ACTIVO (SMS · 6 dígitos · Fraud Guard · Geo Permissions solo
+    El Salvador · sin número comprado). Cuenta Paid/Upgraded.
+  · Auto Recharge OFF — DECISIÓN DELIBERADA del piloto, no una deuda. Balance
+    monitorizado (alerta en US$25). Sin saldo no hay OTP, y el OTP es el único
+    camino de alta de pacientes nuevos.
+  · Turnstile ACTIVO en producción. Sin pendientes de Cloudflare: el hostname
+    temporal del último Preview fue retirado por el owner.
+  · Test Phones CONSERVADOS (exactamente 2).
+
+  ── ORDEN VINCULANTE si alguna vez se toca el CAPTCHA ──
+  El frontend debe estar enviando tokens ANTES de que Supabase los exija.
+      Frontend ON + Supabase OFF = inofensivo (GoTrue ignora el token).
+      Supabase ON + frontend OFF = CAÍDA TOTAL DE AUTH.
+  Para desactivar, el orden es el INVERSO: apagar el enforcement en Supabase
+  primero, y recién después quitar `VITE_CAPTCHA_ENABLED` y redesplegar.
+
+  ── NUNCA ──
+   · Tocar `auth.users` por SQL. SIEMPRE Admin API.
+   · Compartir OTP, contraseñas, tokens, hashes, claves o secretos.
+   · Cambiar hooks de Auth incidentalmente.
+   · Reactivar las legacy Supabase API keys.
+   · Desactivar o reconfigurar Turnstile/CAPTCHA sin autorización.
+   · Revertir de Twilio Verify a Programmable Messaging sin autorización.
+
+  ── IDENTIDADES PROTEGIDAS ──
+   · Katherine — 50372608827 — NO USAR, ni siquiera read-only, salvo override
+     explícito del owner.
+   · Dr. Camilo Carrillo — médico demo QA AUTORIZADO. Cuenta y configuración
+     protegidas salvo orden expresa. `docs/CUENTA_DEMO_CAMILO.md`.
+   · LucyAdmin (owner admin) y `operations_admin` — no modificar.
+
+  ── Consecuencia vigente ──
+  El cambio de teléfono sigue SUSPENDIDO
+  (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`), porque `updateUser({phone})` no
+  admite `captchaToken`.
+
+
+================================================================================
+14 · LUCYCARE PARA MÉDICOS — contexto comercial
+================================================================================
+
+  · Sitio independiente: https://medicos.lucycare.app/medicos
+  · Operador vigente: Divalux, S.A. de C.V.  (antes "Valux" — NO volver a
+    presentar Valux como entidad vigente).
+  · Copy en TUTEO, nunca voseo. Español, sin anglicismos ("agenda en línea",
+    no "booking"; "enlace", no "link"; "lista de espera", no "waitlist").
+  · El piloto ofrece 3 MESES GRATIS a cambio de feedback.
+  · El formulario "Soy médico, quiero aparecer" es parte del funnel.
+  · Cualquier especialidad médica puede probarlo.
+  · La agenda en línea es un beneficio incluso para perfiles tipo odontología.
+  · Pasarela de pago AÚN PENDIENTE. BILLING-P0 está PAUSADO: proveedor NO
+    elegido. "Stripe Checkout hosted" fue tentativo y quedó REABIERTO. No
+    comprometas ninguna pasarela sin la grilla de
+    `docs/ANALISIS_PAGOS_SAAS_MEDICOS.md` §15 y la validación fiscal.
+
+  ── SEO / Google Search Console — frente permanente comercial ──
+  Analizar la evolución de: clics · impresiones · CTR · posición · consultas ·
+  páginas · países · dispositivos · temporalidad.
+  Baseline histórico:
+      https___lucycare.app_-Performance-on-Search-2026-07-29.zip
+  Search Console verificado por archivo HTML; `public/google3f2e02a3c176b538.html`
+  y `public/googlef334c08cb9e5d942.html` son PERMANENTES — NO BORRAR.
+  Sitemap enviado y procesado.
+
+  ── Regla D1 del directorio (comportamiento esperado, NO es un bug) ──
+  El Home exige completitud mínima: `full_name` + especialidad + `clinic.name` +
+  `clinic.address`. Un médico publicado SIN dirección de clínica no aparece en
+  el listado, aunque SÍ esté en el sitemap (`isSitemapEligible` no exige
+  ubicación). Se corrige cargando la dirección desde LucyAdmin.
+
+
+================================================================================
+15 · REGLAS OPERATIVAS PERMANENTES
+================================================================================
+
+  · UN FRENTE FUNCIONAL A LA VEZ.
+  · El owner DECIDE; el dev EJECUTA.
+  · NO merge sin autorización.
+  · NO SQL de escritura sin autorización.
+  · NO `service_role` de escritura sin autorización. (Lectura: pedirla también,
+    salvo que el owner la haya acotado explícitamente para ese diagnóstico.)
+  · NO migraciones sin autorización. EL OWNER aplica el SQL en el SQL Editor de
+    Supabase; el dev prepara la migración y corre los check/smoke.
+  · NO tocar producción, configuración, hooks ni secretos sin autorización.
+  · NO usar datos reales de pacientes para QA, ni en read-only.
+  · NO INVENTAR RESULTADOS. No afirmes que una prueba pasó si solo leíste el
+    código, y no des por PASS lo que no pudiste ejecutar: dilo.
+  · Cambios PEQUEÑOS Y REVERSIBLES.
+  · Copy en TUTEO.
+  · Instrucciones al dev compactas y ejecutables.
+  · Controles BLOQUEANTES donde corresponda (PRE/POST que aborten).
+  · PR que toca DB → migración + `check-s7_NN.mjs` (+ smoke si aplica).
+  · Para cambios de UI: pedir preview / OK visual del owner antes de mergear.
+  · NO mezclar SEO / Analytics / Auth / Clínico / DB en un mismo PR.
+  · Cierre estándar tras cada merge: HEAD, PRs, migraciones,
+    `main == origin/main`, `git status` vacío, rama borrada local+remoto,
+    0 PRs abiertos, sin residuos.
+
+  ── VALIDAR EL INSTRUMENTO, NO SOLO EL FIX ──
+  Corre la MISMA medición contra el código ANTERIOR para comprobar que el
+  defecto se reproduce (A/B). Un test que solo pasa "después" no prueba nada.
+  En esta ventana, MÁS DE DIEZ "FAIL" resultaron ser defectos de las propias
+  aserciones, no del producto. Patrones que se repitieron:
+     · Comprobar una prohibición contra el ARCHIVO ENTERO cuando las guardas
+       POST nombran a propósito lo prohibido → acota al CUERPO de la función.
+     · Inspeccionar `prosrc` crudo en vez del cuerpo SIN COMENTARIOS.
+     · Buscar subcadenas: `includes('id')` matchea "Especialidad".
+     · Quitar comentarios `//` en TypeScript con un regex global: se come la
+       mitad de `'https://lucycare.app'`.
+     · Un comentario `/** ... */` que contiene `*/` dentro de un regex rompe el
+       parseo del propio script.
+     · `Blob.text()` ELIMINA el BOM por especificación: para verificarlo hay que
+       mirar los BYTES (`arrayBuffer`), no el texto.
+     · Un `head:true` con `count` sobre una tabla INEXISTENTE devuelve 204 sin
+       error: parece que existe. Sonda fiable = `select` normal (PGRST202).
+     · Un asset inexistente devuelve HTTP 200 por el rewrite del SPA.
+  SIEMPRE incluye un control de sanidad que DEBA pasar. Si también falla, el
+  defecto es tuyo.
+
+  ── Nota de smokes SQL ──
+  No uses tablas temporales en el SQL Editor de Supabase (42P01 por
+  `search_path`; 3F000 porque `pg_temp` no resuelve hasta que la sesión
+  materializa su esquema temporal). Patrón vigente: variable `jsonb` +
+  `set_config`/`current_setting` dentro de `BEGIN … ROLLBACK`.
+
+  ── Shell (Windows) ──
+  Evita heredocs y `node -e` con escapes anidados para inyectar código: en esta
+  ventana estropearon en silencio regex y template literals varias veces, y un
+  reemplazo que no encuentra su ancla FALLA SIN AVISAR, dejando un check que
+  "pasa" sin medir nada nuevo. Escribe los scripts con el editor de archivos y
+  verifica después que las aserciones nuevas están realmente ahí (cuéntalas).
+
+
+================================================================================
+16 · PRÓXIMO FRENTE POTENCIAL — NO ABIERTO
+================================================================================
+
+  DOCTOR-OWNER-NOTIFICATIONS-P0
+  Estado: PLANNED / NOT STARTED / NO DIAGNOSIS YET
+
+  ⚠️ EL OWNER TODAVÍA NO HA ENVIADO LA INSTRUCCIÓN DE APERTURA.
+     NO diagnostiques, NO analices el código, NO propongas diseño y NO
+     implementes nada hasta que lo pida explícitamente.
+
+  Interés manifestado por el owner: recibir un email cuando
+     1. un médico complete exitosamente el formulario para afiliarse/aparecer;
+     2. un médico reclame exitosamente su perfil.
+
+  Dirección PRELIMINAR (no es diseño cerrado):
+     · email al owner;
+     · disparo únicamente DESPUÉS de la persistencia exitosa;
+     · NO bloqueante — que un fallo de email no rompa el alta ni el reclamo;
+     · idempotente;
+     · destinatario configurable;
+     · SIN OTP, contraseñas, tokens, documentos ni datos clínicos;
+     · aprovechar la infraestructura de email existente si la hay
+       (Resend como SMTP custom de Supabase Auth, dominio lucycare.app, live
+       desde 2026-05-26);
+     · posible enfoque tipo "lead notification".
+
+
+================================================================================
+17 · FRENTES CERRADOS RECIENTES — no reabrir
+================================================================================
+
+  #352  ADMIN-DOCTOR-EXPORT-URL-P0 ... CLOSED (s7_79) — §5
+  #351  ADMIN-DOCTOR-EXPORT-P0 ....... CLOSED (s7_78) — §4
+  #350  CRM-CSV-FECHAS-P0 ............ CLOSED (frontend) — §10
+  #349  PATIENT-CRM-P0 ............... CLOSED (s7_76/s7_77) — §9
+  #348  ADMIN-DOCTOR-SEED-P0 ......... CLOSED (s7_73–s7_75 + Edge Function
+                                       `admin-create-seed-doctor` ACTIVE v4)
+  #342–#346  PASSWORD-ERROR-COPY-P0 · NOTIFICATION-BELL-A11Y-P0 ·
+             CLAIM-COPY-TUTEO-P0 · CLAIM-COPY-HYGIENE-P0
+  Antes: LEGAL-P0 · RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0 ·
+         AUDIT-SEC-P0 · TWILIO-P0 · RATING-URL-P0 · LEGAL-ENTITY-RENAME-P0
+
+  Detalle por PR: `docs/HISTORIAL_FRENTES.md`.
+
+  ── GO/NO-GO DEL PILOTO = GO (2026-08-14) ──
+  Cero FAIL bloqueantes. Booking E2E real validado en producción con un único
+  SMS real; cleanup completo. NO REPETIR ese E2E.
+
+  Objetivo comercial: LucyCare listo para lanzamiento en El Salvador a más
+  tardar el 2 de octubre de 2026, sin expansión regional en este ciclo.
+
+
+================================================================================
+18 · COSAS QUE NO DEBEN REPETIRSE
+================================================================================
+
+   1. NO reaplicar s7_78 ni s7_79. Están APPLIED/VERIFIED/CLOSED.
+   2. NO editar migraciones ya aplicadas: son el registro de lo ejecutado.
+   3. NO reservar números de migración para frentes no iniciados.
+   4. NO duplicar el predicado de `admin_list_doctors`: el export lo REUTILIZA.
+   5. NO modificar `admin_list_doctors` sin necesidad: es la fuente del universo
+      que comparten listado y export.
+   6. NO filtrar en el navegador lo que debe filtrarse server-side.
+   7. NO usar `window.location.origin` para construir URLs de producción.
+   8. NO generar ni reconstruir slugs en un export.
+   9. NO poner PII en `audit_log`: es inmutable, no se corrige.
+  10. NO repetir el Booking E2E real (consume SMS y toca identidades).
+  11. NO usar `git stash` en este repositorio (stash protegido).
+  12. NO tocar `auth.users` por SQL.
+  13. NO despublicar ni modificar perfiles por heurísticas de nombre o email.
+  14. NO dar por caído un despliegue de Vercel solo porque tarde; comprueba qué
+      commit está realmente desplegado.
+  15. NO refactorizar el export de pacientes para compartir código con el de
+      médicos: está cerrado y validado.
+  16. NO afirmar un PASS que no se pudo ejecutar. Si te falta acceso —sesión de
+      Owner Admin, Cloudflare, Vercel—, dilo y pásale la verificación al owner.
+
+
+================================================================================
+19 · DOCUMENTACIÓN DE REFERENCIA
+================================================================================
+
+  ESTE ARCHIVO ......... punto de entrada canónico vigente.
+  CLAUDE.md ............ guía rápida + estado vigente. Si contradice a `docs/`,
+                         mandan los `docs/`.
+  docs/HISTORIAL_FRENTES.md ......... detalle por PR de los frentes cerrados.
+  docs/ANALISIS_PATIENT_CRM.md ...... análisis vivo del CRM de pacientes.
+  docs/OWNER_S7_78_APPLY.md ......... rollout del export de médicos. APLICADA.
+  docs/OWNER_S7_79_APPLY.md ......... rollout del slug. APLICADA.
+  docs/CUENTA_DEMO_CAMILO.md ........ cuenta demo protegida.
+  docs/ANALISIS_PAGOS_SAAS_MEDICOS.md  única fuente canónica de BILLING.
+  docs/ESTADO_TECNICO.md ............ ER/BD, matriz de reglas, flujos.
+  docs/rollbacks/ ................... rollbacks. IGNORADOS por `*.sql`:
+                                      requieren `git add -f`. NO EJECUTAR salvo
+                                      FAIL explícito.
+
+  Handoffs anteriores, todos HISTÓRICOS:
+    docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md
+    docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md
+    docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md   ← mejor descripción del
+                                                          estado general del
+                                                          producto y del piloto
+
+  Scripts de verificación vigentes (no tocan la base salvo indicación):
+    scripts/check-s7_78.mjs .............. 117/117
+    scripts/check-s7_79.mjs ..............  99/99
+    scripts/check-admin-doctor-csv.mjs ...  68/68  (conductual, esbuild)
+    scripts/check-crm-csv-fechas.mjs .....  33/33  (conductual, esbuild)
+    scripts/_qa-crm-paginacion.mjs .......  35/35
+    scripts/check-s7_76.mjs .............. 329/353 (deuda CRLF, §11)
+
+
+================================================================================
+20 · CÓMO ARRANCAR LA VENTANA NUEVA
+================================================================================
+
+    git fetch origin
+    git checkout main
+    git pull --ff-only origin main
+    git log --oneline -10
+    git status --short
+
+  Espera confirmar:
+    HEAD = 291bf8afa172ab2944e5ee395d40d505a8666877 (o un commit documental
+    posterior; el último FUNCIONAL es f7213d2), árbol limpio, 0 PRs abiertos,
+    100 migraciones hasta s7_79.
+
+  Luego lee, en este orden:
+    1. Este archivo (completo).
+    2. CLAUDE.md
+    3. El `docs/ANALISIS_*.md` del objetivo del día, si aplica.
+
+  Y NO empieces nada hasta que el owner te diga qué frente abrir.
+
+================================================================================
+FIN DEL HANDOFF — 2026-08-27 · POST PR #352
+================================================================================
