@@ -183,7 +183,25 @@ check('traduce P0140/P0142/P0146', /P0140:/.test(svc) && /P0142:/.test(svc) && /
 check('fecha con timeZone fija', /timeZone: CSV_TIMEZONE/.test(svc) && /America\/El_Salvador/.test(svc));
 check('hourCycle h23', /hourCycle: 'h23'/.test(svc));
 check('usa formatToParts', /formatToParts/.test(svc));
-check('15 columnas declaradas', (svc.match(/\{ header: '/g) || []).length === 15);
+// El CONTEO total de columnas dejó de ser invariante de este frente:
+// ADMIN-DOCTOR-EXPORT-URL-P0 (s7_79) añadió «Slug» y «URL pública», y lo
+// verifica `check-s7_79`. Lo que s7_78 debe seguir garantizando es que sus 15
+// columnas no sufrieron regresión — eso es lo que se comprueba acá.
+{
+  const suyas = ['Nombre', 'Especialidad', 'Teléfono', 'Correo', 'Clínica',
+    'Dirección de clínica', 'Departamento de clínica', 'Municipio de clínica',
+    'Estado LucyCare', 'Perfil reclamado', 'Verificado en LucyCare', 'Publicado',
+    'Agenda habilitada', 'Operativo', 'Fecha de alta en LucyCare'];
+  check('las 15 columnas de s7_78 siguen declaradas',
+    suyas.every((h) => svc.includes(`header: '${h}'`)));
+  // Se captura el GRUPO, no el match entero: quedarse con el match dejaba la
+  // comilla de cierre pegada al nombre y la comparación fallaba por eso, no
+  // por el orden.
+  const encabezados = [...svc.matchAll(/\{ header: '([^']+)'/g)].map((m) => m[1]);
+  check('y siguen siendo las 15 primeras, en orden',
+    encabezados.slice(0, 15).join('|') === suyas.join('|'));
+  check('el total lo gobierna check-s7_79', (svc.match(/\{ header: '/g) || []).length >= 15);
+}
 check('encabezado «Perfil reclamado»', /header: 'Perfil reclamado'/.test(svc));
 check('encabezado «Verificado en LucyCare»', /header: 'Verificado en LucyCare'/.test(svc));
 check('sin encabezados ambiguos', !/header: 'Reclamado'/.test(svc) && !/header: 'Verificado'/.test(svc));

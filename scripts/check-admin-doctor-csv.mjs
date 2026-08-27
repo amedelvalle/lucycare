@@ -63,6 +63,7 @@ const fila = (over = {}) => ({
   agenda: false,
   operativo: false,
   created_at: '2026-08-02T13:49:49.181225-06:00',
+  slug: null,
   ...over,
 });
 
@@ -90,18 +91,23 @@ console.log('1. Columnas');
   const esperadas = ['Nombre', 'Especialidad', 'Teléfono', 'Correo', 'Clínica',
     'Dirección de clínica', 'Departamento de clínica', 'Municipio de clínica',
     'Estado LucyCare', 'Perfil reclamado', 'Verificado en LucyCare', 'Publicado',
-    'Agenda habilitada', 'Operativo', 'Fecha de alta en LucyCare'];
-  check('son exactamente 15', headers.length, 15);
+    'Agenda habilitada', 'Operativo', 'Fecha de alta en LucyCare',
+    'Slug', 'URL pública'];
+  check('son exactamente 17', headers.length, 17);
   check('en el orden aprobado', headers.join('|'), esperadas.join('|'));
   // Comparación por PALABRA, no por subcadena: `includes('id')` daría un falso
   // positivo con «Especialidad», que sí debe estar.
   const palabras = new Set(
     headers.flatMap(h => h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/))
   );
-  for (const prohibida of ['id', 'uuid', 'licencia', 'jvpm', 'bio', 'avatar', 'tos', 'stripe', 'token', 'slug']) {
+  // `slug` salió de esta lista en ADMIN-DOCTOR-EXPORT-URL-P0: pasó de dato
+  // técnico prohibido a columna aprobada. La lista describe lo que NO debe
+  // salir hoy, no lo que alguna vez estuvo vedado.
+  for (const prohibida of ['id', 'uuid', 'licencia', 'jvpm', 'bio', 'avatar', 'tos', 'stripe', 'token']) {
     check(`no expone «${prohibida}»`, palabras.has(prohibida), false);
   }
   check('sí conserva «Especialidad»', headers.includes('Especialidad'), true);
+  check('sí expone «Slug» (aprobado en URL-P0)', headers.includes('Slug'), true);
 }
 
 // ─── 2 · fechas ─────────────────────────────────────────────
@@ -206,6 +212,56 @@ console.log('\n7. Volumen');
   check('10 000 filas + encabezado', texto.split('\r\n').length, 10001);
   check(`serializa en menos de 5 s (${ms} ms)`, ms < 5000, true);
   check('tope exportado por el servicio', svc.DOCTOR_EXPORT_MAX, 10000);
+}
+
+// ─── 7.bis · Slug y URL pública ─────────────────────────────
+console.log('\n7.bis Slug y URL pública');
+{
+  // publicado CON slug → las dos columnas llenas
+  const { headers, datos } = await parse([fila({ slug: 'dra-ana-perez', publicado: true })]);
+  check('Slug tal cual', col(headers, datos[0], 'Slug'), 'dra-ana-perez');
+  check('URL pública completa', col(headers, datos[0], 'URL pública'), 'https://lucycare.app/doctor/dra-ana-perez');
+  check('dominio exacto de producción', /^https:\/\/lucycare\.app\/doctor\//.test(col(headers, datos[0], 'URL pública')), true);
+  check('sin origen de Preview', /vercel\.app/.test(datos[0].join(',')), false);
+}
+{
+  // NO publicado CON slug → slug sí, URL vacía. El slug queda congelado cuando
+  // se despublica, y esa URL renderizaría «Médico no encontrado».
+  const { headers, datos } = await parse([fila({ slug: 'dr-fidel-hernandez', publicado: false })]);
+  check('Slug presente aunque no esté publicado', col(headers, datos[0], 'Slug'), 'dr-fidel-hernandez');
+  check('URL pública VACÍA si no está publicado', col(headers, datos[0], 'URL pública'), '');
+  check('no escribe la URL a medias', /lucycare\.app/.test(datos[0].join(',')), false);
+}
+{
+  // sin slug → ambas vacías, publicado o no
+  const a = await parse([fila({ slug: null, publicado: true })]);
+  check('sin slug + publicado → Slug vacío', col(a.headers, a.datos[0], 'Slug'), '');
+  check('sin slug + publicado → URL vacía', col(a.headers, a.datos[0], 'URL pública'), '');
+  const b = await parse([fila({ slug: '', publicado: true })]);
+  check('slug cadena vacía → Slug vacío', col(b.headers, b.datos[0], 'Slug'), '');
+  check('slug cadena vacía → URL vacía', col(b.headers, b.datos[0], 'URL pública'), '');
+  const c = await parse([fila({ slug: '   ', publicado: true })]);
+  check('slug solo espacios → URL vacía', col(c.headers, c.datos[0], 'URL pública'), '');
+  const d = await parse([fila({ slug: undefined, publicado: true })]);
+  check('slug undefined → ambas vacías',
+    col(d.headers, d.datos[0], 'Slug') + '|' + col(d.headers, d.datos[0], 'URL pública'), '|');
+}
+{
+  // NO se genera slug a partir del nombre: si no viene, no se inventa.
+  const { headers, datos } = await parse([fila({ full_name: 'Dra. Ana Pérez', slug: null, publicado: true })]);
+  check('no reconstruye el slug desde el nombre', /ana-perez|dra-ana/.test(datos[0].join(',')), false);
+  check('la celda Slug queda vacía', col(headers, datos[0], 'Slug'), '');
+}
+{
+  // El servicio no debe usar el origen del navegador en ninguna forma.
+  const src = fs.readFileSync('src/services/admin.service.ts', 'utf8');
+  // SIN comentarios: el propio comentario del servicio explica que NO se usa
+  // `window.location.origin`, y buscarlo en el texto crudo se delataría solo.
+  // Es la misma lección de s7_77, aplicada al frontend.
+  const ejecutable = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  check('no usa window.location.origin', /window\.location\.origin/.test(ejecutable), false);
+  check('dominio como constante literal', /const LUCYCARE_PUBLIC_ORIGIN = 'https:\/\/lucycare\.app'/.test(src), true);
+  check('la URL exige slug Y publicado', /if \(!slug \|\| !row\.publicado\) return '';/.test(src), true);
 }
 
 // ─── 8 · el export de pacientes NO se tocó ──────────────────
