@@ -4,7 +4,7 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-26) — post PR #351 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-27) — post PR #352 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md`
 > (leer PRIMERO).** Reemplaza al `2026-08-22_ADMIN_DOCTOR_SEED_P0`, que pasa a
@@ -82,6 +82,64 @@
 > `hourCycle: 'h23'` y no `hour12: false`: este último puede rendir `24:15`
 > para la medianoche.
 >
+> ✅ **`ADMIN-DOCTOR-EXPORT-URL-P0` = CLOSED (2026-08-27).** Follow-up de
+> `ADMIN-DOCTOR-EXPORT-P0`: el CSV de médicos pasa de **15 a 17 columnas** con
+> **`Slug`** y **`URL pública`**. PR **#352 MERGED** por **squash and merge**;
+> `main` quedó en **`f7213d29af0b61ea6104da8a962597bb005e658b`**. **`s7_79` =
+> migración 100, APPLIED / VERIFIED / CLOSED** (aplicada por el owner el
+> 2026-08-27, ANTES del PR; entró como registro versionado y **no se ejecutó con
+> el merge**).
+>
+> **El cambio backend es UNA clave:** `CREATE OR REPLACE` de
+> `admin_export_doctors` añadiendo `'slug', d.slug` a la allowlist. `doctors`
+> ya estaba unido para llegar a `profile_id` y `clinic_id`, así que **no hay
+> JOIN nuevo y el plan de ejecución no cambia**. Verificado con **A/B
+> estructural**: quitando esa clave, el cuerpo es **idéntico** al de `s7_78`.
+> **`s7_78` no se modificó** y **`admin_list_doctors` tampoco se tocó** — una
+> guarda POST verifica que el listado no gane la columna.
+>
+> **Regla de la URL — es deliberada:**
+> `publicado + slug` → Slug lleno y `https://lucycare.app/doctor/<slug>` ·
+> `NO publicado + slug` → **Slug lleno y URL VACÍA** ·
+> `sin slug` → **ambas vacías**. `fetchDoctorDetail` filtra por
+> `is_published = true`, así que la URL de un no publicado renderiza «Médico no
+> encontrado»: una columna llamada «URL pública» no debe contener enlaces
+> muertos. El caso existe porque `trg_set_doctor_slug` asigna el slug **al
+> publicar y nunca lo reescribe**, de modo que un médico despublicado conserva
+> el suyo. **El export NUNCA reconstruye el slug desde el nombre.**
+>
+> **Dominio `https://lucycare.app` como constante literal del servicio**, no
+> `window.location.origin`: exportar desde un Preview habría producido enlaces
+> `vercel.app` que fallan fuera del navegador que los generó, y el error sería
+> invisible hasta que alguien hiciera clic. La URL se arma en el frontend porque
+> el dominio es **presentación, no dato**.
+>
+> **Sin cambios** en filtros, paginación, auditoría, `MAX_EXPORT = 10000`,
+> `P0140`/`P0142`/`P0146`, gate `is_admin()`, grants de los cuatro roles ni el
+> orden dentro de `jsonb_agg`. El bloque de auditoría es **idéntico** al de
+> `s7_78`, comprobado por A/B: el slug es una columna más del archivo, y la
+> auditoría registra **cuántas** filas salieron, no cuáles.
+>
+> **Validación:** `check-s7_79` **99/99** (con A/B del instrumento) ·
+> `check-admin-doctor-csv` **68/68** (**conductual**) · `check-s7_78` **117/117**
+> · `check-crm-csv-fechas` **33/33** sin regresión · `_qa-crm-paginacion`
+> **35/35** · `tsc` y `build` **PASS** · **Vercel Production PASS** · **smoke del
+> Preview PASS** y **smoke autenticado de producción PASS** (owner), con la **URL
+> real abierta manualmente en Internet**. Evidencia del CSV: **115 médicos · 17
+> columnas · 39 slugs · 36 URLs públicas · 3 con slug histórico y URL vacía · 76
+> sin slug ni URL · 0 inconsistencias · 0 URLs `vercel.app` · 0 duplicados**. Los
+> **7** eventos de `audit_log` verificados: solo metadata aprobada, **sin slug ni
+> URL en el payload**.
+>
+> **Turnstile:** el hostname temporal del Preview quedó **REMOVED** y
+> `lucycare.app` **permanece autorizado**. Sin pendientes de Cloudflare.
+>
+> **Nota operativa:** el despliegue de producción de este merge **tardó ~30 min**
+> en dispararse —el webhook de Vercel no creó el deployment hasta bastante
+> después del merge—. No fue un fallo del código: el deployment `6125658489`
+> terminó en `success` y el bundle sirve el cambio. Conviene no dar por caído un
+> despliegue solo porque tarde.
+
 > ✅ **`ADMIN-DOCTOR-EXPORT-P0` = CLOSED (2026-08-26).** Exportación CSV de la
 > base de médicos desde LucyAdmin, **en producción**. PR **#351 MERGED** por
 > **squash and merge**; `main` quedó en
@@ -147,20 +205,21 @@
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
-> `61da06e372ecb5c8a4f602492f04ce77a72020f4` — PR #351.** · **PRs funcionales
-> mergeados hasta #351** · **99 migraciones aplicadas** (hasta `s7_78`) ·
+> `f7213d29af0b61ea6104da8a962597bb005e658b` — PR #352.** · **PRs funcionales
+> mergeados hasta #352** · **100 migraciones aplicadas** (hasta `s7_79`) ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
 > desplegada y **validada** contra el dominio · **ningún frente funcional
 > abierto**.
 >
-> ⚠️ **`61da06e` es el último HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`f7213d2` es el último HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> **Último cambio funcional:** #351 (exportación CSV de la base de médicos,
-> `s7_78`). Antes: #350 (fechas del export CSV del CRM), #349 (CRM de pacientes),
-> #348 (seed de médico) y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
+> **Último cambio funcional:** #352 (Slug y URL pública en el CSV de médicos,
+> `s7_79`). Antes: #351 (exportación CSV de la base de médicos, `s7_78`), #350
+> (fechas del export CSV del CRM), #349 (CRM de pacientes), #348 (seed de médico)
+> y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
 > mediante 5 PRs (#342–#346), ninguno con migración ni cambio de
 > configuración** — ver §5 del handoff vigente. Los PRs docs-only mueven el SHA
 > del repositorio pero **no** el estado funcional, las migraciones, la DB, la
@@ -485,6 +544,8 @@ squash-merge, la rama puede borrarse.
 - **#350** ✅ — **CRM-CSV-FECHAS-P0**: las tres columnas de fecha/hora del export CSV del CRM pasan de timestamp ISO crudo a `DD/MM/YYYY HH:mm` en hora de El Salvador. **Frontend-only, sin migración ni backend.** CSV validado por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#351** ✅ — **ADMIN-DOCTOR-EXPORT-P0**: exportación CSV de la base de médicos desde `/admin/medicos`, solo para Owner Admin. `s7_78` (**migración 99**, aplicada antes del PR) crea `admin_export_doctors`, que **reutiliza `admin_list_doctors`** para el universo filtrado. 15 columnas, tope 10 000, auditoría no-PII. CSV validado por el owner en Preview y en producción → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#352** ✅ — **ADMIN-DOCTOR-EXPORT-URL-P0**: el CSV de médicos pasa de 15 a **17 columnas** con `Slug` y `URL pública`. `s7_79` (**migración 100**, aplicada antes del PR) añade **una sola clave** a la allowlist. La URL se llena **solo si hay slug Y el médico está publicado**; el dominio es constante literal, no el origen del navegador. CSV y URL real validados por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
@@ -842,6 +903,13 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_79` ADMIN-DOCTOR-EXPORT-URL-P0: `CREATE OR REPLACE` de
+  `admin_export_doctors` que añade **una sola clave** a la allowlist,
+  `'slug', d.slug`. Sin JOIN nuevo —`doctors` ya estaba unido— y sin cambio en
+  el plan de ejecución. Conserva firma, `SECURITY DEFINER`, `VOLATILE`,
+  `search_path`, grants de los cuatro roles, gate, tope 10 000, orden dentro de
+  `jsonb_agg` y la auditoría, verificado con A/B contra `s7_78`. **No genera
+  slugs** ni construye la URL: eso es presentación y vive en el frontend.
 - `s7_78` ADMIN-DOCTOR-EXPORT-P0: RPC `admin_export_doctors` (`SECURITY
   DEFINER`, `VOLATILE`, gate `is_admin()`/`P0140`, solo `csv`/`P0142`, tope
   10 000/`P0146`). **Reutiliza `admin_list_doctors`** para el universo filtrado

@@ -8,7 +8,8 @@
 >
 > ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
 > (PR #348), `PATIENT-CRM-P0` (PR #349), `CRM-CSV-FECHAS-P0` (PR #350) y
-> `ADMIN-DOCTOR-EXPORT-P0` (PR #351) ya están cerrados** y figuran abajo.
+> `ADMIN-DOCTOR-EXPORT-P0` (PR #351) y `ADMIN-DOCTOR-EXPORT-URL-P0` (PR #352)
+> ya están cerrados** y figuran abajo.
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 
@@ -147,6 +148,93 @@
 - **Dominio público:** `https://lucycare.app` ✅ live en producción desde 2026-05-26 (PR #48). DNS gestionado en Cloudflare. `www.lucycare.app` redirige 308 a apex. `lucycare.vercel.app` permanece activo como **fallback temporal** (no desactivar). Previews siguen en `lucycare-git-*.vercel.app`.
 - **SMTP transaccional:** Resend con dominio `lucycare.app` (verificado en Resend, DNS email — SPF/DKIM/DMARC — en Cloudflare), SMTP custom activo en Supabase Auth (PR #46). El rate limit builtin de ~4 emails/h ya no aplica.
 
+
+## Frentes cerrados 2026-08 (PR #352)
+
+- **ADMIN-DOCTOR-EXPORT-URL-P0 — #352** ✅ **CLOSED (2026-08-27).** Follow-up de
+  `ADMIN-DOCTOR-EXPORT-P0`: el CSV de médicos pasa de **15 a 17 columnas**, con
+  **`Slug`** y **`URL pública`**. `main` quedó en
+  `f7213d29af0b61ea6104da8a962597bb005e658b`.
+
+  **Backend:** `s7_79` = **migración 100**, **APPLIED / VERIFIED / CLOSED**,
+  aplicada por el owner el 2026-08-27 **antes** del PR. Es un
+  `CREATE OR REPLACE` de `admin_export_doctors` que añade **una sola clave** a la
+  allowlist: `'slug', d.slug`. **No hay JOIN nuevo** —`doctors d` ya estaba
+  unido para llegar a `profile_id` y `clinic_id`—, así que el plan de ejecución
+  no cambia. Verificado con **A/B estructural**: quitando esa clave, el cuerpo es
+  **idéntico** al de `s7_78`.
+
+  **Lo que NO se tocó:** `s7_78` quedó intacta —es el registro de lo ejecutado—
+  y **`admin_list_doctors` tampoco**. Podría haberse extendido para devolver el
+  slug, pero es la fuente del predicado que comparten listado y export:
+  arriesgarla para ahorrar un `d.slug` que ya se tenía no compensa. Una guarda
+  POST **verifica que el listado no gane la columna**.
+
+  **La regla de la URL, que es la decisión de producto del frente:**
+
+  | Caso | `Slug` | `URL pública` |
+  |---|---|---|
+  | publicado + slug | lleno | `https://lucycare.app/doctor/<slug>` |
+  | **NO publicado + slug** | **lleno** | **VACÍA** |
+  | sin slug | vacío | vacía |
+
+  `fetchDoctorDetail` filtra por `is_published = true`, así que la URL de un
+  médico no publicado renderiza **«Médico no encontrado»**. Una columna llamada
+  «URL pública» no debe contener enlaces muertos. **El caso existe de verdad:**
+  `trg_set_doctor_slug` asigna el slug **al publicar y nunca lo reescribe**, de
+  modo que un médico despublicado conserva el suyo — hoy son 3 de 115. Ese slug
+  sí se exporta, porque es el valor canónico, pero su URL queda vacía. **El
+  export NUNCA reconstruye el slug desde el nombre.**
+
+  **Dominio:** `https://lucycare.app` como **constante literal** del servicio, no
+  `window.location.origin`. Exportar desde un Preview habría producido enlaces
+  `vercel.app` que fallan en cuanto el archivo sale del navegador que lo generó,
+  y el error sería invisible hasta que alguien hiciera clic. La URL se arma en el
+  frontend porque el dominio es **presentación, no dato**: guardarlo en la base
+  obligaría a una migración para cambiarlo.
+
+  **Sin cambios** en filtros, paginación, auditoría, `MAX_EXPORT = 10000`,
+  `P0140`/`P0142`/`P0146`, gate `is_admin()`, grants, orden dentro de
+  `jsonb_agg`, formato de fechas, BOM, CRLF ni protección contra formula
+  injection. El bloque de auditoría es **idéntico** al de `s7_78`, comprobado por
+  A/B: el slug es una columna más del archivo, y la auditoría registra **cuántas**
+  filas salieron, no cuáles.
+
+  **Validación:** `check-s7_79` **99/99** (estático, con A/B del instrumento) ·
+  `check-admin-doctor-csv` **68/68** (**conductual**, cubriendo publicado+slug, no
+  publicado+slug, slug `null`/`''`/espacios/`undefined`, dominio exacto y ausencia
+  de `vercel.app`) · `check-s7_78` **117/117** · `check-crm-csv-fechas` **33/33**
+  sin regresión · `_qa-crm-paginacion` **35/35** · `tsc` y `build` **PASS** ·
+  **Vercel Production PASS**.
+
+  **Smokes del owner:** Preview **PASS** y producción **PASS**, con la **URL real
+  abierta manualmente en Internet**. Evidencia del CSV: **115 médicos · 17
+  columnas · 39 slugs · 36 URLs públicas · 3 con slug histórico y URL vacía · 76
+  sin slug ni URL · 0 inconsistencias · 0 URLs `vercel.app` · 0 duplicados**. Los
+  **7** eventos de `audit_log` se verificaron uno por uno: solo metadata
+  aprobada, y **ni el slug ni la URL aparecen en el payload**.
+
+  **Verificación del bundle en producción**, tras la minificación: el código
+  publicado es `function y(e){const t=e.slug?.trim();return!t||!e.publicado?"":
+  `${b}/doctor/${t}`}` con `b = "https://lucycare.app"` — la regla «slug **y**
+  publicado» sobrevive literalmente. Buscar la cadena completa
+  `https://lucycare.app/doctor/` en el bundle **no sirve**: se arma con un
+  template literal y nunca existe concatenada.
+
+  **Nota operativa:** el despliegue de producción de este merge **tardó ~30
+  minutos** en dispararse; el webhook de Vercel no creó el deployment hasta mucho
+  después del merge, con `statuses = 0` y `check-runs = 0` mientras tanto. No fue
+  un fallo del código: el deployment `6125658489` terminó en `success`. Conviene
+  **no dar por caído un despliegue solo porque tarde**, y comprobar el bundle
+  servido antes de concluir.
+
+  **Turnstile:** el hostname temporal del Preview quedó **REMOVED** y
+  `lucycare.app` permanece autorizado.
+
+  **Deuda vigente, no corregida:** `admin_list_doctors` sigue ordenando por
+  `created_at DESC` **sin desempate**, lo que afecta a la paginación de la
+  PANTALLA, no al export. Y **`ADMIN-DOCTOR-EXPORT-P1`** (actividad y rating) y
+  **`ADMIN-DOCTOR-EXPORT-P2`** (exportación asíncrona) siguen sin iniciar.
 
 ## Frentes cerrados 2026-08 (PR #351)
 
