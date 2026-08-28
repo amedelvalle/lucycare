@@ -612,7 +612,8 @@ Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 
 ## DOCTOR-OWNER-NOTIFICATIONS-P0 — aviso al owner (afiliación y claim)
 
-> Estado: **implementado y en producción, PR abierto sin mergear** (2026-08-28).
+> Estado: **CLOSED** (2026-08-28). PR **#353 MERGED** por squash; `main` quedó
+> en **`55af306746621266cc7c65389e3cd997a5ef5ca2`**.
 > `s7_80`, `s7_81` y `s7_82` = **APPLIED / VERIFIED / NO REAPLICAR**
 > (migraciones **101**, **102** y **103**), aplicadas por el owner ANTES del PR.
 

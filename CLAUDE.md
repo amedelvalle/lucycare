@@ -4,10 +4,10 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-27) — post PR #352 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-08-28) — post PR #353 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
-> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt`
-> (leer PRIMERO).** Reemplaza al `2026-08-24_PATIENT_CRM_P0`, que pasa a
+> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt`
+> (leer PRIMERO).** Reemplaza al `2026-08-27_POST_PR352`, que pasa a
 > **histórico** junto con todos los anteriores. El detalle por PR de los frentes
 > cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
@@ -200,8 +200,9 @@
 > vacíos**: solo 20/115 clínicas los tienen cargados. Es **dato faltante, no
 > defecto del export**.
 >
-> 🟡 **`DOCTOR-OWNER-NOTIFICATIONS-P0` = IMPLEMENTADO Y EN PRODUCCIÓN, PR
-> ABIERTO (2026-08-28).** Avisa por correo al owner cuando (1) un médico
+> ✅ **`DOCTOR-OWNER-NOTIFICATIONS-P0` = CLOSED (2026-08-28).** PR **#353
+> MERGED** por squash; `main` quedó en
+> **`55af306746621266cc7c65389e3cd997a5ef5ca2`**. Avisa por correo al owner cuando (1) un médico
 > completa el formulario de afiliación y (2) un médico reclama un perfil. Nada
 > más. **`s7_80`, `s7_81` y `s7_82` = APPLIED / VERIFIED / NO REAPLICAR**
 > (migraciones **101, 102 y 103**), aplicadas por el owner ANTES del PR y
@@ -285,13 +286,13 @@
 >
 > **Último HEAD funcional confirmado:
 > `f7213d29af0b61ea6104da8a962597bb005e658b` — PR #352.** · **PRs funcionales
-> mergeados hasta #352** · **103 migraciones aplicadas** (hasta `s7_82`) ·
-> producción desplegada y **validada** contra el dominio.
+> mergeados hasta #353** · **103 migraciones aplicadas** (hasta `s7_82`) ·
+> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
+> desplegada y **validada** contra el dominio · **ningún frente funcional
+> abierto**.
 >
-> ⚠️ **Estado vigente distinto al de arriba:** `DOCTOR-OWNER-NOTIFICATIONS-P0`
-> está **en producción con PR ABIERTO y sin mergear**. Las tres migraciones del
-> frente (`s7_80`–`s7_82`) ya están aplicadas. Para el tip de `main` y el estado
-> de los PRs, consultar Git y `gh pr list` — no este párrafo.
+> ⚠️ **`f7213d2` era el último HEAD funcional del ciclo anterior; el vigente es
+> `55af306` (#353).** Para el tip exacto de `main`, consultar Git.
 >
 > ⚠️ **`f7213d2` es el último HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
@@ -567,7 +568,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt` — **HANDOFF CANÓNICO VIGENTE**. Autosuficiente y pensado para entregarse tal cual a una ventana nueva: baseline Git, producción y el incidente del webhook de Vercel, las 100 migraciones, los dos exports de médicos (#351 y #352) con sus reglas canónicas de `Slug` y `URL pública`, el CRM de pacientes, Auth/Twilio/Turnstile, LucyCare Médicos, SEO, deudas técnicas, reglas operativas permanentes, el frente potencial `DOCTOR-OWNER-NOTIFICATIONS-P0` (**NO abierto**) y la lista de cosas que NO deben repetirse. Los conteos de médicos, slugs y eventos de auditoría van etiquetados como **baseline dinámico**, no como invariantes.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt` — **HANDOFF CANÓNICO VIGENTE** (leer PRIMERO). Autosuficiente: baseline Git en `55af306`, las 103 migraciones, el frente `DOCTOR-OWNER-NOTIFICATIONS-P0` **CLOSED** con su configuración completa y sus prohibiciones, los frentes cerrados recientes, Auth/Twilio/Turnstile, prohibiciones consolidadas, pendientes (ninguno bloqueante) y las lecciones de método —incluidas las dos que costaron caro: `prosrc` incluye comentarios, y `String.replace` interpreta `$$`—.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt` — **HISTÓRICO**, superado por el `2026-08-28`. Su baseline (`f7213d2`, 100 migraciones) y su descripción de `DOCTOR-OWNER-NOTIFICATIONS-P0` como frente «NO abierto» **ya no son válidos**. Sigue siendo buena referencia de los dos exports de médicos (#351/#352).
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **histórico**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. Cerró el frente: PR #349 **MERGED**, producción **PASS**.
 - `docs/ANALISIS_PATIENT_CRM.md` — **análisis vivo de `PATIENT-CRM-P0`**: diagnóstico completo, arquitectura, UX, allowlists, y el detalle de P1–P5. Lo referencia el handoff vigente.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` — **histórico** (frente `ADMIN-DOCTOR-SEED-P0`, cerrado en PR #348): AUTH-SEED-PROBE, `s7_73`/`s7_74`/`s7_75`, Edge v4, idempotencia y compensación, DB smoke, E2E real y cleanup.
@@ -630,11 +632,12 @@ squash-merge, la rama puede borrarse.
 
 - **#352** ✅ — **ADMIN-DOCTOR-EXPORT-URL-P0**: el CSV de médicos pasa de 15 a **17 columnas** con `Slug` y `URL pública`. `s7_79` (**migración 100**, aplicada antes del PR) añade **una sola clave** a la allowlist. La URL se llena **solo si hay slug Y el médico está publicado**; el dominio es constante literal, no el origen del navegador. CSV y URL real validados por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **DOCTOR-OWNER-NOTIFICATIONS-P0** 🟡 — aviso por correo al owner en afiliación
-  y claim. `s7_80`/`s7_81`/`s7_82` **APPLIED**, Edge Function **ACTIVE v1**,
-  **E2E real PASS** en ambos eventos. **PR abierto, sin mergear.** Detalle en el
-  bloque de estado de arriba y en `docs/OWNER_S7_80_APPLY.md` →
-  [detalle](docs/HISTORIAL_FRENTES.md)
+- **#353** ✅ — **DOCTOR-OWNER-NOTIFICATIONS-P0**: aviso por correo al owner en
+  afiliación y claim. `s7_80`/`s7_81`/`s7_82` (**migraciones 101–103**, aplicadas
+  antes del PR), outbox + Edge Function `notify-owner-doctor-events` ACTIVE v1 +
+  Resend, wakeup propio con `pg_net` y Vault, idempotencia de 23 h. **E2E real
+  PASS** en ambos eventos, correo recibido, cola final vacía. Sin cambios en
+  `src/` → [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
