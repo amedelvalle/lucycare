@@ -200,16 +200,98 @@
 > vacíos**: solo 20/115 clínicas los tienen cargados. Es **dato faltante, no
 > defecto del export**.
 >
+> 🟡 **`DOCTOR-OWNER-NOTIFICATIONS-P0` = IMPLEMENTADO Y EN PRODUCCIÓN, PR
+> ABIERTO (2026-08-28).** Avisa por correo al owner cuando (1) un médico
+> completa el formulario de afiliación y (2) un médico reclama un perfil. Nada
+> más. **`s7_80`, `s7_81` y `s7_82` = APPLIED / VERIFIED / NO REAPLICAR**
+> (migraciones **101, 102 y 103**), aplicadas por el owner ANTES del PR y
+> entradas al repositorio solo como registro versionado.
+>
+> **Arquitectura:** `evento → outbox → wakeup (pg_net) → Edge Function → Resend`.
+>
+> **El disparo es backend y posterior a la persistencia, nunca frontend**, y no
+> por gusto: `submit_affiliation_request` devuelve `success:true` **también
+> cuando NO inserta** (dedup anti-enumeración de `s7_21`), y el claim se consuma
+> en el **paso 2 de 4** del modal, así que `onSuccess` daría falsos positivos y
+> perdería eventos. Afiliación → trigger `AFTER INSERT`. Claim → dentro de
+> `claim_doctor_profile`, porque un trigger sobre `doctors` **no distingue** el
+> claim self-service de un `admin_set_lucy_status`.
+>
+> **El evento de negocio siempre gana.** El encolado va en un bloque
+> `EXCEPTION WHEN OTHERS` que se traga cualquier error. Y el `EXCEPTION` del
+> wakeup (`s7_82`) **no es redundante**: si propagara, la captura de
+> `_enqueue_…` revertiría su subtransacción **y con ella el INSERT de la
+> outbox** — el aviso pasaría de *retrasado* a *perdido*. Protegen cosas
+> distintas.
+>
+> **Ventana de idempotencia = 23 h**, porque Resend olvida la `Idempotency-Key`
+> a las 24. Dentro de ventana se reintenta con el mismo `outbox.id`; fuera, la
+> fila pasa a **`needs_reconciliation`** y **no se reenvía**. El techo se aplica
+> con `LEAST`: ningún llamador puede superarlo. Drenado atómico con
+> `FOR UPDATE SKIP LOCKED`.
+>
+> **Cada claim real genera un `outbox.id` nuevo** — sin deduplicar por
+> `doctor_id`, para que un claim legítimo posterior vuelva a notificar.
+>
+> ⚠️ **NO se usa la Database Webhook del Dashboard.** El proyecto **no tiene**
+> el esqueleto `supabase_functions` (`3F000` al crearla) y reconstruirlo exigiría
+> `CREATE USER … CREATEROLE`, `REASSIGN OWNED` y alterar funciones de
+> `supabase_admin`: privilegios que el `postgres` de un proyecto alojado no
+> tiene. No hacía falta: lo único que aporta `http_request()` es un payload que
+> **nuestra Edge Function descarta**. `s7_82` llama a `net.http_post` con un
+> trigger propio. **No recrear ese esqueleto.**
+>
+> ⚠️ **NO existe `supabase/config.toml`, y es DELIBERADO.** Se creó y se
+> eliminó: un config parcial es superficie para `supabase config push`, que
+> empujaría los defaults de la CLI sobre la configuración remota y podría pisar
+> **Turnstile, el SMTP de Resend y Twilio**. Un comentario de advertencia dentro
+> del archivo **no es un control técnico**. El deploy usa
+> `supabase functions deploy notify-owner-doctor-events --no-verify-jwt`, que es
+> por invocación y solo afecta a esa función. **`admin-create-seed-doctor` no se
+> toca ni se redespliega.** `check-s7_80` falla si el archivo reaparece.
+>
+> **El secreto no está en el repo.** El trigger lo lee de **Supabase Vault** por
+> nombre (`DOCTOR_NOTIFICATION_WEBHOOK_SECRET`) en runtime. ⚠️ Vive en **dos
+> sitios con papeles distintos**: Vault es lo que el trigger **envía**, el Edge
+> Function secret es contra lo que se **compara**. Si difieren, cada wakeup da
+> 401 y no sale ningún correo. **Rotar = actualizar los dos**, primero el de la
+> función.
+>
+> **Evidencia de cierre:** Edge Function `notify-owner-doctor-events` **ACTIVE
+> v1** · gates **200 / 401 / 401 PASS** · `pg_net 0.20.0` habilitado · Vault con
+> **exactamente 1** secreto · trigger propio `trg_notify_owner_wakeup` ·
+> **E2E afiliación PASS** (correo real recibido) · **E2E claim PASS** (`sent`,
+> `attempts=1`, `provider_message_id`) · **cola final vacía**, sin `failed` ni
+> `needs_reconciliation`. Residuo aceptado de la variante A: **2 filas
+> inmutables de `audit_log`** del trigger de `s7_21`; la variante B dejó
+> **residuo cero**.
+>
+> **Sin cambios en `src/`.** Sin PII en la outbox ni en `audit_log`.
+> Validación: `check-s7_80` **223/223**, `check-s7_81` **59/59** (con A/B
+> estructural), `check-s7_82` **128/128**, mutation tests **18/18** y **29/29**,
+> smoke SQL transaccional **PASS** con 0 residuales, `build` **PASS**.
+>
+> ⚠️ **LECCIÓN CARA:** `pg_proc.prosrc` **incluye los comentarios**. El primer
+> apply de `s7_82` abortó con *«POST falló: el WARNING usa SQLERRM»* — la guarda
+> se disparó con **su propio comentario**. `check-s7_82.mjs` sí quitaba
+> comentarios y daba PASS: **los dos instrumentos medían textos distintos y solo
+> se notó al aplicar en producción**. Regla: una guarda SQL y su equivalente en
+> JS deben normalizar igual. El mutation test necesita **expectativa invertida**
+> para probar la ausencia de falsos positivos.
+>
 > ℹ️ **`TYPES-RECONCILIATION-P0` es un frente aparte, no iniciado.**
 > `src/types/database.types.ts` está desactualizado desde antes de estos frentes
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **Último HEAD funcional confirmado:
 > `f7213d29af0b61ea6104da8a962597bb005e658b` — PR #352.** · **PRs funcionales
-> mergeados hasta #352** · **100 migraciones aplicadas** (hasta `s7_79`) ·
-> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
-> desplegada y **validada** contra el dominio · **ningún frente funcional
-> abierto**.
+> mergeados hasta #352** · **103 migraciones aplicadas** (hasta `s7_82`) ·
+> producción desplegada y **validada** contra el dominio.
+>
+> ⚠️ **Estado vigente distinto al de arriba:** `DOCTOR-OWNER-NOTIFICATIONS-P0`
+> está **en producción con PR ABIERTO y sin mergear**. Las tres migraciones del
+> frente (`s7_80`–`s7_82`) ya están aplicadas. Para el tip de `main` y el estado
+> de los PRs, consultar Git y `gh pr list` — no este párrafo.
 >
 > ⚠️ **`f7213d2` es el último HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
@@ -547,6 +629,12 @@ squash-merge, la rama puede borrarse.
 - **#351** ✅ — **ADMIN-DOCTOR-EXPORT-P0**: exportación CSV de la base de médicos desde `/admin/medicos`, solo para Owner Admin. `s7_78` (**migración 99**, aplicada antes del PR) crea `admin_export_doctors`, que **reutiliza `admin_list_doctors`** para el universo filtrado. 15 columnas, tope 10 000, auditoría no-PII. CSV validado por el owner en Preview y en producción → [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#352** ✅ — **ADMIN-DOCTOR-EXPORT-URL-P0**: el CSV de médicos pasa de 15 a **17 columnas** con `Slug` y `URL pública`. `s7_79` (**migración 100**, aplicada antes del PR) añade **una sola clave** a la allowlist. La URL se llena **solo si hay slug Y el médico está publicado**; el dominio es constante literal, no el origen del navegador. CSV y URL real validados por el owner en producción → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **DOCTOR-OWNER-NOTIFICATIONS-P0** 🟡 — aviso por correo al owner en afiliación
+  y claim. `s7_80`/`s7_81`/`s7_82` **APPLIED**, Edge Function **ACTIVE v1**,
+  **E2E real PASS** en ambos eventos. **PR abierto, sin mergear.** Detalle en el
+  bloque de estado de arriba y en `docs/OWNER_S7_80_APPLY.md` →
+  [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
@@ -904,6 +992,40 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_82` DOCTOR-OWNER-NOTIFICATIONS-P0 (**migración 103**): despertador propio.
+  Trigger `trg_notify_owner_wakeup` `AFTER INSERT FOR EACH ROW` sobre la outbox
+  que llama **`net.http_post`** directamente — sin el esqueleto
+  `supabase_functions`, que este proyecto no tiene. El secreto se lee de
+  **Vault** por nombre en runtime; no está en la migración, ni en los
+  argumentos del trigger, ni en `pg_get_triggerdef()`. Best-effort: bloque
+  `EXCEPTION WHEN OTHERS` con WARNING de **SQLSTATE, nunca `SQLERRM`** (podría
+  arrastrar el secreto desde los argumentos), y `RETURN NEW`. Timeout 5000 ms,
+  payload `{}`, POST únicamente, `SECURITY DEFINER`, `search_path` fijo,
+  `EXECUTE` revocado a los cuatro roles. El PRE aborta sin `pg_net`, sin Vault,
+  si el secreto no está **exactamente una vez**, si `s7_82` ya está aplicada, o
+  si la outbox tiene **cualquier** trigger previo — toda webhook es un trigger,
+  y otro más produciría doble wakeup.
+- `s7_81` DOCTOR-OWNER-NOTIFICATIONS-P0 (**migración 102**): el aviso de claim
+  representa el EVENTO, no el presente. `CREATE OR REPLACE` de
+  `notify_owner_claim_batch` con **exactamente tres cambios**, demostrados por
+  A/B: el CTE devuelve `subject_profile_id`, el nombre sale de
+  `profiles p ON p.id = c.subject_profile_id` (el perfil **del evento**, no el
+  actual del médico) y `lucy_status` del claim es el literal **`'claimed'`**.
+  Sin esto, un admin que moviera `profile_id` o revirtiera `lucy_status` entre
+  el encolado y el envío produciría un correo que se contradice a sí mismo. La
+  **especialidad** se sigue leyendo del médico actual, deliberadamente: es
+  atributo del profesional, no del claim.
+- `s7_80` DOCTOR-OWNER-NOTIFICATIONS-P0 (**migración 101**): outbox
+  `doctor_owner_notifications` (RLS, sin DML de cliente, `service_role`
+  SELECT-only), helper `_enqueue_doctor_owner_notification` best-effort, trigger
+  `AFTER INSERT` sobre `doctor_affiliation_requests`, encolado dentro de
+  `claim_doctor_profile` (cuerpo verbatim de `s7_64` + un bloque sentinelado,
+  verificado por A/B) y las dos RPCs del procesador —
+  `notify_owner_claim_batch` (drenado atómico con `FOR UPDATE SKIP LOCKED`,
+  ventana de idempotencia de **23 h** con techo por `LEAST`, estado
+  `needs_reconciliation` fuera de ventana) y `notify_owner_mark_result`
+  (`P0150`). Allowlist de campos **en la base**: sin licencia/JVPM, DUI,
+  direcciones, texto libre del lead ni datos clínicos. Sin PII en la outbox.
 - `s7_79` ADMIN-DOCTOR-EXPORT-URL-P0: `CREATE OR REPLACE` de
   `admin_export_doctors` que añade **una sola clave** a la allowlist,
   `'slug', d.slug`. Sin JOIN nuevo —`doctors` ya estaba unido— y sin cambio en
