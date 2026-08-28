@@ -607,3 +607,166 @@ Backlog vivo de prioridad alta a revisar tras el smoke de afiliación:
 - `s7_45` Paciente Global Fase 4 / F4-1 — claim tolerante fila por fila: columnas **pasivas** `patients.merged_into_patient_id` (FK `patients(id)` **sin ON DELETE CASCADE** + CHECK `patients_merged_into_not_self` = `merged_into_patient_id IS NULL OR <> id`) + `patients.merged_at` (infra de F4-2; **nada las escribe en F4-1**) + `CREATE OR REPLACE claim_patient_records()` que reemplaza el UPDATE multi-fila por un **LOOP fila por fila con bloque `BEGIN/EXCEPTION`** (subtransacción por ficha): una colisión `unique_violation` ya **no aborta el claim completo** → skip `unique_conflict`; cualquier otro error de fila → skip `error`; ambos auditados con `SQLSTATE` (fila por ficha `claim_skipped_unique`/`claim_skipped_error` con `record_id` = la ficha + fila resumen con `skipped[]`); errores estructurales fuera del loop (28000, etc.) se siguen propagando; respuesta al cliente = **solo conteos** `{success, linked_count, skipped_count[, reason]}`; el claim **excluye** fichas con `merged_into_patient_id IS NOT NULL`. Firma/nombre/GRANTs intactos; exclusión de pares rechazados (`s7_43`) y copia COALESCE de identidad (`s7_33`) conservadas. **No hace merge, no toca `profiles`/`auth.users`, no resuelve duplicados, no hard-delete.** `database.types.ts` actualizado (2 columnas + FK). Checks: `check-s7_45.mjs` (5/5) + `_smoke-s7_45.mjs` (16/16) / PR #135.
 
 - `s7_70` Cancelación por el paciente + hardening de `appointments` (PR #310, aplicada en producción; archivo del repo byte-idéntico al ejecutado): **hardening de `UPDATE` sobre `appointments`** con restricciones de columnas por rol (paciente / médico / asistente) · RPC **`cancel_my_appointment`** (validación de propiedad y de estado) · tabla **`appointment_patient_cancellations` append-only** con la evidencia y el motivo de cada cancelación hecha por el paciente · RPC de lectura **`list_recent_patient_cancellations`** para el panel del médico · **liberación del horario** tras cancelar · **el historial conserva la cita** como *Cancelada* · **aislamiento entre clínicas** verificado. Validación: **smoke E2E backend 65/65, exit 0**; `check-s7_70` **219/219**; cleanup con **cero residuos**. Frontend en PR #311 (sin migración).
+
+---
+
+## DOCTOR-OWNER-NOTIFICATIONS-P0 — aviso al owner (afiliación y claim)
+
+> Estado: **implementado y en producción, PR abierto sin mergear** (2026-08-28).
+> `s7_80`, `s7_81` y `s7_82` = **APPLIED / VERIFIED / NO REAPLICAR**
+> (migraciones **101**, **102** y **103**), aplicadas por el owner ANTES del PR.
+
+Avisa por correo al owner cuando (1) un médico completa el formulario de
+afiliación y (2) un médico reclama un perfil. Nada más.
+
+```
+evento → outbox → wakeup (pg_net) → Edge Function → Resend
+```
+
+### El punto de disparo, y por qué no es el frontend
+
+`submit_affiliation_request` devuelve `success:true` **también cuando no
+inserta**: la rama `unique_violation` de `s7_21` es dedup anti-enumeración, así
+que el éxito del frontend no equivale a evento. Y el claim se consuma en el
+**paso 2 de 4** del modal, con `checkAlreadyClaimedByMe` convirtiendo timeouts y
+`P0003` en `success:true`. Un disparo desde `onSuccess` produciría **falsos
+positivos garantizados** y perdería eventos si el navegador se cierra.
+
+- **Afiliación** → trigger `AFTER INSERT` sobre `doctor_affiliation_requests`.
+- **Claim** → dentro de `claim_doctor_profile`. Un trigger sobre `doctors` **no
+  distingue** el claim self-service de un `admin_set_lucy_status(listed_only →
+  claimed)`: ambos producen la misma transición de columna.
+
+### `s7_80` — outbox y encolado *(migración 101)*
+
+Tabla `doctor_owner_notifications`: RLS activa, sin policies de escritura,
+`REVOKE` a los cuatro roles, `GRANT SELECT` a `authenticated` (policy
+`is_admin()`) y a `service_role` **solo lectura**, para diagnóstico. Toda
+mutación pasa obligatoriamente por las RPCs.
+
+**Sin PII.** Guarda tipo de evento, clave de deduplicación, IDs canónicos y
+estado. Nombre, teléfono y correo los resuelve `notify_owner_claim_batch` en el
+momento del envío, con **allowlist explícita en la base**: fuera quedan
+licencia/JVPM, DUI, direcciones, el texto libre `message` del lead y cualquier
+dato clínico. **No escribe en `audit_log`** — es inmutable desde `s7_71b` y esto
+es estado operativo mutable.
+
+`_enqueue_doctor_owner_notification` es **best-effort por construcción**:
+`EXCEPTION WHEN OTHERS` + `RAISE WARNING`. El evento de negocio siempre gana.
+
+**Deduplicación asimétrica, deliberada:** afiliación por `request_id` (una
+solicitud, un aviso, siempre); claim por **el propio `outbox.id`** — cero
+supresión entre transacciones, para que un claim legítimo posterior (tras
+revertir `lucy_status`) **vuelva a notificar**. La unicidad «un correo por claim
+real» no depende de esa clave: la da la guarda `lucy_status = 'listed_only'`,
+que hace morir el segundo intento en `P0003` antes de llegar al encolado.
+
+**Drenado atómico:** `FOR UPDATE SKIP LOCKED` — dos invocaciones concurrentes
+nunca toman la misma fila.
+
+**Ventana de idempotencia de 23 h.** Resend olvida la `Idempotency-Key` a las
+24, así que un reintento posterior mandaría un **segundo correo de verdad**.
+Dentro de ventana se reintenta con el mismo `outbox.id`; fuera, la fila pasa a
+**`needs_reconciliation`** con `idem_window_expired` y **no se reenvía**. El
+techo se aplica con `LEAST`, no con `COALESCE`: ningún llamador puede superarlo.
+`first_attempt_at` se fija una vez y **nunca se reescribe** — si se actualizara
+en cada intento, la ventana se extendería indefinidamente.
+
+El cuerpo de `claim_doctor_profile` es **verbatim de `s7_64`** más un bloque
+sentinelado; el A/B de `check-s7_80` demuestra que quitándolo el cuerpo es
+byte-idéntico.
+
+### `s7_81` — el aviso representa el evento, no el presente *(migración 102)*
+
+Un aviso de `doctor_profile_claimed` describe un **hecho pasado**. `s7_80` leía
+dos datos del presente y podía producir un correo que se contradice a sí mismo:
+
+1. **Nombre.** El CTE no devolvía `subject_profile_id`, así que resolvía por
+   `p.id = d.profile_id` — el perfil **actual**. `claim_doctor_profile`
+   re-apunta ese campo y un admin puede volver a moverlo.
+2. **Estado.** Devolvía `d.lucy_status` leído al enviar. Si un admin lo
+   revertía a `listed_only`, el correo diría «Estado LucyCare: listed_only»
+   bajo el asunto «Perfil médico reclamado».
+
+**Exactamente tres líneas cambian** frente a `s7_80`, demostrado por A/B. La
+**especialidad** se sigue leyendo del médico actual, deliberadamente: es
+atributo del profesional, no del claim, y no existe registro histórico suyo.
+
+### `s7_82` — despertador propio *(migración 103)*
+
+**No se usa la Database Webhook del Dashboard.** El proyecto tiene `pg_net
+0.20.0` y `net.http_post` ejecutable, pero **no** el esqueleto
+`supabase_functions` — crear la hook devuelve `3F000` y la UI ya no ofrece
+aprovisionarlo. Reconstruirlo exigiría `CREATE USER … CREATEROLE`,
+`REASSIGN OWNED` y alterar funciones de `supabase_admin`: privilegios que el
+`postgres` de un proyecto alojado no tiene, y objetos de plataforma creados a
+mano que una migración futura de Supabase podría pisar.
+
+Y no hacía falta: lo único que aporta `supabase_functions.http_request()` es un
+payload con `old_record`/`record`/`type`/`table`/`schema` que **nuestra Edge
+Function descarta**. `s7_82` llama a `net.http_post` con un trigger propio.
+**Ventaja lateral:** la configuración del despertador queda versionada en el
+repositorio en vez de vivir solo en el Dashboard.
+
+⚠️ **El `EXCEPTION` de `s7_82` no es redundante con el de `s7_80`.** Si el
+trigger propagara, la captura de `_enqueue_…` revertiría **su subtransacción y
+con ella el INSERT de la outbox**: el aviso pasaría de *retrasado* a
+**perdido**. El de `s7_80` protege el **evento de negocio**; este protege la
+**durabilidad del aviso**. `check-s7_82` verifica que el bloque **envuelve** la
+lectura de Vault y la llamada HTTP, midiendo anidamiento y no orden.
+
+### Edge Function `notify-owner-doctor-events`
+
+Desplegada con `--no-verify-jwt`, bandera **por invocación** que solo afecta a
+esa función. **`admin-create-seed-doctor` no se toca ni se redespliega.**
+
+⚠️ **No existe `supabase/config.toml`, y es deliberado.** Se creó y se eliminó:
+un config parcial es superficie para `supabase config push`, que empujaría los
+defaults de la CLI sobre la configuración remota y podría pisar **Turnstile, el
+SMTP de Resend y Twilio**. Un comentario de advertencia dentro del archivo **no
+es un control técnico**. `check-s7_80` falla si el archivo reaparece.
+
+El control de acceso real es `X-Lucycare-Notify-Secret`, comparado sobre
+digests SHA-256 **en tiempo constante** y fail-closed. La función **ignora el
+payload** del wakeup: lo usa como señal de «despierta» y drena la outbox
+autoritativa por RPC, así que ni invocándola se puede inyectar un evento.
+Sin CORS: no tiene llamador de navegador.
+
+**El secreto vive en dos sitios con papeles distintos:** Vault es lo que el
+trigger **envía**, el Edge Function secret es contra lo que se **compara**. Si
+difieren, cada wakeup da 401 y no sale ningún correo. **Rotar = actualizar los
+dos**, primero el de la función.
+
+### Evidencia de cierre
+
+| | |
+|---|---|
+| Edge Function | `notify-owner-doctor-events` **ACTIVE v1** |
+| Gates | **200 / 401 / 401 PASS** (+ 405 en `GET`) |
+| `pg_net` | **0.20.0 habilitado** |
+| Vault | **exactamente 1** `DOCTOR_NOTIFICATION_WEBHOOK_SECRET` |
+| Trigger | `trg_notify_owner_wakeup`, `AFTER INSERT FOR EACH ROW`, habilitado |
+| Smoke SQL `BEGIN…ROLLBACK` | **PASS**, 0 residuales, sin HTTP real |
+| **E2E A · afiliación** | **PASS** — correo real enviado y recibido |
+| **E2E B · claim** | **PASS** — `sent`, `attempts=1`, `provider_message_id` |
+| Cola final | **vacía**, sin `failed` ni `needs_reconciliation` |
+| Residuo A | **2 filas inmutables de `audit_log`** (trigger de `s7_21`) |
+| Residuo B | **cero** — la outbox no tiene trigger de auditoría |
+
+Validación: `check-s7_80` **223/223**, `check-s7_81` **59/59**, `check-s7_82`
+**128/128**, mutation tests **18/18** y **29/29**, regresiones PASS, `build`
+PASS. **Sin cambios en `src/`.**
+
+### Lección de método
+
+`pg_proc.prosrc` **incluye los comentarios**. El primer apply de `s7_82` abortó
+con «POST falló: el WARNING usa SQLERRM»: la guarda se disparó con **su propio
+comentario**. `check-s7_82.mjs` sí quitaba comentarios y daba PASS — **los dos
+instrumentos medían textos distintos y solo se notó al aplicar en producción**.
+
+Regla: **una guarda SQL y su equivalente en JS deben normalizar igual.** Y el
+mutation test necesita **expectativa invertida** —mutaciones legítimas que el
+check NO debe cazar— para probar la ausencia de falsos positivos.
+
+El apply fallido fue **atómico** (DDL transaccional): no dejó función ni
+trigger. Se verificó antes de reintentar, no se supuso.
