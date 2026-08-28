@@ -1,0 +1,727 @@
+================================================================================
+HANDOFF LUCYCARE — NUEVA VENTANA DE CONTEXTO
+Fecha: 2026-08-28  ·  Post PR #353  ·  PUNTO DE ENTRADA CANÓNICO Y VIGENTE
+================================================================================
+
+Este documento es AUTOSUFICIENTE. No asume que conozcas ninguna conversación
+anterior. Léelo entero antes de proponer, diagnosticar o tocar nada.
+
+REEMPLAZA como referencia canónica a
+`HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt`, que pasa a
+HISTÓRICO junto con todos los anteriores.
+
+NO contiene: PII de pacientes, OTPs, contraseñas, tokens, hashes, claves,
+`service_role`, ni enlaces con credenciales. No los pidas ni los generes.
+
+Reconciliado read-only contra el repositorio y contra producción el 2026-08-28.
+
+
+================================================================================
+0 · LO PRIMERO QUE DEBES SABER
+================================================================================
+
+  · NINGÚN frente funcional está abierto. No hay trabajo a medias.
+  · El PILOTO está en GO desde el 2026-08-14.
+  · El owner decide; el dev ejecuta. Un solo frente funcional a la vez.
+  · `DOCTOR-OWNER-NOTIFICATIONS-P0` está CERRADO y EN PRODUCCIÓN (§4). Sus
+    migraciones, su Edge Function y su configuración NO se tocan.
+  · Los conteos de médicos, slugs y eventos de auditoría de este documento son
+    "última observación / baseline dinámico", NUNCA invariantes. La base se
+    mueve sola. No los hardcodees en checks ni en código.
+
+
+================================================================================
+1 · BASELINE GIT — verificado read-only el 2026-08-28
+================================================================================
+
+  rama ..................... main
+  HEAD = origin/main ....... 55af306746621266cc7c65389e3cd997a5ef5ca2
+  subject de HEAD .......... feat(admin): notify owner on doctor affiliation
+                             and claim (#353)
+  árbol .................... limpio
+  PRs abiertos ............. 0
+  PR #353 .................. MERGED (squash)
+  rama claude/doctor-owner-notifications-p0 ... eliminada (0 local · 0 remota)
+
+  Migraciones aplicadas ..... 103 (hasta `s7_82`)
+
+  Repositorio: github.com/amedelvalle/lucycare  (PÚBLICO)
+  Proyecto Supabase: kvrsfmzlrmmmavillpuj · "lucycare" · East US (Ohio) · PG 17.6
+
+  ⚠️ STASH PROTEGIDO — NO TOCAR NUNCA
+      stash@{0}: WIP on claude/admin-fase-a: 35c250e
+      No lo borres, no lo apliques, no lo inspecciones. Y NO uses `git stash`
+      en este repositorio: crear un stash propio reindexa ese stash protegido.
+      Para aislar cambios usa `git checkout -b`, que preserva el working tree.
+
+  ⚠️ `55af306` es el HEAD confirmado AL CIERRE DE ESTE DOCUMENTO, no el tip
+      eterno. Los commits documentales posteriores NO cambian el estado
+      funcional. Para el tip vigente: `git rev-parse HEAD`.
+
+  Hay ~26 ramas `claude/*` antiguas en local, de sprints previos. NO las toques
+  sin autorización rama por rama.
+
+  Identidad de git en este repo: amedelvalle / lucycare.digital@gmail.com
+
+
+================================================================================
+2 · PRODUCCIÓN Y DESPLIEGUE
+================================================================================
+
+  Dominio: https://lucycare.app  (Vercel + Supabase; DNS en Cloudflare)
+
+  Deployment de `55af306`: **success** — "Deployment has completed".
+
+  ── APRENDIZAJE OPERATIVO (incidente del PR #352, sigue vigente) ──
+
+  Tras mergear #352 el webhook GitHub → Vercel tardó ~30 MINUTOS. Durante ese
+  rato el commit mostraba 0 statuses, 0 check-runs y producción sirviendo el
+  bundle anterior. NO era un defecto del código.
+
+  Si vuelve a pasar:
+    1. Comprueba QUÉ COMMIT está realmente desplegado antes de concluir nada.
+    2. NO hagas `Redeploy` a ciegas sobre un deployment viejo: redesplegaría el
+       commit anterior y parecería que "no funcionó".
+    3. No des por caído un despliegue solo porque tarde.
+
+  (En #353 no ocurrió: el deployment completó sin demora.)
+
+  ── VERIFICAR EL BUNDLE EN PRODUCCIÓN ──
+
+  El código minificado arma las URLs con template literals, así que buscar una
+  cadena completa como `https://lucycare.app/doctor/` da FALSO NEGATIVO: nunca
+  existe concatenada. Verifica los componentes por separado. Además, servicio y
+  página viven en CHUNKS DISTINTOS, y las referencias aparecen en dos formas
+  (`assets/Nombre-hash.js` y `./Nombre-hash.js`).
+
+  REGLA GENERAL: incluye siempre un CONTROL DE SANIDAD — busca algo que con
+  certeza SÍ está. Si el control también sale "ausente", el defecto está en tu
+  sonda, no en producción.
+
+
+================================================================================
+3 · MIGRACIONES
+================================================================================
+
+  Aplicadas en producción: 103. Última: `s7_82_doctor_notification_wakeup.sql`.
+
+  s7_78 · export de médicos ............ APPLIED · VERIFIED · NO REAPLICAR
+  s7_79 · slug/URL en el export ........ APPLIED · VERIFIED · NO REAPLICAR
+  s7_80 · outbox de avisos ............. APPLIED · VERIFIED · NO REAPLICAR
+  s7_81 · semántica del aviso de claim . APPLIED · VERIFIED · NO REAPLICAR
+  s7_82 · despertador de la outbox ..... APPLIED · VERIFIED · NO REAPLICAR
+
+  TODAS fueron aplicadas por el OWNER en el SQL Editor ANTES de su PR, y
+  entraron al repositorio solo como REGISTRO VERSIONADO. El merge NO las
+  ejecuta: el repositorio no tiene ningún automatismo que aplique migraciones
+  (sin `.github/`, `vercel.json` solo con rewrites y cabeceras, `build` =
+  `vite build` sin `postinstall`, y sin `supabase/migrations/`).
+
+  Convención de numeración: NO se reservan números para frentes no iniciados.
+  Se asigna el siguiente libre al escribir el archivo. La próxima sería `s7_83`.
+
+  ⚠️ NUNCA edites una migración ya aplicada. Es el registro de lo que se
+  ejecutó. En `migrations/s7_76_patient_crm_foundation.sql` y en
+  `docs/OWNER_S7_76_APPLY.md` quedan dos menciones a `s7_78` que ya no
+  corresponden; se dejaron DELIBERADAMENTE sin corregir por esta regla.
+
+  Rollbacks en `docs/rollbacks/`. La regla `*.sql` del `.gitignore` (línea 32)
+  solo exceptúa `!migrations/*.sql`, así que TODO rollback nuevo requiere
+  `git add -f` la primera vez. Ya ocurrió que uno se quedara fuera de un PR en
+  silencio (#321). NO EJECUTAR ningún rollback salvo FAIL explícito.
+
+
+================================================================================
+4 · DOCTOR-OWNER-NOTIFICATIONS-P0 — CLOSED (PR #353, s7_80/s7_81/s7_82)
+================================================================================
+
+  Avisa por correo al owner cuando ocurre uno de DOS eventos, y solo dos:
+    1. un médico completa el formulario de afiliación;
+    2. un médico reclama un perfil existente.
+
+  EN PRODUCCIÓN Y VERIFICADO END-TO-END. No hay nada pendiente.
+
+  ── ARQUITECTURA ──
+
+      evento → outbox → wakeup (pg_net) → Edge Function → Resend
+
+  ── CONFIGURACIÓN VIGENTE ──
+
+  destino ................ medicos@lucycare.app
+  sender ................. LucyCare <notificaciones@lucycare.app>
+  proveedor .............. Resend, con API KEY SEPARADA de la del SMTP de Auth
+  Edge Function .......... notify-owner-doctor-events · ACTIVE v1
+  autenticación .......... X-Lucycare-Notify-Secret (SHA-256, tiempo constante,
+                           fail-closed)
+  gates .................. 200 / 401 / 401 PASS  (+405 en GET)
+  verify_jwt ............. false, ÚNICAMENTE por el flag del deploy:
+                           `supabase functions deploy notify-owner-doctor-events
+                            --no-verify-jwt --project-ref kvrsfmzlrmmmavillpuj`
+  supabase/config.toml ... NO EXISTE, y NO debe recrearse (§7)
+  pg_net ................. 0.20.0 HABILITADO
+  Database Webhook ....... NO se usa la del Dashboard (§4.3)
+  wakeup ................. trigger propio `trg_notify_owner_wakeup` →
+                           `net.http_post`
+  secreto del wakeup ..... en Supabase VAULT, por nombre
+                           `DOCTOR_NOTIFICATION_WEBHOOK_SECRET`
+  secretos de la función . RESEND_API_KEY · DOCTOR_NOTIFICATION_EMAIL ·
+                           DOCTOR_NOTIFICATION_WEBHOOK_SECRET
+
+  ⚠️ EL SECRETO VIVE EN DOS SITIOS CON PAPELES DISTINTOS:
+      · VAULT              = lo que el trigger ENVÍA.
+      · Edge Function secret = contra lo que la función COMPARA.
+     Si difieren, cada wakeup recibe 401 y NO sale ningún correo. ROTAR EXIGE
+     ACTUALIZAR LOS DOS, y en este orden: primero el de la función, después
+     Vault. Al revés, los wakeups fallan durante la ventana intermedia.
+     Nada en la base puede verificar que coincidan: son dos almacenes y el
+     segundo no es consultable desde SQL. El síntoma es fila en `pending` +
+     401 en `net._http_response` + ningún correo.
+
+  ── 4.1 · EL PUNTO DE DISPARO, Y POR QUÉ NO ES EL FRONTEND ──
+
+  `submit_affiliation_request` devuelve success:true TAMBIÉN CUANDO NO INSERTA:
+  la rama `unique_violation` de s7_21 es dedup anti-enumeración. Y el claim se
+  consuma en el PASO 2 DE 4 del modal, con `checkAlreadyClaimedByMe`
+  convirtiendo timeouts y P0003 en success:true.
+
+  Disparar desde `onSuccess` daría FALSOS POSITIVOS GARANTIZADOS y perdería
+  eventos si el navegador se cierra. Por eso:
+
+    · Afiliación → trigger AFTER INSERT sobre `doctor_affiliation_requests`.
+    · Claim → DENTRO de `claim_doctor_profile`. Un trigger sobre `doctors` NO
+      distingue el claim self-service de un
+      `admin_set_lucy_status(listed_only → claimed)`.
+
+  ── 4.2 · GARANTÍAS ──
+
+  EL EVENTO DE NEGOCIO SIEMPRE GANA. `_enqueue_doctor_owner_notification` va en
+  un bloque EXCEPTION WHEN OTHERS: un fallo del correo nunca revierte una
+  afiliación ni un claim.
+
+  ⚠️ EL EXCEPTION DE s7_82 NO ES REDUNDANTE CON EL DE s7_80. Si el trigger de
+  wakeup propagara, la captura de `_enqueue_…` revertiría SU SUBTRANSACCIÓN y
+  con ella el INSERT de la outbox: el aviso pasaría de RETRASADO a PERDIDO.
+  El de s7_80 protege el EVENTO DE NEGOCIO; el de s7_82 protege la DURABILIDAD
+  DEL AVISO. Ninguno sustituye al otro.
+
+  IDEMPOTENCIA — VENTANA DE 23 HORAS. Resend olvida la `Idempotency-Key` a las
+  24 h, así que un reintento posterior mandaría un SEGUNDO correo de verdad.
+    · dentro de ventana → reintento con el MISMO `outbox.id`;
+    · fuera de ventana  → la fila pasa a `needs_reconciliation` con
+                          `idem_window_expired` y NO se reenvía.
+  El techo se aplica con LEAST: ningún llamador puede superarlo.
+  `first_attempt_at` se fija UNA vez y nunca se reescribe.
+  Se prefiere un aviso en duda a un aviso duplicado.
+
+  Resolver una fila `needs_reconciliation` es MANUAL: mirar en los logs de
+  Resend si el mensaje salió; si salió, `notify_owner_mark_result(id,'sent',…)`.
+  Si no salió y el aviso sigue importando, encolar un evento NUEVO — no se
+  resucita el viejo, porque su clave ya no protege de nada.
+
+  `failed` es TERMINAL y no se reintenta. Es deliberado: reintentar reabriría la
+  pregunta de la ventana. Queda visible en la consulta de observabilidad.
+
+  DRENADO ATÓMICO con `FOR UPDATE SKIP LOCKED`: dos invocaciones concurrentes
+  nunca toman la misma fila.
+
+  CADA CLAIM REAL GENERA UN `outbox.id` NUEVO — sin deduplicar por `doctor_id`,
+  para que un claim legítimo posterior (tras revertir `lucy_status`) VUELVA a
+  notificar. La afiliación sí deduplica por `request_id`.
+
+  SIN PII EN LA OUTBOX. Guarda tipo de evento, clave de deduplicación, IDs
+  canónicos y estado. Nombre, teléfono y correo se resuelven al enviar, con
+  ALLOWLIST EXPLÍCITA EN LA BASE: fuera quedan licencia/JVPM, DUI, direcciones,
+  el texto libre del lead y cualquier dato clínico. NO escribe en `audit_log`.
+
+  ── 4.3 · POR QUÉ NO SE USA LA DATABASE WEBHOOK DEL DASHBOARD ──
+
+  El proyecto tiene `pg_net 0.20.0` y `net.http_post` ejecutable, pero NO tiene
+  el esqueleto de Database Webhooks: no existen el schema `supabase_functions`,
+  ni `http_request()`, ni `hooks`, ni `migrations`. Crear la hook devuelve
+  `3F000: schema "supabase_functions" does not exist` y la UI ya no ofrece el
+  botón que lo aprovisiona.
+
+  ⛔ NO RECONSTRUIR ESE ESQUELETO A MANO. Exigiría `CREATE USER … CREATEROLE`,
+  `REASSIGN OWNED` y `ALTER FUNCTION net.* SECURITY DEFINER` sobre objetos de
+  `supabase_admin` — privilegios que el `postgres` de un proyecto ALOJADO no
+  tiene. Un fallo a mitad deja objetos de plataforma a medias, en un namespace
+  que una migración futura de Supabase puede pisar.
+
+  Y no hacía falta: lo ÚNICO que aporta `supabase_functions.http_request()` es
+  construir un payload con `old_record`/`record`/`type`/`table`/`schema` que
+  NUESTRA EDGE FUNCTION DESCARTA. `s7_82` llama a `net.http_post` con un trigger
+  propio. Ventaja lateral: la configuración del despertador queda VERSIONADA en
+  el repositorio en vez de vivir solo en el Dashboard.
+
+  ── 4.4 · LA EDGE FUNCTION ──
+
+  IGNORA EL PAYLOAD del wakeup: lo usa como señal de "despierta" y drena la
+  outbox autoritativa por RPC. Aunque alguien lograra invocarla con un cuerpo
+  falsificado, NO puede inyectar un evento — a lo sumo drena una cola vacía.
+  El secreto protege contra abuso de invocación, no contra falsificación de
+  contenido, porque el contenido no viene de fuera.
+
+  Sin CORS: no tiene llamador de navegador. Responde 405 a cualquier método que
+  no sea POST y 401 genérico —sin decir qué falló— ante secreto ausente o
+  incorrecto.
+
+  ── 4.5 · EVIDENCIA DE CIERRE ──
+
+    Edge Function ............ ACTIVE v1
+    gates .................... 200 / 401 / 401 PASS (+405 en GET)
+    pg_net ................... 0.20.0 habilitado
+    Vault .................... EXACTAMENTE 1 DOCTOR_NOTIFICATION_WEBHOOK_SECRET
+    trigger .................. trg_notify_owner_wakeup, AFTER INSERT FOR EACH
+                               ROW, habilitado
+    smoke SQL BEGIN…ROLLBACK . PASS, 0 residuales, SIN HTTP real
+    E2E A · afiliación ....... PASS — correo real enviado y RECIBIDO
+    E2E B · claim ............ PASS — `sent`, `attempts=1`, provider_message_id
+    cola final ............... VACÍA, sin `failed` ni `needs_reconciliation`
+    residuo E2E A ............ 2 registros INMUTABLES esperados en `audit_log`
+                               (trigger de s7_21; no se pueden borrar)
+    residuo E2E B ............ CERO
+
+  Validación: `check-s7_80` 223/223 · `check-s7_81` 59/59 (con A/B estructural)
+  · `check-s7_82` 128/128 · mutation tests 18/18 y 29/29 · regresiones PASS ·
+  `build` PASS. SIN CAMBIOS EN `src/`.
+
+  ── 4.6 · OBSERVABILIDAD ──
+
+  Evento de negocio ocurrido = existe la fila.
+  Correo enviado = esa fila llegó a `status='sent'`.
+  Son dos hechos separados y la tabla los separa físicamente.
+
+      SELECT status, count(*), max(occurred_at)
+      FROM doctor_owner_notifications GROUP BY status;
+
+    pending ............... encolado
+    sending ............... en curso (attempts, first_attempt_at)
+    sent .................. entregado (sent_at, provider_message_id)
+    failed ................ last_error_code (código corto, NUNCA el cuerpo del
+                            error del proveedor, que puede traer direcciones)
+    needs_reconciliation .. ventana de 23 h agotada
+
+  `net._http_response` distingue "la webhook nunca disparó" de "disparó y la
+  función falló", pero tiene TTL corto: es diagnóstico inmediato, no registro.
+
+  LIMITACIÓN ASUMIDA: `pg_net` entrega AT-MOST-ONCE. Si se pierde un despertar
+  no hay reintento propio. Mitigado porque la función DRENA LA COLA ENTERA, así
+  que cualquier evento posterior arrastra lo pendiente. El hueco real es una
+  fila pendiente sin ningún evento posterior; a este volumen podrían ser días.
+  Mientras tanto, invocar la función a mano drena todo. Un barredor periódico
+  es candidato a P1 — NO entra en P0 para no añadir `pg_cron`.
+
+  ── 4.7 · DOCUMENTO OPERATIVO ──
+
+  `docs/OWNER_S7_80_APPLY.md` — rollout completo YA EJECUTADO, con la tabla de
+  evidencia, el smoke transaccional §4c y el E2E §4b. Queda como registro
+  reproducible, NO como lista de tareas pendientes.
+
+
+================================================================================
+5 · FRENTES CERRADOS RECIENTES — no reabrir
+================================================================================
+
+  #353  DOCTOR-OWNER-NOTIFICATIONS-P0 ... CLOSED (s7_80/s7_81/s7_82) — §4
+  #352  ADMIN-DOCTOR-EXPORT-URL-P0 ...... CLOSED (s7_79)
+  #351  ADMIN-DOCTOR-EXPORT-P0 .......... CLOSED (s7_78)
+  #350  CRM-CSV-FECHAS-P0 ............... CLOSED (frontend)
+  #349  PATIENT-CRM-P0 .................. CLOSED (s7_76/s7_77)
+  #348  ADMIN-DOCTOR-SEED-P0 ............ CLOSED (s7_73–s7_75 + Edge Function
+                                          `admin-create-seed-doctor` ACTIVE)
+  Antes: LEGAL-P0 · RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0 ·
+         AUDIT-SEC-P0 · TWILIO-P0 · RATING-URL-P0 · LEGAL-ENTITY-RENAME-P0 ·
+         PASSWORD-ERROR-COPY-P0 · NOTIFICATION-BELL-A11Y-P0 · CLAIM-COPY-*
+
+  Detalle por PR: `docs/HISTORIAL_FRENTES.md`.
+
+  ── ADMIN-DOCTOR-EXPORT-P0 (#351) ──
+  CSV de la base de médicos desde `/admin/medicos`, SOLO Owner Admin. 15
+  columnas. La RPC `admin_export_doctors` REUTILIZA `admin_list_doctors` para
+  resolver el universo filtrado: el predicado vive en UN SOLO LUGAR y listado y
+  export no pueden divergir. NO VUELVAS A DUPLICARLO. Tope MAX_EXPORT = 10000;
+  por encima ABORTA con P0146 en vez de truncar. Auditoría NO-PII: actor,
+  formato, nº de registros, SI HUBO BÚSQUEDA (booleano, nunca el texto) y los
+  filtros normalizados.
+  Decisiones cerradas: CSV y no XLSX · SIN license_number/JVPM · sin citas ni
+  rating · fechas de reclamación/verificación/afiliación OMITIDAS por no existir
+  fuente canónica fiable · Departamento y Municipio pueden venir vacíos (calidad
+  de dato, no defecto).
+
+  ── ADMIN-DOCTOR-EXPORT-URL-P0 (#352) ──
+  El CSV pasa a 17 columnas con `Slug` y `URL pública`.
+  REGLAS CANÓNICAS:
+    Slug — fuente única `doctors.slug`. NO se reconstruye desde el nombre, NO
+    se inventa, NO se genera durante el export. NULL/vacío → celda vacía.
+    URL pública — se llena ÚNICAMENTE si slug existe AND is_published = true.
+      publicado + slug ..... Slug lleno · URL llena
+      NO publicado + slug .. Slug lleno · URL VACÍA
+      sin slug ............. ambas vacías
+    Porque `fetchDoctorDetail` filtra por `is_published = true`: la URL de un no
+    publicado renderiza "Médico no encontrado", y una columna llamada "URL
+    pública" NO debe contener enlaces muertos. El caso existe porque el trigger
+    `trg_set_doctor_slug` asigna el slug AL PUBLICAR y NUNCA lo reescribe.
+    Dominio `https://lucycare.app` como CONSTANTE LITERAL, jamás
+    `window.location.origin`: exportar desde un Preview daría enlaces
+    `vercel.app` que fallan fuera del navegador que los generó.
+
+  ── PATIENT-CRM-P0 (#349) ──
+  CRM de pacientes en LucyAdmin. `/admin/pacientes` con TRES pestañas: Base de
+  pacientes (la unidad es la IDENTIDAD GLOBAL, no la ficha), Pendientes de
+  identificar (walk-ins, `profile_id IS NULL`, NO se suman al universo) y Fusión
+  de fichas (la que ya existía, INTACTA).
+  Estados por prioridad: Bloqueado → En seguimiento → Recurrente → Nuevo →
+  Activo → Inactivo. ⚠️ `Nuevo` GANA sobre `Activo`. Solo el bloqueo se
+  persiste; el resto se calcula en cada lectura.
+  ORDEN DE OPERACIONES (la corrección central): universo + búsqueda → agregados
+  → FILTRO por estado → TOTAL → PAGINACIÓN. La primera versión filtraba DESPUÉS
+  de paginar. NO VUELVAS A INTRODUCIRLO: hay guardas POST y checks que lo
+  prohíben.
+  Alcance CONGELADO de P0. Orden por defecto `profiles.created_at DESC` con
+  desempate estable por ID.
+
+  ── QA-PATIENT-DATA-CLEANUP-P0 = DEFERRED / NO CHANGES ──
+  El owner decidió NO segregar ni purgar el histórico QA: el beneficio no
+  justifica la complejidad. NO apliques diseños previos de segregación (se
+  diseñó una tabla `patient_data_origin_marks` y se DESCARTÓ; sus archivos se
+  eliminaron a propósito). NO purgues el dataset histórico. NO toques consultas
+  firmadas: hay 16 FIRMADAS colgando de fichas sin identidad, inmutables desde
+  s7_28. El dataset demo de Camilo está PROTEGIDO y su clínica NO puede
+  excluirse en bloque: está `verified`/`is_published`/`booking_enabled`, así que
+  un paciente REAL puede reservar ahí.
+
+
+================================================================================
+6 · AUTH / TWILIO / SEGURIDAD — estado vigente
+================================================================================
+
+  · Twilio Verify ACTIVO (SMS · 6 dígitos · Fraud Guard · Geo Permissions solo
+    El Salvador · sin número comprado). Cuenta Paid/Upgraded.
+  · Auto Recharge OFF — DECISIÓN DELIBERADA del piloto, no una deuda. Balance
+    monitorizado (alerta en US$25). SIN SALDO NO HAY OTP, y el OTP es el único
+    camino de alta de pacientes nuevos. Vigilancia = tarea operativa viva.
+  · Turnstile ACTIVO en producción. Sin pendientes de Cloudflare.
+  · Test Phones CONSERVADOS (exactamente 2). NO tocarlos incidentalmente.
+  · SMTP de Auth = Resend, dominio `lucycare.app`, live desde 2026-05-26.
+    ⚠️ Su API key es DISTINTA de la de las notificaciones al owner (§4).
+
+  ── ORDEN VINCULANTE si alguna vez se toca el CAPTCHA ──
+  El frontend debe estar enviando tokens ANTES de que Supabase los exija.
+      Frontend ON + Supabase OFF = inofensivo (GoTrue ignora el token).
+      Supabase ON + frontend OFF = CAÍDA TOTAL DE AUTH.
+  Para desactivar, el orden es el INVERSO: apagar el enforcement en Supabase
+  primero, y recién después quitar `VITE_CAPTCHA_ENABLED` y redesplegar.
+
+  ── IDENTIDADES PROTEGIDAS ──
+   · Katherine — NO USAR, ni siquiera read-only, salvo override explícito del
+     owner. Y NO ESCRIBIR SU TELÉFONO EN NINGÚN SCRIPT, ni siquiera para
+     excluirla: excluir por ese dato obliga a guardarlo y compararlo. Para
+     fixtures, designa un sujeto QA conocido.
+   · Dr. Camilo Carrillo — médico demo QA AUTORIZADO, protegido salvo orden
+     expresa. `docs/CUENTA_DEMO_CAMILO.md`.
+     doctor_id 783a902a-55fd-407c-9e0a-69568135c7f5
+     profile_id db1fba98-a299-4f25-82f1-7feff01e58fa
+   · LucyAdmin (owner admin) y `operations_admin` — no modificar.
+
+  ── SUJETO QA CANÓNICO PARA FIXTURES ──
+   "QA LucyCare — Perfil médico de prueba"
+   doctor  ac0ba772-4263-4fb2-a146-dd90033d8c76
+   profile b5865737-1c7b-4fd1-bd70-b9e5befd87ed
+   `is_published = false` — despublicado en la higiene QA del 2026-08-14
+   conservando la identidad. Resolver por PK + nombre (doble llave).
+
+  ── Consecuencia vigente ──
+  El cambio de teléfono sigue SUSPENDIDO
+  (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`), porque `updateUser({phone})` no
+  admite `captchaToken`.
+
+
+================================================================================
+7 · PROHIBICIONES VIGENTES — consolidadas
+================================================================================
+
+  DE SIEMPRE
+   1. NO SQL de escritura, migraciones, cambios de configuración ni acciones en
+      producción sin autorización explícita del owner.
+   2. NO `service_role` sin autorización, INCLUSO read-only.
+   3. NO tocar `auth.users` por SQL. SIEMPRE Admin API.
+   4. NO usar Katherine, ni siquiera read-only, ni escribir su teléfono.
+   5. Camilo protegido salvo override explícito.
+   6. NO tocar los Test Phones incidentalmente.
+   7. NO desactivar ni reconfigurar Turnstile/CAPTCHA.
+   8. NO revertir de Twilio Verify a Programmable Messaging.
+   9. NO reactivar las legacy Supabase API keys.
+  10. NO usar `git stash` en este repositorio.
+  11. NO compartir OTP, contraseñas, tokens, hashes, claves ni secretos.
+  12. NO usar datos reales de pacientes para QA, ni en read-only.
+
+  DEL FRENTE DE NOTIFICACIONES (§4)
+  13. NO reaplicar `s7_80`, `s7_81` ni `s7_82`.
+  14. NO redesplegar `notify-owner-doctor-events` sin necesidad real.
+  15. NO tocar Vault, `pg_net`, Resend, Twilio, Auth ni SMTP de este frente sin
+      nueva autorización.
+  16. NO reutilizar la API key de Resend del SMTP de Auth para las
+      notificaciones — rotar aquella tumbaría el recovery por email de todos.
+  17. NO ejecutar `supabase config push` en este proyecto.
+  18. NO recrear `supabase/config.toml`. `check-s7_80` falla si reaparece.
+  19. NO reconstruir el esqueleto `supabase_functions`.
+
+  DE DISEÑO (no reabrir sin instrucción)
+  20. NO duplicar el predicado de `admin_list_doctors`: el export lo REUTILIZA.
+  21. NO filtrar en el navegador lo que debe filtrarse server-side.
+  22. NO usar `window.location.origin` para construir URLs de producción.
+  23. NO generar ni reconstruir slugs en un export.
+  24. NO poner PII en `audit_log`: es inmutable, no se corrige.
+  25. NO repetir el Booking E2E real (consume SMS y toca identidades).
+  26. NO despublicar ni modificar perfiles por heurísticas de nombre o email.
+  27. NO editar migraciones ya aplicadas.
+  28. NO refactorizar el export de pacientes para compartir código con el de
+      médicos: está cerrado y validado.
+  29. NO afirmar un PASS que no se pudo ejecutar. Si te falta acceso, dilo y
+      pásale la verificación al owner.
+
+
+================================================================================
+8 · PENDIENTES
+================================================================================
+
+  NO HAY NINGÚN FRENTE FUNCIONAL ABIERTO.
+
+  Lo que sigue son DEUDAS y P1 OPCIONALES. Ninguna se convierte en el siguiente
+  frente automáticamente: hace falta instrucción explícita del owner.
+
+  ── P1 registrado, NO abierto ──
+  · OWNER-NOTIFICATION-EMAIL-UX-P1 — mejora visual de los correos internos al
+    owner (hoy texto plano, funcional y legible). NO ABRIR sin instrucción. No
+    es un defecto: el correo cumple su función y se validó E2E.
+
+  ── Deudas técnicas vigentes ──
+  · TYPES-RECONCILIATION-P0 — `src/types/database.types.ts` desactualizado.
+  · COPY-TUTEO-LOGIN — voseo PREEXISTENTE en `LoginModal`, `ChangePhoneModal`,
+    `WaitlistModal`, `AffiliationRequestModal`, `BookingCard`, `PanelLayout` y
+    varias páginas del panel. Existe en `main` desde el PR #39 (2026-05-25). NO
+    lo introdujo ningún frente reciente.
+  · CRM-SEARCH-TRGM — `pg_trgm` NO está instalada; el ILIKE del buscador cae en
+    scan. No bloqueante al volumen actual. Instalar una extensión es decisión
+    del owner y va por migración.
+  · PATIENT-CRM-FILTERS-P1 — filtros y orden adicionales. REGLA VINCULANTE:
+    filtros, conteo, paginación y exportación deben usar la MISMA lógica
+    server-side, y el CSV debe respetar EXACTAMENTE los filtros activos.
+  · ORDEN SIN DESEMPATE en `admin_list_doctors` — ordena por `created_at DESC`
+    sin tie-breaker; dos médicos creados en el mismo instante pueden
+    intercambiarse entre PÁGINAS. Es de la paginación existente, no del export.
+  · ADMIN-DOCTOR-EXPORT-P1 — actividad, atenciones, última actividad, próxima
+    cita y rating en el export de médicos.
+  · ADMIN-DOCTOR-EXPORT-P2 — exportación asíncrona, SOLO si el volumen supera
+    razonablemente los 10 000.
+  · BARREDOR DE LA OUTBOX (P1) — `pg_net` entrega at-most-once; un despertar
+    perdido se recupera con el evento siguiente, pero no antes. Un barredor
+    periódico lo cerraría, a costa de añadir `pg_cron`. Ver §4.6.
+  · check-s7_76 incompatible con CRLF en Windows — da 329/353. Deuda
+    PREEXISTENTE, demostrada A/B. NO afecta a producción y NO se corrigió. NO la
+    trates como fallo de un PR nuevo.
+  · `.gitignore` y `docs/rollbacks/` — la regla `*.sql` obliga a `git add -f`.
+  · Bundle principal ~671,6 kB porque las dos páginas legales viajan en el chunk
+    inicial. El arreglo sería `lazy()`. El owner decidió no hacerlo ahora.
+  · Tres funciones `_func` huérfanas y ocho escritoras de `audit_log` sin
+    `SET search_path`. Código muerto / deuda documentada, no vector.
+  · Admin API `listUsers` no enumera todo el padrón (~15 de ~140 ilegibles) y
+    `filter=` no filtra por teléfono. Solo afecta a scripts, no al runtime.
+  · Pasarela de pago de LucyCare Médicos — BILLING-P0 PAUSADO, proveedor NO
+    elegido. "Stripe Checkout hosted" fue tentativo y quedó REABIERTO.
+  · Seguimiento SEO / Google Search Console.
+
+
+================================================================================
+9 · LUCYCARE PARA MÉDICOS — contexto comercial
+================================================================================
+
+  · Sitio independiente: https://medicos.lucycare.app/medicos
+  · Operador vigente: Divalux, S.A. de C.V. (antes "Valux" — NO volver a
+    presentar Valux como entidad vigente).
+  · Copy en TUTEO, nunca voseo. Español, sin anglicismos ("agenda en línea",
+    no "booking"; "enlace", no "link"; "lista de espera", no "waitlist").
+  · El piloto ofrece 3 MESES GRATIS a cambio de feedback.
+  · El formulario "Soy médico, quiero aparecer" es parte del funnel — y desde
+    #353 cada envío genera un aviso por correo al owner (§4).
+  · Objetivo comercial: lanzamiento en El Salvador a más tardar el 2 de octubre
+    de 2026, sin expansión regional en este ciclo.
+
+  ── Regla D1 del directorio (comportamiento esperado, NO es un bug) ──
+  El Home exige completitud mínima: `full_name` + especialidad + `clinic.name` +
+  `clinic.address`. Un médico publicado SIN dirección de clínica no aparece en
+  el listado, aunque SÍ esté en el sitemap. Se corrige cargando la dirección
+  desde LucyAdmin.
+
+  ── SEO ──
+  Search Console verificado por archivo HTML; `public/google3f2e02a3c176b538.html`
+  y `public/googlef334c08cb9e5d942.html` son PERMANENTES — NO BORRAR.
+
+
+================================================================================
+10 · MÉTODO — cómo trabajar en este proyecto
+================================================================================
+
+  ── REGLAS OPERATIVAS ──
+  · UN FRENTE FUNCIONAL A LA VEZ. El owner DECIDE; el dev EJECUTA.
+  · NO merge sin autorización. NO abrir PR sin autorización.
+  · EL OWNER aplica el SQL en el SQL Editor; el dev prepara la migración y corre
+    los check/smoke.
+  · PR que toca DB → migración + `check-s7_NN.mjs` (+ smoke si aplica).
+  · Para cambios de UI: pedir preview / OK visual del owner antes de mergear.
+  · NO mezclar SEO / Analytics / Auth / Clínico / DB en un mismo PR.
+  · Cambios PEQUEÑOS Y REVERSIBLES. Copy en TUTEO.
+  · Cierre estándar tras cada merge: HEAD, PRs, migraciones,
+    `main == origin/main`, `git status` vacío, rama borrada local+remoto,
+    0 PRs abiertos, sin residuos.
+
+  ── CÓMO PEDIR Y CÓMO EJECUTAR (aprendido en el ciclo #353) ──
+  · UNA INSTRUCCIÓN CONSOLIDADA POR ETAPA funciona mejor que muchas parciales:
+    reduce ida y vuelta y evita que el árbol cambie mientras alguien aplica.
+  · SEPARAR bloqueantes reales de hardening opcional. No todo hallazgo merece
+    convertirse en trabajo.
+  · ANTE UN FALLO: medir el ESTADO REAL → UNA corrección → UNA validación. No
+    encadenar hipótesis.
+  · EVITAR LA PROLIFERACIÓN de checks y hardenings cuando el frente ya es
+    funcional. Cada guarda nueva es código que puede fallar por su cuenta.
+
+  ── VALIDAR EL INSTRUMENTO, NO SOLO EL FIX ──
+  Corre la MISMA medición contra el código ANTERIOR para comprobar que el
+  defecto se reproduce (A/B). Un test que solo pasa "después" no prueba nada.
+  Y usa MUTATION TESTS: introduce la regresión y comprueba que el check la caza.
+  Si no la caza, la aserción es DECORATIVA.
+
+  Incluye también EXPECTATIVA INVERTIDA: mutaciones legítimas que el check NO
+  debe cazar. Sin ellas no se detectan los FALSOS POSITIVOS — y un falso
+  positivo puede impedir aplicar una migración correcta.
+
+  ── DOS LECCIONES QUE COSTARON CARO ──
+
+  1) `pg_proc.prosrc` INCLUYE LOS COMENTARIOS.
+     El primer apply de `s7_82` abortó con «POST falló: el WARNING usa SQLERRM»:
+     la guarda se disparó con SU PROPIO COMENTARIO. `check-s7_82.mjs` sí quitaba
+     comentarios y daba PASS.
+     REGLA: UNA GUARDA SQL Y SU EQUIVALENTE EN JS DEBEN MEDIR EXACTAMENTE LA
+     MISMA REPRESENTACIÓN. Si una normaliza y la otra no, la discrepancia es
+     invisible en local y solo aparece al aplicar en producción.
+     Y las comprobaciones de PRESENCIA tienen el fallo simétrico: pasarían si el
+     código pierde la llamada pero un comentario la nombra.
+
+  2) `String.prototype.replace(x, cadena)` INTERPRETA `$$` EN EL REEMPLAZO.
+     Convirtió `AS $$` en `AS $` y `$$;` en `$;` al empalmar SQL por programa.
+     Silencioso: el archivo se escribió sin error. Usa splice de array o
+     split/join, NUNCA `replace` con cadena, para inyectar SQL.
+
+  ── OTRAS TRAMPAS YA PISADAS ──
+  · Comprobar una prohibición contra el ARCHIVO ENTERO cuando las guardas POST
+    nombran a propósito lo prohibido → acota al CUERPO de la función.
+  · Medir ORDEN cuando lo que importa es ANIDAMIENTO: quitar un `BEGIN` deja el
+    `EXCEPTION` en la misma posición relativa y un check por índices lo deja
+    pasar. Cuenta la estructura.
+  · `includes('id')` matchea "Especialidad".
+  · Quitar comentarios `//` de TypeScript con un regex global se come la mitad
+    de `'https://lucycare.app'`.
+  · `Blob.text()` ELIMINA el BOM por especificación: para verificarlo hay que
+    mirar los BYTES.
+  · Un `head:true` con `count` sobre una tabla INEXISTENTE devuelve 204 sin
+    error: parece que existe. Sonda fiable = `select` normal.
+  · PGRST202 significa "no hay sobrecarga que case", no necesariamente "la
+    función no existe": un nombre de parámetro equivocado da lo mismo.
+  · 42501 sobre una RPC PRUEBA que existe (una inexistente daría PGRST202) y de
+    paso confirma sus grants.
+  · PostgREST NO expone `pg_catalog` ni las funciones que devuelven `trigger`.
+    Todo lo de catálogo se verifica en el SQL Editor.
+  · Tras aplicar DDL, el SCHEMA CACHE de PostgREST puede quedar obsoleto y
+    devolver PGRST205/PGRST202 aunque el objeto exista. NO concluyas "la
+    migración falló": verifica con `to_regclass`/`to_regprocedure` primero.
+  · SIEMPRE incluye un CONTROL DE SANIDAD que DEBA pasar. Si también falla, el
+    defecto es tuyo.
+
+  ── SHELL (Windows) ──
+  Evita heredocs grandes y `node -e` con escapes anidados: en este proyecto han
+  corrompido regex y template literals VARIAS VECES, en silencio (`\s` → `s`,
+  `$$` → `$`). Escribe los scripts con el editor de archivos y verifica después
+  que las aserciones nuevas están realmente ahí.
+  En PowerShell 5.1, `curl` es alias de `Invoke-WebRequest`: usa `curl.exe`.
+  `npx supabase <lo que sea>` deja `supabase/.temp/cli-latest`, que NO está en
+  `.gitignore`. Bórralo antes de stagear.
+
+  ── SMOKES SQL ──
+  No uses tablas temporales en el SQL Editor (42P01 / 3F000). Patrón vigente:
+  variable `jsonb` + `set_config`/`current_setting` dentro de BEGIN … ROLLBACK.
+  El SQL Editor NO MUESTRA LOS NOTICE: haz que el bloque termine con
+  `IF v_fail > 0 THEN RAISE EXCEPTION`, así "completar sin excepción" ES la
+  prueba de 0 FAIL.
+  Un smoke que inserta en tablas con trigger de auditoría DEBE ir en
+  BEGIN…ROLLBACK: `audit_log` es inmutable desde s7_71b y lo que entre ahí no se
+  corrige.
+
+
+================================================================================
+11 · DOCUMENTACIÓN DE REFERENCIA
+================================================================================
+
+  ESTE ARCHIVO ......... punto de entrada canónico vigente.
+  CLAUDE.md ............ guía rápida + estado vigente. Si contradice a `docs/`,
+                         mandan los `docs/`.
+  docs/HISTORIAL_FRENTES.md ......... detalle por PR de los frentes cerrados.
+  docs/OWNER_S7_80_APPLY.md ......... rollout de las notificaciones al owner,
+                                      YA EJECUTADO. Incluye el smoke §4c y el
+                                      E2E §4b.
+  docs/ANALISIS_PATIENT_CRM.md ...... análisis vivo del CRM de pacientes.
+  docs/OWNER_S7_78_APPLY.md ......... rollout del export de médicos. APLICADA.
+  docs/OWNER_S7_79_APPLY.md ......... rollout del slug. APLICADA.
+  docs/CUENTA_DEMO_CAMILO.md ........ cuenta demo protegida.
+  docs/ANALISIS_PAGOS_SAAS_MEDICOS.md  única fuente canónica de BILLING.
+  docs/ESTADO_TECNICO.md ............ ER/BD, matriz de reglas, flujos.
+  docs/SETUP_SMTP_RESEND.md ......... Resend como SMTP de Auth (distinto de la
+                                      key de notificaciones).
+  docs/rollbacks/ ................... rollbacks. IGNORADOS por `*.sql`:
+                                      requieren `git add -f`. NO EJECUTAR salvo
+                                      FAIL explícito.
+
+  Handoffs anteriores, todos HISTÓRICOS:
+    docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt
+    docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md
+    docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md
+    docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md   ← mejor descripción del
+                                                          estado general del
+                                                          producto y del piloto
+
+  Scripts de verificación vigentes (no tocan la base salvo indicación):
+    scripts/check-s7_78.mjs .............. 117/117
+    scripts/check-s7_79.mjs ..............  99/99
+    scripts/check-s7_80.mjs .............. 223/223
+    scripts/check-s7_81.mjs ..............  59/59  (con A/B estructural)
+    scripts/check-s7_82.mjs .............. 128/128
+    scripts/_smoke-s7_80.mjs .............  18/18  (post-apply, solo lectura)
+    scripts/check-admin-doctor-csv.mjs ...  68/68  (conductual, esbuild)
+    scripts/check-crm-csv-fechas.mjs .....  33/33  (conductual, esbuild)
+    scripts/_qa-crm-paginacion.mjs .......  35/35
+    scripts/check-s7_76.mjs .............. 329/353 (deuda CRLF, §8)
+
+
+================================================================================
+12 · CÓMO ARRANCAR LA VENTANA NUEVA
+================================================================================
+
+    git fetch origin
+    git checkout main
+    git pull --ff-only origin main
+    git log --oneline -10
+    git status --short
+
+  Espera confirmar:
+    HEAD = 55af306746621266cc7c65389e3cd997a5ef5ca2 (o un commit documental
+    posterior), árbol limpio, 0 PRs abiertos, 103 migraciones hasta `s7_82`.
+
+  Luego lee, en este orden:
+    1. Este archivo (completo).
+    2. CLAUDE.md
+    3. El `docs/ANALISIS_*.md` del objetivo del día, si aplica.
+
+  Y NO empieces nada hasta que el owner te diga qué frente abrir.
+
+================================================================================
+FIN DEL HANDOFF — 2026-08-28 · POST PR #353
+================================================================================
