@@ -4,12 +4,88 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-08-28) — post PR #353 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-09-02) — post PR #355 en `main`. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt`
 > (leer PRIMERO).** Reemplaza al `2026-08-27_POST_PR352`, que pasa a
 > **histórico** junto con todos los anteriores. El detalle por PR de los frentes
 > cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
+>
+> ⚠️ El handoff canónico se cerró **post #353**: su baseline (`55af306`, y el
+> «ningún frente funcional abierto») describe ese momento. **`MOBILE-BOOT-RECOVERY-P0`
+> (#355) es POSTERIOR** y está recogido aquí y en `docs/HISTORIAL_FRENTES.md`.
+> El handoff ya advierte que su HEAD no es el tip eterno: **el vigente se
+> consulta con `git rev-parse HEAD`.**
+>
+> ✅ **`MOBILE-BOOT-RECOVERY-P0` = CLOSED (2026-09-02).** PR **#355 MERGED** por
+> squash; `main` quedó en
+> **`0fc36b11dbbe88a430356e7e28fadb13ae27d4eb`**. **Frontend-only: sin SQL, sin
+> Supabase, sin migraciones, sin backend, sin configuración.** Un solo archivo,
+> `index.html` (+118 / −1). **103 migraciones, SIN CAMBIOS** (hasta `s7_82`).
+>
+> **El bug:** en Android/Chrome, al restaurar una pestaña móvil (perfil público
+> `/doctor/:slug`, background o teléfono bloqueado ~10 min) la app podía quedar
+> **indefinidamente en el splash estático** de `index.html`. Un refresh manual
+> cargaba el mismo perfil al instante.
+>
+> **Causa:** el splash lo borra **exactamente un evento** — el primer commit de
+> React, cuando `createRoot` limpia `#root` en `main.tsx`. Ningún componente lo
+> reproduce (`RouteFallback` es solo spinner, **sin el wordmark**). Si el módulo
+> de entrada **no ejecuta** —fetch fallido, error de CORS, throw en el grafo de
+> imports— no hay `onerror` en la etiqueta, ni `window.onerror`, ni
+> `unhandledrejection`, **ni un solo ErrorBoundary en el repositorio**: el splash
+> se queda para siempre, sin aviso y sin reintento. El bootstrap quedó descartado
+> por eliminación: su `Promise.race` está acotado por `setTimeout`, y una pestaña
+> **visible** ejecuta timers. Descartados también, con evidencia: **no hay
+> service worker**, **no hay `pageshow`** en `src/`, y **`useIdleLogout` no
+> interviene** (ventanas de 15–60 min, inerte sin sesión, y corre post-montaje).
+>
+> **La solución:** watchdog **pre-React** en `index.html` — script clásico e
+> inline, el único código que corre aunque el bundle no llegue; los
+> `type="module"` son diferidos, así que queda armado antes. Si el splash sigue
+> montado a los **12 s**, o si falla la carga de un recurso `SCRIPT`, ejecuta
+> **como máximo UN reload automático por navegación** (marca en
+> `sessionStorage`); si eso no resuelve, sustituye el splash por una pantalla
+> recuperable con botón **«Reintentar»**. La marca se limpia en cuanto la app
+> monta, vigilado con `MutationObserver`.
+>
+> ⚠️ **Bucles imposibles por construcción:** sin `sessionStorage` disponible el
+> reload automático **se omite por completo** y se va directo a la pantalla
+> recuperable; y el reintento manual **no** limpia la marca.
+>
+> **Validación:** A/B con **el mismo hash de bundle en ambos lados**
+> (`index-DdISdyyI.js`) — la única variable es el watchdog. Con el bundle de
+> entrada devolviendo 503: baseline `6a2cb75` = **splash permanente a los 20 s,
+> 0 botones**; PR = **recuperado en ~3 s**, **exactamente 1** reload automático,
+> estable a 13 s y 23 s **sin bucle**, y **0 reloads** cuando `sessionStorage`
+> lanza (probado con **inyección de fallo real**, no leyendo el código). Control
+> **sin** bloqueo: Home y `/doctor/<slug>` arrancan normales, `guard = null`,
+> **sin reload espurio**. «Sin bucle» **medido** con `performance.timeOrigin`
+> estable entre muestras, no observado a ojo. Móvil 375×812 sin overflow.
+> `tsc`, `build` y `git diff --check` **PASS**.
+>
+> **QA real en Android/Chrome (owner): PASS** — escenario original reproducido
+> sobre el Preview; la app se recuperó y volvió al mismo perfil médico.
+> **Producción validada** tras el merge (deployment `6228020277`, ref `0fc36b1`,
+> **success**): Home y `/doctor/dr-camilo-carrillo` sirven el watchdog y arrancan
+> con `guard = null`.
+>
+> ⚠️ **Lección de QA (nueva):** una sonda que bloquea un recurso **debe servirlo
+> `no-store`**. La primera versión del servidor de prueba servía los assets como
+> `immutable` —igual que producción—, el navegador usó el bundle de **su propia
+> caché**, el bloqueo nunca se ejerció y el PR dio un **FALSO PASS**. Se detectó
+> porque el resultado era *demasiado bueno*, se corrigió el instrumento (y se
+> estrenó origen para vaciar caché y `sessionStorage`) y se repitió el A/B
+> entero. Es la variante de caché de la regla ya conocida: **si el control
+> también "pasa", el defecto está en la sonda.**
+>
+> ℹ️ **`BOOT-GETUSER-GATE-P1` = deuda OPCIONAL, NO abierta.** `main.tsx`
+> condiciona el render de **todas** las rutas, públicas incluidas, a
+> `supabase.auth.getUser()` — que en auth-js 2.57.4 es `initializePromise` +
+> `_acquireLock(-1, …)` + `fetch` **sin `AbortSignal` ni timeout en ninguna
+> capa**, con el `setTimeout` de `main.tsx` como único freno. **No puede causar
+> el splash infinito** (queda acotado a ~4,5 s), pero retrasa rutas 100 %
+> públicas tras un round-trip de red. **No abrir sin instrucción del owner.**
 >
 > ✅ **`ADMIN-DOCTOR-SEED-P0` = CLOSED.** PR **#348 mergeado** (2026-08-24);
 > `main` quedó en **`b9edf91d135c74404711c2b8f9bffebdc0ad497e`** ·
@@ -284,23 +360,25 @@
 > `src/types/database.types.ts` está desactualizado desde antes de estos frentes
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
-> **Último HEAD funcional confirmado:
-> `f7213d29af0b61ea6104da8a962597bb005e658b` — PR #352.** · **PRs funcionales
-> mergeados hasta #353** · **103 migraciones aplicadas** (hasta `s7_82`) ·
+> **HEAD funcional canónico:
+> `0fc36b11dbbe88a430356e7e28fadb13ae27d4eb` — PR #355.** · **PRs funcionales
+> mergeados hasta #355** · **103 migraciones aplicadas** (hasta `s7_82`) ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
 > desplegada y **validada** contra el dominio · **ningún frente funcional
 > abierto**.
 >
-> ⚠️ **`f7213d2` era el último HEAD funcional del ciclo anterior; el vigente es
-> `55af306` (#353).** Para el tip exacto de `main`, consultar Git.
->
-> ⚠️ **`f7213d2` es el último HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`0fc36b1` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> **Último cambio funcional:** #352 (Slug y URL pública en el CSV de médicos,
-> `s7_79`). Antes: #351 (exportación CSV de la base de médicos, `s7_78`), #350
+> Ciclos anteriores, ya superados como HEAD: `55af306` (#353) y `f7213d2`
+> (#352). **No volver a citarlos como vigentes.**
+>
+> **Último cambio funcional:** #355 (watchdog de arranque en `index.html`; sin
+> migración). Antes: #353 (aviso al owner en afiliación y claim, `s7_80`–`s7_82`),
+> #352 (Slug y URL pública en el CSV de médicos,
+> `s7_79`), #351 (exportación CSV de la base de médicos, `s7_78`), #350
 > (fechas del export CSV del CRM), #349 (CRM de pacientes), #348 (seed de médico)
 > y #346, #345, #344, #342/#343. **Desde el handoff `2026-08-18` se cerraron 4 frentes funcionales
 > mediante 5 PRs (#342–#346), ninguno con migración ni cambio de
@@ -639,6 +717,15 @@ squash-merge, la rama puede borrarse.
   PASS** en ambos eventos, correo recibido, cola final vacía. Sin cambios en
   `src/` → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#355** ✅ — **MOBILE-BOOT-RECOVERY-P0**: al restaurar una pestaña móvil, la
+  app podía quedar **indefinidamente en el splash estático** si el módulo de
+  entrada no ejecutaba —no había `onerror`, `window.onerror` ni ErrorBoundary—.
+  Watchdog **pre-React** en `index.html`: máximo **un** reload automático por
+  navegación y fallback manual **«Reintentar»**; bucles imposibles por
+  construcción. **Frontend-only, sin migración ni backend**, un solo archivo.
+  A/B con el mismo hash de bundle, control sin bloqueo, **QA real Android/Chrome
+  PASS** y producción validada → [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
@@ -654,6 +741,8 @@ squash-merge, la rama puede borrarse.
 - **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
 - **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
+
+- **`BOOT-GETUSER-GATE-P1` — deuda OPCIONAL, registrada en #355, NO abierta.** `main.tsx` condiciona el render de **todas** las rutas, **públicas incluidas**, a `supabase.auth.getUser()`. En auth-js 2.57.4 eso es `await initializePromise` → `_acquireLock(-1, …)` → `fetch` **sin `AbortSignal` ni timeout en ninguna capa** (verificado en `node_modules`); su único freno es el `setTimeout(3000)` de `main.tsx`, más 1500 ms de la rama `signOut`. **No puede producir el splash infinito** —queda acotado a ~4,5 s y ese frente ya está cerrado por #355— pero retrasa `/`, `/doctor/*`, `/privacidad` y `/terminos` tras un round-trip de red que esas rutas **no necesitan**. El patrón canónico del proyecto para esto ya existe (`getSessionWithTimeout`), pero usa `getSession()` (lectura local) y **no** detectaría el token stale que este gate busca: **cualquier arreglo tiene ese trade-off y exige decisión del owner.** **No abrir sin instrucción.**
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).

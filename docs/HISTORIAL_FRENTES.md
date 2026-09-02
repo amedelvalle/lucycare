@@ -9,7 +9,134 @@
 > ⚠️ Este archivo lista solo frentes **CERRADOS**. **`ADMIN-DOCTOR-SEED-P0`
 > (PR #348), `PATIENT-CRM-P0` (PR #349), `CRM-CSV-FECHAS-P0` (PR #350) y
 > `ADMIN-DOCTOR-EXPORT-P0` (PR #351) y `ADMIN-DOCTOR-EXPORT-URL-P0` (PR #352)
-> ya están cerrados** y figuran abajo.
+> ya están cerrados** y figuran abajo. **`DOCTOR-OWNER-NOTIFICATIONS-P0`
+> (PR #353)** y **`MOBILE-BOOT-RECOVERY-P0` (PR #355)** también.
+
+## Frentes cerrados 2026-09 (PR #355)
+
+### MOBILE-BOOT-RECOVERY-P0 — el splash infinito al reanudar en móvil
+
+**CLOSED (2026-09-02).** PR **#355 MERGED** por squash; `main` quedó en
+**`0fc36b11dbbe88a430356e7e28fadb13ae27d4eb`**. **Frontend-only: sin migración,
+sin backend, sin configuración.** Un solo archivo, `index.html` (+118 / −1).
+**103 migraciones, sin cambios** (hasta `s7_82`).
+
+#### El bug
+
+En Android/Chrome: perfil público `/doctor/:slug` abierto, teléfono
+bloqueado o Chrome en background ~10 min, y al volver la pestaña mostraba
+**solo el splash estático de LucyCare, indefinidamente**. Un refresh manual
+cargaba el mismo perfil al instante.
+
+#### El diagnóstico, por eliminación sobre el código
+
+El splash es **marcado estático dentro de `#root`** en `index.html`. Lo borra
+**exactamente un evento**: el primer commit de React, cuando `createRoot` limpia
+el contenedor en `main.tsx`. Ningún componente lo reproduce — `RouteFallback`
+de `App.tsx` es **solo spinner, sin el wordmark**, y `/` y `/doctor/*` son
+estáticas y ni pasan por `<Suspense>`.
+
+⇒ **Splash permanente ⟺ React nunca montó.**
+
+Y no podía ser el bootstrap: el `Promise.race` de `main.tsx` está acotado por un
+`setTimeout(3000)` (más 1500 ms de la rama `signOut`), y **una pestaña visible
+ejecuta timers con normalidad**; cualquier throw cae al `catch`, que igual
+renderiza. Congelar tampoco explica permanencia: al volver, la página se
+descongela y el timer dispara. ⇒ **el módulo de entrada nunca se ejecutó.**
+
+Descartados con evidencia, no por suposición: **no hay service worker** (0
+coincidencias de `serviceWorker`/`workbox`/`registerSW` en `src/`, `public/`,
+`vite.config.ts` y `package.json`; el `site.webmanifest` no aporta caché);
+**no hay `pageshow`** en todo `src/`; y **`useIdleLogout` queda exonerado** —
+sus ventanas son 15–60 min, no ~10, es inerte sin sesión y corre post-montaje,
+cuando el splash ya no existe.
+
+Lo que hacía el fallo **silencioso y permanente**: `index.html` no tenía
+`onerror` en la etiqueta, y el repositorio no tiene `window.onerror`,
+`unhandledrejection` **ni un solo ErrorBoundary**. El bundle de entrada es un
+**punto único de fallo** de 673 kB.
+
+#### La solución
+
+Watchdog **clásico e inline** en `index.html` — el único código que sigue
+corriendo cuando el bundle no llega. Los `type="module"` son diferidos, así que
+queda armado antes de que corra el código de React (Vite eleva el módulo al
+`<head>`, pero eso no cambia el orden de **ejecución**).
+
+- Splash aún montado a los **12 s**, o fallo de carga de un recurso `SCRIPT`
+  → **como máximo un reload automático por navegación**, con marca en
+  `sessionStorage`.
+- Si no resuelve → el splash se sustituye por una pantalla recuperable con
+  botón **Reintentar**.
+- La marca se limpia en cuanto la app monta, vigilado con `MutationObserver`.
+
+**Bucles imposibles por construcción:** sin `sessionStorage` disponible el
+reload automático **se omite por completo** y se va directo a la pantalla
+recuperable; y el reintento manual **no** limpia la marca.
+
+12 s deja margen ~6–10× sobre el arranque real medido (~1–2 s) y cubre los
+hasta 4,5 s del bootstrap de `main.tsx`.
+
+#### Evidencia de cierre
+
+A/B con **el mismo hash de bundle en ambos lados** (`index-DdISdyyI.js`, dos
+builds reales): la única variable es el watchdog. Bundle de entrada → 503.
+
+| | Baseline `6a2cb75` | PR #355 |
+|---|---|---|
+| Bloqueado, a 20 s | **splash permanente, 0 botones** | recuperado en **~3 s** |
+| Reloads automáticos | — | **exactamente 1** |
+| Estable a 13 s y 23 s | — | **sí, sin bucle** |
+| Sin `sessionStorage` | — | **0 reloads**, pantalla recuperable |
+| Control **sin** bloqueo | arranca | arranca, `guard = null` |
+
+`tsc` **PASS** · `build` **PASS** · `git diff --check` **PASS**.
+
+- **Control de sanidad:** sin bloqueo, Home y `/doctor/<slug>` arrancan
+  normales y **sin reload espurio**.
+- **"Sin bucle" medido, no observado:** `performance.timeOrigin` y una variable
+  de página idénticos entre muestras separadas 10 s — una recarga los habría
+  reiniciado.
+- **`sessionStorage` probado con inyección de fallo real** (getter que lanza,
+  inyectado *antes* del watchdog, con aserción de que quedó antes), no leyendo
+  el código.
+- **Móvil 375×812:** `scrollWidth == innerWidth == 375`, sin overflow; botón de
+  47 px (≥ 44).
+- **QA real en Android/Chrome (owner): PASS.** Reproducido el escenario
+  original sobre el Preview —perfil abierto, background/bloqueo varios minutos,
+  regreso sin refresh manual— y **LucyCare se recuperó y volvió al mismo
+  perfil**. No quedó atrapada en el splash.
+- **Producción validada** tras el merge: deployment `6228020277`, ref
+  `0fc36b1`, **success**. Home y `/doctor/dr-camilo-carrillo` sirven el watchdog
+  y arrancan con `guard = null`, sin pantalla de reintento.
+
+⚠️ El deployment de Production **no existía al terminar el merge**: es el
+retraso de webhook de Vercel ya documentado (ocurrió con #352). **No se
+redesplegó a ciegas ni se dio por caído** — se esperó y se verificó el ref.
+
+#### Lección de método — la sonda que oculta el fallo
+
+La primera versión del servidor de prueba servía los assets con
+`Cache-Control: public, max-age=31536000, immutable`, **igual que producción**.
+El navegador tomó el bundle de **su propia caché**, el bloqueo nunca se ejerció
+y el PR dio un **falso PASS**: parecía arrancar bien con el bundle "bloqueado".
+
+Regla: **una sonda que bloquea un recurso debe servirlo `no-store`** —y
+conviene estrenar origen (puerto nuevo) para vaciar caché y `sessionStorage`—,
+o no está midiendo lo que cree. Es la variante de caché de la trampa ya
+conocida: *si el control también "pasa", el defecto está en la sonda.* Se
+detectó porque el resultado era **demasiado bueno**, se corrigió el instrumento
+y se repitió el A/B entero.
+
+#### Deuda registrada, NO abierta
+
+**`BOOT-GETUSER-GATE-P1`.** `main.tsx` condiciona el render de **todas** las
+rutas, públicas incluidas, a `supabase.auth.getUser()`, que en auth-js 2.57.4
+es `await initializePromise` → `_acquireLock(-1, …)` → `fetch` **sin
+`AbortSignal` ni timeout en ninguna capa** (verificado en `node_modules`). Su
+único freno es el `setTimeout` de `main.tsx`. **No puede causar el splash
+infinito** —queda acotado a ~4,5 s— pero retrasa rutas 100 % públicas tras un
+round-trip de red. **Opcional. No abrir sin instrucción del owner.**
 
 ## Frentes cerrados — detalle por PR (#105–#346)
 
