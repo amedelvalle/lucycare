@@ -20,12 +20,129 @@
       <!-- Splash estático: visible solo durante el bootstrap (validación de
            sesión con timeout, main.tsx). React lo reemplaza al renderizar.
            Evita la pantalla blanca pura en redes lentas (móvil). -->
-      <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#ffffff;font-family:system-ui,-apple-system,sans-serif;">
+      <div id="boot-splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#ffffff;font-family:system-ui,-apple-system,sans-serif;">
         <div style="font-size:26px;font-weight:600;color:#3C2285;letter-spacing:-0.5px;">LucyCare</div>
         <div style="margin-top:18px;width:28px;height:28px;border:3px solid #8AE4CB;border-top-color:#3C2285;border-radius:50%;animation:boot-spin .8s linear infinite;"></div>
         <style>@keyframes boot-spin{to{transform:rotate(360deg)}}</style>
       </div>
     </div>
+    <!-- Watchdog de arranque. Script CLÁSICO e inline a propósito: es el único
+         código que se ejecuta aunque el bundle de entrada no llegue a cargarse.
+         Los `type="module"` son diferidos, así que este corre antes.
+
+         Problema que cierra: el splash de arriba solo lo borra el primer commit
+         de React (createRoot limpia #root en main.tsx). Si el módulo nunca
+         ejecuta —fetch fallido, error de CORS, throw en el grafo de imports— no
+         hay onerror, ni window.onerror, ni ErrorBoundary: el splash se queda
+         indefinidamente, sin aviso ni reintento.
+
+         No toca Auth, sesión, Supabase, router ni caché. -->
+    <script>
+      (function () {
+        'use strict';
+        // Margen amplio sobre un arranque legítimo (descarga + parseo del
+        // bundle + hasta 4,5 s del bootstrap de main.tsx) para no recargar
+        // una carga lenta que iba a terminar bien.
+        var RECOVER_AFTER_MS = 12000;
+        var GUARD_KEY = 'lc_boot_reload';
+
+        var root = document.getElementById('root');
+        var splash = document.getElementById('boot-splash');
+        if (!root || !splash) return;
+
+        var done = false;
+        var timer = null;
+        var observer = null;
+
+        // sessionStorage puede lanzar (modo privado, cookies bloqueadas).
+        // `undefined` = no disponible; `null` = disponible y sin marca.
+        function guard(op) {
+          try {
+            if (op === 'get') return window.sessionStorage.getItem(GUARD_KEY);
+            if (op === 'set') return window.sessionStorage.setItem(GUARD_KEY, '1');
+            return window.sessionStorage.removeItem(GUARD_KEY);
+          } catch (e) {
+            return undefined;
+          }
+        }
+
+        function mounted() {
+          return !splash.isConnected;
+        }
+
+        function stop() {
+          done = true;
+          if (timer) { clearTimeout(timer); timer = null; }
+          if (observer) { observer.disconnect(); observer = null; }
+          window.removeEventListener('error', onResourceError, true);
+        }
+
+        // La app arrancó: se limpia la marca para que la próxima navegación
+        // vuelva a disponer de su único reload automático.
+        function succeed() {
+          if (done) return;
+          stop();
+          guard('remove');
+        }
+
+        function showRetry() {
+          while (splash.firstChild) splash.removeChild(splash.firstChild);
+
+          var box = document.createElement('div');
+          box.setAttribute('role', 'alert');
+          box.style.cssText = 'max-width:320px;width:100%;padding:0 24px;box-sizing:border-box;text-align:center;';
+
+          var title = document.createElement('div');
+          title.textContent = 'LucyCare';
+          title.style.cssText = 'font-size:26px;font-weight:600;color:#3C2285;letter-spacing:-0.5px;';
+
+          var msg = document.createElement('p');
+          msg.textContent = 'No pudimos cargar la aplicación. Revisa tu conexión e inténtalo de nuevo.';
+          msg.style.cssText = 'margin:14px 0 20px;font-size:15px;line-height:1.5;color:#4b5563;';
+
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Reintentar';
+          btn.style.cssText = 'display:block;width:100%;min-height:44px;padding:12px 20px;border:0;border-radius:9999px;background:#3C2285;color:#ffffff;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;';
+          // No limpia la marca: un reintento manual fallido vuelve a esta
+          // pantalla en vez de encadenar recargas.
+          btn.addEventListener('click', function () { window.location.reload(); });
+
+          box.appendChild(title);
+          box.appendChild(msg);
+          box.appendChild(btn);
+          splash.appendChild(box);
+        }
+
+        function recover() {
+          if (done) return;
+          if (mounted()) { succeed(); return; }
+
+          var used = guard('get');
+          stop();
+          // Sin sessionStorage no se puede recordar el intento, así que NO se
+          // recarga: se ofrece el reintento manual. Hace imposible el bucle.
+          if (used === undefined || used !== null) { showRetry(); return; }
+          guard('set');
+          window.location.reload();
+        }
+
+        // Camino rápido: un <script> que falla al cargar no ejecuta nunca.
+        // Solo SCRIPT — un LINK (CSS, iconos) no impide montar React.
+        function onResourceError(e) {
+          if (!e || !e.target || e.target.nodeName !== 'SCRIPT') return;
+          recover();
+        }
+
+        window.addEventListener('error', onResourceError, true);
+        timer = setTimeout(recover, RECOVER_AFTER_MS);
+
+        if (window.MutationObserver) {
+          observer = new MutationObserver(function () { if (mounted()) succeed(); });
+          observer.observe(root, { childList: true });
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
