@@ -411,3 +411,66 @@ export async function adminApproveAndCreateDoctor(
     reusedExistingUser: !!row.reused_existing_user,
   }
 }
+
+// ═══════════════════════════════════════════════════════════
+// Correo de bienvenida al médico (DOCTOR-WELCOME-EMAIL-P0)
+// ═══════════════════════════════════════════════════════════
+// El envío NO es automático: lo dispara el owner desde LucyAdmin después de
+// aprobar y publicar. Todos los gates son server-side; lo de acá es UX.
+
+/** Motivo por el que la bienvenida puede o no enviarse. Clave estable de la RPC. */
+export type WelcomeReason =
+  | 'ok'
+  | 'no_doctor'
+  | 'no_email'
+  | 'not_published'
+  | 'no_slug'
+  | 'already_claimed'
+  | 'already_sent'
+  | 'sending_recent'
+  | 'needs_review'
+
+export type WelcomeStatus = 'not_sent' | 'sending' | 'sent' | 'failed'
+
+export interface WelcomeEmailState {
+  status: WelcomeStatus
+  sentAt: string | null
+  lastAttemptAt: string | null
+  canSend: boolean
+  reason: WelcomeReason
+}
+
+export async function getWelcomeEmailState(requestId: string): Promise<WelcomeEmailState> {
+  const { data, error } = await supabase.rpc('admin_welcome_email_state', {
+    p_request_id: requestId,
+  })
+  if (error) throw new Error(error.message)
+  const s = (data ?? {}) as Record<string, unknown>
+  return {
+    status: (s.status as WelcomeStatus) ?? 'not_sent',
+    sentAt: (s.sent_at as string) ?? null,
+    lastAttemptAt: (s.last_attempt_at as string) ?? null,
+    canSend: !!s.can_send,
+    reason: (s.reason as WelcomeReason) ?? 'needs_review',
+  }
+}
+
+/**
+ * Dispara el envío. La Edge Function recibe SOLO el id de la solicitud: el
+ * correo, el nombre y el slug los resuelve la base, nunca el navegador.
+ *
+ * El `Authorization` va explícito a propósito, igual que en
+ * `adminDoctorSeed.service.ts`: la función evalúa `is_admin()` con ESE token y
+ * no se delega en que supabase-js lo adjunte solo.
+ */
+export async function sendWelcomeEmail(requestId: string): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('not_authenticated')
+
+  const { error } = await supabase.functions.invoke('send-doctor-welcome-email', {
+    body: { affiliation_request_id: requestId },
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (error) throw new Error('send_failed')
+}

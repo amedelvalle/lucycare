@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   adminMarkInReview,
   adminRejectAffiliationRequest,
   adminMarkApprovedPendingCreation,
   adminApproveAndCreateDoctor,
   adminAffiliationPreflight,
+  getWelcomeEmailState,
+  sendWelcomeEmail,
   type AffiliationRequestRow,
   type AffiliationStatus,
   type ApproveAndCreateResult,
   type AffiliationPreflight,
+  type WelcomeReason,
 } from '../../../services/affiliation.service'
 import { useSpecialties, useDepartments, useMunicipalities } from '../../../hooks/useDirectory'
 
@@ -280,6 +283,9 @@ export default function AdminAffiliationDetailModal({
               )}
             </section>
           )}
+
+          {/* ───── Correo de bienvenida al médico ───── */}
+          {row.doctorId && <WelcomeEmailSection requestId={requestId} />}
 
           {/* ───── Pantalla de éxito post-creación ───── */}
           {createdResult && (
@@ -725,5 +731,121 @@ export default function AdminAffiliationDetailModal({
         </div>
       </div>
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// Correo de bienvenida al médico (DOCTOR-WELCOME-EMAIL-P0)
+// ═══════════════════════════════════════════════════════════
+// El estado y los gates son server-side (`admin_welcome_email_state`). Acá solo
+// se traduce el motivo a copy en español y tuteo. NUNCA se muestra al owner el
+// código técnico del error: se persiste en `welcome_last_error_code`, no se
+// imprime.
+
+/** Motivo → explicación para el owner. Sin jerga ni códigos crudos. */
+const WELCOME_BLOCKED_COPY: Record<WelcomeReason, string> = {
+  ok: '',
+  no_doctor: 'Primero hay que crear el médico a partir de esta solicitud.',
+  no_email: 'La solicitud no trae correo electrónico, así que no hay a dónde escribir.',
+  not_published: 'El perfil del médico todavía no está publicado.',
+  no_slug: 'El perfil aún no tiene dirección pública asignada.',
+  already_claimed: 'El médico ya reclamó su perfil, así que la bienvenida ya no aplica.',
+  already_sent: '',
+  sending_recent: 'Hay un envío en curso. Si no se completa, vas a poder reintentar en unos minutos.',
+  needs_review: 'El estado del envío requiere revisión.',
+}
+
+function formatSV(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('es-SV', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+
+function WelcomeEmailSection({ requestId }: { requestId: string }) {
+  const queryClient = useQueryClient()
+  const stateQ = useQuery({
+    queryKey: ['welcome-email-state', requestId],
+    queryFn: () => getWelcomeEmailState(requestId),
+    staleTime: 0,
+  })
+
+  const send = useMutation({
+    mutationFn: () => sendWelcomeEmail(requestId),
+    // Se refresca pase lo que pase: el estado autoritativo lo tiene la base,
+    // no el resultado de esta llamada.
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['welcome-email-state', requestId] })
+    },
+  })
+
+  const s = stateQ.data
+  const busy = send.isPending || stateQ.isFetching
+
+  return (
+    <section className="border-t border-gray-200 pt-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">Correo de bienvenida</h3>
+      <div className="bg-gray-50 rounded-lg p-3">
+        {stateQ.isLoading && <p className="text-sm text-gray-500">Cargando estado…</p>}
+
+        {stateQ.isError && (
+          <p className="text-sm text-gray-700">
+            No se pudo consultar el estado del correo de bienvenida.
+          </p>
+        )}
+
+        {s && (
+          <>
+            {s.status === 'sent' ? (
+              <p className="text-sm text-emerald-800 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">
+                  <i className="ri-mail-check-line" /> Bienvenida enviada
+                </span>
+                {s.sentAt && <span className="text-gray-600">{formatSV(s.sentAt)}</span>}
+              </p>
+            ) : s.reason === 'needs_review' ? (
+              <p className="text-sm text-amber-800">
+                El estado del envío requiere revisión. No se reenvía automáticamente para
+                evitar que al médico le llegue el correo dos veces.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-700">
+                  {s.status === 'failed'
+                    ? 'No se pudo enviar el correo de bienvenida.'
+                    : s.canSend
+                      ? 'El perfil ya está publicado y listo para que el médico lo reclame.'
+                      : WELCOME_BLOCKED_COPY[s.reason]}
+                </p>
+
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => send.mutate()}
+                    disabled={!s.canSend || busy}
+                    className="px-4 py-2 text-sm rounded-full font-medium bg-brand-purple text-white hover:bg-brand-purple-dark disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {send.isPending
+                      ? 'Enviando…'
+                      : s.status === 'failed'
+                        ? 'Reintentar'
+                        : 'Enviar correo de bienvenida'}
+                  </button>
+                </div>
+
+                {send.isError && (
+                  <p className="text-sm text-gray-700 mt-2">
+                    El envío no se completó. Puedes reintentarlo.
+                  </p>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   )
 }
