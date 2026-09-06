@@ -83,13 +83,40 @@ GRANT EXECUTE ON FUNCTION public.doctor_booking_ready(uuid) TO authenticated;
 -- Los checks se devuelven ADEMÁS de la etapa, para que nada quede escondido
 -- detrás de ella.
 --
--- ⚠️ EVIDENCIA DE CLAIM. La señal canónica es `tos_accepted_at IS NOT NULL`:
--- la escribe EXCLUSIVAMENTE `claim_doctor_profile` (s7_13/s7_64), y
--- `admin_approve_and_create_doctor` no la toca. La cláusula sobre
--- `lucy_status` que la acompaña es una INFERENCIA LEGACY, no una segunda
--- fuente canónica: existe solo porque `tos_accepted_at` cubre 1 de 115
--- médicos históricos. NO se normaliza el histórico en este frente, y cuando
--- se normalice esa cláusula puede caer sin tocar nada más.
+-- ⚠️ EVIDENCIA DE CLAIM — señal canónica y cohorte legacy ACOTADA.
+--
+-- La señal canónica es `tos_accepted_at IS NOT NULL`. La escribe EXCLUSIVAMENTE
+-- `claim_doctor_profile` (s7_13 → s7_64): `admin_approve_and_create_doctor` no
+-- la toca, y `s7_60` la dejó FUERA del `GRANT UPDATE` de `authenticated`, así
+-- que ni el médico ni el panel pueden escribirla por otra vía. Es un hecho
+-- fechado, no un estado editable.
+--
+-- ⚠️ POR QUÉ LA INFERENCIA LEGACY VA ACOTADA POR FECHA. `lucy_status` SÍ es
+-- editable a mano (`admin_set_lucy_status`), así que usarlo sin acotar
+-- clasificaría como «reclamado» a un médico NUEVO al que un admin le moviera
+-- el estado sin que hubiera claim real. Por eso solo aplica a la cohorte
+-- histórica.
+--
+-- EL CORTE ES `2026-05-24`, y es demostrable en el repositorio: `s7_13` es la
+-- PRIMERA migración que introduce la escritura de `tos_accepted_at`, y su
+-- commit es `b4702b3` del 2026-05-24 («feat(reclamo): flujo seguro de
+-- "Reclamar perfil" (Fase 2) (#32)»). Verificado con `git log --diff-filter=A`
+-- sobre las nueve migraciones que mencionan la columna: ninguna anterior la
+-- escribe.
+--
+--   · created_at >= 2026-05-24 → SOLO cuenta `tos_accepted_at`. La cohorte
+--     nueva no admite inferencia, así que un `lucy_status` movido a mano NO
+--     puede fabricar un claim. Es el caso que importa proteger.
+--   · created_at <  2026-05-24 → se admite la inferencia por `lucy_status`,
+--     porque esos médicos pudieron reclamar cuando la columna aún no existía.
+--
+-- El corte usa la fecha de COMMIT, no la de aplicación, que es necesariamente
+-- posterior. El error posible es por tanto un FALSO NEGATIVO —un médico
+-- histórico que quede como «pendiente de reclamar»—, visible y corregible.
+-- Nunca un falso positivo: el modelo jamás inventa un claim.
+--
+-- NO se normaliza ni se modifica el histórico. Cuando se normalice, la
+-- cláusula entera puede caer sin tocar nada más.
 --
 -- PERFIL MÍNIMO = exactamente cinco campos: foto, especialidad, descripción,
 -- clínica y ubicación. Son los que el correo de bienvenida le pide al médico.
@@ -112,7 +139,8 @@ AS $$
       d.id,
       d.is_published AS published,
       (d.tos_accepted_at IS NOT NULL
-       OR d.lucy_status IN ('claimed', 'booking_enabled', 'verified')) AS claimed,
+       OR (d.created_at < DATE '2026-05-24'
+           AND d.lucy_status IN ('claimed', 'booking_enabled', 'verified'))) AS claimed,
       d.is_operational  AS activated,
       d.booking_enabled AS booking_on,
       EXISTS (SELECT 1 FROM services s
@@ -216,15 +244,6 @@ REVOKE ALL ON FUNCTION public._doctor_onboarding(uuid) FROM authenticated;
 -- Los checks se devuelven ADEMÁS de la etapa, para que nada quede escondido
 -- detrás de ella.
 --
--- ⚠️ EVIDENCIA DE CLAIM. La señal canónica es `tos_accepted_at IS NOT NULL`:
--- la escribe EXCLUSIVAMENTE `claim_doctor_profile` (s7_13/s7_64), y
--- `admin_approve_and_create_doctor` no la toca. La cláusula sobre
--- `lucy_status` que la acompaña es una INFERENCIA LEGACY, no una segunda
--- fuente canónica: existe solo porque `tos_accepted_at` cubre 1 de 115
--- médicos históricos. NO se normaliza el histórico en este frente, y cuando
--- se normalice esa cláusula puede caer sin tocar nada más.
---
--- El texto para el owner NO vive acá: se devuelven códigos estables
 -- (`next_action`, `actor`) y el frontend los traduce.
 
 

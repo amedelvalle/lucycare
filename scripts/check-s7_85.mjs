@@ -121,10 +121,29 @@ has('el CASE cierra con ELSE (siempre hay respuesta)', cuerpoOnb, "ELSE 'complet
 console.log('\nD · evidencia de claim');
 has('señal primaria: tos_accepted_at', cuerpoOnb, 'd.tos_accepted_at IS NOT NULL');
 has('fallback legacy por lucy_status', cuerpoOnb, "d.lucy_status IN ('claimed', 'booking_enabled', 'verified')");
-has('el fallback está documentado como INFERENCIA LEGACY', raw85, 'INFERENCIA LEGACY');
 // Y que el orden importe: la señal canónica va primero.
 check('tos_accepted_at se evalúa antes que el fallback',
   cuerpoOnb.indexOf('tos_accepted_at') < cuerpoOnb.indexOf("lucy_status IN"), true);
+
+// ── EL FALLBACK ESTÁ ACOTADO POR FECHA, no es una regla permanente ──
+// Sin el corte, un admin que moviera `lucy_status` a mano fabricaría un claim
+// inexistente en un médico NUEVO. Ese es el falso positivo que hay que impedir.
+has('el fallback lleva corte por created_at', cuerpoOnb, "d.created_at < DATE '2026-05-24'");
+check('el corte y el fallback van en el MISMO paréntesis (AND, no OR)',
+  /\(\s*d\.created_at\s*<\s*DATE\s*'2026-05-24'\s*AND\s*d\.lucy_status IN/.test(cuerpoOnb), true);
+
+// El corte debe ser demostrable en el repositorio, no un número inventado.
+has('documenta el commit que lo justifica', raw85, 'b4702b3');
+has('documenta que s7_13 es la primera que escribe tos_accepted_at', raw85,
+  'PRIMERA migración que introduce la escritura de `tos_accepted_at`');
+
+{
+  // MUTATION: quitar el corte reabre el falso positivo. Debe cazarse.
+  const k = cuerpoOnb.indexOf("d.created_at < DATE '2026-05-24'");
+  const sinCorte = cuerpoOnb.slice(0, k) + 'true' + cuerpoOnb.slice(k + "d.created_at < DATE '2026-05-24'".length);
+  check('caza la pérdida del corte por fecha',
+    sinCorte.includes("d.created_at < DATE '2026-05-24'"), false);
+}
 
 // ═══════════════════════════════════════════════════════════
 // E · PERFIL MÍNIMO — los cinco campos acordados, ni uno más
