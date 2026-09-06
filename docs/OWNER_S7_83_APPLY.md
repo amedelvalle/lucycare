@@ -188,3 +188,79 @@ Revertir es seguro mientras no se haya enviado ningún correo real: elimina las
 cuatro funciones y las cinco columnas. **Si ya hubo envíos, borrar las columnas
 pierde el registro de a quién se le escribió** — en ese caso, dejar las
 columnas y eliminar solo las funciones.
+
+---
+
+# ANEXO · `s7_84` — volatilidad de `_welcome_email_claimable`
+
+**Migración 105.** Corrige una declaración incorrecta introducida por `s7_83`:
+la función se declaró `IMMUTABLE` pero usa `now()`. `IMMUTABLE` promete que la
+salida depende solo de los argumentos, y Postgres puede plegar la llamada a
+constante — una ventana temporal congelada es justo lo que no se quiere en la
+política de reintentos.
+
+Hoy no se manifiesta (las RPCs la llaman con valores de columna, no con
+constantes, y sin constantes no hay plegado), pero se corrige **antes del primer
+envío real**.
+
+**Cambia EXCLUSIVAMENTE la volatilidad.** Firma, cuerpo, ventanas de 23 h y
+10 min, RPCs, Edge Function y UI quedan intactos. **`s7_83` no se modifica.**
+
+## PRE — debe devolver `immutable`
+
+```sql
+SELECT p.provolatile AS codigo,
+       CASE p.provolatile WHEN 'i' THEN 'immutable'
+                          WHEN 's' THEN 'stable'
+                          WHEN 'v' THEN 'volatile' END AS volatilidad
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.proname = '_welcome_email_claimable';
+```
+
+Esperado: **`i` / `immutable`**. Si ya dice `stable`, `s7_84` ya está aplicada:
+**no la repitas**.
+
+## Aplicar
+
+Ejecutar el contenido íntegro de
+`migrations/s7_84_welcome_claimable_stable.sql`.
+
+## POST — debe completar sin excepción
+
+```sql
+DO $$
+DECLARE v_fail int := 0; v_vol char; v_n int;
+BEGIN
+  SELECT p.provolatile INTO v_vol
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = '_welcome_email_claimable';
+  IF v_vol <> 's' THEN v_fail := v_fail + 1; RAISE WARNING 'volatilidad: % (esperaba s)', v_vol; END IF;
+
+  -- La función sigue existiendo UNA sola vez, con la misma firma.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = '_welcome_email_claimable';
+  IF v_n <> 1 THEN v_fail := v_fail + 1; RAISE WARNING 'sobrecargas: %', v_n; END IF;
+
+  -- anon sigue sin poder ejecutarla.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = '_welcome_email_claimable'
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_n <> 0 THEN v_fail := v_fail + 1; RAISE WARNING 'anon puede ejecutar'; END IF;
+
+  -- Las tres RPCs del frente siguen intactas.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname IN
+     ('admin_welcome_email_state','admin_welcome_email_claim','admin_welcome_email_mark');
+  IF v_n <> 3 THEN v_fail := v_fail + 1; RAISE WARNING 'RPCs: % (esperaba 3)', v_n; END IF;
+
+  IF v_fail > 0 THEN RAISE EXCEPTION 'POST s7_84 FALLÓ: % comprobaciones', v_fail; END IF;
+END $$;
+```
+
+## Después
+
+Volver a correr la sonda de ventanas del guion E2E. Esperado sin cambios:
+**`t, f, t, f, f, t, f, f`**. Si sale eso, seguir con el clic real.
