@@ -4,7 +4,121 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-09-02) — post PR #355 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-09-06) — post PR #357 en `main`. PILOTO = GO.**
+>
+> ✅ **`DOCTOR-WELCOME-EMAIL-P0` = CLOSED (2026-09-06).** PR **#357 MERGED** por
+> squash; `main` quedó en
+> **`a0b974b6c8fbf040eb89397f7b8f780bd653d887`**. **`s7_83` (migración 104) y
+> `s7_84` (migración 105) = APPLIED / VERIFIED / NO REAPLICAR**, ambas aplicadas
+> por el owner ANTES del merge. Edge Function **`send-doctor-welcome-email`
+> ACTIVE v1**. **Sin secreto nuevo.**
+>
+> **Qué hace:** tras aprobar y publicar a un médico, el owner pulsa
+> **«Enviar correo de bienvenida»** en `/admin/afiliaciones` y LucyCare le manda
+> al médico su URL pública y los siguientes pasos. Automatiza el **segundo**
+> correo del flujo; el aviso al owner de #353 **no se tocó**.
+>
+> ⚠️ **Publicar NO envía nada.** El disparo es una acción explícita del owner:
+> **sin trigger, sin outbox, sin `pg_net`, sin wakeup, sin cron, sin Vault**.
+> Es la diferencia deliberada con `DOCTOR-OWNER-NOTIFICATIONS-P0`, y la decidió
+> el owner por encima del diseño automático que se había propuesto primero.
+>
+> **Arquitectura:** `botón → Edge Function autenticada con la sesión LucyAdmin →
+> Resend → médico`. La función recibe **un solo campo**,
+> `affiliation_request_id`; correo, nombre y slug los resuelve la base. La URL se
+> arma con el dominio como **constante literal** (regla de #352).
+>
+> **Destinatario: `doctor_affiliation_requests.email`**, nunca `profiles.email`
+> — en la rama `reuse_patient` de `s7_42` el email del lead **no se copia** al
+> perfil. Si el lead no traía correo, el override de la aprobación sí lo escribe
+> en esa columna (`email = COALESCE(email, v_email)`, verificado en código).
+>
+> **Autorización en tres capas:** `verify_jwt` por defecto —desplegada **sin**
+> `--no-verify-jwt`, al revés que `notify-owner-doctor-events`, porque a ésta la
+> invoca un navegador— · JWT del admin en el cliente de negocio · gate
+> `is_admin()` con **`P0160`** en las tres RPCs. **No usa `service_role` en
+> ningún punto.**
+>
+> **Concurrencia:** los seis gates viven en el `WHERE` de **un solo `UPDATE`
+> condicional**. Una segunda llamada espera el bloqueo de fila, reevalúa contra
+> `welcome_status='sending'` ya comiteado y casa **0 filas**. Doble clic, refresh
+> y retry no pueden producir dos correos, sin advisory lock.
+>
+> **Idempotencia:** `Idempotency-Key` hacia Resend = el **id de la solicitud**,
+> estable para siempre. **Sin reintentos automáticos**: un intento se reclama a
+> mano solo dentro de la ventana segura del proveedor —primer intento < 23 h, y
+> si está en vuelo, último intento > 10 min—. Pasada la ventana **no se
+> reenvía**: se muestra «El estado del envío requiere revisión».
+> `welcome_first_attempt_at` se fija una vez y **nunca** se reescribe.
+>
+> **Fallo:** no despublica, no revierte la aprobación, no bloquea LucyAdmin.
+> Códigos cortos y normalizados (`^[a-z0-9_]{1,40}$`), **nunca el cuerpo del
+> proveedor**, y **nunca crudos en la UI**.
+>
+> **Remitente:** `LucyCare para Médicos <medicos@lucycare.app>` ·
+> `Reply-To: medicos@lucycare.app`. Viable **sin DNS nuevo**: Resend está
+> verificado a nivel de **dominio** (DKIM `resend._domainkey`, bounce en
+> `send.lucycare.app`), así que cualquier local-part alinea igual. Los MX
+> apuntan a Google Workspace, de modo que las respuestas caen ahí **sin
+> integrar Gmail en LucyCare**. Se reutiliza la `RESEND_API_KEY` transaccional
+> — **jamás la del SMTP de Auth** (prohibición 16).
+>
+> ⚠️ **El tratamiento NUNCA se infiere.** `profiles.full_name` es **mixto** en
+> producción: `dr-harold-trillos` y `dra-pamela-bolanos` ya lo traen,
+> `elba-angelica-lobo` no. Si el nombre trae tratamiento se respeta tal cual
+> —incluido el femenino—; si no lo trae, se usa **como está**. Anteponer «Dr. »
+> habría producido «Dr. Dr. Harold Trillos» y «Dr. Dra. Pamela Bolaños», que
+> además la trata en masculino.
+>
+> **Validación:** `check-s7_83` **109/109** (mitad conductual: el `render.ts`
+> real transpilado con esbuild) · `check-s7_84` **34/34** (A/B que prueba que
+> entre `s7_83` y `s7_84` **solo** cambia la volatilidad) · `tsc`, `build` y
+> `git diff --check` **PASS** · seis estados de la UI validados con harness
+> temporal, eliminado del PR · **E2E real PASS** (correo recibido, «Bienvenida
+> enviada», `sent` con fecha y `welcome_last_error_code` NULL) · **cleanup con
+> 0 residuales funcionales**, salvo `audit_log`.
+>
+> ℹ️ **`s7_84` corrige a `s7_83`:** `_welcome_email_claimable` se declaró
+> `IMMUTABLE` usando `now()`. `IMMUTABLE` promete que la salida depende solo de
+> los argumentos, y Postgres puede plegar la llamada a constante — una ventana
+> temporal congelada es justo lo que no se quiere en la política de reintentos.
+> No llegó a manifestarse (las RPCs la llaman con valores de columna), y se
+> corrigió **antes del primer envío real**. `s7_83` **no se editó**: es el
+> registro de lo que se ejecutó.
+>
+> ⚠️ **Deudas registradas, NINGUNA abierta:**
+> **(a) Lead sin correo aprobado sin override** → `doctor_affiliation_requests.email`
+> queda NULL para siempre y **no hay ninguna vía en LucyAdmin para corregirlo**:
+> la bienvenida de ese médico queda muerta sin aviso. Pasó con la fixture del
+> E2E. **(b)** `no_slug`, `already_claimed` y el caso `directory_editor` **no
+> tienen cobertura conductual** — decisión del owner de no mutar producción solo
+> por QA. **(c)** El Preview de Vercel **no puede ejecutar E2E autenticados**:
+> tiene el CAPTCHA apagado y Supabase lo exige (`captcha_failed`), así que haría
+> falta tocar Turnstile y las variables del Preview.
+>
+> ⚠️ **TRES LECCIONES DE MÉTODO, registradas sin adornos:**
+>
+> 1. **La mitigación del sitemap falló por no medirla.** Se afirmó que sin
+>    especialidad la fixture quedaría fuera del `sitemap.xml` (por el
+>    `specialties!inner` de `middleware.ts`), se dio la instrucción y **no se
+>    verificó el resultado**. Se le asignó Neumología, el INNER JOIN casó, y el
+>    perfil de prueba estuvo público e **`index,follow`** hasta que se detectó
+>    revisando el sitemap. Es la misma regla que ya costó caro en `s7_82`:
+>    **medir el efecto, no deducirlo.**
+> 2. **Un preflight de dependencias debe cubrir TODOS los padres que la
+>    transacción toca.** El primer escaneo de FKs cubrió `doctors`, `profiles` y
+>    `clinics` pero **no** `doctor_affiliation_requests`, que el cleanup también
+>    borraba. Se detectó antes de ejecutar. El escaneo correcto se hace contra
+>    `pg_constraint` con conteos reales vía `query_to_xml`, no leyendo las
+>    migraciones. Reveló que **`clinics.owner_id` es `RESTRICT`**: la clínica se
+>    borra ANTES que el perfil, y un cleanup por nombres habría fallado a mitad.
+> 3. **Las RPCs con gate `is_admin()` NO se pueden probar desde el SQL Editor.**
+>    Ahí la sesión es `postgres` **sin JWT**, `auth.uid()` es NULL y el gate
+>    responde `P0160` — correctamente. Un bloque de QA que las llamaba desde ahí
+>    murió con ese error. Lo ejercitable sin sesión es solo lo que no tiene gate
+>    (`_welcome_email_claimable`); el resto se prueba por la UI autenticada.
+>
+> 🟢 **ESTADO ANTERIOR (2026-09-02) — post PR #355. PILOTO = GO.**
 > **Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt`
 > (leer PRIMERO).** Reemplaza al `2026-08-27_POST_PR352`, que pasa a
@@ -361,22 +475,24 @@
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **HEAD funcional canónico:
-> `0fc36b11dbbe88a430356e7e28fadb13ae27d4eb` — PR #355.** · **PRs funcionales
-> mergeados hasta #355** · **103 migraciones aplicadas** (hasta `s7_82`) ·
-> `main == origin/main` · árbol limpio · **0 PRs abiertos** · producción
-> desplegada y **validada** contra el dominio · **ningún frente funcional
-> abierto**.
+> `a0b974b6c8fbf040eb89397f7b8f780bd653d887` — PR #357.** · **PRs funcionales
+> mergeados hasta #357** · **105 migraciones aplicadas** (hasta
+> `s7_84_welcome_claimable_stable.sql`) · `main == origin/main` · árbol limpio ·
+> **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
+> **ningún frente funcional abierto**.
 >
-> ⚠️ **`0fc36b1` es el HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`a0b974b` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> Ciclos anteriores, ya superados como HEAD: `55af306` (#353) y `f7213d2`
-> (#352). **No volver a citarlos como vigentes.**
+> Ciclos anteriores, ya superados como HEAD: `0fc36b1` (#355), `55af306` (#353)
+> y `f7213d2` (#352). **No volver a citarlos como vigentes.**
 >
-> **Último cambio funcional:** #355 (watchdog de arranque en `index.html`; sin
-> migración). Antes: #353 (aviso al owner en afiliación y claim, `s7_80`–`s7_82`),
+> **Último cambio funcional:** #357 (correo de bienvenida al médico desde
+> LucyAdmin, `s7_83` y `s7_84`). Antes: #355 (watchdog de arranque en
+> `index.html`; sin
+> migración), #353 (aviso al owner en afiliación y claim, `s7_80`–`s7_82`),
 > #352 (Slug y URL pública en el CSV de médicos,
 > `s7_79`), #351 (exportación CSV de la base de médicos, `s7_78`), #350
 > (fechas del export CSV del CRM), #349 (CRM de pacientes), #348 (seed de médico)
@@ -726,6 +842,17 @@ squash-merge, la rama puede borrarse.
   A/B con el mismo hash de bundle, control sin bloqueo, **QA real Android/Chrome
   PASS** y producción validada → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#357** ✅ — **DOCTOR-WELCOME-EMAIL-P0**: botón **«Enviar correo de
+  bienvenida»** en `/admin/afiliaciones`. **Publicar NO envía**: el disparo es
+  una acción explícita del owner, sin trigger, outbox, `pg_net`, cron ni secreto
+  nuevo. `s7_83` (**migración 104**) añade 5 columnas y 3 RPCs con los seis gates
+  en el `WHERE` de **un solo `UPDATE` condicional**; `s7_84` (**105**) corrige la
+  volatilidad de `_welcome_email_claimable`. Edge Function
+  `send-doctor-welcome-email` **ACTIVE v1**, con `verify_jwt` y **sin
+  `service_role`**. Destinatario desde `doctor_affiliation_requests.email`,
+  nunca `profiles.email`. **E2E real PASS** y cleanup con 0 residuales
+  funcionales → [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
@@ -743,6 +870,10 @@ squash-merge, la rama puede borrarse.
 - **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
 
 - **`BOOT-GETUSER-GATE-P1` — deuda OPCIONAL, registrada en #355, NO abierta.** `main.tsx` condiciona el render de **todas** las rutas, **públicas incluidas**, a `supabase.auth.getUser()`. En auth-js 2.57.4 eso es `await initializePromise` → `_acquireLock(-1, …)` → `fetch` **sin `AbortSignal` ni timeout en ninguna capa** (verificado en `node_modules`); su único freno es el `setTimeout(3000)` de `main.tsx`, más 1500 ms de la rama `signOut`. **No puede producir el splash infinito** —queda acotado a ~4,5 s y ese frente ya está cerrado por #355— pero retrasa `/`, `/doctor/*`, `/privacidad` y `/terminos` tras un round-trip de red que esas rutas **no necesitan**. El patrón canónico del proyecto para esto ya existe (`getSessionWithTimeout`), pero usa `getSession()` (lectura local) y **no** detectaría el token stale que este gate busca: **cualquier arreglo tiene ese trade-off y exige decisión del owner.** **No abrir sin instrucción.**
+
+- **`WELCOME-EMAIL-SIN-CORREO-P1` — deuda registrada en #357, NO abierta.** Si un lead llega **sin correo** y se aprueba **sin rellenar el override**, `doctor_affiliation_requests.email` queda NULL para siempre y **no existe ninguna vía en LucyAdmin para corregirlo**: el formulario de override solo existe en el momento de crear el médico, y la solicitud es un registro histórico. Ese médico **nunca** podrá recibir la bienvenida sin un `UPDATE` manual en SQL. No es un defecto de `s7_83` —el gate `no_email` hace exactamente lo que debe— sino una esquina áspera del flujo de aprobación. Ocurrió de verdad con la fixture del E2E. **No abrir sin instrucción.**
+- **Cobertura conductual pendiente de #357, NO abierta.** Los gates `no_slug` y `already_claimed`, y el caso de autorización `directory_editor`, **no se ejercitaron**: exigían mutar producción solo por QA y el owner decidió no hacerlo. El check estático los verifica en el `WHERE` del reclamo, pero **no hay prueba conductual**. No se dan por probados.
+- **El Preview de Vercel no puede ejecutar E2E autenticados.** Tiene `VITE_CAPTCHA_ENABLED` apagado y Supabase exige Turnstile: cualquier login ahí devuelve `captcha_failed`. Habilitarlo exigiría variables de Preview **y** autorizar el hostname en Cloudflare Turnstile — dos cambios de configuración. Es el motivo por el que el E2E de #357 se hizo tras el merge, en producción. **No cambiar sin instrucción.**
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).
@@ -1084,6 +1215,24 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_84` DOCTOR-WELCOME-EMAIL-P0 (**migración 105**): `CREATE OR REPLACE` de
+  `_welcome_email_claimable` que cambia **exclusivamente la volatilidad**, de
+  `IMMUTABLE` a `STABLE`. `IMMUTABLE` con `now()` dentro es incorrecto: Postgres
+  puede plegar la llamada a constante y congelar la ventana de reintentos. No
+  llegó a manifestarse —las RPCs la llaman con valores de columna, no con
+  constantes— y se corrigió antes del primer envío real. `STABLE` y no
+  `VOLATILE` porque dentro de una sentencia `now()` es fijo. Firma, cuerpo y
+  ventanas de 23 h / 10 min intactos, verificado por A/B byte a byte en
+  `check-s7_84`. **`s7_83` no se editó.**
+- `s7_83` DOCTOR-WELCOME-EMAIL-P0 (**migración 104**): cinco columnas sobre
+  `doctor_affiliation_requests` (`welcome_status`, `welcome_first_attempt_at`,
+  `welcome_last_attempt_at`, `welcome_sent_at`, `welcome_last_error_code`) con
+  seis `CHECK` de forma, el helper de ventanas `_welcome_email_claimable`, y las
+  tres RPCs `admin_welcome_email_state` / `_claim` / `_mark`. Todos los gates
+  viven en el `WHERE` de **un solo `UPDATE` condicional**, que es lo que cierra
+  el doble envío por bloqueo de fila. Gate `is_admin()` con **`P0160`**,
+  `search_path` fijo, `REVOKE` de `PUBLIC`/`anon`/`service_role` y `GRANT` solo
+  a `authenticated`. **Sin tabla nueva, sin trigger, sin `pg_net`, sin Vault.**
 - `s7_82` DOCTOR-OWNER-NOTIFICATIONS-P0 (**migración 103**): despertador propio.
   Trigger `trg_notify_owner_wakeup` `AFTER INSERT FOR EACH ROW` sobre la outbox
   que llama **`net.http_post`** directamente — sin el esqueleto

@@ -10,7 +10,148 @@
 > (PR #348), `PATIENT-CRM-P0` (PR #349), `CRM-CSV-FECHAS-P0` (PR #350) y
 > `ADMIN-DOCTOR-EXPORT-P0` (PR #351) y `ADMIN-DOCTOR-EXPORT-URL-P0` (PR #352)
 > ya están cerrados** y figuran abajo. **`DOCTOR-OWNER-NOTIFICATIONS-P0`
-> (PR #353)** y **`MOBILE-BOOT-RECOVERY-P0` (PR #355)** también.
+> (PR #353)**, **`MOBILE-BOOT-RECOVERY-P0` (PR #355)** y
+> **`DOCTOR-WELCOME-EMAIL-P0` (PR #357)** también.
+
+## Frentes cerrados 2026-09 (PR #357)
+
+### DOCTOR-WELCOME-EMAIL-P0 — bienvenida al médico, disparada a mano
+
+**CLOSED (2026-09-06).** PR **#357 MERGED** por squash; `main` quedó en
+**`a0b974b6c8fbf040eb89397f7b8f780bd653d887`**. **`s7_83` = migración 104** y
+**`s7_84` = migración 105**, ambas **APPLIED / VERIFIED / NO REAPLICAR**,
+aplicadas por el owner antes del merge. Edge Function
+**`send-doctor-welcome-email` ACTIVE v1**. **Sin secreto nuevo.**
+
+Automatiza el **segundo** correo del flujo de afiliación. El primero —el aviso
+al owner de #353— **no se tocó**.
+
+#### La decisión de producto que cambió el diseño
+
+El análisis inicial propuso un disparo automático al publicar: trigger
+`AFTER UPDATE` sobre `doctors` + outbox + `pg_net`, replicando `#353`. **El
+owner lo rechazó** y pidió una acción explícita desde LucyAdmin.
+
+⇒ **Publicar NO envía nada.** El owner aprueba, publica, y **pulsa un botón**.
+Sin trigger, sin outbox, sin `pg_net`, sin wakeup, sin cron, sin Vault, sin
+secreto nuevo. Es una arquitectura sustancialmente más simple, y alineada con
+un proceso que ya era humano.
+
+```
+afiliación → revisión → aprobación/publicación
+          → «Enviar correo de bienvenida» → Edge Function → Resend → médico
+```
+
+#### Gates, todos server-side
+
+Solicitud vinculada a `doctor_id` · email no vacío · doctor publicado · slug
+existente · `lucy_status = 'listed_only'` · bienvenida no enviada · `is_admin()`.
+
+Los seis primeros viven **en el `WHERE` de un único `UPDATE` condicional**. Eso
+es lo que cierra el doble envío: una segunda llamada concurrente espera el
+bloqueo de fila, reevalúa contra `welcome_status='sending'` ya comiteado y casa
+**0 filas**. Sin advisory lock.
+
+#### Idempotencia y recuperación
+
+`Idempotency-Key` hacia Resend = **el id de la solicitud**, estable para
+siempre. **Sin reintentos automáticos.** Un intento se reclama a mano solo
+dentro de la ventana segura del proveedor: primer intento < 23 h y, si está en
+vuelo, último intento > 10 min. Pasada la ventana **no se reenvía** — se muestra
+«El estado del envío requiere revisión». `welcome_first_attempt_at` se fija una
+vez y nunca se reescribe.
+
+#### Destinatario
+
+**`doctor_affiliation_requests.email`**, el correo que el médico escribió y el
+owner revisó. **Nunca `profiles.email`**: la rama `reuse_patient` de `s7_42`
+deliberadamente no lo copia. Si el lead no traía correo, el override de la
+aprobación sí lo escribe en esa columna (`email = COALESCE(email, v_email)`).
+
+La Edge Function recibe **un solo campo**, `affiliation_request_id`. Nombre y
+slug los resuelve la base. La URL se arma con el dominio como **constante
+literal**, regla heredada de #352.
+
+#### Autorización — tres capas, cero `service_role`
+
+`verify_jwt` por defecto (desplegada **sin** `--no-verify-jwt`, al revés que
+`notify-owner-doctor-events`, porque a ésta la invoca un navegador) · JWT del
+admin en el cliente de negocio · `is_admin()` con **`P0160`** dentro de cada
+RPC. **Este flujo no necesita `service_role` en ningún punto**, a diferencia de
+`admin-create-seed-doctor`.
+
+#### El tratamiento del nombre NUNCA se infiere
+
+`profiles.full_name` es **mixto** en producción: `dr-harold-trillos` y
+`dra-pamela-bolanos` ya traen tratamiento, `elba-angelica-lobo` no. Si lo trae,
+se respeta tal cual —incluido el femenino—; si no, se usa **como está**.
+Anteponer «Dr. » habría producido **«Dr. Dr. Harold Trillos»** y **«Dr. Dra.
+Pamela Bolaños»**, que además la trata en masculino. Se detectó comprobando los
+slugs reales del directorio antes del primer envío.
+
+#### `s7_84` corrige a `s7_83`
+
+`_welcome_email_claimable` se declaró `IMMUTABLE` usando `now()`. `IMMUTABLE`
+promete que la salida depende solo de los argumentos, y Postgres puede plegar la
+llamada a constante — una ventana temporal congelada es justo lo que no se
+quiere en una política de reintentos. No llegó a manifestarse, porque las RPCs
+la llaman con valores de columna. Se corrigió **antes del primer envío real**.
+`STABLE` y no `VOLATILE`: dentro de una sentencia `now()` es fijo.
+**`s7_83` no se editó** — es el registro de lo que se ejecutó.
+
+#### Evidencia de cierre
+
+| | |
+|---|---|
+| `check-s7_83` | **109/109** — mitad conductual, `render.ts` real vía esbuild |
+| `check-s7_84` | **34/34** — A/B byte a byte: solo cambia la volatilidad |
+| `tsc` · `build` · `git diff --check` | **PASS** |
+| UI | seis estados validados con harness temporal, **eliminado del PR** |
+| Edge Function | ACTIVE v1 · gates **401 / 401 / 401** |
+| Ventanas 23 h / 10 min | **8/8** en sonda SQL sin sesión |
+| **E2E real** | **PASS** — correo recibido, «Bienvenida enviada», `sent` con fecha, `welcome_last_error_code` NULL |
+| Segundo envío | **imposible** — `sent` corta en `_welcome_email_claimable` sin depender del tiempo |
+| Cleanup | **0 residuales funcionales** · identidad QA eliminada por Dashboard |
+
+Residuo aceptado: las filas de `audit_log` del alta, aprobación, publicación,
+despublicación y borrado. **Inmutables desde `s7_71b`.**
+
+#### Deudas registradas, ninguna abierta
+
+- **Lead sin correo aprobado sin override** → `email` queda NULL para siempre y
+  **no hay vía en LucyAdmin para corregirlo**. La bienvenida de ese médico queda
+  muerta sin aviso. Ocurrió con la fixture del E2E.
+- **`no_slug`, `already_claimed` y `directory_editor` sin cobertura
+  conductual** — exigían mutar producción solo por QA. No se dan por probados.
+- **El Preview no puede ejecutar E2E autenticados**: CAPTCHA apagado y Supabase
+  lo exige (`captcha_failed`). Por eso el E2E se hizo tras el merge.
+
+#### Tres lecciones de método
+
+**1 · La mitigación del sitemap falló por no medirla.** Se afirmó que sin
+especialidad la fixture quedaría fuera del `sitemap.xml` —por el
+`specialties!inner` de `middleware.ts`—, se dio la instrucción y **no se
+verificó el resultado**. Se le asignó Neumología, el INNER JOIN casó, y el
+perfil de prueba estuvo público con **`index,follow`** hasta que se detectó
+revisando el sitemap. Es la misma regla que ya costó caro en `s7_82`: **medir el
+efecto, no deducirlo.** Corolario operativo: **una fixture publicada es
+contenido público** — despublicar es el primer paso del cleanup, no el último.
+
+**2 · El preflight de dependencias debe cubrir TODOS los padres que la
+transacción toca.** El primer escaneo cubrió `doctors`, `profiles` y `clinics`
+pero **no** `doctor_affiliation_requests`, que el cleanup también borraba. Se
+detectó antes de ejecutar. El escaneo correcto se hace contra `pg_constraint`
+con conteos reales vía `query_to_xml`, **no leyendo las migraciones**: así
+apareció que **`clinics.owner_id` es `RESTRICT`**, de modo que la clínica se
+borra ANTES que el perfil. Un cleanup por nombres —el primero que se propuso—
+habría fallado a mitad de la transacción.
+
+**3 · Las RPCs con gate `is_admin()` no se pueden probar desde el SQL Editor.**
+Ahí la sesión es `postgres` **sin JWT**: `auth.uid()` es NULL y el gate responde
+`P0160`, correctamente. Un bloque de QA que las llamaba desde ahí murió con ese
+error, sin dejar cambios. Lo ejercitable sin sesión es solo lo que no tiene gate
+—`_welcome_email_claimable`—; el resto se prueba por la UI autenticada. El
+propio `P0160` quedó como evidencia del control de autorización.
 
 ## Frentes cerrados 2026-09 (PR #355)
 
