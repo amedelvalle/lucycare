@@ -9,6 +9,8 @@ import {
   updateDoctorInfo,
 } from '../../services/admin.service';
 import AdminDoctorServicesSection from './components/AdminDoctorServicesSection';
+import { OnboardingChecklist } from './components/OnboardingBadges';
+import { getDoctorsOnboarding } from '../../services/admin.service';
 import AdminDoctorWaitlistSection from './components/AdminDoctorWaitlistSection';
 import AvatarUploader from '@/components/AvatarUploader';
 import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
@@ -78,6 +80,14 @@ function OwnerDoctorEditView({ id }: { id: string }) {
   const specQ = useQuery({
     queryKey: ['admin-specialties'],
     queryFn: getSpecialtiesForAdmin,
+  });
+  // La misma RPC batcheada del listado, acá con un array de uno. No hay una
+  // segunda ruta de cálculo: etapa y `booking_ready` salen del mismo sitio.
+  const onboardingQ = useQuery({
+    queryKey: ['admin-doctors-onboarding', [id]],
+    queryFn: () => getDoctorsOnboarding([id!]),
+    enabled: !!id,
+    staleTime: 30_000,
   });
 
   // ─── Estado por sección ──────────────────────────────────
@@ -187,6 +197,12 @@ function OwnerDoctorEditView({ id }: { id: string }) {
           {d.isOperational ? 'Operativo' : 'Suspendido'} · {d.isPublished ? 'Publicado' : 'No publicado'} · lucy={d.lucyStatus}
         </p>
       </header>
+
+      {/* ─── Onboarding (derivado, sin acciones manuales) ─── */}
+      <section className="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Onboarding</h2>
+        <OnboardingChecklist o={onboardingQ.data?.get(d.doctorId)} />
+      </section>
 
       {/* ─── Foto de perfil ──────────────────────────────── */}
       <Section

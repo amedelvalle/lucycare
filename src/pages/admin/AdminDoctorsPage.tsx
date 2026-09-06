@@ -16,6 +16,12 @@ import { adminWaitlistPendingCountByDoctor } from '../../services/waitlist.servi
 import { useLucyAdminAccess } from '../../hooks/useLucyAdminAccess';
 import DirectoryDoctorsList from './components/DirectoryDoctorsList';
 import AdminCreateSeedDoctorModal from './components/AdminCreateSeedDoctorModal';
+import { OnboardingChip } from './components/OnboardingBadges';
+import {
+  getDoctorsOnboarding,
+  ONBOARDING_STAGE_LABEL,
+  type OnboardingStage,
+} from '../../services/admin.service';
 
 const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
   { value: 'listed_only', label: 'Solo listado' },
@@ -120,6 +126,25 @@ function OwnerDoctorsView() {
   });
   const waitlistCounts = waitlistCountsQ.data ?? new Map<string, number>();
 
+  // Onboarding de la PÁGINA VISIBLE en UNA sola llamada: `admin_doctors_onboarding`
+  // recibe el array de ids, así que no hay N+1 aunque la página traiga 25 filas.
+  // Mismo patrón que el bulk de lista de espera de arriba.
+  const visibleIds = (data?.rows ?? []).map((d) => d.id);
+  const onboardingQ = useQuery({
+    queryKey: ['admin-doctors-onboarding', visibleIds],
+    queryFn: () => getDoctorsOnboarding(visibleIds),
+    enabled: visibleIds.length > 0,
+    staleTime: 30_000,
+  });
+  const onboarding = onboardingQ.data ?? new Map();
+
+  // ⚠️ Filtro de etapa CLIENT-SIDE, acotado a la página cargada. La etapa es
+  // derivada y no vive en `admin_list_doctors`, cuya firma se deja intacta a
+  // propósito (es `RETURNS TABLE` y ampliarla exigiría DROP + re-otorgar
+  // grants, además de servir también al export CSV). El copy del selector dice
+  // "en esta página" para no prometer un filtro global que no es.
+  const [stageFilter, setStageFilter] = useState<OnboardingStage | ''>('');
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-doctors'] });
 
   // ─── Exportación CSV ─────────────────────────────────────
@@ -173,7 +198,10 @@ function OwnerDoctorsView() {
   const errMsg =
     anyError instanceof Error ? anyError.message : anyError ? String(anyError) : null;
 
-  const rows = data?.rows ?? [];
+  const allRows = data?.rows ?? [];
+  const rows = stageFilter
+    ? allRows.filter((d) => onboarding.get(d.id)?.stage === stageFilter)
+    : allRows;
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -236,6 +264,19 @@ function OwnerDoctorsView() {
               placeholder="Nombre, especialidad o teléfono…"
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
             />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Onboarding (en esta página)</label>
+            <select
+              value={stageFilter}
+              onChange={(e) => setStageFilter(e.target.value as OnboardingStage | '')}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <option value="">Todas las etapas</option>
+              {(Object.keys(ONBOARDING_STAGE_LABEL) as OnboardingStage[]).map((s) => (
+                <option key={s} value={s}>{ONBOARDING_STAGE_LABEL[s]}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Publicado</label>
@@ -318,6 +359,7 @@ function OwnerDoctorsView() {
               <tr>
                 <th className="px-4 py-3 text-left">Médico</th>
                 <th className="px-3 py-3 text-left">Estado</th>
+                <th className="px-3 py-3 text-left">Onboarding</th>
                 <th className="px-3 py-3 text-left">Lucy status</th>
                 <th className="px-3 py-3 text-right">Acciones</th>
               </tr>
@@ -349,6 +391,9 @@ function OwnerDoctorsView() {
                     <Badge on={d.isOperational} labelOn="Operativo" labelOff="Suspendido" />{' '}
                     <Badge on={d.isPublished} labelOn="Publicado" labelOff="No publicado" />{' '}
                     <Badge on={d.isVerified} labelOn="Verificado" labelOff="No verificado" />
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <OnboardingChip o={onboarding.get(d.id)} />
                   </td>
                   <td className="px-3 py-3 align-top">
                     <select
