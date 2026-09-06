@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   fetchDoctors,
   fetchDoctorDetail,
+  fetchDoctorBookingReady,
   fetchSpecialties,
   fetchDepartments,
   fetchMunicipalities,
@@ -83,5 +84,22 @@ export function useMunicipalities(departmentId: string | null) {
     queryKey: ['municipalities', departmentId],
     queryFn: () => fetchMunicipalities(departmentId),
     staleTime: 1000 * 60 * 60, // 1 hora
+  })
+}
+
+/**
+ * Reservabilidad canónica del médico. Se resuelve por `doctor_id`, así que
+ * depende del detalle ya cargado (la ruta puede venir por slug).
+ *
+ * `retry: false` a propósito: ante un fallo queremos decidir YA en fail closed,
+ * no reintentar mientras el CTA queda en un limbo visible.
+ */
+export function useDoctorBookingReady(doctorId: string | undefined) {
+  return useQuery({
+    queryKey: ['doctor-booking-ready', doctorId],
+    queryFn: () => fetchDoctorBookingReady(doctorId!),
+    enabled: !!doctorId,
+    retry: false,
+    staleTime: 1000 * 60,
   })
 }

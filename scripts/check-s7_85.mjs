@@ -269,5 +269,78 @@ console.log('\nmutation tests');
     (stripSql(raw85).split('FUNCTION public.doctor_booking_ready')[1] ?? '').split('COMMENT ON')[0] === cuerpoReady, true);
 }
 
+// ═══════════════════════════════════════════════════════════
+// I · EL PERFIL PÚBLICO CONSUME LA VERDAD CANÓNICA
+// ═══════════════════════════════════════════════════════════
+// El frente no se cumple con tener la función: hay que USARLA donde estaba el
+// gate insuficiente. Esto verifica el consumidor real, no la intención.
+console.log('\nI · perfil público');
+
+const pagePub = leerLF(path.join('src', 'pages', 'doctor-detail', 'page.tsx'));
+const svcPub = leerLF(path.join('src', 'services', 'directory.service.ts'));
+const hookPub = leerLF(path.join('src', 'hooks', 'useDirectory.ts'));
+
+/**
+ * Solo el código EJECUTABLE de un .ts/.tsx: quita bloques y líneas que EMPIEZAN
+ * por `//`.
+ *
+ * Se filtra por línea completa y NO con un `//` global a propósito: un regex
+ * global se comería la mitad de `'https://lucycare.app'`, que es una trampa ya
+ * pisada en este proyecto. Y hace falta filtrar porque los comentarios de esta
+ * misma implementación nombran `is_operational` y `validate_booking_slot`
+ * justamente para explicar por qué NO se usan.
+ */
+const soloCodigo = (s) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, '')
+   .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+
+const svcCode = soloCodigo(svcPub);
+const pageCode = soloCodigo(pagePub);
+
+// 1) La cadena servicio → hook → página existe.
+has('el servicio llama a doctor_booking_ready', svcPub, "'doctor_booking_ready'");
+has('el hook expone la readiness', hookPub, 'useDoctorBookingReady');
+has('el perfil consume el hook', pagePub, 'useDoctorBookingReady(doctor?.id)');
+
+// 2) Ya NO decide con bookingEnabled. Aserción central del punto.
+hasNot('canBook YA NO sale de doctor.bookingEnabled', pagePub, 'canBook = doctor.bookingEnabled');
+has('canBook sale de la readiness derivada', pagePub, 'const canBook = bookingReady === true');
+
+// 3) FAIL CLOSED. `=== true` cierra las dos puertas a la vez: `undefined`
+//    mientras carga (sin flash del CTA) y `undefined` tras un error (sin
+//    apertura). Cualquier fallback reabriría el gate insuficiente.
+hasNot('el servicio no hace fallback a booking_enabled',
+  svcCode.split('fetchDoctorBookingReady')[1] ?? '', 'booking_enabled');
+hasNot('no hay OR con bookingEnabled en el gate', pagePub, 'bookingReady === true ||');
+hasNot('no hay fallback ?? a bookingEnabled', pagePub, 'bookingReady ?? doctor.bookingEnabled');
+has('la readiness no reintenta: decide ya, en cerrado', hookPub, 'retry: false');
+
+// 4) NO se expone nada interno a `anon`.
+has('la RPC pública devuelve solo boolean', raw85, 'RETURNS boolean');
+hasNot('el servicio no pide is_operational', svcCode, 'is_operational');
+hasNot('el servicio no pide disponibilidad', svcCode, 'availability_rules');
+
+// 5) `validate_booking_slot` sigue siendo la autoridad del slot concreto.
+hasNot('el frontend no reimplementa la validación de slot', pageCode, 'validate_booking_slot');
+
+{
+  // MUTATION: volver al gate viejo debe cazarse.
+  const regresion = pagePub.replace('const canBook = bookingReady === true',
+    'const canBook = doctor.bookingEnabled');
+  check('caza la regresión a doctor.bookingEnabled',
+    regresion.includes('const canBook = bookingReady === true'), false);
+
+  // MUTATION: un fallback abriría booking ante fallo. Debe cazarse.
+  const conFallback = pagePub.replace('const canBook = bookingReady === true',
+    'const canBook = bookingReady === true || doctor.bookingEnabled');
+  check('caza un fallback que abriría booking ante fallo',
+    conFallback.includes('bookingReady === true ||'), true);
+
+  // EXPECTATIVA INVERTIDA: un comentario nuevo en la página no altera el gate.
+  const conComentario = pagePub.replace('// Mapear datos', '// Mapear datos del médico');
+  check('NO caza un cambio de comentario en la página',
+    conComentario.includes('const canBook = bookingReady === true'), true);
+}
+
 console.log(`\n${pass} ok · ${fail} FAIL   (${pass}/${pass + fail})\n`);
 process.exit(fail === 0 ? 0 : 1);

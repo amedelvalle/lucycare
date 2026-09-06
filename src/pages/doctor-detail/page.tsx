@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LUCYCARE_LOGO_SRC } from '@/lib/brand';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useDoctorDetail } from '../../hooks/useDirectory';
+import { useDoctorDetail, useDoctorBookingReady } from '../../hooks/useDirectory';
 import ImageGallery from './components/ImageGallery';
 import BookingCard from './components/BookingCard';
 import ClaimProfilePromptCard from './components/ClaimProfilePromptCard';
@@ -55,6 +55,11 @@ export default function DoctorDetail() {
 
   // ─── DATOS REALES desde Supabase ───
   const { data: doctor, isLoading, error, refetch, isRefetching } = useDoctorDetail(id);
+
+  // Reservabilidad canónica (s7_85). Se pide por `doctor.id` porque la ruta
+  // puede venir por slug. `undefined` mientras carga o si falla → NO se ofrece
+  // reserva. Ver la nota extensa junto a `canBook`.
+  const { data: bookingReady } = useDoctorBookingReady(doctor?.id);
 
   // Canonicalización de URL: si se entró por UUID (u otro alias) y el médico
   // tiene slug, reescribir la barra a la URL amigable SIN remontar. replaceState
@@ -147,7 +152,24 @@ export default function DoctorDetail() {
   }
 
   // Mapear datos
-  const canBook = doctor.bookingEnabled;
+  // ─── Reservabilidad: fuente canónica en la base ──────────────────────────
+  // ANTES esto era `doctor.bookingEnabled`, UN flag de los cinco que el backend
+  // exige de verdad (`validate_booking_slot`, s7_66: is_published AND
+  // booking_enabled AND is_operational, más servicio activo y disponibilidad).
+  // Como `is_operational` no está en la allowlist de `anon` (s7_60), el perfil
+  // público NO podía verificarlo: ofrecía una reserva que el servidor rechazaba.
+  //
+  // `doctor_booking_ready` devuelve SOLO el booleano derivado: sin flags
+  // internos, sin servicios y sin horarios.
+  //
+  // Tres reglas, en este orden:
+  //   · mientras NO esté resuelta → NO se ofrece reserva. Evita el flash del
+  //     CTA que luego desaparecería.
+  //   · si FALLA → fail closed. No hay fallback a `bookingEnabled`: volver a
+  //     él reintroduciría exactamente el gate insuficiente que esto reemplaza.
+  //   · el perfil sigue cargando en ambos casos: la readiness no bloquea la
+  //     página, solo la reserva.
+  const canBook = bookingReady === true;
   const lucyStatus = doctor.lucyStatus?.toUpperCase() || 'LISTED_ONLY';
   // Gate explícito para la card de reclamo: un estado faltante/null NO debe
   // hacer fail-open a 'LISTED_ONLY' (a diferencia del default de `lucyStatus`,
