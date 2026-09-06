@@ -104,11 +104,31 @@ GRANT EXECUTE ON FUNCTION public.doctor_booking_ready(uuid) TO authenticated;
 -- sobre las nueve migraciones que mencionan la columna: ninguna anterior la
 -- escribe.
 --
---   · created_at >= 2026-05-24 → SOLO cuenta `tos_accepted_at`. La cohorte
---     nueva no admite inferencia, así que un `lucy_status` movido a mano NO
---     puede fabricar un claim. Es el caso que importa proteger.
---   · created_at <  2026-05-24 → se admite la inferencia por `lucy_status`,
---     porque esos médicos pudieron reclamar cuando la columna aún no existía.
+--   · created_at >= corte → SOLO cuenta `tos_accepted_at`. La cohorte nueva no
+--     admite inferencia, así que un `lucy_status` movido a mano NO puede
+--     fabricar un claim. Es el caso que importa proteger.
+--   · created_at <  corte → se admite la inferencia por `lucy_status`, porque
+--     esos médicos pudieron reclamar cuando la columna aún no existía.
+--
+-- ⚠️ EL LITERAL ES `TIMESTAMPTZ … +00`, NO `DATE`, y es deliberado.
+-- `doctors.created_at` es `timestamptz` (verificado: PostgREST lo devuelve con
+-- offset explícito, `…-06:00`, cosa que un `timestamp without time zone` no
+-- hace). Comparar contra un `DATE` obliga a Postgres a castearlo usando el
+-- TIMEZONE DE SESIÓN, así que el mismo corte se movería seis horas según quién
+-- ejecute la consulta. Con el literal explícito el borde es absoluto.
+-- No cambia la semántica: las sesiones de este proyecto corren en UTC, donde
+-- `DATE '2026-05-24'` ya resolvía exactamente a este instante. Y se verificó
+-- sobre datos reales que la ventana ambigua está VACÍA — el médico más cercano
+-- por debajo es del 2026-05-21 y el más cercano por encima del 2026-08-31—,
+-- así que ningún médico cruza el borde por este cambio.
+--
+-- ⚠️ QUÉ ES Y QUÉ NO ES ESTA INFERENCIA. Lo anterior al corte es una
+-- INFERENCIA LEGACY **para clasificar onboarding**, y nada más. NO es
+-- evidencia canónica de que hubo claim, NO acredita aceptación de términos y
+-- NO autoriza nada: no concede acceso, no habilita el panel ni sustituye a
+-- `is_operational`. Para cualquier médico actual —y para cualquier uso que
+-- necesite prueba y no estimación— la evidencia sigue siendo, únicamente,
+-- `tos_accepted_at IS NOT NULL`.
 --
 -- El corte usa la fecha de COMMIT, no la de aplicación, que es necesariamente
 -- posterior. El error posible es por tanto un FALSO NEGATIVO —un médico
@@ -139,7 +159,7 @@ AS $$
       d.id,
       d.is_published AS published,
       (d.tos_accepted_at IS NOT NULL
-       OR (d.created_at < DATE '2026-05-24'
+       OR (d.created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'
            AND d.lucy_status IN ('claimed', 'booking_enabled', 'verified'))) AS claimed,
       d.is_operational  AS activated,
       d.booking_enabled AS booking_on,

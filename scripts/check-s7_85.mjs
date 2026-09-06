@@ -128,21 +128,37 @@ check('tos_accepted_at se evalúa antes que el fallback',
 // ── EL FALLBACK ESTÁ ACOTADO POR FECHA, no es una regla permanente ──
 // Sin el corte, un admin que moviera `lucy_status` a mano fabricaría un claim
 // inexistente en un médico NUEVO. Ese es el falso positivo que hay que impedir.
-has('el fallback lleva corte por created_at', cuerpoOnb, "d.created_at < DATE '2026-05-24'");
+// El corte va con literal TIMESTAMPTZ explícito, no DATE: `doctors.created_at`
+// es timestamptz, y comparar contra un DATE lo castea usando el TIMEZONE DE
+// SESIÓN, moviendo el borde seis horas según quién ejecute. Con el literal el
+// corte es absoluto.
+has('el corte usa literal TIMESTAMPTZ explícito', cuerpoOnb,
+  "d.created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'");
+hasNot('el corte NO usa literal DATE (dependiente de sesión)', cuerpoOnb, "DATE '2026-05-24'");
 check('el corte y el fallback van en el MISMO paréntesis (AND, no OR)',
-  /\(\s*d\.created_at\s*<\s*DATE\s*'2026-05-24'\s*AND\s*d\.lucy_status IN/.test(cuerpoOnb), true);
+  /\(\s*d\.created_at\s*<\s*TIMESTAMPTZ\s*'2026-05-24 00:00:00\+00'\s*AND\s*d\.lucy_status IN/.test(cuerpoOnb), true);
 
 // El corte debe ser demostrable en el repositorio, no un número inventado.
 has('documenta el commit que lo justifica', raw85, 'b4702b3');
 has('documenta que s7_13 es la primera que escribe tos_accepted_at', raw85,
   'PRIMERA migración que introduce la escritura de `tos_accepted_at`');
+// La inferencia legacy debe quedar acotada por escrito a lo que es: una
+// clasificación de onboarding, no una prueba ni una autorización.
+has('documenta que NO es evidencia canónica de claim', raw85, 'NO es\n-- evidencia canónica');
+has('documenta que NO autoriza nada', raw85, 'NO autoriza nada');
+has('documenta que la evidencia actual sigue siendo tos_accepted_at', raw85,
+  'la evidencia sigue siendo, únicamente,\n-- `tos_accepted_at IS NOT NULL`');
 
 {
   // MUTATION: quitar el corte reabre el falso positivo. Debe cazarse.
-  const k = cuerpoOnb.indexOf("d.created_at < DATE '2026-05-24'");
-  const sinCorte = cuerpoOnb.slice(0, k) + 'true' + cuerpoOnb.slice(k + "d.created_at < DATE '2026-05-24'".length);
-  check('caza la pérdida del corte por fecha',
-    sinCorte.includes("d.created_at < DATE '2026-05-24'"), false);
+  const CORTE = "d.created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'";
+  const k = cuerpoOnb.indexOf(CORTE);
+  const sinCorte = cuerpoOnb.slice(0, k) + 'true' + cuerpoOnb.slice(k + CORTE.length);
+  check('caza la pérdida del corte por fecha', sinCorte.includes(CORTE), false);
+  // Y caza la REGRESIÓN a un literal DATE, que reintroduciría la dependencia
+  // del timezone de sesión sin cambiar la fecha aparente.
+  const conDate = cuerpoOnb.slice(0, k) + "d.created_at < DATE '2026-05-24'" + cuerpoOnb.slice(k + CORTE.length);
+  check('caza la regresión de TIMESTAMPTZ a DATE', conDate.includes(CORTE), false);
 }
 
 // ═══════════════════════════════════════════════════════════
