@@ -19,8 +19,10 @@ import AdminCreateSeedDoctorModal from './components/AdminCreateSeedDoctorModal'
 import { OnboardingChip } from './components/OnboardingBadges';
 import {
   getDoctorsOnboarding,
+  getDoctorsByOnboardingStage,
   ONBOARDING_STAGE_LABEL,
   type OnboardingStage,
+  type DoctorOnboarding,
 } from '../../services/admin.service';
 
 const LUCY_OPTIONS: Array<{ value: LucyStatus; label: string }> = [
@@ -126,6 +128,9 @@ function OwnerDoctorsView() {
   });
   const waitlistCounts = waitlistCountsQ.data ?? new Map<string, number>();
 
+  // Etapa seleccionada. Se declara ANTES de las queries que la leen:
+  // `const` tiene zona muerta temporal y usarla antes reventaría en runtime.
+  const [stageFilter, setStageFilter] = useState<OnboardingStage | ''>('');
   // Onboarding de la PÁGINA VISIBLE en UNA sola llamada: `admin_doctors_onboarding`
   // recibe el array de ids, así que no hay N+1 aunque la página traiga 25 filas.
   // Mismo patrón que el bulk de lista de espera de arriba.
@@ -133,17 +138,30 @@ function OwnerDoctorsView() {
   const onboardingQ = useQuery({
     queryKey: ['admin-doctors-onboarding', visibleIds],
     queryFn: () => getDoctorsOnboarding(visibleIds),
-    enabled: visibleIds.length > 0,
+    enabled: visibleIds.length > 0 && !stageFilter,
     staleTime: 30_000,
   });
   const onboarding = onboardingQ.data ?? new Map();
 
-  // ⚠️ Filtro de etapa CLIENT-SIDE, acotado a la página cargada. La etapa es
-  // derivada y no vive en `admin_list_doctors`, cuya firma se deja intacta a
-  // propósito (es `RETURNS TABLE` y ampliarla exigiría DROP + re-otorgar
-  // grants, además de servir también al export CSV). El copy del selector dice
-  // "en esta página" para no prometer un filtro global que no es.
-  const [stageFilter, setStageFilter] = useState<OnboardingStage | ''>('');
+  // Filtro de etapa sobre el UNIVERSO completo, no la página visible: cuando
+  // hay etapa seleccionada se usa `admin_list_doctors_by_onboarding`, que
+  // reutiliza `admin_list_doctors` para el predicado y pagina ya filtrado. Sin
+  // etapa, se mantiene el camino de siempre y esta query queda deshabilitada.
+  const byStageQ = useQuery({
+    queryKey: ['admin-doctors-by-stage',
+      { stageFilter, search, published, operational, lucy, page }],
+    queryFn: () => getDoctorsByOnboardingStage({
+      stage: stageFilter as OnboardingStage,
+      search: search || undefined,
+      published: triToBool(published),
+      operational: triToBool(operational),
+      lucyStatus: lucy || null,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
+    enabled: !!stageFilter,
+    placeholderData: (prev) => prev,
+  });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-doctors'] });
 
@@ -198,10 +216,9 @@ function OwnerDoctorsView() {
   const errMsg =
     anyError instanceof Error ? anyError.message : anyError ? String(anyError) : null;
 
-  const allRows = data?.rows ?? [];
-  const rows = stageFilter
-    ? allRows.filter((d) => onboarding.get(d.id)?.stage === stageFilter)
-    : allRows;
+  // Con etapa seleccionada manda la RPC filtrada, que ya trae el onboarding
+  // embebido: no hace falta la segunda llamada en lote.
+  const rows = stageFilter ? (byStageQ.data?.rows ?? []) : (data?.rows ?? []);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -266,7 +283,7 @@ function OwnerDoctorsView() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Onboarding (en esta página)</label>
+            <label className="block text-xs text-gray-500 mb-1">Onboarding</label>
             <select
               value={stageFilter}
               onChange={(e) => setStageFilter(e.target.value as OnboardingStage | '')}
@@ -393,7 +410,7 @@ function OwnerDoctorsView() {
                     <Badge on={d.isVerified} labelOn="Verificado" labelOff="No verificado" />
                   </td>
                   <td className="px-3 py-3 align-top">
-                    <OnboardingChip o={onboarding.get(d.id)} />
+                    <OnboardingChip o={'onboarding' in d ? (d as { onboarding: DoctorOnboarding }).onboarding : onboarding.get(d.id)} />
                   </td>
                   <td className="px-3 py-3 align-top">
                     <select

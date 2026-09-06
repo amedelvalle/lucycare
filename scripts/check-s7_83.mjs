@@ -42,8 +42,20 @@ console.log('\ncheck-s7_83 — correo de bienvenida al médico\n');
 // ═══════════════════════════════════════════════════════════
 // A · MIGRACIÓN
 // ═══════════════════════════════════════════════════════════
+/**
+ * Lee normalizando los finales de línea a LF.
+ *
+ * En Windows `core.autocrlf=true` deja los `.sql` con CRLF en el working tree,
+ * mientras que en git el blob está en LF. Sin esta normalización, las
+ * aserciones ancladas en `\n` fallan en un checkout y pasan en otro — el mismo
+ * check daría resultados distintos según la máquina. Es la deuda ya registrada
+ * para `check-s7_76`; acá se cierra en origen.
+ */
+const leerLFDe = (s) => s.split('\r\n').join('\n');
+const leerLF = (p) => leerLFDe(fs.readFileSync(p, 'utf8'));
+
 const SQL_PATH = path.join('migrations', 's7_83_doctor_welcome_email.sql');
-const sqlRaw = fs.readFileSync(SQL_PATH, 'utf8');
+const sqlRaw = leerLF(SQL_PATH);
 
 /** Quita comentarios de línea y de bloque. MISMA normalización que usaría una guarda SQL. */
 function stripSqlComments(s) {
@@ -229,10 +241,28 @@ for (const forbidden of ['JVPM', 'licencia', 'DUI', 'OTP', 'contraseña', 'token
 has('control de sanidad: la sonda detecta lo que sí está', text, 'Bienvenido a LucyCare.');
 
 // ═══════════════════════════════════════════════════════════
+// A/B LF vs CRLF — el check debe dar LO MISMO con ambos finales
+// ═══════════════════════════════════════════════════════════
+console.log('\nA/B finales de línea');
+{
+  const crlf = sqlRaw.split('\n').join('\r\n');
+  check('CRLF normalizado === LF', leerLFDe(crlf) === sqlRaw, true);
+
+  const cuentaAdmin = (t) => (stripSqlComments(t).match(/IF NOT is_admin\(\) THEN/g) || []).length;
+  check('is_admin() se cuenta igual bajo CRLF', cuentaAdmin(leerLFDe(crlf)), cuentaAdmin(sqlRaw));
+  check('las 5 columnas se cuentan igual bajo CRLF',
+    (stripSqlComments(leerLFDe(crlf)).match(/ADD COLUMN IF NOT EXISTS/g) || []).length, 5);
+
+  // CONTROL DE SANIDAD: el texto con CRLF SIN normalizar es distinto del
+  // original. Si esto fallara, el A/B no estaría midiendo nada.
+  check('control: CRLF sin normalizar difiere del original', crlf === sqlRaw, false);
+}
+
+// ═══════════════════════════════════════════════════════════
 // C · EDGE FUNCTION (estática, sobre el archivo real)
 // ═══════════════════════════════════════════════════════════
 console.log('\nC · Edge Function');
-const ef = fs.readFileSync(path.join('supabase', 'functions', 'send-doctor-welcome-email', 'index.ts'), 'utf8');
+const ef = leerLF(path.join('supabase', 'functions', 'send-doctor-welcome-email', 'index.ts'));
 const efCode = ef.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/[^\n]*$/gm, '');
 
 has('From aprobado', efCode, "from: 'LucyCare para Médicos <medicos@lucycare.app>'");

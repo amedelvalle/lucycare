@@ -18,6 +18,10 @@
 import path from 'path';
 import fs from 'fs';
 
+/** Normaliza finales de línea: el mismo check debe dar igual bajo LF y CRLF. */
+const leerLFDe = (s) => s.split('\r\n').join('\n');
+const leerLF = (p) => leerLFDe(fs.readFileSync(p, 'utf8'));
+
 let pass = 0, fail = 0;
 const check = (label, actual, esperado) => {
   const ok = actual === esperado;
@@ -41,10 +45,10 @@ const stripSql = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, 
 const stripComentariosYCommentOn = (s) =>
   stripSql(s).replace(/COMMENT\s+ON\s+FUNCTION[\s\S]*?;/gi, '');
 
-const raw85 = fs.readFileSync(path.join('migrations', 's7_85_doctor_onboarding_readiness.sql'), 'utf8');
+const raw85 = leerLF(path.join('migrations', 's7_85_doctor_onboarding_readiness.sql'));
 /** Solo el SQL EJECUTABLE: sin comentarios y sin las sentencias COMMENT ON. */
 const ejecutable85 = stripComentariosYCommentOn(raw85);
-const raw66 = fs.readFileSync(path.join('migrations', 's7_66_booking_intent_transaction.sql'), 'utf8');
+const raw66 = leerLF(path.join('migrations', 's7_66_booking_intent_transaction.sql'));
 const sql85 = stripSql(raw85);
 const sql66 = stripSql(raw66);
 
@@ -85,7 +89,7 @@ has('s7_66 rechaza sin disponibilidad con P0097', sql66, 'P0097');
 // ═══════════════════════════════════════════════════════════
 console.log('\nB · onboarding y booking_ready no se mezclan');
 
-const cuerpoOnb = (sql85.split('FUNCTION public.admin_doctors_onboarding')[1] ?? '').split('COMMENT ON')[0] ?? '';
+const cuerpoOnb = (sql85.split('FUNCTION public._doctor_onboarding')[1] ?? '').split('COMMENT ON')[0] ?? '';
 
 // `profile_incomplete` es etapa de onboarding pero NO puede entrar en el gate.
 has('profile_incomplete es una etapa', cuerpoOnb, "'profile_incomplete'");
@@ -94,7 +98,7 @@ hasNot('el gate de reservas NO mira avatar', cuerpoReady, 'avatar_url');
 hasNot('el gate de reservas NO mira bio', cuerpoReady, 'bio');
 hasNot('el gate de reservas NO mira lucy_status', cuerpoReady, 'lucy_status');
 hasNot('el gate de reservas NO mira tos_accepted_at', cuerpoReady, 'tos_accepted_at');
-has('el onboarding expone booking_ready aparte', cuerpoOnb, 'doctor_booking_ready(d.id)');
+has('el onboarding expone booking_ready aparte', cuerpoOnb, 'doctor_booking_ready(c.id)');
 
 // ═══════════════════════════════════════════════════════════
 // C · PRECEDENCIA determinista
@@ -141,21 +145,43 @@ hasNot('no mira experience_years', cuerpoOnb, 'experience_years');
 console.log('\nF · nada persistido, ninguna firma tocada');
 for (const prohibido of [
   'CREATE TABLE', 'ALTER TABLE', 'ADD COLUMN', 'CREATE TRIGGER', 'DROP FUNCTION',
-  'admin_list_doctors', 'admin_list_affiliation_requests', 'validate_booking_slot',
+  'admin_list_affiliation_requests', 'validate_booking_slot',
   'admin_set_doctor_operational', 'admin_set_lucy_status', 'claim_doctor_profile',
   'net.http_post', 'cron.schedule', 'vault',
 ]) {
   hasNot(`s7_85 no toca ${prohibido}`, ejecutable85, prohibido);
 }
-check('crea exactamente 2 funciones',
-  (sql85.match(/CREATE OR REPLACE FUNCTION/g) || []).length, 2);
+
+// `admin_list_doctors` SÍ se invoca —es el patrón de reutilización del
+// predicado, igual que en `admin_export_doctors`— pero NUNCA se redefine ni se
+// borra. Esa es la distinción que importa: llamarla es correcto, tocar su
+// firma no.
+has('reutiliza admin_list_doctors en el FROM', ejecutable85, 'public.admin_list_doctors(');
+hasNot('NO redefine admin_list_doctors', ejecutable85, 'FUNCTION admin_list_doctors(');
+hasNot('NO redefine admin_list_doctors (calificada)', ejecutable85, 'FUNCTION public.admin_list_doctors(');
+// Y el predicado NO se copia: no aparece ningún ILIKE propio.
+hasNot('no duplica el predicado de búsqueda', ejecutable85, 'ILIKE');
+
+// La lógica de etapa vive en UN solo sitio: las otras dos RPCs la invocan.
+check('_doctor_onboarding se invoca desde las dos RPCs',
+  (ejecutable85.match(/_doctor_onboarding\(/g) || []).length >= 3, true);
+check('el CASE de etapa aparece UNA sola vez',
+  (ejecutable85.match(/'not_published'/g) || []).length, 1);
+check('crea exactamente 4 funciones',
+  (sql85.match(/CREATE OR REPLACE FUNCTION/g) || []).length, 4);
 
 // ═══════════════════════════════════════════════════════════
 // G · SEGURIDAD Y GRANTS
 // ═══════════════════════════════════════════════════════════
 console.log('\nG · seguridad');
-check('gate is_admin() en la RPC de admin', (cuerpoOnb.match(/IF NOT is_admin\(\) THEN/g) || []).length, 1);
-has('P0170 en la RPC de admin', cuerpoOnb, "ERRCODE = 'P0170'");
+// Las DOS RPCs públicas gatean. `_doctor_onboarding` no lo necesita: es
+// interna y SIN grant, así que solo la alcanzan ellas como SECURITY DEFINER.
+check('is_admin() en las 2 RPCs públicas',
+  (ejecutable85.match(/IF NOT is_admin\(\) THEN/g) || []).length, 2);
+check("P0170 en las 2 RPCs públicas",
+  (ejecutable85.match(/ERRCODE = 'P0170'/g) || []).length, 2);
+has('_doctor_onboarding queda SIN grant', raw85,
+  'REVOKE ALL ON FUNCTION public._doctor_onboarding(uuid) FROM authenticated');
 has('search_path fijo en booking_ready', cuerpoReady, 'SET search_path = public');
 has('search_path fijo en onboarding', cuerpoOnb, 'SET search_path = public');
 
@@ -175,7 +201,8 @@ hasNot('la RPC de admin NO se otorga a anon', raw85, `GRANT EXECUTE ON FUNCTION 
 // ═══════════════════════════════════════════════════════════
 console.log('\nH · sin N+1');
 has('recibe un ARRAY de ids', raw85, 'p_doctor_ids uuid[]');
-has('los expande con unnest', cuerpoOnb, 'unnest(p_doctor_ids)');
+const cuerpoBatch = (sql85.split('FUNCTION public.admin_doctors_onboarding')[1] ?? '').split('COMMENT ON')[0] ?? '';
+has('los expande con unnest', cuerpoBatch, 'unnest(p_doctor_ids)');
 has('devuelve jsonb (ampliable sin DROP)', raw85, 'RETURNS jsonb');
 
 // ═══════════════════════════════════════════════════════════

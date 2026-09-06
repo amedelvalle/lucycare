@@ -594,3 +594,75 @@ export const PROFILE_FIELD_LABEL: Record<string, string> = {
   clinica: 'Clínica',
   ubicacion: 'Ubicación',
 }
+
+export interface DoctorsByStagePage {
+  total: number
+  rows: Array<AdminDoctorRow & { onboarding: DoctorOnboarding }>
+}
+
+/**
+ * Listado filtrado por etapa sobre el UNIVERSO completo, no la página visible.
+ * La RPC reutiliza `admin_list_doctors` para el predicado, así que la búsqueda
+ * y los tres filtros se comportan igual que en el listado normal.
+ * Una sola llamada por página: trae filas y onboarding juntos.
+ */
+export async function getDoctorsByOnboardingStage(params: {
+  stage: OnboardingStage
+  search?: string
+  published?: boolean | null
+  operational?: boolean | null
+  lucyStatus?: LucyStatus | null
+  limit: number
+  offset: number
+}): Promise<DoctorsByStagePage> {
+  const { data, error } = await supabase.rpc('admin_list_doctors_by_onboarding', {
+    p_stage: params.stage,
+    p_search: params.search ?? undefined,
+    p_published: params.published ?? undefined,
+    p_operational: params.operational ?? undefined,
+    p_lucy_status: params.lucyStatus ?? undefined,
+    p_limit: params.limit,
+    p_offset: params.offset,
+  })
+  if (error) throw new Error(error.message)
+
+  const body = (data ?? {}) as { total?: number; rows?: unknown[] }
+  const rows = (body.rows ?? []).map((r) => {
+    const o = r as Record<string, unknown>
+    const onb = (o.onboarding ?? {}) as Record<string, unknown>
+    const c = (onb.checks ?? {}) as Record<string, unknown>
+    return {
+      id: String(o.id),
+      fullName: (o.full_name as string) ?? null,
+      phone: (o.phone as string) ?? null,
+      specialty: (o.specialty as string) ?? null,
+      clinicName: (o.clinic_name as string) ?? null,
+      isVerified: !!o.is_verified,
+      isPublished: !!o.is_published,
+      bookingEnabled: !!o.booking_enabled,
+      isOperational: !!o.is_operational,
+      lucyStatus: o.lucy_status as LucyStatus,
+      createdAt: String(o.created_at),
+      onboarding: {
+        doctorId: String(onb.doctor_id ?? o.id),
+        stage: onb.stage as OnboardingStage,
+        nextAction: String(onb.next_action ?? 'none'),
+        actor: (onb.actor ?? null) as OnboardingActor,
+        bookingReady: !!onb.booking_ready,
+        checks: {
+          published: !!c.published,
+          claimed: !!c.claimed,
+          activated: !!c.activated,
+          profileMin: !!c.profile_min,
+          hasServices: !!c.has_services,
+          hasAvailability: !!c.has_availability,
+          bookingEnabled: !!c.booking_enabled,
+        },
+        profileMissing: Array.isArray(onb.profile_missing)
+          ? (onb.profile_missing as string[])
+          : [],
+      },
+    } as AdminDoctorRow & { onboarding: DoctorOnboarding }
+  })
+  return { total: body.total ?? 0, rows }
+}
