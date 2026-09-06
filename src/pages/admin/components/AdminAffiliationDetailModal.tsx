@@ -755,14 +755,27 @@ const WELCOME_BLOCKED_COPY: Record<WelcomeReason, string> = {
   needs_review: 'El estado del envío requiere revisión.',
 }
 
+/**
+ * `DD/MM/YYYY HH:mm` en hora de El Salvador. Mismo patrón canónico que
+ * `fechaCsv` en `patientCrm.service.ts`, y por los mismos dos motivos:
+ * `toLocaleString` intercala una COMA entre fecha y hora, y `es-SV` es un
+ * locale de 12 horas que sin `hourCycle` rendiría `02:32 p. m.`.
+ * `hourCycle: 'h23'` y no `hour12: false`: este último puede dar `24:15`.
+ */
+const FECHA_FMT = new Intl.DateTimeFormat('es-SV', {
+  timeZone: 'America/El_Salvador',
+  day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+
 function formatSV(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString('es-SV', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
+  const p: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {}
+  for (const parte of FECHA_FMT.formatToParts(d)) p[parte.type] = parte.value
+  if (!p.day || !p.month || !p.year || !p.hour || !p.minute) return ''
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`
 }
 
 function WelcomeEmailSection({ requestId }: { requestId: string }) {

@@ -190,17 +190,16 @@ execFileSync(process.execPath, [
   '--bundle', '--format=esm', '--platform=neutral', `--outfile=${outFile}`,
 ], { stdio: 'pipe' });
 
-const { renderWelcomeEmail, honorific, publicProfileUrl } = await import(pathToFileURL(path.resolve(outFile)).href);
+const { renderWelcomeEmail, displayName, publicProfileUrl } = await import(pathToFileURL(path.resolve(outFile)).href);
 
-// ── El tratamiento NO se duplica. Caso real de producción: `dr-harold-trillos`
-//    y `dra-pamela-bolanos` derivan de nombres que YA traen el tratamiento.
-check('nombre sin tratamiento → antepone Dr.', honorific('Elba Angélica Lobo'), 'Dr. Elba Angélica Lobo');
-check('nombre con Dr. → no duplica', honorific('Dr. Harold Trillos'), 'Dr. Harold Trillos');
-check('nombre con Dra. → respeta el femenino', honorific('Dra. Pamela Bolaños'), 'Dra. Pamela Bolaños');
-check('minúsculas también se detectan', honorific('dr. camilo carrillo'), 'dr. camilo carrillo');
-check('"Doctor" completo se respeta', honorific('Doctor Miguel Flores'), 'Doctor Miguel Flores');
-check('espacios colapsados', honorific('  Elba   Lobo  '), 'Dr. Elba Lobo');
-check('"Drago" NO es tratamiento', honorific('Drago Pérez'), 'Dr. Drago Pérez');
+// ── El tratamiento NUNCA se infiere. Si el nombre lo trae, se respeta; si no,
+//    se usa tal cual. Anteponer "Dr." implicaría un sexo que el dato no tiene.
+check('nombre con Dr. → se conserva', displayName('Dr. Harold Trillos'), 'Dr. Harold Trillos');
+check('nombre con Dra. → se conserva el femenino', displayName('Dra. Pamela Bolaños'), 'Dra. Pamela Bolaños');
+check('nombre SIN tratamiento → tal cual', displayName('Elba Angélica Lobo'), 'Elba Angélica Lobo');
+check('"Drago" NO es tratamiento', displayName('Drago Pérez'), 'Drago Pérez');
+check('espacios colapsados', displayName('  Elba   Lobo  '), 'Elba Lobo');
+check('no se infiere tratamiento en minúsculas', displayName('elba lobo'), 'elba lobo');
 
 // ── URL: dominio literal, jamás un origen recibido ──
 check('URL pública canónica', publicProfileUrl('dr-harold-trillos'), 'https://lucycare.app/doctor/dr-harold-trillos');
@@ -208,6 +207,14 @@ check('URL pública canónica', publicProfileUrl('dr-harold-trillos'), 'https://
 const { subject, text } = renderWelcomeEmail({ name: 'Dr. Harold Trillos', slug: 'dr-harold-trillos' });
 check('asunto aprobado', subject, 'Bienvenido a LucyCare, Dr. Harold Trillos');
 has('saludo', text, 'Hola, Dr. Harold Trillos:');
+
+// Sin tratamiento: el asunto y el saludo no lo inventan.
+{
+  const r = renderWelcomeEmail({ name: 'Elba Angélica Lobo', slug: 'elba-angelica-lobo' });
+  check('asunto sin tratamiento', r.subject, 'Bienvenido a LucyCare, Elba Angélica Lobo');
+  has('saludo sin tratamiento', r.text, 'Hola, Elba Angélica Lobo:');
+  hasNot('no aparece "Dr." inventado', r.text, 'Dr. Elba');
+}
 has('enlace al perfil', text, 'https://lucycare.app/doctor/dr-harold-trillos');
 has('CTA literal del perfil', text, '"¿Eres este profesional?"');
 has('guía para empezar', text, 'https://medicos.lucycare.app/medicos/empezar');

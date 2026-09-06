@@ -15,21 +15,22 @@ const PUBLIC_ORIGIN = 'https://lucycare.app';
 const GUIDE_URL = 'https://medicos.lucycare.app/medicos/empezar';
 
 /**
- * Trata el tratamiento profesional SIN duplicarlo.
+ * Devuelve el nombre para mostrar. NUNCA infiere el tratamiento.
  *
  * `profiles.full_name` es mixto en producción, verificado contra el directorio
- * público: "Dr. Camilo Carrillo" y "Dra. Pamela Bolaños" ya traen el
- * tratamiento, mientras que "Elba Angélica Lobo" no. Anteponer "Dr. " a ciegas
- * produciría "Dr. Dr. Harold Trillos" y, peor, "Dr. Dra. Pamela Bolaños", que
- * además la trataría en masculino.
+ * público: "Dr. Harold Trillos" y "Dra. Pamela Bolaños" ya traen tratamiento,
+ * mientras que "Elba Angélica Lobo" no.
  *
- * Regla: si el nombre YA trae tratamiento, se respeta tal cual. Si no lo trae,
- * se antepone "Dr. " según el copy aprobado.
+ * Regla: si el nombre YA trae tratamiento, se respeta tal cual —incluido el
+ * femenino—. Si no lo trae, se usa el nombre **como está**. No se antepone
+ * "Dr. ", porque el tratamiento implica un sexo que el dato no contiene y
+ * anteponerlo produciría "Dr. Elba Angélica Lobo".
+ *
+ * El punto tras "Dr"/"Dra" es OBLIGATORIO para que cuente como tratamiento:
+ * sin él, "Drago Pérez" se leería como tratamiento y perdería el nombre.
  */
-export function honorific(fullName: string): string {
-  const name = fullName.trim().replace(/\s+/g, ' ');
-  if (/^(dr|dra|doctor|doctora)\.?\s/i.test(name)) return name;
-  return `Dr. ${name}`;
+export function displayName(fullName: string): string {
+  return fullName.trim().replace(/\s+/g, ' ');
 }
 
 export function publicProfileUrl(slug: string): string {
@@ -47,7 +48,7 @@ export interface RenderedEmail {
 }
 
 export function renderWelcomeEmail(input: WelcomeInput): RenderedEmail {
-  const treated = honorific(input.name);
+  const treated = displayName(input.name);
   const url = publicProfileUrl(input.slug);
 
   const subject = `Bienvenido a LucyCare, ${treated}`;
