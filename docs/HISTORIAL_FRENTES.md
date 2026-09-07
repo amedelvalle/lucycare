@@ -11,7 +11,112 @@
 > `ADMIN-DOCTOR-EXPORT-P0` (PR #351) y `ADMIN-DOCTOR-EXPORT-URL-P0` (PR #352)
 > ya están cerrados** y figuran abajo. **`DOCTOR-OWNER-NOTIFICATIONS-P0`
 > (PR #353)**, **`MOBILE-BOOT-RECOVERY-P0` (PR #355)** y
-> **`DOCTOR-WELCOME-EMAIL-P0` (PR #357)** también.
+> **`DOCTOR-WELCOME-EMAIL-P0` (PR #357)** y
+> **`DOCTOR-ONBOARDING-READINESS-P0` (PRs #359, #360 y #361)** también.
+
+## Frentes cerrados 2026-09 (PRs #359, #360, #361)
+
+### DOCTOR-ONBOARDING-READINESS-P0 — en qué punto va cada médico
+
+**CLOSED (2026-09-07).** Tres PRs MERGED por squash; `main` quedó en
+**`e8e8c03d588b85cca32c81013befa312d14bef07`**. **`s7_85` = migración 106** y
+**`s7_86` = migración 107**, ambas **APPLIED / VERIFIED / NO REAPLICAR**,
+aplicadas por el owner antes de cada merge.
+
+**Referencia completa del frente: `docs/ANALISIS_ONBOARDING_READINESS.md`.**
+Acá queda solo el detalle por PR.
+
+| PR | Qué entregó | Migración |
+|---|---|---|
+| **#359** | Etapa de onboarding derivada (8 estados), `booking_ready`, filtro global por etapa, chip en el listado, checklist en la ficha, y el **gate público de reserva** corregido | `s7_85` |
+| **#360** | **Hotfix P0** del binding de `doctor_booking_ready` | — |
+| **#361** | Tarjeta de onboarding compacta, copy del eje operativo y **3 columnas nuevas** en el CSV | `s7_86` |
+
+#### #359 — la derivación
+
+Cero columnas nuevas. `_doctor_onboarding(uuid) → jsonb` concentra la definición
+de etapa; `admin_doctors_onboarding(uuid[])` la sirve en lote (sin N+1) y
+`admin_list_doctors_by_onboarding(...)` filtra sobre el **universo completo**,
+no la página visible. Esa última **reutiliza `admin_list_doctors` en el `FROM`**
+—el patrón de `s7_78`— así que el predicado sigue viviendo en un solo lugar y no
+hizo falta tocar su firma. Gate `is_admin()` con **`P0170`**; `P0171` aborta en
+vez de truncar.
+
+El gate público de reserva pasó de `booking_enabled` a secas —**uno solo de los
+cinco requisitos**— a `doctor_booking_ready`, con semántica **fail closed**.
+
+#### #360 — la regresión, y por qué costó
+
+`fetchDoctorBookingReady` extraía `supabase.rpc` a una variable y lo llamaba
+suelto. `supabase.rpc` es un **método**: desligado, `this` queda `undefined` y
+lanza `Cannot read properties of undefined (reading 'rest')` **antes de emitir la
+petición**. Resultado: **la reserva en línea quedó caída en TODOS los perfiles
+públicos**.
+
+Detectado midiendo, no leyendo: el resource timing de
+`/doctor/dr-camilo-carrillo` en producción no listaba **ninguna** llamada a
+`/rpc/doctor_booking_ready`.
+
+Corrección: `supabase.rpc.bind(supabase)`. Una palabra.
+
+**Regla vigente: nunca desligar un método del cliente Supabase.** Si hay que
+tipar la llamada, se liga con `.bind(supabase)`.
+
+**Lección de método, sin adornos.** Se había reportado validada la ruta de fallo
+«uuid inválido → `22P02` → throw». Se observó *un* throw y se lo atribuyó a la
+RPC; era el `TypeError`. Es la regla que el proyecto ya tenía escrita: **si el
+control también "pasa", el defecto está en la sonda.** La cobertura que faltaba
+existe ahora en `scripts/check-directory-booking-ready.mjs`, que **ejecuta** el
+helper real contra un `fetch` instrumentado y afirma que la petición sale de
+verdad — validado A/B: 20/20 con el fix, 5 FAIL contra el código mutado.
+
+#### #361 — UI, copy y CSV
+
+Tarjeta de onboarding con encabezado propio (los chips en la línea del título,
+sin tarjeta anidada), checklist en dos sub-columnas **en orden de precedencia**
+—`grid-flow-col`, porque el flujo por filas los habría intercalado— y detalle a
+la derecha que **no se renderiza** cuando no falta nada. Móvil a una columna,
+verificado a 375: `viewport=375 scrollWidth=375`, sin overflow. **Sin consultas
+nuevas**: la fila resuelve el onboarding en una sola `const` que alimenta chip,
+insignia y botón.
+
+Copy del eje operativo: **`Operativo` / `No habilitado` / `No operativo`**, filtro
+neutral, botón **`Habilitar`** deshabilitado antes del claim. Se retiraron
+**`Suspendido`** y **`Reactivar`**: la columna no guarda historia y `audit_log`
+no es legible desde LucyAdmin, así que una activación previa **no es demostrable
+en ningún caso**. `is_operational` y toda la lógica server-side quedaron intactas.
+
+`s7_86` añade 3 columnas al CSV mediante
+**`LEFT JOIN LATERAL public._doctor_onboarding(d.id)`**: un `Function Scan`, una
+evaluación por médico. Tres llamadas escalares habrían dado tres —PostgreSQL no
+deduplica llamadas a función, y la función no puede inlinearse por ser
+`SECURITY DEFINER` con `SET`—. `LEFT JOIN` y no `CROSS JOIN` para que un médico
+no pueda desaparecer del CSV en silencio.
+
+#### Evidencia de cierre
+
+| Verificación | Resultado |
+|---|---|
+| Universo | **117 médicos** |
+| `Function Scan on _doctor_onboarding` | **`loops=117`** — una por médico |
+| Candidato vs control de 3 llamadas | **60,357 ms** vs 191,198 ms (**3,17×**) |
+| Buffers | 3 069 vs 7 581 |
+| CSV real desde LucyAdmin | **117 filas · 20 columnas** |
+| Harold en el CSV | `Pendiente de reclamar` · `El médico debe reclamar su perfil` · `No` |
+| Camilo en el CSV | `Completo` · próxima acción vacía · `Sí` |
+| Peticiones del export | **una sola** |
+| Perfiles públicos | Harold sin CTA · Camilo con CTA restaurado |
+| Degradación del módulo | **ninguna** |
+
+Checks: `check-s7_85` **98/98**, `check-s7_86` **54/54**,
+`check-admin-doctor-csv` **75/75** (era 68), `check-directory-booking-ready`
+**20/20**, regresiones PASS, `build` y `git diff --check` PASS, `tsc -b` con
+**0 diagnósticos atribuibles**.
+
+⚠️ **`npx tsc --noEmit` no es una validación válida en este repositorio.** El
+`tsconfig.json` es *solution-style* con `"files": []`: comprueba cero archivos y
+siempre sale 0. El typecheck real es **`tsc -b`**. Todo «tsc PASS» anterior a
+este frente era vacío.
 
 ## Frentes cerrados 2026-09 (PR #357)
 
