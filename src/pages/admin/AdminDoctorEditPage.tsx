@@ -9,8 +9,12 @@ import {
   updateDoctorInfo,
 } from '../../services/admin.service';
 import AdminDoctorServicesSection from './components/AdminDoctorServicesSection';
-import { OnboardingChecklist } from './components/OnboardingBadges';
-import { getDoctorsOnboarding } from '../../services/admin.service';
+import { OnboardingCard } from './components/OnboardingBadges';
+import {
+  getDoctorsOnboarding,
+  operationalLabel,
+  resolveClaimed,
+} from '../../services/admin.service';
 import AdminDoctorWaitlistSection from './components/AdminDoctorWaitlistSection';
 import AvatarUploader from '@/components/AvatarUploader';
 import { uploadDoctorAvatarAsAdmin, removeDoctorAvatarAsAdmin } from '@/services/avatar.service';
@@ -194,15 +198,19 @@ function OwnerDoctorEditView({ id }: { id: string }) {
         <h1 className="text-2xl font-bold text-gray-900">{d.fullName || '(sin nombre)'}</h1>
         <p className="text-sm text-gray-500 mt-1">
           ID {d.doctorId.slice(0, 8)}… · Estado:{' '}
-          {d.isOperational ? 'Operativo' : 'Suspendido'} · {d.isPublished ? 'Publicado' : 'No publicado'} · lucy={d.lucyStatus}
+          {operationalLabel(
+            d.isOperational,
+            resolveClaimed(d.lucyStatus, onboardingQ.data?.get(d.doctorId)),
+          )}{' '}
+          · {d.isPublished ? 'Publicado' : 'No publicado'} · lucy={d.lucyStatus}
         </p>
       </header>
 
-      {/* ─── Onboarding (derivado, sin acciones manuales) ─── */}
-      <section className="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Onboarding</h2>
-        <OnboardingChecklist o={onboardingQ.data?.get(d.doctorId)} />
-      </section>
+      {/* ─── Onboarding (derivado, sin acciones manuales) ───
+          La tarjeta trae su propio encabezado para que los dos chips vivan en
+          la misma línea que el título. Sin <section> envolvente: anidar dos
+          tarjetas era justo lo que hinchaba la altura. */}
+      <OnboardingCard o={onboardingQ.data?.get(d.doctorId)} />
 
       {/* ─── Foto de perfil ──────────────────────────────── */}
       <Section

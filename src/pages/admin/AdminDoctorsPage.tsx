@@ -21,6 +21,8 @@ import {
   getDoctorsOnboarding,
   getDoctorsByOnboardingStage,
   ONBOARDING_STAGE_LABEL,
+  operationalLabel,
+  resolveClaimed,
   type OnboardingStage,
   type DoctorOnboarding,
 } from '../../services/admin.service';
@@ -315,8 +317,10 @@ function OwnerDoctorsView() {
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
             >
               <option value="all">Todos</option>
+              {/* Neutro a propósito: el filtro cubre a la vez a quien nunca fue
+                  habilitado y a quien dejó de estarlo. Los VALORES no cambian. */}
               <option value="yes">Operativo</option>
-              <option value="no">Suspendido</option>
+              <option value="no">No operativo</option>
             </select>
           </div>
           <div className="md:col-span-2">
@@ -382,7 +386,15 @@ function OwnerDoctorsView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((d: AdminDoctorRow) => (
+              {rows.map((d: AdminDoctorRow) => {
+                // UN solo acceso al onboarding por fila, reutilizado por el
+                // chip, la insignia operativa y el botón. Es el payload que la
+                // página YA cargó: no añade ninguna consulta.
+                const onb = 'onboarding' in d
+                  ? (d as { onboarding: DoctorOnboarding }).onboarding
+                  : onboarding.get(d.id);
+                const reclamado = resolveClaimed(d.lucyStatus, onb);
+                return (
                 <tr key={d.id}>
                   <td className="px-4 py-3 align-top">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -405,12 +417,16 @@ function OwnerDoctorsView() {
                     <p className="text-[11px] text-gray-400">{d.clinicName ?? ''}</p>
                   </td>
                   <td className="px-3 py-3 align-top space-y-1">
-                    <Badge on={d.isOperational} labelOn="Operativo" labelOff="Suspendido" />{' '}
+                    <Badge
+                      on={d.isOperational}
+                      labelOn="Operativo"
+                      labelOff={operationalLabel(false, reclamado)}
+                    />{' '}
                     <Badge on={d.isPublished} labelOn="Publicado" labelOff="No publicado" />{' '}
                     <Badge on={d.isVerified} labelOn="Verificado" labelOff="No verificado" />
                   </td>
                   <td className="px-3 py-3 align-top">
-                    <OnboardingChip o={'onboarding' in d ? (d as { onboarding: DoctorOnboarding }).onboarding : onboarding.get(d.id)} />
+                    <OnboardingChip o={onb} />
                   </td>
                   <td className="px-3 py-3 align-top">
                     <select
@@ -439,18 +455,32 @@ function OwnerDoctorsView() {
                     >
                       {d.isPublished ? 'Despublicar' : 'Publicar'}
                     </button>
+                    {/*
+                      Antes del claim el botón se ve pero no se pulsa: habilitar
+                      a un médico que todavía no reclamó adelanta un paso del
+                      onboarding sin efecto observable —su cuenta nace dormida—
+                      y lo deja entrando al panel sin revisión. Se deshabilita en
+                      el cliente y se explica por qué; `admin_set_doctor_operational`
+                      NO cambia.
+                    */}
                     <button
                       onClick={() => mOperational.mutate({ id: d.id, v: !d.isOperational })}
-                      disabled={mOperational.isPending}
-                      className={`text-xs px-2.5 py-1.5 rounded-lg text-white ${
+                      disabled={mOperational.isPending || (!d.isOperational && !reclamado)}
+                      title={
+                        !d.isOperational && !reclamado
+                          ? 'El médico debe reclamar su perfil primero.'
+                          : undefined
+                      }
+                      className={`text-xs px-2.5 py-1.5 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed ${
                         d.isOperational ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
                       }`}
                     >
-                      {d.isOperational ? 'Suspender' : 'Reactivar'}
+                      {d.isOperational ? 'Suspender' : 'Habilitar'}
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
