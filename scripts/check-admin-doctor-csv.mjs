@@ -64,6 +64,10 @@ const fila = (over = {}) => ({
   operativo: false,
   created_at: '2026-08-02T13:49:49.181225-06:00',
   slug: null,
+  // s7_86 · onboarding
+  onb_stage: 'not_published',
+  onb_next_action: 'owner_publish',
+  booking_ready: false,
   ...over,
 });
 
@@ -92,8 +96,9 @@ console.log('1. Columnas');
     'Dirección de clínica', 'Departamento de clínica', 'Municipio de clínica',
     'Estado LucyCare', 'Perfil reclamado', 'Verificado en LucyCare', 'Publicado',
     'Agenda habilitada', 'Operativo', 'Fecha de alta en LucyCare',
-    'Slug', 'URL pública'];
-  check('son exactamente 17', headers.length, 17);
+    'Slug', 'URL pública',
+    'Onboarding', 'Próxima acción', 'Listo para reservas'];
+  check('son exactamente 20', headers.length, 20);
   check('en el orden aprobado', headers.join('|'), esperadas.join('|'));
   // Comparación por PALABRA, no por subcadena: `includes('id')` daría un falso
   // positivo con «Especialidad», que sí debe estar.
@@ -161,6 +166,28 @@ console.log('\n4. Booleanos y estado');
   check('Publicado', col(headers, datos[0], 'Publicado'), 'Sí');
   check('Agenda habilitada', col(headers, datos[0], 'Agenda habilitada'), 'Sí');
   check('Operativo false → No', col(headers, datos[0], 'Operativo'), 'No');
+}
+
+// ─── s7_86 · las tres columnas de onboarding ─────────────
+{
+  console.log('\nonboarding (s7_86)');
+  const { headers, datos } = await parse([
+    fila({ onb_stage: 'pending_claim', onb_next_action: 'doctor_claim', booking_ready: false }),
+    fila({ onb_stage: 'complete', onb_next_action: 'none', booking_ready: true }),
+  ]);
+  check('etapa traducida al español', col(headers, datos[0], 'Onboarding'), 'Pendiente de reclamar');
+  check('próxima acción traducida', col(headers, datos[0], 'Próxima acción'), 'El médico debe reclamar su perfil');
+  check('booking_ready false → No', col(headers, datos[0], 'Listo para reservas'), 'No');
+  check('etapa complete', col(headers, datos[1], 'Onboarding'), 'Completo');
+  // 'none' mapea a cadena vacía: un CSV no debe decir «ninguna acción».
+  check('sin próxima acción → celda vacía', col(headers, datos[1], 'Próxima acción'), '');
+  check('booking_ready true → Sí', col(headers, datos[1], 'Listo para reservas'), 'Sí');
+}
+{
+  // Código desconocido: se escribe crudo en vez de dejar la celda vacía. Un
+  // hueco silencioso ocultaría una etapa nueva sin traducir.
+  const { headers, datos } = await parse([fila({ onb_stage: 'etapa_futura' })]);
+  check('etapa desconocida conserva el código', col(headers, datos[0], 'Onboarding'), 'etapa_futura');
 }
 {
   const { headers, datos } = await parse([fila({ lucy_status: 'booking_enabled' })]);

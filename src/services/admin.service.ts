@@ -311,6 +311,12 @@ export interface AdminDoctorExportRow {
   created_at: string;
   /** Valor canónico de `doctors.slug`. NULL mientras el médico nunca se publicó. */
   slug: string | null;
+  // s7_86 · onboarding. Los tres salen de UNA evaluación de
+  // `_doctor_onboarding` por médico, hecha en la RPC. La base emite el código
+  // canónico; la traducción vive acá, igual que con `lucy_status`.
+  onb_stage: OnboardingStage;
+  onb_next_action: string;
+  booking_ready: boolean;
 }
 
 const EXPORT_ERRORES: Record<string, string> = {
@@ -434,7 +440,7 @@ function urlPublica(row: AdminDoctorExportRow): string {
 }
 
 /**
- * Las 15 columnas del archivo, en orden. Es un SUBCONJUNTO de la allowlist del
+ * Las 20 columnas del archivo, en orden. Es un SUBCONJUNTO de la allowlist del
  * backend: el export no puede inventar campos, solo elegir cuáles de los que ya
  * vienen escribe.
  */
@@ -465,6 +471,18 @@ const DOCTOR_EXPORT_COLUMNS: {
   // reconstruye desde el nombre — quien los asigna es el trigger de `s7_52`.
   { header: 'Slug', value: (r) => r.slug ?? '' },
   { header: 'URL pública', value: urlPublica },
+  // s7_86 · onboarding. Se reutilizan LOS MISMOS mapas que pinta LucyAdmin, así
+  // que el archivo y la pantalla no pueden nombrar distinto a la misma etapa.
+  // El checklist detallado NO va al CSV: es diagnóstico de ficha, no de hoja.
+  {
+    header: 'Onboarding',
+    value: (r) => ONBOARDING_STAGE_LABEL[r.onb_stage] ?? String(r.onb_stage ?? ''),
+  },
+  {
+    header: 'Próxima acción',
+    value: (r) => ONBOARDING_NEXT_ACTION_LABEL[r.onb_next_action] ?? '',
+  },
+  { header: 'Listo para reservas', value: (r) => siNo(r.booking_ready) },
 ];
 
 /**
@@ -585,6 +603,40 @@ export const ONBOARDING_NEXT_ACTION_LABEL: Record<string, string> = {
   doctor_add_availability: 'El médico debe definir sus horarios',
   enable_booking: 'Activar la agenda en línea',
   none: '',
+}
+
+/**
+ * Copy del eje operativo. Es SOLO presentación: `is_operational` sigue siendo
+ * un booleano y ninguna RPC cambia.
+ *
+ * ⚠️ Por qué NO se dice «Suspendido»: la columna no guarda historia, y
+ * `audit_log` quedó sin lectura para `authenticated` desde s7_71b. Un médico
+ * recién creado nace con `is_operational=false` —lo fija la aprobación— y
+ * `claim_doctor_profile` NO lo toca, así que «no operativo» es el estado de
+ * fábrica, no una sanción. Llamarlo «Suspendido» afirmaba una activación
+ * previa que no podemos demostrar en ningún caso.
+ *
+ * El corte por `claimed` sí es demostrable: quien nunca reclamó nunca tuvo
+ * panel, así que no pudo ser suspendido de operar.
+ */
+export function operationalLabel(isOperational: boolean, claimed: boolean): string {
+  if (isOperational) return 'Operativo'
+  return claimed ? 'No operativo' : 'No habilitado'
+}
+
+/**
+ * ¿El médico reclamó su perfil?
+ *
+ * El valor canónico es el del onboarding (incluye la cohorte legacy de s7_85).
+ * Mientras ese payload no ha llegado se usa `lucy_status`, que viene en la
+ * propia fila del listado: así la etiqueta no parpadea de «No operativo» a
+ * «No habilitado» ni al revés, y NO se dispara ninguna consulta extra.
+ */
+export function resolveClaimed(
+  lucyStatus: LucyStatus,
+  onboarding: DoctorOnboarding | undefined,
+): boolean {
+  return onboarding ? onboarding.checks.claimed : lucyStatus !== 'listed_only'
 }
 
 export const PROFILE_FIELD_LABEL: Record<string, string> = {
