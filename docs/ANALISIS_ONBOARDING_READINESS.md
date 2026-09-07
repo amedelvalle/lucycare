@@ -388,9 +388,14 @@ real es **`tsc -b`**.
   LucyAdmin. **Por eso el copy es neutral** (`No operativo`). Resolverlo exigiría
   leer historia o persistir estado nuevo; ninguna de las dos está en alcance.
 
-### Cobertura no ejercitada
+## Limitación de evidencia del cierre
 
-Los estados `not_published`, `services_missing`, `availability_missing` y
+**No es un frente abierto ni un requisito pendiente.** Es el alcance exacto de
+lo que se verificó, anotado para que nadie lo cite de más.
+
+Las etapas `not_published`, `services_missing`, `availability_missing` y
 `booking_disabled` **no se ejercitaron con datos reales**: hacerlo exigía mutar
-producción solo por QA. Están cubiertos por el check estático y por el harness
-de UI, pero **no se dan por probados conductualmente**.
+producción solo por QA, y el owner decidió no hacerlo. Están cubiertas por el
+check estático y por el harness de UI, así que **no deben describirse como
+«probadas en producción»**. El frente está **CLOSED** y esto no exige trabajo
+futuro.

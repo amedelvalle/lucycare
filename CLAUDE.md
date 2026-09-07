@@ -128,10 +128,12 @@
 > distinguir «nunca habilitado» de una suspensión real en un médico **reclamado**;
 > **por eso el copy es neutral**.
 >
-> ⚠️ **Cobertura no ejercitada:** `not_published`, `services_missing`,
-> `availability_missing` y `booking_disabled` **no se probaron con datos reales**
-> —exigía mutar producción solo por QA—. Cubiertos por el check estático y el
-> harness de UI, **no se dan por probados conductualmente**.
+> ℹ️ **LIMITACIÓN DE EVIDENCIA DEL CIERRE — no es un frente ni un pendiente.**
+> Las etapas `not_published`, `services_missing`, `availability_missing` y
+> `booking_disabled` **no se ejercitaron con datos reales**: hacerlo exigía mutar
+> producción solo por QA. Están cubiertas por el check estático y por el harness
+> de UI. Se registra para que nadie las cite como «probadas en producción»; **el
+> frente está CLOSED y esto no exige trabajo futuro.**
 >
 > 🟢 **ESTADO ANTERIOR (2026-09-06) — post PR #357. PILOTO = GO.**
 >
@@ -1037,11 +1039,6 @@ squash-merge, la rama puede borrarse.
   `s7_71b`. **Por eso el copy es neutral (`No operativo`) y NO dice
   «Suspendido».** Resolverlo exigiría leer historia o persistir estado nuevo;
   ninguna de las dos está en alcance.
-- **Cobertura conductual pendiente de #359/#361, NO abierta.** Los estados
-  `not_published`, `services_missing`, `availability_missing` y
-  `booking_disabled` **no se ejercitaron con datos reales** —exigía mutar
-  producción solo por QA—. Cubiertos por el check estático y el harness de UI,
-  **no se dan por probados conductualmente**.
 
 - **`BOOT-GETUSER-GATE-P1` — deuda OPCIONAL, registrada en #355, NO abierta.** `main.tsx` condiciona el render de **todas** las rutas, **públicas incluidas**, a `supabase.auth.getUser()`. En auth-js 2.57.4 eso es `await initializePromise` → `_acquireLock(-1, …)` → `fetch` **sin `AbortSignal` ni timeout en ninguna capa** (verificado en `node_modules`); su único freno es el `setTimeout(3000)` de `main.tsx`, más 1500 ms de la rama `signOut`. **No puede producir el splash infinito** —queda acotado a ~4,5 s y ese frente ya está cerrado por #355— pero retrasa `/`, `/doctor/*`, `/privacidad` y `/terminos` tras un round-trip de red que esas rutas **no necesitan**. El patrón canónico del proyecto para esto ya existe (`getSessionWithTimeout`), pero usa `getSession()` (lectura local) y **no** detectaría el token stale que este gate busca: **cualquier arreglo tiene ese trade-off y exige decisión del owner.** **No abrir sin instrucción.**
 
