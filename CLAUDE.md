@@ -117,8 +117,9 @@
 > diagnósticos atribuibles**.
 >
 > ⚠️ **Deudas REGISTRADAS, NINGUNA abierta — no abrir sin instrucción:**
-> **(a) `ONBOARDING-FOLLOWUP-P1`** — seguimiento y comunicación según etapa,
-> aprovechando la automatización asistida del correo de bienvenida (#357).
+> **(a) `ONBOARDING-FOLLOWUP-P1` = ON HOLD (2026-09-07)** — diseñado y medido,
+> **no implementado por falta de cohorte elegible**. Ver la sección al final de
+> `docs/ANALISIS_ONBOARDING_READINESS.md`.
 > **(b) `ADMIN-DOCTOR-DETAIL-TABS-P1`** — reorganizar la ficha en pestañas *si*
 > la densidad de información sigue creciendo. **(c) Redundancia interna de
 > `_doctor_onboarding`**: `doctor_booking_ready`, llamada desde dentro, relee
@@ -1020,9 +1021,19 @@ squash-merge, la rama puede borrarse.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
 - **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
 
-- **`ONBOARDING-FOLLOWUP-P1` — registrado en #361, NO abierto.** Seguimiento y
-  comunicación según la etapa de onboarding, aprovechando la automatización
-  asistida que ya existe para el correo de bienvenida (#357). **No abrir sin
+- **`ONBOARDING-FOLLOWUP-P1` = ON HOLD (2026-09-07) — diseñado y medido, NO
+  implementado por falta de cohorte elegible.** Seguimiento al médico según la
+  etapa de onboarding. El diseño se completó y se midió la cohorte real:
+  **44 `pending_claim` → 1 con afiliación vinculada → 1 con correo autoritativo
+  → 0 con bienvenida enviada → 0 elegibles.** Con cero elegibles no se justifica
+  tabla, cola, trigger, pestaña, RPC ni Edge Function: la superficie no podría
+  demostrar ni desmentir su utilidad. ⚠️ **El seguimiento solo debía iniciar
+  DESPUÉS de una bienvenida enviada**, y **`profiles.email` de los médicos
+  importados NO se adopta automáticamente como correo autoritativo** — el
+  autoritativo es el de `doctor_affiliation_requests`. **Condición para
+  retomarlo:** volumen suficiente de bienvenidas enviadas, **o** una decisión
+  explícita del owner sobre la contactabilidad del padrón importado. Diseño y
+  medición completos en `docs/ANALISIS_ONBOARDING_READINESS.md`. **No abrir sin
   instrucción del owner.**
 - **`ADMIN-DOCTOR-DETAIL-TABS-P1` — registrado en #361, NO abierto.** Evaluar
   reorganizar la ficha del médico en pestañas **si** la densidad de información

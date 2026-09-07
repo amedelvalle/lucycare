@@ -372,9 +372,8 @@ real es **`tsc -b`**.
 
 **No abrir sin instrucción del owner.**
 
-- **`ONBOARDING-FOLLOWUP-P1`** — seguimiento y comunicación según etapa de
-  onboarding, aprovechando la automatización asistida que ya existe para el
-  correo de bienvenida (#357). Es el frente natural que sigue.
+- **`ONBOARDING-FOLLOWUP-P1` = ON HOLD** — diseñado y medido, **no implementado
+  por falta de cohorte elegible**. Detalle completo abajo.
 - **`ADMIN-DOCTOR-DETAIL-TABS-P1`** — evaluar reorganizar la ficha del médico en
   pestañas **si** la densidad de información sigue creciendo. Hoy no hace falta.
 - **Redundancia interna de `_doctor_onboarding`** — `doctor_booking_ready`, que
@@ -399,3 +398,117 @@ producción solo por QA, y el owner decidió no hacerlo. Están cubiertas por el
 check estático y por el harness de UI, así que **no deben describirse como
 «probadas en producción»**. El frente está **CLOSED** y esto no exige trabajo
 futuro.
+
+---
+
+## Apéndice · `ONBOARDING-FOLLOWUP-P1` = ON HOLD
+
+> **ON HOLD (2026-09-07) — diseñado y medido, no implementado por falta de
+> cohorte elegible.** No abrir sin instrucción del owner.
+
+El frente natural que seguía a este: contactar al médico según su etapa de
+onboarding para saber cuándo escribirle, qué decirle, cuándo insistir, cuándo
+escalar a un humano y cuándo parar. Se diseñó completo y se midió antes de
+escribir una línea. La medición lo detuvo.
+
+### Diseño propuesto, en una página
+
+**Solo contactan las etapas cuyo `actor` es `doctor`.** La regla no se inventa:
+`actor` ya viene en el payload de `_doctor_onboarding`. `not_published` y
+`pending_activation` son trabajo del owner y producen una lista, no un correo.
+`complete` es terminal.
+
+| Etapa | ¿Contactar? | 1er seguimiento | Cadencia | Máx. |
+|---|---|---|---|---|
+| `not_published` | no — owner | — | — | — |
+| `pending_claim` | sí | +3 d de `welcome_sent_at` | +10 d, +21 d | 3 |
+| `pending_activation` | no — owner | — | — | — |
+| `profile_incomplete` | sí | +5 d | +14 d, +30 d | 3 |
+| `services_missing` | sí | +5 d | +14 d, +30 d | 3 |
+| `availability_missing` | sí | +5 d | +14 d, +30 d | 3 |
+| `booking_disabled` | sí | +7 d | +21 d | 2 |
+| `complete` | **STOP** | — | — | — |
+
+**Arquitectura: manual asistido con cola persistente.** La máquina decide a
+quién y cuándo; el humano decide enviar. El motor es la cola —índice parcial
+sobre `next_followup_at`—, **nunca un barrido de `doctors`**, y
+`_doctor_onboarding` se evalúa por `LATERAL` solo sobre las filas vencidas: el
+patrón ya medido de `s7_86`. Descartados: cron (el proyecto nunca usó `pg_cron`
+y `check-s7_83` lo prohíbe), drenado autónomo (prematuro a este volumen) y
+reutilizar `doctor_owner_notifications` (es la outbox del owner, otro
+destinatario y otra semántica).
+
+**Estado mínimo:** una fila por médico con `status`, `attempts_in_stage`,
+`last_contact_at`, `next_followup_at`, `send_status` y `last_error_code`.
+**`onboarding_stage` nunca se persiste.** Para que el reloj se reinicie al
+cambiar de etapa hacen falta `observed_stage_code` + `stage_observed_at`, que
+son **snapshot del seguimiento, no estado canónico**: sin ellos, un médico que
+acaba de avanzar a `services_missing` recibiría un correo de inmediato porque
+`tos_accepted_at` ocurrió semanas antes.
+
+**Canal: correo, y solo correo.** WhatsApp exige Business API, plantillas
+aprobadas y un secreto nuevo. SMS no se justifica: Twilio está en Verify (que es
+para OTP), cambiarlo está prohibido sin autorización, y a ~US$0,299 por mensaje
+a El Salvador tres intentos para 117 médicos costarían ~US$105 contra ~US$0 por
+correo.
+
+**Idempotencia y seguridad:** el patrón de `s7_83` — todos los gates en el
+`WHERE` de un solo `UPDATE` condicional (es lo que cierra el doble envío por
+bloqueo de fila), `Idempotency-Key` estable, ventana de 23 h, gate `is_admin()`,
+`verify_jwt`, sin `service_role`.
+
+### La medición que lo detuvo
+
+Ejecutada en producción el 2026-09-07, read-only, sobre el padrón real:
+
+| Medición | Valor |
+|---|---|
+| `pending_claim` | **44** |
+| con afiliación vinculada | **1** |
+| con correo autoritativo | **1** |
+| con bienvenida enviada | **0** |
+| **elegibles para seguimiento** | **0** |
+
+Desglose de los 44: **43 sin afiliación vinculada** · 1 con la bienvenida en
+`not_sent`.
+
+Contexto: `doctor_affiliation_requests` tiene **4 filas** en total, así que como
+mucho 4 médicos pueden tener afiliación vinculada — `doctor_id` es una FK en esa
+tabla. Los 114 médicos con correo del CSV lo tienen en `profiles.email`, cargado
+por el importador masivo.
+
+**Con cero elegibles no se justifica tabla, cola, trigger, pestaña, RPC ni Edge
+Function.** La superficie mostraría un grupo vacío y 43 filas cuyo siguiente paso
+no existe en LucyAdmin: sin solicitud de afiliación no hay forma de enviar la
+bienvenida.
+
+### Las dos reglas que quedan fijadas
+
+1. **El seguimiento solo debía iniciar DESPUÉS de una bienvenida enviada.** La
+   bienvenida es el día 0; el seguimiento son los recordatorios. Sin
+   `welcome_status = 'sent'` no hay nada que recordar.
+2. **`profiles.email` de los médicos importados NO se adopta automáticamente
+   como correo autoritativo.** El autoritativo es el de
+   `doctor_affiliation_requests`. Tener un correo no equivale a ser elegible para
+   una secuencia de onboarding que el médico nunca pidió.
+
+### Condición para retomarlo
+
+Cualquiera de las dos:
+
+- **volumen suficiente de bienvenidas enviadas** que genere una cohorte real; o
+- **decisión explícita del owner sobre la contactabilidad del padrón
+  importado.**
+
+### Hallazgo identificado, frente NO abierto
+
+**43 médicos publicados y sin reclamar no tienen ninguna vía autorizada de
+contacto.** El dato existe —43 de los 44 tienen correo en el perfil—; lo que
+falta es la **procedencia**. Adoptarlos exigiría un paso explícito que convierta
+ese correo en autoritativo, con registro de la decisión, y trae su propio riesgo:
+escribir a 43 personas que nunca dieron su dirección para esto compromete la
+reputación de `lucycare.app`, el mismo dominio que envía los correos
+transaccionales del piloto.
+
+Es hermano de la deuda `WELCOME-EMAIL-SIN-CORREO-P1`. **Queda solo identificado:
+no se abre ningún frente de contactabilidad.**
