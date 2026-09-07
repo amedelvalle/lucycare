@@ -34,7 +34,8 @@ Todo lo de esta parte es ✅ **VERIFICADO**.
 | **HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** |
 | `main == origin/main` | sí |
 | Working tree | limpio |
-| PRs abiertos | **0** |
+| PRs funcionales abiertos | **0** |
+| PRs abiertos durante el cierre | **#364**, docs-only, pendiente de merge |
 | Migraciones | **107** · última `s7_86_admin_doctor_export_onboarding.sql` |
 | Último deployment | `6311556516` · ref `4094dc3` · 2026-09-07T15:17Z |
 
@@ -227,9 +228,12 @@ Resultados de autenticación: **SPF PASS · DKIM PASS · DMARC PASS**.
 - Decisión: **volúmenes pequeños y calentamiento progresivo**.
 - ⚠️ **No asumir garantía de inbox.**
 
-⚠️ **Convive con otro remitente.** El correo de bienvenida de #357 sale por
-**Resend** desde el mismo `medicos@lucycare.app`. Son dos caminos distintos
-sobre el mismo dominio, y ambos consumen su reputación.
+⚠️ **Convive con otro emisor sobre la misma dirección.** El correo de
+bienvenida de #357 sale por **Resend** desde el mismo `medicos@lucycare.app`.
+Cumplen **propósitos distintos** —transaccional/operativo el de #357,
+campaña/outreach este—, pero **ambos consumen la reputación del dominio** y
+pueden coincidir en un mismo destinatario. La **segmentación queda pendiente**
+de definir antes de aumentar volumen.
 
 ## B.3 · Google Sheets de campaña
 
@@ -334,17 +338,27 @@ ningún texto que diga 3 meses.** Ambas versiones deben decir lo mismo.
 **Sitio comercial:** `https://medicos.lucycare.app/medicos`
 **Ruta central:** `https://medicos.lucycare.app/medicos/empezar`
 
-> ⚠️ ✅ **Verificado: `medicos.lucycare.app` NO es este repositorio.** No existen
-> rutas `/medicos` ni `/medicos/empezar` en `src/router/config.tsx` — solo
-> `/admin/medicos` y `/admin/medicos/:id`. Es una **propiedad separada**.
+> **`https://medicos.lucycare.app/medicos/empezar` SÍ EXISTE.** Es la ruta
+> central de onboarding del médico y está operativa.
 >
-> ⚠️ **Pero hay un acoplamiento duro que conviene conocer.** El repo referencia
-> esa URL en dos sitios: `send-doctor-welcome-email/render.ts` la emite como
-> `GUIDE_URL`, y **`scripts/check-s7_83.mjs` la ASERTA** («guía para empezar»).
-> Si la ruta `/medicos/empezar` cambia o desaparece en la otra propiedad, el
-> correo de bienvenida enviaría a un enlace muerto **y el check fallaría**. Al
-> rediseñar `/medicos/empezar`, **conservar esa ruta o actualizar los dos
-> sitios a la vez.**
+> ⚠️ ✅ **Verificado: pertenece al sitio independiente `medicos.lucycare.app`,
+> NO a este repositorio.** En `src/router/config.tsx` no hay rutas `/medicos`
+> ni `/medicos/empezar` — solo `/admin/medicos` y `/admin/medicos/:id`. El
+> rediseño de esa página como centro de onboarding completo está **decidido**,
+> pero **corresponde ejecutarlo en esa otra propiedad**, no aquí.
+>
+> ⚠️ **Este repo mantiene una DEPENDENCIA DURA de la URL actual**, en dos
+> sitios: `send-doctor-welcome-email/render.ts` la emite como `GUIDE_URL`, y
+> **`scripts/check-s7_83.mjs` la ASERTA** («guía para empezar»).
+>
+> Consecuencia práctica, en los dos sentidos:
+>
+> - **Mientras se conserve la ruta, el contenido de la página puede cambiar
+>   libremente sin tocar este repositorio.** El rediseño de onboarding no
+>   requiere ningún cambio aquí.
+> - **Si en el futuro cambia la URL**, el correo de bienvenida apuntaría a un
+>   enlace muerto y el check fallaría: **ambos proyectos deben actualizarse de
+>   forma coordinada.**
 
 **Decisión de producto:** **no** crear una segunda ruta de «primeros pasos».
 `/medicos/empezar` evoluciona como **centro de onboarding**.
@@ -400,10 +414,11 @@ LucyCare · completar perfil · configurar servicios · configurar agenda · usa
 > vinculada**, de modo que **no es elegible** para el correo de bienvenida
 > automatizado de #357.
 >
-> ⚠️ **Discrepancia a resolver:** el correo que recibió salió por la vía de
-> campaña (Gmail/Apps Script), **no** por el flujo de #357. Ambos existen y
-> hacen lo mismo por caminos distintos. Conviene decidir cuál es el canónico
-> antes de escalar.
+> ℹ️ **Por qué vía le llegó:** el correo que recibió salió por la **campaña**
+> (Gmail/Apps Script), **no** por el flujo transaccional de #357 — para el que,
+> además, no es elegible. Son **propósitos distintos**, no dos versiones de lo
+> mismo. ⚠️ Antes de subir volumen hay que **definir la segmentación** para que
+> un mismo médico no reciba comunicaciones duplicadas o demasiado próximas.
 
 ## B.9 · ⛔ Lo que falta capturar — primera tarea de la próxima ventana
 
@@ -414,9 +429,14 @@ LucyCare · completar perfil · configurar servicios · configurar agenda · usa
 | Texto plano del correo | Dentro del Apps Script | Sale con el `.gs` |
 | Id del Sheet / nombre del archivo | Google Drive | Anotar la URL |
 
-⚠️ **Sin estos dos archivos, la campaña no es reproducible ni auditable, y el
-frente de importación de B.10 no puede diseñarse con precisión.** Es la razón
-por la que este handoff los marca ⛔ en vez de describirlos de memoria.
+⚠️ **El Google Sheet, el Apps Script y `PlantillaEmail.html` son hoy artefactos
+operativos EXTERNOS y NO versionados en este repositorio.** Viven en Google
+Workspace / Drive. Es la razón por la que este handoff los marca ⛔ en vez de
+describirlos de memoria.
+
+**Antes de implementar la importación incremental (B.10) deberán capturarse
+desde su fuente real**, para trabajar sobre la versión vigente y no sobre una
+reconstrucción. **No bloquea este cierre documental.**
 
 ## B.10 · SIGUIENTE FRENTE — Importación incremental desde LucyAdmin
 
@@ -435,8 +455,9 @@ acción → el sistema **integre solo los nuevos**, genere los campos de campañ
 **Propuesta discutida, no implementada:** pestaña **`Importar médicos`** +
 acción de menú **`Integrar nuevos médicos`**.
 
-**Identidad:** `doctor_id` como **clave canónica** si el export lo incluye ·
-`slug`/URL pública como apoyo · ⚠️ **no deduplicar solo por nombre**.
+**Identidad y reconciliación:** ⚠️ **no deduplicar únicamente por nombre.** Ver
+el recuadro de abajo: hoy la mejor llave estable disponible en el export es el
+**`Slug`**, con la **`URL pública`** y el **`Correo`** como defensas adicionales.
 
 > ⚠️ **REGLA CRÍTICA: importar NUNCA debe significar enviar.** Los médicos
 > nuevos entran con **`Enviar = No`** hasta selección explícita del owner.
@@ -452,10 +473,19 @@ LucyAdmin**.
 > URL pública · **Onboarding** · **Próxima acción** · **Listo para reservas**.
 >
 > ⚠️ **El export NO incluye `doctor_id`.** Es una decisión explícita de la
-> allowlist de `s7_78` («sin UUID internos»). La clave canónica preferida **no
-> está disponible hoy**: el identificador estable que sí viaja es el **`Slug`**,
-> y la **`URL pública`** que lo contiene. Exponer `doctor_id` exigiría modificar
+> allowlist de `s7_78` («sin UUID internos»). Exponerlo exigiría modificar
 > `admin_export_doctors` — decisión del owner, no del frente.
+>
+> **`Slug` es la mejor llave estable DISPONIBLE hoy** para reconciliar desde
+> este export, y el importador deberá usarla como llave principal, con la
+> **`URL pública`** (que lo contiene) y el **`Correo`** como defensas
+> adicionales cuando corresponda.
+>
+> ⚠️ **No afirmar que el slug es un identificador canónico inmutable.** Lo que
+> consta es que `trg_set_doctor_slug` lo asigna al publicar y no lo reescribe,
+> y que un médico despublicado conserva el suyo. Eso lo hace **estable en la
+> práctica observada**, no inmutable por contrato. Cualquier diseño que dependa
+> de su inmutabilidad necesita **evidencia técnica específica** primero.
 >
 > Columnas directamente aprovechables: **`Perfil reclamado`** → `Perfil_Reclamado`
 > · **`URL pública`** → `URL_Perfil` · **`Onboarding`** → estado de campaña.
@@ -481,11 +511,15 @@ LucyAdmin**.
 2. **Se pidió incluir el Apps Script y la plantilla; no existen aquí ni estaban
    disponibles.** No se reconstruyeron de memoria: se marcaron ⛔ con
    instrucciones de captura.
-3. **Dos caminos de correo compiten.** La bienvenida de #357 (Resend, botón en
-   LucyAdmin, con idempotencia y trazabilidad) y la campaña (Gmail, Apps
-   Script). Ambos escriben a médicos desde `medicos@lucycare.app`. **Ninguno
-   sabe del otro**, así que un médico podría recibir los dos. Decidir cuál es el
-   canónico antes de escalar volumen.
+3. **Dos comunicaciones con PROPÓSITOS DISTINTOS sobre el mismo remitente.**
+   **#357** es comunicación **transaccional/operativa**: la bienvenida que sigue
+   al flujo de afiliación, disparada por el owner desde LucyAdmin, con
+   idempotencia y trazabilidad. **Google Sheets + Apps Script** es
+   **campaña/outreach de captación**. No compiten: hacen cosas diferentes.
+   Pero **pueden coincidir en un mismo destinatario**, y ninguno de los dos
+   sabe del otro. ⚠️ **Antes de aumentar volumen debe definirse la segmentación**
+   para evitar comunicaciones duplicadas o demasiado próximas en el tiempo.
+   **No se resuelve en este cierre.**
 4. **La cohorte del correo automatizado es prácticamente vacía.** 44
    `pending_claim`, **1** con afiliación vinculada, **0** con bienvenida
    enviada. El flujo de #357 solo alcanza a quienes entren por afiliación; los
