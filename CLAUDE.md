@@ -6,6 +6,15 @@
 
 > 🟢 **ESTADO VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
+> **📗 Punto de entrada canónico:
+> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-09-07.md` (leer PRIMERO).**
+> Reemplaza al `2026-08-28_POST_PR353`, que pasa a **histórico** junto con todos
+> los anteriores. Trae en su **Parte B** el estado operativo de la **campaña de
+> captación de médicos** (Workspace, Sheets, Apps Script, plantilla,
+> entregabilidad, `/medicos/empezar`) y el frente **NO iniciado** de importación
+> incremental desde LucyAdmin. ⚠️ Esa parte es **declarada por el owner y no
+> verificable desde el repositorio**.
+>
 > ✅ **`DOCTOR-ONBOARDING-READINESS-P0` = CLOSED (2026-09-07).** Tres PRs MERGED
 > por squash; `main` quedó en
 > **`e8e8c03d588b85cca32c81013befa312d14bef07`**. **`s7_85` (migración 106) y
@@ -251,9 +260,8 @@
 >    (`_welcome_email_claimable`); el resto se prueba por la UI autenticada.
 >
 > 🟢 **ESTADO ANTERIOR (2026-09-02) — post PR #355. PILOTO = GO.**
-> **Punto de entrada canónico:
-> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt`
-> (leer PRIMERO).** Reemplaza al `2026-08-27_POST_PR352`, que pasa a
+> **Punto de entrada canónico ENTONCES (hoy histórico):
+> `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt`.** Reemplazaba al `2026-08-27_POST_PR352`, que pasó a
 > **histórico** junto con todos los anteriores. El detalle por PR de los frentes
 > cerrados vive en **`docs/HISTORIAL_FRENTES.md`** — este archivo no lo duplica.
 >
@@ -896,7 +904,8 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/ANALISIS_PACIENTE_GLOBAL_FASE4_MERGE_ADMIN.md` — diseño del merge admin de fichas duplicadas (Fase 4 / B1), **DM1–DM9 cerradas (#134)**. Alcance = fichas `patients` intra-clínica; reglas vinculantes; fases F4-1 (✅ #135/`s7_45`) → **F4-2 backend (✅ #138/`s7_46`, V1=`same_profile`)** → **F4-3-search RPC candidatos (✅ #140/`s7_47`)** → **F4-3 UI PR A read-only `/admin/pacientes` (✅ #142)** → **F4-3 UI PR B merge real `/admin/pacientes` (✅ #144)** → **unmerge formal backend (✅ #147/`s7_48`)** → **unmerge UI "Deshacer fusión" (✅ #149)** → **F4-3b bandeja de rechazos (`patient_link_rejections`): backend ✅ #151/`s7_49`, UI ✅ #153** → pendiente: F4-D identidades (diferido).
 - `docs/ANALISIS_PACIENTE_GLOBAL_F4_UNMERGE.md` — diseño del unmerge formal (reversa del merge), decisiones cerradas; **backend ✅ live en #147/`s7_48`** (`admin_unmerge_patients_preflight` + `admin_unmerge_patients`, códigos P0070–P0077) + **UI "Deshacer fusión" ✅ live en #149** (`/admin/pacientes`, acción en el historial). F4-3b (bandeja `patient_link_rejections`) ✅ live #151/`s7_49`+#153; F4-D pendiente.
 - `docs/ANALISIS_ADMINISTRADORES_LUCY.md` — administración de LucyAdmins (Opción B, D1–D6 aprobadas; Fase 1 ✅ live en #132/`s7_44`; owner/superadmin y capacidades granulares = Fase 2).
-- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt` — **HANDOFF CANÓNICO VIGENTE** (leer PRIMERO). Autosuficiente: baseline Git en `55af306`, las 103 migraciones, el frente `DOCTOR-OWNER-NOTIFICATIONS-P0` **CLOSED** con su configuración completa y sus prohibiciones, los frentes cerrados recientes, Auth/Twilio/Turnstile, prohibiciones consolidadas, pendientes (ninguno bloqueante) y las lecciones de método —incluidas las dos que costaron caro: `prosrc` incluye comentarios, y `String.replace` interpreta `$$`—.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-09-07.md` — **HANDOFF CANÓNICO VIGENTE (leer PRIMERO).** Dos partes. **A ·** estado real del proyecto: los cuatro frentes cerrados en la ventana (#355, #357, #359–#361), `s7_83`–`s7_86`, la regresión P0 de #360 con su regla vinculante, QA de producción y los pendientes. **B ·** «Campaña de captación y onboarding de médicos», con Workspace, Sheets, Apps Script, plantilla, entregabilidad, `/medicos/empezar` y el frente NO iniciado de importación desde LucyAdmin. ⚠️ La Parte B es **declarada por el owner y no verificable desde el repositorio**; el código del Apps Script y la plantilla **no están capturados** y hacerlo es la primera tarea si se retoma la campaña.
+- `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt` — **HISTÓRICO**, superado por el `2026-09-07`. Su baseline (`55af306`, 103 migraciones) ya no es válido. Autosuficiente: baseline Git en `55af306`, las 103 migraciones, el frente `DOCTOR-OWNER-NOTIFICATIONS-P0` **CLOSED** con su configuración completa y sus prohibiciones, los frentes cerrados recientes, Auth/Twilio/Turnstile, prohibiciones consolidadas, pendientes (ninguno bloqueante) y las lecciones de método —incluidas las dos que costaron caro: `prosrc` incluye comentarios, y `String.replace` interpreta `$$`—.
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt` — **HISTÓRICO**, superado por el `2026-08-28`. Su baseline (`f7213d2`, 100 migraciones) y su descripción de `DOCTOR-OWNER-NOTIFICATIONS-P0` como frente «NO abierto» **ya no son válidos**. Sigue siendo buena referencia de los dos exports de médicos (#351/#352).
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **histórico**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. Cerró el frente: PR #349 **MERGED**, producción **PASS**.
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
