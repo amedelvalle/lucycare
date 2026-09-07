@@ -439,14 +439,18 @@ function normalizeText(text: string): string {
  * precisamente el gate insuficiente que este frente reemplaza.
  */
 export async function fetchDoctorBookingReady(doctorId: string): Promise<boolean> {
-  // El nombre se pasa como `string` y no como literal, igual que el helper
-  // `rpc()` de `admin.service.ts`. Motivo: `src/types/database.types.ts` está
-  // desactualizado (deuda TYPES-RECONCILIATION-P0) y además `s7_85` todavía no
-  // está aplicada, así que la RPC aún no figura en los tipos generados. No se
-  // confía en el tipo del resultado: se compara con `=== true`, de modo que
-  // cualquier otra cosa —incluido `null`— cae en fail closed.
-  const fn: string = 'doctor_booking_ready'
-  const { data, error } = await supabase.rpc(fn, { p_doctor_id: doctorId })
+  // `src/types/database.types.ts` está desactualizado (deuda
+  // TYPES-RECONCILIATION-P0) y no incluye esta RPC, así que el cliente tipado
+  // rechaza su nombre. Se declara la firma REAL en el punto de llamada en vez
+  // de usar `any`: los argumentos siguen comprobados y el error también.
+  // El resultado se declara `unknown` a propósito y se compara con `=== true`,
+  // de modo que cualquier otra cosa —incluido `null`— cae en fail closed.
+  const rpc = supabase.rpc as unknown as (
+    fn: 'doctor_booking_ready',
+    args: { p_doctor_id: string },
+  ) => Promise<{ data: unknown; error: { message: string } | null }>
+
+  const { data, error } = await rpc('doctor_booking_ready', { p_doctor_id: doctorId })
   if (error) throw new Error(error.message)
   return data === true
 }
