@@ -4,7 +4,136 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-09-06) — post PR #357 en `main`. PILOTO = GO.**
+> 🟢 **ESTADO VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
+>
+> ✅ **`DOCTOR-ONBOARDING-READINESS-P0` = CLOSED (2026-09-07).** Tres PRs MERGED
+> por squash; `main` quedó en
+> **`e8e8c03d588b85cca32c81013befa312d14bef07`**. **`s7_85` (migración 106) y
+> `s7_86` (migración 107) = APPLIED / VERIFIED / NO REAPLICAR**, aplicadas por
+> el owner ANTES de cada merge. **Sin Edge Functions, sin secretos, sin
+> configuración.**
+>
+> **📘 Referencia completa: `docs/ANALISIS_ONBOARDING_READINESS.md`.** Detalle
+> por PR en `docs/HISTORIAL_FRENTES.md`. Este bloque es solo el resumen.
+>
+> **Qué hace:** LucyAdmin muestra **en qué punto del camino va cada médico** y a
+> quién le toca el siguiente paso. **Todo DERIVADO: cero columnas de estado,
+> cero flags, ninguna acción de «marcar» onboarding.**
+>
+> ⚠️ **CUATRO EJES SEPARADOS. No mezclarlos nunca:**
+> **onboarding** (¿en qué paso va?) · **`booking_ready`** (¿se le puede reservar
+> ahora?) · **`is_operational`** (¿el owner le habilitó el panel? — **manual**) ·
+> **`is_published`** (¿aparece en el directorio?). **`Completo` y
+> `Listo para reservas` se muestran SIEMPRE por separado**: existen de verdad
+> `complete + no reservable` y `profile_incomplete + reservable`.
+>
+> **8 etapas por precedencia** (gana la primera aplicable):
+> `not_published` → `pending_claim` → `pending_activation` → `profile_incomplete`
+> → `services_missing` → `availability_missing` → `booking_disabled` →
+> `complete`. `next_action` y `actor` salen del **mismo `CASE`**, así que no
+> pueden discrepar. Los códigos viven en la base; la traducción, en el frontend.
+>
+> **`booking_ready` = CINCO condiciones**: `is_published` ∧ `is_operational` ∧
+> `booking_enabled` ∧ servicio activo ∧ horario activo. El perfil público lo
+> consume **fail closed** (`canBook = bookingReady === true`). Antes dependía de
+> `booking_enabled` a secas — **uno solo de los cinco**.
+>
+> **Perfil mínimo del onboarding** = foto + especialidad + descripción + clínica
+> + ubicación. ⚠️ **NO es la regla D1 del directorio**, que no pide foto ni
+> descripción. Son criterios distintos a propósito.
+>
+> ⚠️ **Fallback legacy de claim, acotado.** El claim canónico es
+> `tos_accepted_at IS NOT NULL`. Para los médicos previos se acepta
+> `lucy_status IN ('claimed','booking_enabled','verified')` **solo si
+> `created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'`** — sin ese corte, un
+> `lucy_status` editado a mano habría marcado como reclamado a cualquiera. El
+> literal es `TIMESTAMPTZ` y no `DATE` porque un `DATE` haría el cast con la zona
+> de la sesión. **Ese tramo es inferencia legacy para onboarding: NO es evidencia
+> canónica de claim ni autorización de nada.**
+>
+> ⚠️ **`is_operational` sigue siendo GATE MANUAL del owner.** No se automatiza.
+> La aprobación crea al médico con `false` y **`claim_doctor_profile` no lo
+> toca**: «no operativo» es el estado de fábrica, no una sanción.
+>
+> **Copy final del eje operativo:** `Operativo` · **`No habilitado`** (no
+> operativo + **sin** reclamar) · **`No operativo`** (no operativo + reclamado) ·
+> filtro **`Operativo / No operativo`** · botón **`Habilitar`**, deshabilitado
+> antes del claim con «El médico debe reclamar su perfil primero.», y `Suspender`
+> cuando es operativo. ⚠️ **`Suspendido` y `Reactivar` quedaron RETIRADOS**: la
+> columna no guarda historia y `audit_log` no es legible desde LucyAdmin, así que
+> **una activación previa no es demostrable en ningún caso**. **No reintroducir
+> ese copy.**
+>
+> **CSV de médicos: 17 → 20 columnas** (`Onboarding`, `Próxima acción`,
+> `Listo para reservas`). `s7_86` las añade con
+> **`LEFT JOIN LATERAL public._doctor_onboarding(d.id)`**: un `Function Scan`,
+> **una evaluación por médico**. Tres llamadas escalares habrían dado tres —
+> PostgreSQL no deduplica llamadas a función, y la función no puede inlinearse
+> por ser `SECURITY DEFINER` con `SET`. `LEFT JOIN` y no `CROSS JOIN` para que un
+> médico no desaparezca del CSV en silencio. **Criterio de rendimiento vigente:
+> `loops` = número de médicos; si diera `3 × N`, el diseño dejó de cumplir.**
+>
+> **Medición en producción:** 117 médicos · `loops=117` · candidato **60,357 ms**
+> vs control de 3 llamadas 191,198 ms (**3,17×**) · buffers 3 069 vs 7 581 · **una
+> sola petición de export**, sin N+1. En el tope de `MAX_EXPORT` (10 000) serían
+> ~5 s; el universo real es el **1,17 %** de ese tope. Registrado, no optimizado.
+>
+> ⚠️ **REGRESIÓN P0 DE #359, CORREGIDA EN #360 — lección vinculante.**
+> `fetchDoctorBookingReady` extraía `supabase.rpc` a una variable y lo llamaba
+> suelto. **Es un método**: desligado, `this` queda `undefined` y lanza
+> `Cannot read properties of undefined (reading 'rest')` **antes de emitir la
+> petición**. Resultado: **la reserva en línea quedó caída en TODOS los perfiles
+> públicos**. Se detectó midiendo —el resource timing de producción no listaba
+> ninguna llamada a `/rpc/doctor_booking_ready`—, no leyendo el código.
+> Corrección: `supabase.rpc.bind(supabase)`.
+> **Regla vigente: NUNCA desligar un método del cliente Supabase; si hay que
+> tipar la llamada, ligarlo con `.bind(supabase)`.**
+>
+> ⚠️ **Y la lección de método:** se había reportado validada la ruta de fallo
+> «uuid inválido → `22P02` → throw». Se observó *un* throw y se lo atribuyó a la
+> RPC; era el `TypeError`. Es la regla que el proyecto ya tenía escrita: **si el
+> control también "pasa", el defecto está en la sonda.** La cobertura existe
+> ahora en `scripts/check-directory-booking-ready.mjs`, que **ejecuta** el helper
+> real contra un `fetch` instrumentado (20/20 con el fix, 5 FAIL contra el código
+> mutado).
+>
+> ⚠️ **`npx tsc --noEmit` NO ES UNA VALIDACIÓN VÁLIDA en este repositorio y no
+> debe volver a reportarse como PASS.** El `tsconfig.json` es *solution-style*
+> con `"files": []`: comprueba **cero archivos** y siempre sale 0, y `vite build`
+> no hace typecheck. **El typecheck real es `tsc -b`.** Todo «tsc PASS» anterior
+> a este frente era vacío.
+>
+> **QA final en producción (deployment `6300527694`, ref `e8e8c03`, success):**
+> Harold `Pendiente de reclamar` y no reservable · Camilo `Completo` y
+> `Listo para reservas` · `doctor_booking_ready` restaurado y funcionando ·
+> **CSV real descargado: 117 médicos, 20 columnas** · Harold
+> `Pendiente de reclamar` / `El médico debe reclamar su perfil` / `No` · Camilo
+> `Completo` / próxima acción vacía / `Sí` · **una sola petición de export** ·
+> **sin degradación del módulo**.
+>
+> **Validación:** `check-s7_85` **98/98** · `check-s7_86` **54/54** ·
+> `check-admin-doctor-csv` **75/75** · `check-directory-booking-ready` **20/20** ·
+> regresiones PASS · `build` y `git diff --check` PASS · `tsc -b` con **0
+> diagnósticos atribuibles**.
+>
+> ⚠️ **Deudas REGISTRADAS, NINGUNA abierta — no abrir sin instrucción:**
+> **(a) `ONBOARDING-FOLLOWUP-P1`** — seguimiento y comunicación según etapa,
+> aprovechando la automatización asistida del correo de bienvenida (#357).
+> **(b) `ADMIN-DOCTOR-DETAIL-TABS-P1`** — reorganizar la ficha en pestañas *si*
+> la densidad de información sigue creciendo. **(c) Redundancia interna de
+> `_doctor_onboarding`**: `doctor_booking_ready`, llamada desde dentro, relee
+> `doctors`/`services`/`availability_rules` que el CTE ya consultó — 3 de ~9
+> lecturas duplicadas. Preexistente de `s7_85`. **Optimizar solo si una medición
+> lo justifica**; hoy no lo justifica. **(d) Historial insuficiente** para
+> distinguir «nunca habilitado» de una suspensión real en un médico **reclamado**;
+> **por eso el copy es neutral**.
+>
+> ⚠️ **Cobertura no ejercitada:** `not_published`, `services_missing`,
+> `availability_missing` y `booking_disabled` **no se probaron con datos reales**
+> —exigía mutar producción solo por QA—. Cubiertos por el check estático y el
+> harness de UI, **no se dan por probados conductualmente**.
+>
+> 🟢 **ESTADO ANTERIOR (2026-09-06) — post PR #357. PILOTO = GO.**
 >
 > ✅ **`DOCTOR-WELCOME-EMAIL-P0` = CLOSED (2026-09-06).** PR **#357 MERGED** por
 > squash; `main` quedó en
@@ -475,22 +604,24 @@
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **HEAD funcional canónico:
-> `a0b974b6c8fbf040eb89397f7b8f780bd653d887` — PR #357.** · **PRs funcionales
-> mergeados hasta #357** · **105 migraciones aplicadas** (hasta
-> `s7_84_welcome_claimable_stable.sql`) · `main == origin/main` · árbol limpio ·
+> `e8e8c03d588b85cca32c81013befa312d14bef07` — PRs #359/#360/#361.** · **PRs funcionales
+> mergeados hasta #361** · **107 migraciones aplicadas** (hasta
+> `s7_86_admin_doctor_export_onboarding.sql`) · `main == origin/main` · árbol limpio ·
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
 >
-> ⚠️ **`a0b974b` es el HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> Ciclos anteriores, ya superados como HEAD: `0fc36b1` (#355), `55af306` (#353)
-> y `f7213d2` (#352). **No volver a citarlos como vigentes.**
+> Ciclos anteriores, ya superados como HEAD: `a0b974b` (#357), `0fc36b1` (#355),
+> `55af306` (#353) y `f7213d2` (#352). **No volver a citarlos como vigentes.**
 >
-> **Último cambio funcional:** #357 (correo de bienvenida al médico desde
-> LucyAdmin, `s7_83` y `s7_84`). Antes: #355 (watchdog de arranque en
+> **Último cambio funcional:** #361 (onboarding derivado, copy operativo y CSV;
+> `s7_85` y `s7_86`, con el hotfix #360 del binding de `doctor_booking_ready`).
+> Antes: #357 (correo de bienvenida al médico desde
+> LucyAdmin, `s7_83` y `s7_84`), #355 (watchdog de arranque en
 > `index.html`; sin
 > migración), #353 (aviso al owner en afiliación y claim, `s7_80`–`s7_82`),
 > #352 (Slug y URL pública en el CSV de médicos,
@@ -765,6 +896,13 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt` — **HANDOFF CANÓNICO VIGENTE** (leer PRIMERO). Autosuficiente: baseline Git en `55af306`, las 103 migraciones, el frente `DOCTOR-OWNER-NOTIFICATIONS-P0` **CLOSED** con su configuración completa y sus prohibiciones, los frentes cerrados recientes, Auth/Twilio/Turnstile, prohibiciones consolidadas, pendientes (ninguno bloqueante) y las lecciones de método —incluidas las dos que costaron caro: `prosrc` incluye comentarios, y `String.replace` interpreta `$$`—.
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt` — **HISTÓRICO**, superado por el `2026-08-28`. Su baseline (`f7213d2`, 100 migraciones) y su descripción de `DOCTOR-OWNER-NOTIFICATIONS-P0` como frente «NO abierto» **ya no son válidos**. Sigue siendo buena referencia de los dos exports de médicos (#351/#352).
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **histórico**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. Cerró el frente: PR #349 **MERGED**, producción **PASS**.
+- `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
+  `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
+  separación entre onboarding / `booking_ready` / `is_operational` / publicación,
+  el perfil mínimo, el fallback legacy de claim y su corte, el copy del eje
+  operativo, el CSV de 20 columnas, el criterio de rendimiento de `s7_86`, la
+  regresión de #359 con su lección sobre no desligar métodos del cliente
+  Supabase, y los cuatro pendientes registrados sin abrir.
 - `docs/ANALISIS_PATIENT_CRM.md` — **análisis vivo de `PATIENT-CRM-P0`**: diagnóstico completo, arquitectura, UX, allowlists, y el detalle de P1–P5. Lo referencia el handoff vigente.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-22_ADMIN_DOCTOR_SEED_P0.md` — **histórico** (frente `ADMIN-DOCTOR-SEED-P0`, cerrado en PR #348): AUTH-SEED-PROBE, `s7_73`/`s7_74`/`s7_75`, Edge v4, idempotencia y compensación, DB smoke, E2E real y cleanup.
 - `docs/HANDOFF_LUCYCARE_NUEVA_VENTANA_2026-08-20.md` — **histórico** (post-#346, **piloto = GO**). Sigue siendo la mejor descripción del **estado general del producto**: reglas operativas, piloto, Auth/Booking/Twilio/Turnstile, calificaciones (`s7_72`), Legal + entidad **Divalux**, identidades protegidas y de QA, regla D1, SEO y backlog clasificado.
@@ -842,6 +980,17 @@ squash-merge, la rama puede borrarse.
   A/B con el mismo hash de bundle, control sin bloqueo, **QA real Android/Chrome
   PASS** y producción validada → [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#359 · #360 · #361** ✅ — **DOCTOR-ONBOARDING-READINESS-P0**: etapa de
+  onboarding **derivada** (8 estados por precedencia), `booking_ready` como
+  indicador **separado**, filtro global por etapa, tarjeta compacta en la ficha,
+  copy del eje operativo (**`Operativo` / `No habilitado` / `No operativo`**, sin
+  `Suspendido` ni `Reactivar`) y **3 columnas nuevas** en el CSV. `s7_85`
+  (**106**) y `s7_86` (**107**), aplicadas antes de cada merge. **#360 es un
+  hotfix P0**: `s7_85` dejó la reserva en línea caída en todos los perfiles
+  públicos por desligar `supabase.rpc` de su objeto. **Cero columnas de estado.**
+  QA en producción con CSV real de 117 médicos y 20 columnas →
+  [detalle](docs/HISTORIAL_FRENTES.md) · [referencia](docs/ANALISIS_ONBOARDING_READINESS.md)
+
 - **#357** ✅ — **DOCTOR-WELCOME-EMAIL-P0**: botón **«Enviar correo de
   bienvenida»** en `/admin/afiliaciones`. **Publicar NO envía**: el disparo es
   una acción explícita del owner, sin trigger, outbox, `pg_net`, cron ni secreto
@@ -868,6 +1017,31 @@ squash-merge, la rama puede borrarse.
 - **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
 - **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
+
+- **`ONBOARDING-FOLLOWUP-P1` — registrado en #361, NO abierto.** Seguimiento y
+  comunicación según la etapa de onboarding, aprovechando la automatización
+  asistida que ya existe para el correo de bienvenida (#357). **No abrir sin
+  instrucción del owner.**
+- **`ADMIN-DOCTOR-DETAIL-TABS-P1` — registrado en #361, NO abierto.** Evaluar
+  reorganizar la ficha del médico en pestañas **si** la densidad de información
+  sigue creciendo. Hoy no hace falta.
+- **Redundancia interna de `_doctor_onboarding` — registrada, NO abierta.**
+  `doctor_booking_ready`, llamada desde dentro, **relee** `doctors`, `services` y
+  `availability_rules` que el CTE ya consultó: 3 de las ~9 lecturas por
+  evaluación están duplicadas. Es **preexistente de `s7_85`**, no lo introdujo el
+  CSV. **Optimizar solo si una medición lo justifica**; con 117 médicos y 60 ms,
+  hoy no lo justifica.
+- **Historial insuficiente del eje operativo — registrado, NO abierto.** Un
+  médico **reclamado** y no operativo es **indistinguible** de uno suspendido con
+  las columnas actuales, y `audit_log` no es legible desde LucyAdmin desde
+  `s7_71b`. **Por eso el copy es neutral (`No operativo`) y NO dice
+  «Suspendido».** Resolverlo exigiría leer historia o persistir estado nuevo;
+  ninguna de las dos está en alcance.
+- **Cobertura conductual pendiente de #359/#361, NO abierta.** Los estados
+  `not_published`, `services_missing`, `availability_missing` y
+  `booking_disabled` **no se ejercitaron con datos reales** —exigía mutar
+  producción solo por QA—. Cubiertos por el check estático y el harness de UI,
+  **no se dan por probados conductualmente**.
 
 - **`BOOT-GETUSER-GATE-P1` — deuda OPCIONAL, registrada en #355, NO abierta.** `main.tsx` condiciona el render de **todas** las rutas, **públicas incluidas**, a `supabase.auth.getUser()`. En auth-js 2.57.4 eso es `await initializePromise` → `_acquireLock(-1, …)` → `fetch` **sin `AbortSignal` ni timeout en ninguna capa** (verificado en `node_modules`); su único freno es el `setTimeout(3000)` de `main.tsx`, más 1500 ms de la rama `signOut`. **No puede producir el splash infinito** —queda acotado a ~4,5 s y ese frente ya está cerrado por #355— pero retrasa `/`, `/doctor/*`, `/privacidad` y `/terminos` tras un round-trip de red que esas rutas **no necesitan**. El patrón canónico del proyecto para esto ya existe (`getSessionWithTimeout`), pero usa `getSession()` (lectura local) y **no** detectaría el token stale que este gate busca: **cualquier arreglo tiene ese trade-off y exige decisión del owner.** **No abrir sin instrucción.**
 
@@ -1215,6 +1389,30 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_86` DOCTOR-ONBOARDING-READINESS-P0 (**migración 107**): `CREATE OR
+  REPLACE` de `admin_export_doctors` con **DOS ediciones** sobre `s7_79` — un
+  `LEFT JOIN LATERAL public._doctor_onboarding(d.id)` y tres claves que leen ese
+  payload (`onb_stage`, `onb_next_action`, `booking_ready`). El `LATERAL` es un
+  **`Function Scan`**: UNA evaluación por médico. Tres llamadas escalares habrían
+  dado tres —PostgreSQL no deduplica llamadas a función, y `_doctor_onboarding`
+  no puede inlinearse por ser `SECURITY DEFINER` con `SET`—. `LEFT JOIN` y no
+  `CROSS JOIN` para que un médico no desaparezca del CSV en silencio. Firma,
+  gate `P0140`, `P0142`, `P0146`, `MAX_EXPORT`, grants, orden dentro de
+  `jsonb_agg` y auditoría **byte-idénticos a `s7_79`**, verificado por A/B. El
+  POST **cuenta las llamadas y exige exactamente 1**. `admin_list_doctors` NO se
+  toca. Medido en producción: 117 médicos, `loops=117`, 60,357 ms vs 191,198 ms
+  del control de tres llamadas.
+- `s7_85` DOCTOR-ONBOARDING-READINESS-P0 (**migración 106**): cuatro funciones,
+  **cero columnas nuevas**. `doctor_booking_ready(uuid)` (las CINCO condiciones
+  de reservabilidad; único `EXECUTE` para `anon` del frente) ·
+  `_doctor_onboarding(uuid) → jsonb` (definición ÚNICA de las 8 etapas por
+  precedencia + `next_action` + `actor` + `checks` + `profile_missing`; revocada
+  para los cuatro roles) · `admin_doctors_onboarding(uuid[])` (lote, sin N+1) ·
+  `admin_list_doctors_by_onboarding(...)` (filtro sobre el UNIVERSO, no la página
+  visible; **reutiliza `admin_list_doctors` en el `FROM`** — patrón de `s7_78` —
+  con `MAX_SCAN + 1` y `P0171` en vez de truncar). Gate `is_admin()`/**`P0170`**.
+  El claim se deriva de `tos_accepted_at`, con fallback legacy **acotado** a
+  `created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'`.
 - `s7_84` DOCTOR-WELCOME-EMAIL-P0 (**migración 105**): `CREATE OR REPLACE` de
   `_welcome_email_claimable` que cambia **exclusivamente la volatilidad**, de
   `IMMUTABLE` a `STABLE`. `IMMUTABLE` con `now()` dentro es incorrecto: Postgres
