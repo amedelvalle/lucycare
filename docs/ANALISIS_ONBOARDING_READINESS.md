@@ -502,13 +502,13 @@ Cualquiera de las dos:
 
 ### Hallazgo identificado, frente NO abierto
 
-**43 médicos publicados y sin reclamar no tienen ninguna vía autorizada de
-contacto.** El dato existe —43 de los 44 tienen correo en el perfil—; lo que
-falta es la **procedencia**. Adoptarlos exigiría un paso explícito que convierta
-ese correo en autoritativo, con registro de la decisión, y trae su propio riesgo:
-escribir a 43 personas que nunca dieron su dirección para esto compromete la
-reputación de `lucycare.app`, el mismo dominio que envía los correos
-transaccionales del piloto.
+**43 médicos publicados y sin reclamar quedan sin una vía de contacto
+autoritativa bajo la regla vigente del producto.** El dato existe —43 de los 44
+tienen correo en el perfil—; lo que falta es la **procedencia**. Adoptarlos
+exigiría un paso explícito que convierta ese correo en autoritativo, con
+registro de la decisión, y trae su propio riesgo: adoptar esos correos para este
+flujo **podría aumentar el riesgo de entregabilidad y reputación del dominio**
+`lucycare.app`, el mismo que envía los correos transaccionales del piloto.
 
 Es hermano de la deuda `WELCOME-EMAIL-SIN-CORREO-P1`. **Queda solo identificado:
 no se abre ningún frente de contactabilidad.**
