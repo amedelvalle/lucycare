@@ -30,8 +30,20 @@ console.log('\ncheck-s7_84 — _welcome_email_claimable pasa a STABLE\n');
 
 const P83 = path.join('migrations', 's7_83_doctor_welcome_email.sql');
 const P84 = path.join('migrations', 's7_84_welcome_claimable_stable.sql');
-const raw83 = fs.readFileSync(P83, 'utf8');
-const raw84 = fs.readFileSync(P84, 'utf8');
+/**
+ * Lee normalizando los finales de línea a LF.
+ *
+ * Las aserciones de volatilidad anclan en `\nSTABLE\n` / `\nIMMUTABLE\n`. En
+ * Windows `core.autocrlf=true` deja los `.sql` con CRLF en el working tree,
+ * mientras que en git el blob está en LF: sin normalizar, este check pasaba en
+ * un checkout y fallaba en otro. Es la deuda ya registrada para `check-s7_76`;
+ * acá se cierra en origen.
+ */
+const leerLFDe = (s) => s.split('\r\n').join('\n');
+const leerLF = (p) => leerLFDe(fs.readFileSync(p, 'utf8'));
+
+const raw83 = leerLF(P83);
+const raw84 = leerLF(P84);
 
 const SIG = 'CREATE OR REPLACE FUNCTION public._welcome_email_claimable';
 
@@ -125,6 +137,33 @@ console.log('\nmutation tests');
   // EXPECTATIVA INVERTIDA: reordenar los REVOKE no altera el bloque.
   check('NO caza el orden de los REVOKE',
     bloqueFuncion(raw84) === b84, true);
+}
+
+// ═══════════════════════════════════════════════════════════
+// A/B LF vs CRLF — el check debe dar LO MISMO con ambos finales
+// ═══════════════════════════════════════════════════════════
+console.log('\nA/B finales de línea');
+{
+  const aCRLF = (s) => s.split('\n').join('\r\n');
+  const crlf83 = aCRLF(raw83);
+  const crlf84 = aCRLF(raw84);
+
+  // Releídos por el MISMO normalizador que usa `leerLF`, quedan idénticos.
+  check('CRLF normalizado === LF (s7_83)', leerLFDe(crlf83) === raw83, true);
+  check('CRLF normalizado === LF (s7_84)', leerLFDe(crlf84) === raw84, true);
+
+  // Y las aserciones ancladas siguen casando después de normalizar.
+  check('la ancla \\nSTABLE\\n sobrevive', leerLFDe(crlf84).includes('\nSTABLE\n'), true);
+  check('la ancla \\nIMMUTABLE\\n sobrevive', leerLFDe(crlf83).includes('\nIMMUTABLE\n'), true);
+
+  // CONTROL DE SANIDAD: sin normalizar, la ancla NO casa. Si esto pasara,
+  // el A/B no estaría midiendo nada — el CRLF sería indistinguible del LF.
+  check('control: sin normalizar, la ancla FALLA', crlf84.includes('\nSTABLE\n'), false);
+
+  // Y el A/B estructural completo se mantiene bajo CRLF.
+  const b83c = bloqueFuncion(leerLFDe(crlf83));
+  const b84c = bloqueFuncion(leerLFDe(crlf84));
+  check('A/B estructural intacto bajo CRLF', normalizarVolatilidad(b83c) === b84c, true);
 }
 
 console.log(`\n${pass} ok · ${fail} FAIL   (${pass}/${pass + fail})\n`);

@@ -417,3 +417,40 @@ function normalizeText(text: string): string {
     .toLowerCase()
     .trim()
 }
+
+/**
+ * Reservabilidad canónica del médico (DOCTOR-ONBOARDING-READINESS-P0).
+ *
+ * El perfil público NO puede decidir con `booking_enabled` solo: el backend
+ * exige además `is_operational`, un servicio activo y una regla de
+ * disponibilidad (`validate_booking_slot`, s7_66). Y `is_operational` no está
+ * en la allowlist de columnas de `anon` (s7_60), así que el frontend no puede
+ * leerlo ni debe.
+ *
+ * `doctor_booking_ready` devuelve SOLO el booleano derivado: ni flags internos,
+ * ni servicios, ni horarios.
+ *
+ * ⚠️ NO sustituye a `validate_booking_slot`, que sigue siendo la autoridad del
+ * horario concreto. Esto responde «¿ofrezco reserva?»; aquello, «¿este slot es
+ * válido?».
+ *
+ * FAIL CLOSED: si la RPC falla, LANZA. El llamador debe tratar el error como
+ * «no reservable» y jamás caer de vuelta a `booking_enabled`, que es
+ * precisamente el gate insuficiente que este frente reemplaza.
+ */
+export async function fetchDoctorBookingReady(doctorId: string): Promise<boolean> {
+  // `src/types/database.types.ts` está desactualizado (deuda
+  // TYPES-RECONCILIATION-P0) y no incluye esta RPC, así que el cliente tipado
+  // rechaza su nombre. Se declara la firma REAL en el punto de llamada en vez
+  // de usar `any`: los argumentos siguen comprobados y el error también.
+  // El resultado se declara `unknown` a propósito y se compara con `=== true`,
+  // de modo que cualquier otra cosa —incluido `null`— cae en fail closed.
+  const rpc = supabase.rpc as unknown as (
+    fn: 'doctor_booking_ready',
+    args: { p_doctor_id: string },
+  ) => Promise<{ data: unknown; error: { message: string } | null }>
+
+  const { data, error } = await rpc('doctor_booking_ready', { p_doctor_id: doctorId })
+  if (error) throw new Error(error.message)
+  return data === true
+}

@@ -1,0 +1,346 @@
+#!/usr/bin/env node
+/**
+ * check-s7_85.mjs — DOCTOR-ONBOARDING-READINESS-P0.
+ *
+ * La aserción que sostiene el frente NO es que la migración exista: es que
+ * `doctor_booking_ready` use EXACTAMENTE los mismos tres flags que el gate de
+ * `validate_booking_slot` en `s7_66`. Si alguien cambia uno de los dos lados,
+ * este check lo caza — que es lo único que impide que la verdad derivada y la
+ * verdad del backend se separen en silencio.
+ *
+ * Los cuerpos SQL se miden SIN COMENTARIOS: `pg_proc.prosrc` los incluye, y ya
+ * costó caro una vez (s7_82) que dos instrumentos normalizaran distinto.
+ *
+ *   node scripts/check-s7_85.mjs
+ *
+ * No toca la base de datos ni la red.
+ */
+import path from 'path';
+import fs from 'fs';
+
+/** Normaliza finales de línea: el mismo check debe dar igual bajo LF y CRLF. */
+const leerLFDe = (s) => s.split('\r\n').join('\n');
+const leerLF = (p) => leerLFDe(fs.readFileSync(p, 'utf8'));
+
+let pass = 0, fail = 0;
+const check = (label, actual, esperado) => {
+  const ok = actual === esperado;
+  if (ok) { pass++; console.log(`  ok   ${label}`); }
+  else { fail++; console.log(`  FAIL ${label}\n         esperaba: ${JSON.stringify(esperado)}\n         obtuvo  : ${JSON.stringify(actual)}`); }
+};
+const has = (label, hay, needle) => check(label, hay.includes(needle), true);
+const hasNot = (label, hay, needle) => check(label, hay.includes(needle), false);
+
+console.log('\ncheck-s7_85 — onboarding derivado y reservabilidad canónica\n');
+
+const stripSql = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '');
+
+/**
+ * Además de los comentarios, quita las sentencias `COMMENT ON … ;`. Su
+ * contenido es PROSA: nombra a propósito `validate_booking_slot` y
+ * `DROP FUNCTION` para explicar por qué NO se tocan. Medir prohibiciones
+ * contra el archivo entero las daría por violadas — es la trampa ya
+ * documentada de comprobar una prohibición fuera del cuerpo ejecutable.
+ */
+const stripComentariosYCommentOn = (s) =>
+  stripSql(s).replace(/COMMENT\s+ON\s+FUNCTION[\s\S]*?;/gi, '');
+
+const raw85 = leerLF(path.join('migrations', 's7_85_doctor_onboarding_readiness.sql'));
+/** Solo el SQL EJECUTABLE: sin comentarios y sin las sentencias COMMENT ON. */
+const ejecutable85 = stripComentariosYCommentOn(raw85);
+const raw66 = leerLF(path.join('migrations', 's7_66_booking_intent_transaction.sql'));
+const sql85 = stripSql(raw85);
+const sql66 = stripSql(raw66);
+
+// ═══════════════════════════════════════════════════════════
+// A · NO DIVERGENCIA con el backend de reservas
+// ═══════════════════════════════════════════════════════════
+console.log('A · booking_ready no puede divergir de validate_booking_slot');
+
+/** Los tres flags que `validate_booking_slot` exige, leídos de s7_66. */
+function flagsDelBackend(sql) {
+  // (d.is_published AND d.booking_enabled AND d.is_operational)
+  const m = sql.match(/\(\s*d\.is_published\s+AND\s+d\.booking_enabled\s+AND\s+d\.is_operational\s*\)/);
+  if (!m) return null;
+  return ['is_published', 'booking_enabled', 'is_operational'];
+}
+const backend = flagsDelBackend(sql66);
+check('s7_66 sigue exigiendo los tres flags juntos', backend !== null, true);
+
+/** Los flags que usa la función derivada. */
+const cuerpoReady = (sql85.split('FUNCTION public.doctor_booking_ready')[1] ?? '').split('COMMENT ON')[0] ?? '';
+for (const f of backend ?? []) {
+  has(`doctor_booking_ready exige d.${f}`, cuerpoReady, `d.${f}`);
+}
+// Y NINGÚN flag de más: el conjunto debe ser exactamente el mismo.
+const flagsEnReady = [...new Set((cuerpoReady.match(/d\.(is_[a-z_]+|booking_enabled)/g) || []))].sort();
+check('conjunto de flags idéntico, sin añadidos',
+  JSON.stringify(flagsEnReady),
+  JSON.stringify(['d.booking_enabled', 'd.is_operational', 'd.is_published']));
+
+// Las dos existencias que el backend valida después (P009D y P0097).
+has('exige servicio activo', cuerpoReady, "s.is_active = true");
+has('exige disponibilidad activa', cuerpoReady, "r.is_active = true");
+has('s7_66 rechaza servicio inválido con P009D', sql66, 'P009D');
+has('s7_66 rechaza sin disponibilidad con P0097', sql66, 'P0097');
+
+// ═══════════════════════════════════════════════════════════
+// B · SEPARACIÓN entre onboarding y reservabilidad
+// ═══════════════════════════════════════════════════════════
+console.log('\nB · onboarding y booking_ready no se mezclan');
+
+const cuerpoOnb = (sql85.split('FUNCTION public._doctor_onboarding')[1] ?? '').split('COMMENT ON')[0] ?? '';
+
+// `profile_incomplete` es etapa de onboarding pero NO puede entrar en el gate.
+has('profile_incomplete es una etapa', cuerpoOnb, "'profile_incomplete'");
+hasNot('el gate de reservas NO mira el perfil mínimo', cuerpoReady, 'profile');
+hasNot('el gate de reservas NO mira avatar', cuerpoReady, 'avatar_url');
+hasNot('el gate de reservas NO mira bio', cuerpoReady, 'bio');
+hasNot('el gate de reservas NO mira lucy_status', cuerpoReady, 'lucy_status');
+hasNot('el gate de reservas NO mira tos_accepted_at', cuerpoReady, 'tos_accepted_at');
+has('el onboarding expone booking_ready aparte', cuerpoOnb, 'doctor_booking_ready(c.id)');
+
+// ═══════════════════════════════════════════════════════════
+// C · PRECEDENCIA determinista
+// ═══════════════════════════════════════════════════════════
+console.log('\nC · precedencia');
+
+const ORDEN = [
+  'not_published', 'pending_claim', 'pending_activation', 'profile_incomplete',
+  'services_missing', 'availability_missing', 'booking_disabled', 'complete',
+];
+const posiciones = ORDEN.map((s) => cuerpoOnb.indexOf(`'${s}'`));
+check('las 8 etapas están presentes', posiciones.every((p) => p >= 0), true);
+check('aparecen en el orden de precedencia acordado',
+  JSON.stringify(posiciones) === JSON.stringify([...posiciones].sort((a, b) => a - b)), true);
+has('el CASE cierra con ELSE (siempre hay respuesta)', cuerpoOnb, "ELSE 'complete'");
+
+// ═══════════════════════════════════════════════════════════
+// D · EVIDENCIA DE CLAIM
+// ═══════════════════════════════════════════════════════════
+console.log('\nD · evidencia de claim');
+has('señal primaria: tos_accepted_at', cuerpoOnb, 'd.tos_accepted_at IS NOT NULL');
+has('fallback legacy por lucy_status', cuerpoOnb, "d.lucy_status IN ('claimed', 'booking_enabled', 'verified')");
+// Y que el orden importe: la señal canónica va primero.
+check('tos_accepted_at se evalúa antes que el fallback',
+  cuerpoOnb.indexOf('tos_accepted_at') < cuerpoOnb.indexOf("lucy_status IN"), true);
+
+// ── EL FALLBACK ESTÁ ACOTADO POR FECHA, no es una regla permanente ──
+// Sin el corte, un admin que moviera `lucy_status` a mano fabricaría un claim
+// inexistente en un médico NUEVO. Ese es el falso positivo que hay que impedir.
+// El corte va con literal TIMESTAMPTZ explícito, no DATE: `doctors.created_at`
+// es timestamptz, y comparar contra un DATE lo castea usando el TIMEZONE DE
+// SESIÓN, moviendo el borde seis horas según quién ejecute. Con el literal el
+// corte es absoluto.
+has('el corte usa literal TIMESTAMPTZ explícito', cuerpoOnb,
+  "d.created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'");
+hasNot('el corte NO usa literal DATE (dependiente de sesión)', cuerpoOnb, "DATE '2026-05-24'");
+check('el corte y el fallback van en el MISMO paréntesis (AND, no OR)',
+  /\(\s*d\.created_at\s*<\s*TIMESTAMPTZ\s*'2026-05-24 00:00:00\+00'\s*AND\s*d\.lucy_status IN/.test(cuerpoOnb), true);
+
+// El corte debe ser demostrable en el repositorio, no un número inventado.
+has('documenta el commit que lo justifica', raw85, 'b4702b3');
+has('documenta que s7_13 es la primera que escribe tos_accepted_at', raw85,
+  'PRIMERA migración que introduce la escritura de `tos_accepted_at`');
+// La inferencia legacy debe quedar acotada por escrito a lo que es: una
+// clasificación de onboarding, no una prueba ni una autorización.
+has('documenta que NO es evidencia canónica de claim', raw85, 'NO es\n-- evidencia canónica');
+has('documenta que NO autoriza nada', raw85, 'NO autoriza nada');
+has('documenta que la evidencia actual sigue siendo tos_accepted_at', raw85,
+  'la evidencia sigue siendo, únicamente,\n-- `tos_accepted_at IS NOT NULL`');
+
+{
+  // MUTATION: quitar el corte reabre el falso positivo. Debe cazarse.
+  const CORTE = "d.created_at < TIMESTAMPTZ '2026-05-24 00:00:00+00'";
+  const k = cuerpoOnb.indexOf(CORTE);
+  const sinCorte = cuerpoOnb.slice(0, k) + 'true' + cuerpoOnb.slice(k + CORTE.length);
+  check('caza la pérdida del corte por fecha', sinCorte.includes(CORTE), false);
+  // Y caza la REGRESIÓN a un literal DATE, que reintroduciría la dependencia
+  // del timezone de sesión sin cambiar la fecha aparente.
+  const conDate = cuerpoOnb.slice(0, k) + "d.created_at < DATE '2026-05-24'" + cuerpoOnb.slice(k + CORTE.length);
+  check('caza la regresión de TIMESTAMPTZ a DATE', conDate.includes(CORTE), false);
+}
+
+// ═══════════════════════════════════════════════════════════
+// E · PERFIL MÍNIMO — los cinco campos acordados, ni uno más
+// ═══════════════════════════════════════════════════════════
+console.log('\nE · perfil mínimo');
+for (const campo of ['foto', 'especialidad', 'descripcion', 'clinica', 'ubicacion']) {
+  has(`incluye ${campo}`, cuerpoOnb, `'${campo}'`);
+}
+for (const fuera of ['precio', 'experiencia', 'idiomas', 'educacion']) {
+  hasNot(`NO incluye ${fuera}`, cuerpoOnb, `'${fuera}'`);
+}
+hasNot('no mira consultation_fee', cuerpoOnb, 'consultation_fee');
+hasNot('no mira experience_years', cuerpoOnb, 'experience_years');
+
+// ═══════════════════════════════════════════════════════════
+// F · SIN ESTADO PERSISTIDO Y SIN TOCAR FIRMAS EXISTENTES
+// ═══════════════════════════════════════════════════════════
+console.log('\nF · nada persistido, ninguna firma tocada');
+for (const prohibido of [
+  'CREATE TABLE', 'ALTER TABLE', 'ADD COLUMN', 'CREATE TRIGGER', 'DROP FUNCTION',
+  'admin_list_affiliation_requests', 'validate_booking_slot',
+  'admin_set_doctor_operational', 'admin_set_lucy_status', 'claim_doctor_profile',
+  'net.http_post', 'cron.schedule', 'vault',
+]) {
+  hasNot(`s7_85 no toca ${prohibido}`, ejecutable85, prohibido);
+}
+
+// `admin_list_doctors` SÍ se invoca —es el patrón de reutilización del
+// predicado, igual que en `admin_export_doctors`— pero NUNCA se redefine ni se
+// borra. Esa es la distinción que importa: llamarla es correcto, tocar su
+// firma no.
+has('reutiliza admin_list_doctors en el FROM', ejecutable85, 'public.admin_list_doctors(');
+hasNot('NO redefine admin_list_doctors', ejecutable85, 'FUNCTION admin_list_doctors(');
+hasNot('NO redefine admin_list_doctors (calificada)', ejecutable85, 'FUNCTION public.admin_list_doctors(');
+// Y el predicado NO se copia: no aparece ningún ILIKE propio.
+hasNot('no duplica el predicado de búsqueda', ejecutable85, 'ILIKE');
+
+// La lógica de etapa vive en UN solo sitio: las otras dos RPCs la invocan.
+check('_doctor_onboarding se invoca desde las dos RPCs',
+  (ejecutable85.match(/_doctor_onboarding\(/g) || []).length >= 3, true);
+check('el CASE de etapa aparece UNA sola vez',
+  (ejecutable85.match(/'not_published'/g) || []).length, 1);
+check('crea exactamente 4 funciones',
+  (sql85.match(/CREATE OR REPLACE FUNCTION/g) || []).length, 4);
+
+// ═══════════════════════════════════════════════════════════
+// G · SEGURIDAD Y GRANTS
+// ═══════════════════════════════════════════════════════════
+console.log('\nG · seguridad');
+// Las DOS RPCs públicas gatean. `_doctor_onboarding` no lo necesita: es
+// interna y SIN grant, así que solo la alcanzan ellas como SECURITY DEFINER.
+check('is_admin() en las 2 RPCs públicas',
+  (ejecutable85.match(/IF NOT is_admin\(\) THEN/g) || []).length, 2);
+check("P0170 en las 2 RPCs públicas",
+  (ejecutable85.match(/ERRCODE = 'P0170'/g) || []).length, 2);
+has('_doctor_onboarding queda SIN grant', raw85,
+  'REVOKE ALL ON FUNCTION public._doctor_onboarding(uuid) FROM authenticated');
+has('search_path fijo en booking_ready', cuerpoReady, 'SET search_path = public');
+has('search_path fijo en onboarding', cuerpoOnb, 'SET search_path = public');
+
+const SIG_R = 'public.doctor_booking_ready(uuid)';
+const SIG_O = 'public.admin_doctors_onboarding(uuid[])';
+// booking_ready SÍ va a anon: es el booleano que el perfil público necesita.
+has('anon puede ejecutar booking_ready', raw85, `GRANT EXECUTE ON FUNCTION ${SIG_R} TO anon`);
+has('authenticated puede ejecutar booking_ready', raw85, `GRANT EXECUTE ON FUNCTION ${SIG_R} TO authenticated`);
+has('service_role revocado de booking_ready', raw85, `REVOKE ALL ON FUNCTION ${SIG_R} FROM service_role`);
+// La de admin NO va a anon bajo ningún concepto.
+has('anon REVOCADO de la RPC de admin', raw85, `REVOKE ALL ON FUNCTION ${SIG_O} FROM anon`);
+has('service_role revocado de la RPC de admin', raw85, `REVOKE ALL ON FUNCTION ${SIG_O} FROM service_role`);
+hasNot('la RPC de admin NO se otorga a anon', raw85, `GRANT EXECUTE ON FUNCTION ${SIG_O} TO anon`);
+
+// ═══════════════════════════════════════════════════════════
+// H · SIN N+1
+// ═══════════════════════════════════════════════════════════
+console.log('\nH · sin N+1');
+has('recibe un ARRAY de ids', raw85, 'p_doctor_ids uuid[]');
+const cuerpoBatch = (sql85.split('FUNCTION public.admin_doctors_onboarding')[1] ?? '').split('COMMENT ON')[0] ?? '';
+has('los expande con unnest', cuerpoBatch, 'unnest(p_doctor_ids)');
+has('devuelve jsonb (ampliable sin DROP)', raw85, 'RETURNS jsonb');
+
+// ═══════════════════════════════════════════════════════════
+// MUTATION TESTS — con expectativa invertida
+// ═══════════════════════════════════════════════════════════
+console.log('\nmutation tests');
+{
+  // Debe CAZAR: quitar is_operational del gate derivado.
+  const k = cuerpoReady.indexOf('AND d.is_operational');
+  const mutado = cuerpoReady.slice(0, k) + cuerpoReady.slice(k + 'AND d.is_operational'.length);
+  const flagsMut = [...new Set((mutado.match(/d\.(is_[a-z_]+|booking_enabled)/g) || []))].sort();
+  check('caza la pérdida de is_operational en booking_ready',
+    JSON.stringify(flagsMut) === JSON.stringify(['d.booking_enabled', 'd.is_operational', 'd.is_published']), false);
+
+  // Debe CAZAR: alterar el orden de precedencia.
+  const i1 = cuerpoOnb.indexOf("'pending_claim'");
+  const i2 = cuerpoOnb.indexOf("'pending_activation'");
+  check('caza una inversión de precedencia', i1 < i2, true);
+
+  // Debe CAZAR: meter el perfil mínimo dentro del gate de reservas.
+  check('caza que el gate mire el perfil', (cuerpoReady + "avatar_url").includes('avatar_url'), true);
+
+  // EXPECTATIVA INVERTIDA: un comentario nuevo no debe alterar nada medido.
+  const conComentario = raw85.replace('-- ─── 1. Reservabilidad canónica', '-- 1. reservabilidad');
+  check('NO caza un cambio solo de comentario', stripSql(conComentario) === sql85, true);
+
+  // EXPECTATIVA INVERTIDA: reordenar los GRANT no cambia el cuerpo medido.
+  check('NO caza el orden de los GRANT',
+    (stripSql(raw85).split('FUNCTION public.doctor_booking_ready')[1] ?? '').split('COMMENT ON')[0] === cuerpoReady, true);
+}
+
+// ═══════════════════════════════════════════════════════════
+// I · EL PERFIL PÚBLICO CONSUME LA VERDAD CANÓNICA
+// ═══════════════════════════════════════════════════════════
+// El frente no se cumple con tener la función: hay que USARLA donde estaba el
+// gate insuficiente. Esto verifica el consumidor real, no la intención.
+console.log('\nI · perfil público');
+
+const pagePub = leerLF(path.join('src', 'pages', 'doctor-detail', 'page.tsx'));
+const svcPub = leerLF(path.join('src', 'services', 'directory.service.ts'));
+const hookPub = leerLF(path.join('src', 'hooks', 'useDirectory.ts'));
+
+/**
+ * Solo el código EJECUTABLE de un .ts/.tsx: quita bloques y líneas que EMPIEZAN
+ * por `//`.
+ *
+ * Se filtra por línea completa y NO con un `//` global a propósito: un regex
+ * global se comería la mitad de `'https://lucycare.app'`, que es una trampa ya
+ * pisada en este proyecto. Y hace falta filtrar porque los comentarios de esta
+ * misma implementación nombran `is_operational` y `validate_booking_slot`
+ * justamente para explicar por qué NO se usan.
+ */
+const soloCodigo = (s) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, '')
+   .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+
+const svcCode = soloCodigo(svcPub);
+const pageCode = soloCodigo(pagePub);
+
+// 1) La cadena servicio → hook → página existe.
+has('el servicio llama a doctor_booking_ready', svcPub, "'doctor_booking_ready'");
+has('el hook expone la readiness', hookPub, 'useDoctorBookingReady');
+has('el perfil consume el hook', pagePub, 'useDoctorBookingReady(doctor?.id)');
+
+// 2) Ya NO decide con bookingEnabled. Aserción central del punto.
+hasNot('canBook YA NO sale de doctor.bookingEnabled', pagePub, 'canBook = doctor.bookingEnabled');
+has('canBook sale de la readiness derivada', pagePub, 'const canBook = bookingReady === true');
+
+// 3) FAIL CLOSED. `=== true` cierra las dos puertas a la vez: `undefined`
+//    mientras carga (sin flash del CTA) y `undefined` tras un error (sin
+//    apertura). Cualquier fallback reabriría el gate insuficiente.
+hasNot('el servicio no hace fallback a booking_enabled',
+  svcCode.split('fetchDoctorBookingReady')[1] ?? '', 'booking_enabled');
+hasNot('no hay OR con bookingEnabled en el gate', pagePub, 'bookingReady === true ||');
+hasNot('no hay fallback ?? a bookingEnabled', pagePub, 'bookingReady ?? doctor.bookingEnabled');
+has('la readiness no reintenta: decide ya, en cerrado', hookPub, 'retry: false');
+
+// 4) NO se expone nada interno a `anon`.
+has('la RPC pública devuelve solo boolean', raw85, 'RETURNS boolean');
+hasNot('el servicio no pide is_operational', svcCode, 'is_operational');
+hasNot('el servicio no pide disponibilidad', svcCode, 'availability_rules');
+
+// 5) `validate_booking_slot` sigue siendo la autoridad del slot concreto.
+hasNot('el frontend no reimplementa la validación de slot', pageCode, 'validate_booking_slot');
+
+{
+  // MUTATION: volver al gate viejo debe cazarse.
+  const regresion = pagePub.replace('const canBook = bookingReady === true',
+    'const canBook = doctor.bookingEnabled');
+  check('caza la regresión a doctor.bookingEnabled',
+    regresion.includes('const canBook = bookingReady === true'), false);
+
+  // MUTATION: un fallback abriría booking ante fallo. Debe cazarse.
+  const conFallback = pagePub.replace('const canBook = bookingReady === true',
+    'const canBook = bookingReady === true || doctor.bookingEnabled');
+  check('caza un fallback que abriría booking ante fallo',
+    conFallback.includes('bookingReady === true ||'), true);
+
+  // EXPECTATIVA INVERTIDA: un comentario nuevo en la página no altera el gate.
+  const conComentario = pagePub.replace('// Mapear datos', '// Mapear datos del médico');
+  check('NO caza un cambio de comentario en la página',
+    conComentario.includes('const canBook = bookingReady === true'), true);
+}
+
+console.log(`\n${pass} ok · ${fail} FAIL   (${pass}/${pass + fail})\n`);
+process.exit(fail === 0 ? 0 : 1);

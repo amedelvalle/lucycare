@@ -486,3 +486,183 @@ export function doctorsExportFileName(ext: 'csv'): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `lucycare-medicos-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.${ext}`;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Onboarding y reservabilidad (DOCTOR-ONBOARDING-READINESS-P0)
+// ═══════════════════════════════════════════════════════════
+// Todo DERIVADO: no hay estado persistido ni columnas nuevas. La etapa y
+// `bookingReady` son conceptos SEPARADOS — un médico puede estar en
+// `profile_incomplete` y ser reservable igualmente.
+
+export type OnboardingStage =
+  | 'not_published'
+  | 'pending_claim'
+  | 'pending_activation'
+  | 'profile_incomplete'
+  | 'services_missing'
+  | 'availability_missing'
+  | 'booking_disabled'
+  | 'complete'
+
+export type OnboardingActor = 'owner' | 'doctor' | null
+
+export interface OnboardingChecks {
+  published: boolean
+  claimed: boolean
+  activated: boolean
+  profileMin: boolean
+  hasServices: boolean
+  hasAvailability: boolean
+  bookingEnabled: boolean
+}
+
+export interface DoctorOnboarding {
+  doctorId: string
+  stage: OnboardingStage
+  nextAction: string
+  actor: OnboardingActor
+  bookingReady: boolean
+  checks: OnboardingChecks
+  profileMissing: string[]
+}
+
+/**
+ * Onboarding de VARIOS médicos en UNA llamada. El listado admin pasa los ids
+ * de la página visible; la ficha pasa un array de uno. Así no hay N+1.
+ */
+export async function getDoctorsOnboarding(ids: string[]): Promise<Map<string, DoctorOnboarding>> {
+  const out = new Map<string, DoctorOnboarding>()
+  if (ids.length === 0) return out
+
+  const { data, error } = await supabase.rpc('admin_doctors_onboarding', {
+    p_doctor_ids: ids,
+  })
+  if (error) throw new Error(error.message)
+
+  for (const raw of (data ?? []) as Array<Record<string, unknown>>) {
+    const c = (raw.checks ?? {}) as Record<string, unknown>
+    out.set(String(raw.doctor_id), {
+      doctorId: String(raw.doctor_id),
+      stage: raw.stage as OnboardingStage,
+      nextAction: String(raw.next_action ?? 'none'),
+      actor: (raw.actor ?? null) as OnboardingActor,
+      bookingReady: !!raw.booking_ready,
+      checks: {
+        published: !!c.published,
+        claimed: !!c.claimed,
+        activated: !!c.activated,
+        profileMin: !!c.profile_min,
+        hasServices: !!c.has_services,
+        hasAvailability: !!c.has_availability,
+        bookingEnabled: !!c.booking_enabled,
+      },
+      profileMissing: Array.isArray(raw.profile_missing)
+        ? (raw.profile_missing as string[])
+        : [],
+    })
+  }
+  return out
+}
+
+/** Etiquetas para el owner. Los códigos viven en la base; el copy, acá. */
+export const ONBOARDING_STAGE_LABEL: Record<OnboardingStage, string> = {
+  not_published: 'Sin publicar',
+  pending_claim: 'Pendiente de reclamar',
+  pending_activation: 'Pendiente de habilitación',
+  profile_incomplete: 'Perfil incompleto',
+  services_missing: 'Sin servicios',
+  availability_missing: 'Sin horarios',
+  booking_disabled: 'Agenda desactivada',
+  complete: 'Completo',
+}
+
+export const ONBOARDING_NEXT_ACTION_LABEL: Record<string, string> = {
+  owner_publish: 'Publicar el perfil',
+  doctor_claim: 'El médico debe reclamar su perfil',
+  owner_activate: 'Habilitar el panel del médico',
+  doctor_complete_profile: 'El médico debe completar su perfil',
+  doctor_add_services: 'El médico debe cargar sus servicios',
+  doctor_add_availability: 'El médico debe definir sus horarios',
+  enable_booking: 'Activar la agenda en línea',
+  none: '',
+}
+
+export const PROFILE_FIELD_LABEL: Record<string, string> = {
+  foto: 'Fotografía',
+  especialidad: 'Especialidad',
+  descripcion: 'Descripción',
+  clinica: 'Clínica',
+  ubicacion: 'Ubicación',
+}
+
+export interface DoctorsByStagePage {
+  total: number
+  rows: Array<AdminDoctorRow & { onboarding: DoctorOnboarding }>
+}
+
+/**
+ * Listado filtrado por etapa sobre el UNIVERSO completo, no la página visible.
+ * La RPC reutiliza `admin_list_doctors` para el predicado, así que la búsqueda
+ * y los tres filtros se comportan igual que en el listado normal.
+ * Una sola llamada por página: trae filas y onboarding juntos.
+ */
+export async function getDoctorsByOnboardingStage(params: {
+  stage: OnboardingStage
+  search?: string
+  published?: boolean | null
+  operational?: boolean | null
+  lucyStatus?: LucyStatus | null
+  limit: number
+  offset: number
+}): Promise<DoctorsByStagePage> {
+  const { data, error } = await supabase.rpc('admin_list_doctors_by_onboarding', {
+    p_stage: params.stage,
+    p_search: params.search ?? undefined,
+    p_published: params.published ?? undefined,
+    p_operational: params.operational ?? undefined,
+    p_lucy_status: params.lucyStatus ?? undefined,
+    p_limit: params.limit,
+    p_offset: params.offset,
+  })
+  if (error) throw new Error(error.message)
+
+  const body = (data ?? {}) as { total?: number; rows?: unknown[] }
+  const rows = (body.rows ?? []).map((r) => {
+    const o = r as Record<string, unknown>
+    const onb = (o.onboarding ?? {}) as Record<string, unknown>
+    const c = (onb.checks ?? {}) as Record<string, unknown>
+    return {
+      id: String(o.id),
+      fullName: (o.full_name as string) ?? null,
+      phone: (o.phone as string) ?? null,
+      specialty: (o.specialty as string) ?? null,
+      clinicName: (o.clinic_name as string) ?? null,
+      isVerified: !!o.is_verified,
+      isPublished: !!o.is_published,
+      bookingEnabled: !!o.booking_enabled,
+      isOperational: !!o.is_operational,
+      lucyStatus: o.lucy_status as LucyStatus,
+      createdAt: String(o.created_at),
+      onboarding: {
+        doctorId: String(onb.doctor_id ?? o.id),
+        stage: onb.stage as OnboardingStage,
+        nextAction: String(onb.next_action ?? 'none'),
+        actor: (onb.actor ?? null) as OnboardingActor,
+        bookingReady: !!onb.booking_ready,
+        checks: {
+          published: !!c.published,
+          claimed: !!c.claimed,
+          activated: !!c.activated,
+          profileMin: !!c.profile_min,
+          hasServices: !!c.has_services,
+          hasAvailability: !!c.has_availability,
+          bookingEnabled: !!c.booking_enabled,
+        },
+        profileMissing: Array.isArray(onb.profile_missing)
+          ? (onb.profile_missing as string[])
+          : [],
+      },
+    } as AdminDoctorRow & { onboarding: DoctorOnboarding }
+  })
+  return { total: body.total ?? 0, rows }
+}
