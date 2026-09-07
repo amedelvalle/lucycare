@@ -445,7 +445,16 @@ export async function fetchDoctorBookingReady(doctorId: string): Promise<boolean
   // de usar `any`: los argumentos siguen comprobados y el error también.
   // El resultado se declara `unknown` a propósito y se compara con `=== true`,
   // de modo que cualquier otra cosa —incluido `null`— cae en fail closed.
-  const rpc = supabase.rpc as unknown as (
+  //
+  // ⚠️ `.bind(supabase)` NO es decorativo. `supabase.rpc` es un MÉTODO: extraerlo
+  // a una variable y llamarlo suelto deja `this` en `undefined` y revienta con
+  // `Cannot read properties of undefined (reading 'rest')` ANTES de emitir la
+  // petición. Eso es justo lo que ocurrió en producción tras s7_85: la RPC nunca
+  // salía, el hook caía en fail closed y NINGÚN perfil ofrecía reserva. El fallo
+  // es de runtime, así que ni los tipos ni el build lo ven: lo cubre
+  // `scripts/check-directory-booking-ready.mjs`, que verifica que la petición se
+  // emite de verdad.
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: 'doctor_booking_ready',
     args: { p_doctor_id: string },
   ) => Promise<{ data: unknown; error: { message: string } | null }>
