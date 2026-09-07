@@ -336,8 +336,15 @@ ningún texto que diga 3 meses.** Ambas versiones deben decir lo mismo.
 
 > ⚠️ ✅ **Verificado: `medicos.lucycare.app` NO es este repositorio.** No existen
 > rutas `/medicos` ni `/medicos/empezar` en `src/router/config.tsx` — solo
-> `/admin/medicos`. Es una **propiedad separada**. Este repo solo la referencia
-> como URL externa en `send-doctor-welcome-email/render.ts`.
+> `/admin/medicos` y `/admin/medicos/:id`. Es una **propiedad separada**.
+>
+> ⚠️ **Pero hay un acoplamiento duro que conviene conocer.** El repo referencia
+> esa URL en dos sitios: `send-doctor-welcome-email/render.ts` la emite como
+> `GUIDE_URL`, y **`scripts/check-s7_83.mjs` la ASERTA** («guía para empezar»).
+> Si la ruta `/medicos/empezar` cambia o desaparece en la otra propiedad, el
+> correo de bienvenida enviaría a un enlace muerto **y el check fallaría**. Al
+> rediseñar `/medicos/empezar`, **conservar esa ruta o actualizar los dos
+> sitios a la vez.**
 
 **Decisión de producto:** **no** crear una segunda ruta de «primeros pasos».
 `/medicos/empezar` evoluciona como **centro de onboarding**.
