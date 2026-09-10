@@ -7,6 +7,15 @@
 -- previa y no leyo ni escribio ninguna fila del modelo vigente. Por eso este
 -- rollback es un DROP limpio y NO tiene que restaurar nada.
 --
+-- ⚠️ ATOMICO. Los tres DROP y su verificacion van dentro de un unico
+-- `BEGIN; ... COMMIT;`, y el COMMIT esta DESPUES de la verificacion: si algo
+-- no cuadra —por ejemplo, si el catalogo legacy hubiera quedado tocado—, la
+-- excepcion aborta la transaccion y NO se borra nada. Nunca se llega a un
+-- estado en el que se hayan soltado unas tablas y otras no.
+--
+-- ℹ️ Las secuencias IDENTITY caen con sus tablas: `DROP TABLE` se lleva la
+-- secuencia que posee la columna. No hay que soltarlas por separado.
+--
 -- ⚠️ COMPROBACION PREVIA — si devuelve algo distinto de 0, hay catalogo
 --    territorial cargado (Fundacion 2 o posterior) y ESTE ROLLBACK LO BORRA.
 --    Detenerse y consultar al owner:
@@ -17,6 +26,8 @@
 --    Y si `clinics` ya tiene `country_id` o `territory_unit_id`, el DROP
 --    fallara por dependencia: primero hay que revertir esa fundacion.
 -- ═══════════════════════════════════════════════════════════════════════
+
+BEGIN;
 
 -- Orden inverso al de creacion: las hijas primero.
 DROP TABLE IF EXISTS public.administrative_units;
@@ -57,3 +68,6 @@ BEGIN
 
   RAISE NOTICE 'rollback s7_87: OK — base de vuelta al estado previo a la migracion 108';
 END $ROLLBACK$;
+
+-- Solo ahora, con la verificacion pasada.
+COMMIT;

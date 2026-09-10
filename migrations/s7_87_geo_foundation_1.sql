@@ -38,7 +38,9 @@
 -- un objeto existente, ninguna FK previa se toca, ninguna fila existente se lee
 -- ni se escribe, y ningun objeto actual referencia a los nuevos. Si el diseno
 -- resultara equivocado, no hay nada que se rompa: hay tres tablas sin usar.
--- Como todo es `CREATE`, un fallo a mitad no deja residuo.
+--
+-- Que un fallo a mitad no deje residuo NO se sigue de que todo sea `CREATE`:
+-- se sigue de la TRANSACCION EXPLICITA de abajo, que es la unica garantia.
 --
 -- ── IDENTIDAD: INTERNA Y OPACA ──
 -- Las PK son `IDENTITY`, sin ningun significado externo. Los codigos oficiales
@@ -62,16 +64,18 @@
 -- el REVOKE explicito, estas tablas podrian nacer legibles.
 --
 -- ── COMO APLICARLA ──
--- Tres pasos, seleccionando cada bloque en el SQL Editor:
---   PASO 1 = seccion 0        · guardas PRE   · solo lectura, diagnostico
---   PASO 2 = secciones 1 a 4  · LA MIGRACION  · BEGIN ... COMMIT, atomica
---   PASO 3 = seccion 5        · guardas POST  · solo lectura, diagnostico
+-- DOS pasos, seleccionando cada bloque en el SQL Editor:
+--   PASO 1 = seccion 0        · guardas PRE  · solo lectura, diagnostico previo
+--   PASO 2 = secciones 1 a 5  · LA MIGRACION · BEGIN -> DDL/semilla/permisos
+--                                              -> POST -> COMMIT
 --
--- Si el PASO 1 lanza excepcion, NO continuar. Si el PASO 3 fallara, la
--- migracion ya esta comiteada: revertir con `docs/rollbacks/s7_87_rollback.sql`.
--- (Alternativa disponible si se prefiere: mover el bloque POST DENTRO del
--- BEGIN/COMMIT, con lo que un fallo de verificacion revierte solo. Se dejo
--- fuera para conservarlo como paso de diagnostico independiente.)
+-- Si el PASO 1 lanza excepcion, NO continuar.
+--
+-- El POST corre DENTRO de la transaccion, antes del COMMIT: si una guarda de
+-- verificacion falla, la excepcion aborta la transaccion y Fundacion 1 se
+-- revierte SOLA. Nunca queda un estado comiteado a medio verificar, y el
+-- rollback manual pasa a ser para deshacer una aplicacion CORRECTA, no para
+-- limpiar una fallida.
 
 
 -- ─── 0. Guardas PRE ─────────────────────────────────────────
@@ -296,10 +300,31 @@ REVOKE ALL ON TABLE public.countries            FROM PUBLIC, anon, authenticated
 REVOKE ALL ON TABLE public.country_levels       FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON TABLE public.administrative_units FROM PUBLIC, anon, authenticated, service_role;
 
-COMMIT;
--- ═══════════════════════════════════════════════════════════
--- FIN DEL PASO 2. Todo lo anterior se aplico o no se aplico nada.
--- ═══════════════════════════════════════════════════════════
+-- Las columnas IDENTITY crean una SECUENCIA cada una, y una secuencia es un
+-- objeto con privilegios propios: revocar la tabla no la alcanza. Los DEFAULT
+-- PRIVILEGES del proyecto pueden otorgar sobre SEQUENCES igual que sobre
+-- TABLES, asi que sin esto las dos secuencias podrian nacer accesibles.
+--
+-- Se resuelve el nombre con `pg_get_serial_sequence` en vez de escribirlo a
+-- mano: es la fuente autoritativa del vinculo columna→secuencia y no depende
+-- de la convencion de nombres.
+--
+-- ⚠️ NO se tocan los `ALTER DEFAULT PRIVILEGES` globales del proyecto: eso
+-- afectaria a objetos futuros ajenos a este frente. Se revoca objeto por objeto.
+DO $SEQ$
+DECLARE
+  v_rel text;
+  v_seq text;
+BEGIN
+  FOREACH v_rel IN ARRAY ARRAY['countries', 'administrative_units'] LOOP
+    v_seq := pg_get_serial_sequence('public.' || v_rel, 'id');
+    IF v_seq IS NULL THEN
+      RAISE EXCEPTION 's7_87: no se resolvio la secuencia IDENTITY de %', v_rel;
+    END IF;
+    EXECUTE format(
+      'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated, service_role', v_seq);
+  END LOOP;
+END $SEQ$;
 
 
 -- ─── 5. Guardas POST ────────────────────────────────────────
@@ -450,6 +475,35 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Las secuencias IDENTITY son objetos aparte: revocar la tabla no las cubre.
+  DECLARE
+    v_seq  text;
+    v_role text;
+  BEGIN
+    FOREACH v_txt IN ARRAY ARRAY['countries', 'administrative_units'] LOOP
+      v_seq := pg_get_serial_sequence('public.' || v_txt, 'id');
+      IF v_seq IS NULL THEN
+        RAISE EXCEPTION 's7_87 POST: no se resolvio la secuencia IDENTITY de %', v_txt;
+      END IF;
+
+      FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+        IF has_sequence_privilege(v_role, v_seq, 'USAGE')
+           OR has_sequence_privilege(v_role, v_seq, 'SELECT')
+           OR has_sequence_privilege(v_role, v_seq, 'UPDATE') THEN
+          RAISE EXCEPTION 's7_87 POST: % conserva privilegios sobre la secuencia %', v_role, v_seq;
+        END IF;
+      END LOOP;
+
+      -- PUBLIC no es un rol consultable con has_sequence_privilege: se busca la
+      -- entrada de ACL sin concesionario, que es como se representa.
+      IF EXISTS (SELECT 1
+                   FROM pg_class c, unnest(coalesce(c.relacl, '{}'::aclitem[])) a
+                  WHERE c.oid = v_seq::regclass AND a::text LIKE '=%') THEN
+        RAISE EXCEPTION 's7_87 POST: PUBLIC conserva privilegios sobre la secuencia %', v_seq;
+      END IF;
+    END LOOP;
+  END;
+
   -- ── 5.6 Cero impacto sobre lo que ya existia ──
   SELECT count(*) INTO v_n FROM public.departments;
   IF v_n <> 14 THEN
@@ -485,3 +539,12 @@ BEGIN
 
   RAISE NOTICE 's7_87: guardas POST OK — Fundacion 1 aplicada, cero impacto sobre el modelo vigente';
 END $POST$;
+
+
+COMMIT;
+-- ═══════════════════════════════════════════════════════════
+-- FIN DEL PASO 2.
+-- El POST corre DENTRO de la transaccion: si cualquiera de sus guardas lanza,
+-- la excepcion aborta la transaccion entera y Fundacion 1 se revierte SOLA.
+-- No queda un estado comiteado a medio verificar.
+-- ═══════════════════════════════════════════════════════════

@@ -80,17 +80,25 @@ check('el DDL no arrastra prosa', ddl.includes('POR QUE ESTO NO PUEDE ROMPER'), 
 // CLIENTE: si alguien pegara las sentencias de a una, cada una haría autocommit
 // y un fallo a mitad dejaría tablas creadas sin semilla.
 console.log('\n0 · atomicidad del paso que modifica la base');
-check('el DDL abre transacción', /^BEGIN;/m.test(ddl), true);
-check('el DDL la cierra', /^COMMIT;/m.test(ddl), true);
-check('exactamente un BEGIN', (ddl.match(/^BEGIN;/gm) || []).length, 1);
-check('exactamente un COMMIT', (ddl.match(/^COMMIT;/gm) || []).length, 1);
+const sql = sinComentarios(raw);
+const pos = (needle) => sql.indexOf(needle);
+
+check('exactamente un BEGIN', (sql.match(/^BEGIN;/gm) || []).length, 1);
+check('exactamente un COMMIT', (sql.match(/^COMMIT;/gm) || []).length, 1);
+check('el PRE queda FUERA de la transacción (diagnóstico previo)',
+  pos('END $PRE$;') < pos('BEGIN;'), true);
 check('el BEGIN precede a todo el DDL',
-  ddl.indexOf('BEGIN;') < ddl.indexOf('CREATE TABLE'), true);
-check('el COMMIT va después del último REVOKE',
-  ddl.lastIndexOf('COMMIT;') > ddl.lastIndexOf('REVOKE'), true);
+  pos('BEGIN;') < pos('CREATE TABLE'), true);
+// Lo que pediste: si POST falla, la transacción aborta y todo se revierte sola.
+check('el POST corre DENTRO de la transacción',
+  pos('BEGIN;') < pos('DO $POST$') && pos('DO $POST$') < pos('COMMIT;'), true);
+check('el COMMIT va DESPUÉS de que el POST termine',
+  pos('END $POST$;') < pos('COMMIT;'), true);
+check('el COMMIT es lo último del paso modificador',
+  sql.slice(pos('COMMIT;') + 'COMMIT;'.length).trim(), '');
 // Ninguna sentencia de las que PostgreSQL prohíbe dentro de una transacción.
 check('no hay sentencias incompatibles con transacción',
-  /CREATE\s+INDEX\s+CONCURRENTLY|\bVACUUM\b|CREATE\s+DATABASE|ALTER\s+SYSTEM/i.test(ddl), false);
+  /CREATE\s+INDEX\s+CONCURRENTLY|\bVACUUM\b|CREATE\s+DATABASE|ALTER\s+SYSTEM/i.test(sql), false);
 
 // ═══════════════════════════════════════════════════════════
 // 1 · LAS TRES TABLAS Y SU FORMA
@@ -178,6 +186,23 @@ has('el REVOKE alcanza a service_role', ddl,
   'FROM PUBLIC, anon, authenticated, service_role');
 has('el POST exige 0 policies', raw, 'policies, esperaba 0 (nadie la consume aun)');
 has('el POST exige 0 privilegios de cliente', raw, 'privilegios de cliente, esperaba 0');
+
+// Las columnas IDENTITY crean una secuencia cada una, y una secuencia tiene
+// privilegios PROPIOS: revocar la tabla no la alcanza.
+console.log('\n4.b · las secuencias IDENTITY también');
+has('revoca sobre las secuencias', ddl,
+  'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated, service_role');
+has('resuelve el nombre con pg_get_serial_sequence', ddl, "pg_get_serial_sequence('public.' || v_rel, 'id')");
+has('cubre las dos secuencias', ddl, "ARRAY['countries', 'administrative_units']");
+check('NO toca los DEFAULT PRIVILEGES globales del proyecto',
+  /ALTER\s+DEFAULT\s+PRIVILEGES/i.test(ddl), false);
+has('el POST comprueba privilegios de secuencia', raw, 'conserva privilegios sobre la secuencia');
+has('el POST cubre PUBLIC en las secuencias', raw,
+  'PUBLIC conserva privilegios sobre la secuencia');
+has('el POST verifica los tres roles de cliente', raw,
+  "ARRAY['anon', 'authenticated', 'service_role']");
+has('el POST aborta si no resuelve la secuencia', raw,
+  'no se resolvio la secuencia IDENTITY de');
 
 // ═══════════════════════════════════════════════════════════
 // 5 · ADITIVIDAD — la aserción decisiva, con mutación invertida
@@ -323,6 +348,16 @@ check('borra EXACTAMENTE 3 tablas', (sinComentarios(rawRb).match(/DROP TABLE/g) 
 has('advierte si ya hay catálogo cargado', rawRb, 'ESTE ROLLBACK LO BORRA');
 has('se verifica a sí mismo', rawRb, 'DO $ROLLBACK$');
 has('exige conservar el catálogo legacy', rawRb, 'debian quedar las 7 FK territoriales');
+// Atómico, y el COMMIT sólo después de que la verificación pase.
+const sqlRb = sinComentarios(rawRb);
+check('el rollback abre transacción', (sqlRb.match(/^BEGIN;/gm) || []).length, 1);
+check('el rollback la cierra una sola vez', (sqlRb.match(/^COMMIT;/gm) || []).length, 1);
+check('el BEGIN precede al primer DROP',
+  sqlRb.indexOf('BEGIN;') < sqlRb.indexOf('DROP TABLE'), true);
+check('el COMMIT va DESPUÉS de la verificación',
+  sqlRb.indexOf('END $ROLLBACK$;') < sqlRb.indexOf('COMMIT;'), true);
+check('nada después del COMMIT',
+  sqlRb.slice(sqlRb.indexOf('COMMIT;') + 'COMMIT;'.length).trim(), '');
 check('el rollback NO toca objetos legacy',
   /DROP[^;]*\b(departments|municipalities|clinics|doctors)\b/i.test(sinComentarios(rawRb)), false);
 
