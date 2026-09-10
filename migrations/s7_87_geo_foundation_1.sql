@@ -1,14 +1,27 @@
 -- ============================================================
--- s7_88 · MULTICOUNTRY-GEO-P0 · FUNDACION 1
+-- s7_87 · MULTICOUNTRY-GEO-P0 · FUNDACION 1
 -- ============================================================
 --
 -- Tres tablas nuevas y cuatro filas de semilla. Migracion 108.
 --
--- ⚠️ NUMERACION. El numero s7_87 quedo ocupado por un PROTOTIPO DESCARTADO que
--- vive en la rama `claude/s7_87-geo` (commit 30649f7) y que NUNCA se aplico ni
--- se mergeara. Reusar ese numero dejaria dos archivos distintos con el mismo
--- nombre en la historia del repositorio. Esta es s7_88 y es la migracion 108:
--- el hueco esta en los nombres, no en la secuencia aplicada.
+-- ℹ️ NUMERACION. Existe un PROTOTIPO DESCARTADO con este mismo numero en la
+-- rama local `claude/s7_87-geo` (commit 30649f7). Esa rama no esta mergeada ni
+-- aplicada, asi que NO consume numeracion de la historia canonica: la siguiente
+-- migracion real despues de s7_86 es esta.
+--
+-- ── ATOMICIDAD ──
+-- Las secciones 1 a 4 —el PASO 2, lo unico que MODIFICA la base— van envueltas
+-- en un `BEGIN; ... COMMIT;` EXPLICITO. En PostgreSQL el DDL es transaccional y
+-- ninguna sentencia de aqui es de las que no admiten transaccion (no hay
+-- `CREATE INDEX CONCURRENTLY` ni equivalentes), de modo que el bloque entero se
+-- aplica o no se aplica ninguna parte.
+--
+-- No se deja al comportamiento implicito del cliente. El SQL Editor envuelve
+-- una seleccion multi-sentencia en una transaccion implicita, pero eso es una
+-- propiedad del CLIENTE, no del script: si alguien pegara las sentencias de a
+-- una, cada una haria autocommit y un fallo a mitad dejaria tablas creadas sin
+-- semilla. El `BEGIN`/`COMMIT` explicito hace que la garantia viaje CON el
+-- archivo. «Todo es CREATE» describe el contenido; no garantiza nada.
 --
 -- ── ALCANCE ──
 -- Crea `countries`, `country_levels` y `administrative_units`, y siembra
@@ -50,10 +63,15 @@
 --
 -- ── COMO APLICARLA ──
 -- Tres pasos, seleccionando cada bloque en el SQL Editor:
---   PASO 1 = seccion 0 (guardas PRE)
---   PASO 2 = secciones 1 a 4 (la migracion)
---   PASO 3 = seccion 5 (guardas POST)
--- Si el PASO 1 lanza excepcion, NO continuar.
+--   PASO 1 = seccion 0        · guardas PRE   · solo lectura, diagnostico
+--   PASO 2 = secciones 1 a 4  · LA MIGRACION  · BEGIN ... COMMIT, atomica
+--   PASO 3 = seccion 5        · guardas POST  · solo lectura, diagnostico
+--
+-- Si el PASO 1 lanza excepcion, NO continuar. Si el PASO 3 fallara, la
+-- migracion ya esta comiteada: revertir con `docs/rollbacks/s7_87_rollback.sql`.
+-- (Alternativa disponible si se prefiere: mover el bloque POST DENTRO del
+-- BEGIN/COMMIT, con lo que un fallo de verificacion revierte solo. Se dejo
+-- fuera para conservarlo como paso de diagnostico independiente.)
 
 
 -- ─── 0. Guardas PRE ─────────────────────────────────────────
@@ -68,39 +86,51 @@ BEGIN
    WHERE n.nspname = 'public'
      AND c.relname IN ('countries', 'country_levels', 'administrative_units');
   IF v_n <> 0 THEN
-    RAISE EXCEPTION 's7_88 PRE: % de las tres tablas ya existen — no reaplicar', v_n;
+    RAISE EXCEPTION 's7_87 PRE: % de las tres tablas ya existen — no reaplicar', v_n;
   END IF;
 
   -- El modelo legacy debe estar donde lo dejo la medicion read-only. Esta
   -- migracion no lo toca; si cambio, el diagnostico ya no describe esta base.
   SELECT count(*) INTO v_n FROM public.departments;
   IF v_n <> 14 THEN
-    RAISE EXCEPTION 's7_88 PRE: esperaba 14 departamentos, hay %', v_n;
+    RAISE EXCEPTION 's7_87 PRE: esperaba 14 departamentos, hay %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM public.municipalities;
   IF v_n <> 262 THEN
-    RAISE EXCEPTION 's7_88 PRE: esperaba 262 municipios, hay %', v_n;
+    RAISE EXCEPTION 's7_87 PRE: esperaba 262 municipios, hay %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n
     FROM pg_constraint con JOIN pg_class tgt ON tgt.oid = con.confrelid
    WHERE con.contype = 'f' AND tgt.relname IN ('departments', 'municipalities');
   IF v_n <> 7 THEN
-    RAISE EXCEPTION 's7_88 PRE: esperaba 7 FK territoriales, hay %', v_n;
+    RAISE EXCEPTION 's7_87 PRE: esperaba 7 FK territoriales, hay %', v_n;
   END IF;
 
-  RAISE NOTICE 's7_88: guardas PRE OK';
+  RAISE NOTICE 's7_87: guardas PRE OK';
 END $PRE$;
+
+
+-- ═══════════════════════════════════════════════════════════
+-- PASO 2 · LA MIGRACION — secciones 1 a 4, en UNA transaccion
+-- ═══════════════════════════════════════════════════════════
+BEGIN;
 
 
 -- ─── 1. countries ───────────────────────────────────────────
 -- `smallint` y no `bigint`: los paises son unas decenas para siempre, y
 -- `clinics.country_id` sera la columna mas caliente del modelo territorial.
 -- Dos bytes por fila valen la pena ahi.
+--
+-- ⚠️ `START WITH 100` NO es decorativo. La PK interna JAMAS se hardcodea: para
+-- resolver El Salvador se consulta `iso_alpha2 = 'SV'`. Arrancando la secuencia
+-- lejos de 1, cualquier codigo que asuma `country_id = 1` **no funciona ni por
+-- casualidad**: falla de inmediato en vez de andar bien hasta el dia en que el
+-- orden de siembra cambie. Convierte una convencion en un hecho.
 
 CREATE TABLE public.countries (
-  id                smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id                smallint GENERATED ALWAYS AS IDENTITY (START WITH 100) PRIMARY KEY,
   iso_alpha2        text     NOT NULL,
   name              text     NOT NULL,
   directory_enabled boolean  NOT NULL DEFAULT false,
@@ -111,7 +141,10 @@ CREATE TABLE public.countries (
 );
 
 COMMENT ON COLUMN public.countries.id IS
-  'Identidad INTERNA y opaca. No es el codigo ISO y no debe usarse como tal.';
+  'Identidad INTERNA y opaca. No es el codigo ISO y no debe usarse como tal. '
+  'NUNCA se hardcodea: para resolver un pais se consulta por iso_alpha2. La '
+  'secuencia arranca en 100 justamente para que nadie pueda depender de que '
+  'El Salvador sea el 1.';
 
 COMMENT ON COLUMN public.countries.iso_alpha2 IS
   'ISO 3166-1 alpha-2. Metadato EXTERNO: debe casar verbatim con la cabecera '
@@ -165,7 +198,11 @@ CREATE TABLE public.administrative_units (
   legacy_id        text,
   official_code    text,
   official_source  text,
-  official_version date,
+  -- Fecha de la fuente, no «version». Si algun catalogo oficial trae una
+  -- version TEXTUAL de verdad, se agregara `official_version text` aparte: son
+  -- dos cosas distintas y mezclarlas obliga a inventar una fecha o a perder la
+  -- version.
+  official_source_date date,
   is_active        boolean  NOT NULL DEFAULT true,
 
   -- Toda unidad tiene etiqueta, por construccion. Sin esta FK, un nivel
@@ -201,12 +238,10 @@ CREATE UNIQUE INDEX au_country_legacy_key
   ON public.administrative_units (country_id, legacy_id)
   WHERE legacy_id IS NOT NULL;
 
--- ⚠️ AÑADIDO SOBRE EL ALCANCE ENUMERADO — el mas prescindible de los dos.
--- Hoy no protege nada porque todos los codigos nacen NULL. Cuesta cero y
--- previene una clase de error el dia que se carguen.
-CREATE UNIQUE INDEX au_country_level_official_code_key
-  ON public.administrative_units (country_id, level, official_code)
-  WHERE official_code IS NOT NULL;
+-- ℹ️ NO hay unique sobre `official_code`, a proposito. No se ha cargado ningun
+-- codigo todavia y no esta establecido que todo sistema oficial futuro respete
+-- la misma regla de unicidad. Se evaluara en la Fundacion 2, contra datos
+-- reales. Poner la constraint antes seria decidir sin evidencia.
 
 -- Indices minimos de consulta. Los dos que sirven al selector territorial:
 -- primer nivel de un pais, e hijos de una unidad. Nada mas: no hay ninguna
@@ -260,6 +295,11 @@ REVOKE ALL ON TABLE public.countries            FROM PUBLIC, anon, authenticated
 REVOKE ALL ON TABLE public.country_levels       FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON TABLE public.administrative_units FROM PUBLIC, anon, authenticated, service_role;
 
+COMMIT;
+-- ═══════════════════════════════════════════════════════════
+-- FIN DEL PASO 2. Todo lo anterior se aplico o no se aplico nada.
+-- ═══════════════════════════════════════════════════════════
+
 
 -- ─── 5. Guardas POST ────────────────────────────────────────
 DO $POST$
@@ -273,50 +313,50 @@ BEGIN
    WHERE n.nspname = 'public'
      AND c.relname IN ('countries', 'country_levels', 'administrative_units');
   IF v_n <> 3 THEN
-    RAISE EXCEPTION 's7_88 POST: esperaba 3 tablas nuevas, hay %', v_n;
+    RAISE EXCEPTION 's7_87 POST: esperaba 3 tablas nuevas, hay %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'countries';
   IF v_n <> 5 THEN
-    RAISE EXCEPTION 's7_88 POST: countries debe tener 5 columnas, tiene % — alcance excedido', v_n;
+    RAISE EXCEPTION 's7_87 POST: countries debe tener 5 columnas, tiene % — alcance excedido', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'country_levels';
   IF v_n <> 4 THEN
-    RAISE EXCEPTION 's7_88 POST: country_levels debe tener 4 columnas, tiene %', v_n;
+    RAISE EXCEPTION 's7_87 POST: country_levels debe tener 4 columnas, tiene %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'administrative_units';
   IF v_n <> 10 THEN
-    RAISE EXCEPTION 's7_88 POST: administrative_units debe tener 10 columnas, tiene %', v_n;
+    RAISE EXCEPTION 's7_87 POST: administrative_units debe tener 10 columnas, tiene %', v_n;
   END IF;
 
   -- ── 5.2 Identidad interna, no codigo externo ──
   SELECT is_identity INTO v_txt FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'countries' AND column_name = 'id';
   IF v_txt <> 'YES' THEN
-    RAISE EXCEPTION 's7_88 POST: countries.id no es IDENTITY';
+    RAISE EXCEPTION 's7_87 POST: countries.id no es IDENTITY';
   END IF;
 
   SELECT is_identity INTO v_txt FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'administrative_units' AND column_name = 'id';
   IF v_txt <> 'YES' THEN
-    RAISE EXCEPTION 's7_88 POST: administrative_units.id no es IDENTITY';
+    RAISE EXCEPTION 's7_87 POST: administrative_units.id no es IDENTITY';
   END IF;
 
   SELECT data_type INTO v_txt FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'countries' AND column_name = 'id';
   IF v_txt <> 'smallint' THEN
-    RAISE EXCEPTION 's7_88 POST: countries.id deberia ser smallint, es %', v_txt;
+    RAISE EXCEPTION 's7_87 POST: countries.id deberia ser smallint, es %', v_txt;
   END IF;
 
   SELECT data_type INTO v_txt FROM information_schema.columns
    WHERE table_schema = 'public' AND table_name = 'administrative_units' AND column_name = 'id';
   IF v_txt <> 'bigint' THEN
-    RAISE EXCEPTION 's7_88 POST: administrative_units.id deberia ser bigint, es %', v_txt;
+    RAISE EXCEPTION 's7_87 POST: administrative_units.id deberia ser bigint, es %', v_txt;
   END IF;
 
   -- ── 5.3 Las constraints que sostienen el modelo ──
@@ -325,7 +365,7 @@ BEGIN
                                    'au_parent_country_fkey', 'au_root_iff_level_1'])
   LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = v_txt) THEN
-      RAISE EXCEPTION 's7_88 POST: falta la constraint %', v_txt;
+      RAISE EXCEPTION 's7_87 POST: falta la constraint %', v_txt;
     END IF;
   END LOOP;
 
@@ -333,33 +373,50 @@ BEGIN
   -- garantizaria que padre e hijo comparten pais.
   SELECT cardinality(conkey) INTO v_n FROM pg_constraint WHERE conname = 'au_parent_country_fkey';
   IF coalesce(v_n, 0) <> 2 THEN
-    RAISE EXCEPTION 's7_88 POST: au_parent_country_fkey no es compuesta de 2 columnas (%)', coalesce(v_n, 0);
+    RAISE EXCEPTION 's7_87 POST: au_parent_country_fkey no es compuesta de 2 columnas (%)', coalesce(v_n, 0);
   END IF;
 
-  FOR v_txt IN SELECT unnest(ARRAY['au_country_legacy_key', 'au_country_level_official_code_key',
+  FOR v_txt IN SELECT unnest(ARRAY['au_country_legacy_key',
                                    'au_country_level_active_idx', 'au_parent_active_idx'])
   LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_indexes
                     WHERE schemaname = 'public' AND indexname = v_txt) THEN
-      RAISE EXCEPTION 's7_88 POST: falta el indice %', v_txt;
+      RAISE EXCEPTION 's7_87 POST: falta el indice %', v_txt;
     END IF;
   END LOOP;
 
   -- ── 5.4 La semilla, exacta ──
   SELECT count(*) INTO v_n FROM public.countries;
   IF v_n <> 1 THEN
-    RAISE EXCEPTION 's7_88 POST: countries debe tener 1 fila, tiene %', v_n;
+    RAISE EXCEPTION 's7_87 POST: countries debe tener 1 fila, tiene %', v_n;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.countries
                   WHERE iso_alpha2 = 'SV' AND name = 'El Salvador'
                     AND directory_enabled AND booking_enabled) THEN
-    RAISE EXCEPTION 's7_88 POST: la semilla de El Salvador no quedo como se esperaba';
+    RAISE EXCEPTION 's7_87 POST: la semilla de El Salvador no quedo como se esperaba';
+  END IF;
+
+  -- La PK interna NO se hardcodea. Esta guarda hace ejecutable esa regla: si SV
+  -- saliera con id = 1, cualquier codigo que asumiera ese valor «funcionaria»
+  -- por casualidad y el fallo aparecería mucho despues, en otro pais.
+  SELECT id INTO v_n FROM public.countries WHERE iso_alpha2 = 'SV';
+  IF v_n = 1 THEN
+    RAISE EXCEPTION 's7_87 POST: SV obtuvo countries.id = 1 — la secuencia debe arrancar en 100 para que nadie pueda depender de ese valor';
+  END IF;
+
+  -- Y la semilla de niveles tiene que haber resuelto el pais POR iso_alpha2,
+  -- no por un literal: si lo hubiera hecho por id, no casaria con el generado.
+  SELECT count(*) INTO v_n
+    FROM public.country_levels cl
+   WHERE cl.country_id = (SELECT id FROM public.countries WHERE iso_alpha2 = 'SV');
+  IF v_n <> 3 THEN
+    RAISE EXCEPTION 's7_87 POST: los niveles no quedaron colgados del id real de SV (% de 3)', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM public.country_levels;
   IF v_n <> 3 THEN
-    RAISE EXCEPTION 's7_88 POST: country_levels debe tener 3 filas, tiene %', v_n;
+    RAISE EXCEPTION 's7_87 POST: country_levels debe tener 3 filas, tiene %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n
@@ -367,13 +424,13 @@ BEGIN
    WHERE c.iso_alpha2 = 'SV'
      AND (cl.level, cl.label_singular) IN ((1, 'Departamento'), (2, 'Municipio'), (3, 'Distrito'));
   IF v_n <> 3 THEN
-    RAISE EXCEPTION 's7_88 POST: los tres niveles de SV no son Departamento/Municipio/Distrito';
+    RAISE EXCEPTION 's7_87 POST: los tres niveles de SV no son Departamento/Municipio/Distrito';
   END IF;
 
   -- NINGUNA unidad territorial: el catalogo es Fundacion 2.
   SELECT count(*) INTO v_n FROM public.administrative_units;
   IF v_n <> 0 THEN
-    RAISE EXCEPTION 's7_88 POST: administrative_units debe quedar VACIA, tiene % filas', v_n;
+    RAISE EXCEPTION 's7_87 POST: administrative_units debe quedar VACIA, tiene % filas', v_n;
   END IF;
 
   -- ── 5.5 Minimo privilegio ──
@@ -381,32 +438,32 @@ BEGIN
   LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = 'public' AND c.relname = v_txt) THEN
-      RAISE EXCEPTION 's7_88 POST: % sin RLS', v_txt;
+      RAISE EXCEPTION 's7_87 POST: % sin RLS', v_txt;
     END IF;
 
     SELECT count(*) INTO v_n FROM pg_policies
      WHERE schemaname = 'public' AND tablename = v_txt;
     IF v_n <> 0 THEN
-      RAISE EXCEPTION 's7_88 POST: % tiene % policies, esperaba 0 (nadie la consume aun)', v_txt, v_n;
+      RAISE EXCEPTION 's7_87 POST: % tiene % policies, esperaba 0 (nadie la consume aun)', v_txt, v_n;
     END IF;
 
     SELECT count(*) INTO v_n FROM information_schema.role_table_grants
      WHERE table_schema = 'public' AND table_name = v_txt
        AND grantee IN ('anon', 'authenticated', 'service_role', 'PUBLIC');
     IF v_n <> 0 THEN
-      RAISE EXCEPTION 's7_88 POST: % conserva % privilegios de cliente, esperaba 0', v_txt, v_n;
+      RAISE EXCEPTION 's7_87 POST: % conserva % privilegios de cliente, esperaba 0', v_txt, v_n;
     END IF;
   END LOOP;
 
   -- ── 5.6 Cero impacto sobre lo que ya existia ──
   SELECT count(*) INTO v_n FROM public.departments;
   IF v_n <> 14 THEN
-    RAISE EXCEPTION 's7_88 POST: departments cambio de tamano: %', v_n;
+    RAISE EXCEPTION 's7_87 POST: departments cambio de tamano: %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM public.municipalities;
   IF v_n <> 262 THEN
-    RAISE EXCEPTION 's7_88 POST: municipalities cambio de tamano: %', v_n;
+    RAISE EXCEPTION 's7_87 POST: municipalities cambio de tamano: %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n
@@ -414,22 +471,22 @@ BEGIN
    WHERE con.contype = 'f' AND tgt.relname IN ('departments', 'municipalities')
      AND con.confupdtype = 'a';
   IF v_n <> 7 THEN
-    RAISE EXCEPTION 's7_88 POST: las 7 FK territoriales previas debian seguir intactas, hay %', v_n;
+    RAISE EXCEPTION 's7_87 POST: las 7 FK territoriales previas debian seguir intactas, hay %', v_n;
   END IF;
 
   -- `clinics` no gana ninguna columna en Fundacion 1.
   IF EXISTS (SELECT 1 FROM information_schema.columns
               WHERE table_schema = 'public' AND table_name = 'clinics'
                 AND column_name IN ('country_id', 'territory_unit_id')) THEN
-    RAISE EXCEPTION 's7_88 POST: clinics NO debe cambiar en Fundacion 1';
+    RAISE EXCEPTION 's7_87 POST: clinics NO debe cambiar en Fundacion 1';
   END IF;
 
   -- Y el eje de reservabilidad del medico, intacto.
   SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'doctor_booking_ready';
   IF v_n <> 1 THEN
-    RAISE EXCEPTION 's7_88 POST: doctor_booking_ready fue alterada (hay % definiciones)', v_n;
+    RAISE EXCEPTION 's7_87 POST: doctor_booking_ready fue alterada (hay % definiciones)', v_n;
   END IF;
 
-  RAISE NOTICE 's7_88: guardas POST OK — Fundacion 1 aplicada, cero impacto sobre el modelo vigente';
+  RAISE NOTICE 's7_87: guardas POST OK — Fundacion 1 aplicada, cero impacto sobre el modelo vigente';
 END $POST$;

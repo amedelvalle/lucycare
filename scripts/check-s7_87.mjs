@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-s7_88.mjs — Fundación 1 del modelo territorial genérico.
+ * check-s7_87.mjs — Fundación 1 del modelo territorial genérico.
  *
  * El harness es deliberadamente más chico que el de `s7_86`: esta migración
  * solo CREA. Hay cuatro cosas que demostrar y ninguna más — **aditividad**,
@@ -13,7 +13,7 @@
  * versión de `check-s7_86`: dos instrumentos que miden textos distintos dan
  * resultados distintos, y solo se nota al aplicar.
  *
- *   node scripts/check-s7_88.mjs
+ *   node scripts/check-s7_87.mjs
  *
  * No toca la base de datos ni la red.
  */
@@ -31,10 +31,10 @@ const check = (label, actual, esperado) => {
 };
 const has = (label, hay, needle) => check(label, hay.includes(needle), true);
 
-console.log('\ncheck-s7_88 — Fundación 1 del modelo territorial\n');
+console.log('\ncheck-s7_87 — Fundación 1 del modelo territorial\n');
 
-const P88 = path.join('migrations', 's7_88_geo_foundation_1.sql');
-const PRB = path.join('docs', 'rollbacks', 's7_88_rollback.sql');
+const P88 = path.join('migrations', 's7_87_geo_foundation_1.sql');
+const PRB = path.join('docs', 'rollbacks', 's7_87_rollback.sql');
 const PTY = path.join('src', 'types', 'database.types.ts');
 
 /** CRLF → LF: `core.autocrlf=true` deja los .sql con CRLF en el working tree. */
@@ -73,6 +73,26 @@ check('el DDL se aísla de las guardas', ddl.length > 500 && ddl.length < raw.le
 check('el DDL no arrastra prosa', ddl.includes('POR QUE ESTO NO PUEDE ROMPER'), false);
 
 // ═══════════════════════════════════════════════════════════
+// 0 · ATOMICIDAD
+// ═══════════════════════════════════════════════════════════
+// La garantía tiene que viajar CON el archivo. La transacción implícita que el
+// SQL Editor pone alrededor de una selección multi-sentencia es propiedad del
+// CLIENTE: si alguien pegara las sentencias de a una, cada una haría autocommit
+// y un fallo a mitad dejaría tablas creadas sin semilla.
+console.log('\n0 · atomicidad del paso que modifica la base');
+check('el DDL abre transacción', /^BEGIN;/m.test(ddl), true);
+check('el DDL la cierra', /^COMMIT;/m.test(ddl), true);
+check('exactamente un BEGIN', (ddl.match(/^BEGIN;/gm) || []).length, 1);
+check('exactamente un COMMIT', (ddl.match(/^COMMIT;/gm) || []).length, 1);
+check('el BEGIN precede a todo el DDL',
+  ddl.indexOf('BEGIN;') < ddl.indexOf('CREATE TABLE'), true);
+check('el COMMIT va después del último REVOKE',
+  ddl.lastIndexOf('COMMIT;') > ddl.lastIndexOf('REVOKE'), true);
+// Ninguna sentencia de las que PostgreSQL prohíbe dentro de una transacción.
+check('no hay sentencias incompatibles con transacción',
+  /CREATE\s+INDEX\s+CONCURRENTLY|\bVACUUM\b|CREATE\s+DATABASE|ALTER\s+SYSTEM/i.test(ddl), false);
+
+// ═══════════════════════════════════════════════════════════
 // 1 · LAS TRES TABLAS Y SU FORMA
 // ═══════════════════════════════════════════════════════════
 console.log('\n1 · las tres tablas');
@@ -83,7 +103,7 @@ check('crea EXACTAMENTE 3 tablas', (ddl.match(/CREATE TABLE/g) || []).length, 3)
 
 console.log('\n1.b · identidad interna y opaca');
 has('countries.id es smallint identity', ddl,
-  'id                smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY');
+  'id                smallint GENERATED ALWAYS AS IDENTITY (START WITH 100) PRIMARY KEY');
 has('administrative_units.id es bigint identity', ddl,
   'id               bigint   GENERATED ALWAYS AS IDENTITY PRIMARY KEY');
 check('ninguna PK es un código externo',
@@ -94,9 +114,11 @@ has('el CHECK de formato vive en iso_alpha2, no en la PK', ddl,
 
 console.log('\n1.c · columnas de administrative_units');
 for (const c of ['country_id', 'parent_id', 'level', 'name', 'legacy_id',
-                 'official_code', 'official_source', 'official_version', 'is_active']) {
+                 'official_code', 'official_source', 'official_source_date', 'is_active']) {
   has(`columna ${c}`, ddl, c);
 }
+check('fecha y version NO se mezclan: no existe official_version',
+  /official_version/.test(ddl), false);
 check('legacy_id es anulable', /legacy_id\s+text,/.test(ddl), true);
 check('official_code es anulable', /official_code\s+text,/.test(ddl), true);
 
@@ -119,10 +141,13 @@ console.log('\n2.b · índices');
 has('unique parcial de legacy_id (idempotencia del backfill de F2)', ddl,
   'CREATE UNIQUE INDEX au_country_legacy_key');
 has('el unique de legacy_id es parcial', ddl, 'WHERE legacy_id IS NOT NULL');
-has('unique parcial de official_code', ddl, 'CREATE UNIQUE INDEX au_country_level_official_code_key');
 has('índice de primer nivel por país', ddl, 'au_country_level_active_idx');
 has('índice de hijos por padre', ddl, 'au_parent_active_idx');
-check('no hay índices de más', (ddl.match(/CREATE (UNIQUE )?INDEX/g) || []).length, 4);
+check('no hay índices de más', (ddl.match(/CREATE (UNIQUE )?INDEX/g) || []).length, 3);
+// Se retiró a propósito: sin códigos cargados no hay evidencia de que todo
+// sistema oficial futuro respete esa unicidad. Se decide en Fundación 2.
+check('NO hay unique sobre official_code',
+  /UNIQUE INDEX[^;]*official_code/i.test(ddl), false);
 
 // ═══════════════════════════════════════════════════════════
 // 3 · SEMILLA
@@ -234,6 +259,43 @@ check('ninguna guarda salta con un cambio inocuo',
 // objetos vigentes porque su trabajo es verificarlos. Por eso el DDL se aísla.
 check('el archivo completo produce falsos positivos (por eso se aísla el DDL)',
   guardas.filter((g) => !g.ok(sinLiterales(sinComentarios(raw)))).length > 0, true);
+
+// ═══════════════════════════════════════════════════════════
+// 5.d · LA PK DE PAÍS NO SE HARDCODEA
+// ═══════════════════════════════════════════════════════════
+// Resolver un país se hace SIEMPRE por `iso_alpha2`. La secuencia arranca en
+// 100 para que un `country_id = 1` no funcione ni por casualidad: así el fallo
+// aparece de inmediato y no el día que cambie el orden de siembra.
+console.log('\n5.d · la PK de país no se hardcodea');
+has('la secuencia arranca lejos de 1', ddl, 'GENERATED ALWAYS AS IDENTITY (START WITH 100)');
+has('la semilla de niveles resuelve por iso_alpha2', ddl, "WHERE c.iso_alpha2 = 'SV'");
+check('el DDL nunca escribe un country_id literal',
+  /country_id\s*(=|:)\s*\d/.test(ddl), false);
+has('el POST prohíbe explícitamente que SV sea el 1', raw,
+  'SV obtuvo countries.id = 1');
+has('el POST comprueba que los niveles cuelgan del id REAL', raw,
+  'no quedaron colgados del id real de SV');
+
+/** Recorre src/ buscando un id de país escrito a mano. */
+const archivosTs = (dir, acc = []) => {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) archivosTs(p, acc);
+    else if (/\.tsx?$/.test(e.name)) acc.push(p);
+  }
+  return acc;
+};
+const PATRON_HARDCODE = /\bcountry_?[Ii]d\s*(===?|:)\s*\d+/;
+const culpables = archivosTs('src')
+  .filter((f) => !f.endsWith('database.types.ts'))
+  .filter((f) => PATRON_HARDCODE.test(leerLF(f)));
+check('ningún archivo de src/ hardcodea un id de país', culpables.join(', '), '');
+// Expectativa invertida: si el patrón no detectara nada, la aserción de arriba
+// sería vacía y pasaría siempre.
+check('el patrón SÍ detecta un hardcode',
+  PATRON_HARDCODE.test('const q = { country_id: 1 }'), true);
+check('y no confunde una comparación legítima',
+  PATRON_HARDCODE.test("eq('country_id', country.id)"), false);
 
 // ═══════════════════════════════════════════════════════════
 // 6 · CERO IMPACTO — lo verifica el POST en la base

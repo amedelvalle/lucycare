@@ -69,7 +69,7 @@ export type Database = {
           name: string
           official_code: string | null
           official_source: string | null
-          official_version: string | null
+          official_source_date: string | null
           parent_id: number | null
         }
         Insert: {
@@ -81,7 +81,7 @@ export type Database = {
           name: string
           official_code?: string | null
           official_source?: string | null
-          official_version?: string | null
+          official_source_date?: string | null
           parent_id?: number | null
         }
         Update: {
@@ -93,7 +93,7 @@ export type Database = {
           name?: string
           official_code?: string | null
           official_source?: string | null
-          official_version?: string | null
+          official_source_date?: string | null
           parent_id?: number | null
         }
         Relationships: [

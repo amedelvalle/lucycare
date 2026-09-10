@@ -1,9 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════
--- ROLLBACK de s7_88 · MULTICOUNTRY-GEO-P0 · Fundacion 1
+-- ROLLBACK de s7_87 · MULTICOUNTRY-GEO-P0 · Fundacion 1
 --
 -- ⛔ NO EJECUTAR salvo FAIL explicito y autorizacion del owner.
 --
--- s7_88 solo CREA. No altero ninguna tabla existente, no toco ninguna FK
+-- s7_87 solo CREA. No altero ninguna tabla existente, no toco ninguna FK
 -- previa y no leyo ni escribio ninguna fila del modelo vigente. Por eso este
 -- rollback es un DROP limpio y NO tiene que restaurar nada.
 --
@@ -33,27 +33,27 @@ BEGIN
    WHERE n.nspname = 'public'
      AND c.relname IN ('countries', 'country_levels', 'administrative_units');
   IF v_n <> 0 THEN
-    RAISE EXCEPTION 'rollback s7_88: quedan % de las tres tablas', v_n;
+    RAISE EXCEPTION 'rollback s7_87: quedan % de las tres tablas', v_n;
   END IF;
 
   -- Lo que el rollback NO puede llevarse por delante. Es barato comprobarlo y
   -- demuestra que la Fundacion 1 no habia tocado nada de esto.
   SELECT count(*) INTO v_n FROM public.departments;
   IF v_n <> 14 THEN
-    RAISE EXCEPTION 'rollback s7_88: departments quedo en %', v_n;
+    RAISE EXCEPTION 'rollback s7_87: departments quedo en %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n FROM public.municipalities;
   IF v_n <> 262 THEN
-    RAISE EXCEPTION 'rollback s7_88: municipalities quedo en %', v_n;
+    RAISE EXCEPTION 'rollback s7_87: municipalities quedo en %', v_n;
   END IF;
 
   SELECT count(*) INTO v_n
     FROM pg_constraint con JOIN pg_class tgt ON tgt.oid = con.confrelid
    WHERE con.contype = 'f' AND tgt.relname IN ('departments', 'municipalities');
   IF v_n <> 7 THEN
-    RAISE EXCEPTION 'rollback s7_88: debian quedar las 7 FK territoriales, hay %', v_n;
+    RAISE EXCEPTION 'rollback s7_87: debian quedar las 7 FK territoriales, hay %', v_n;
   END IF;
 
-  RAISE NOTICE 'rollback s7_88: OK — base de vuelta al estado previo a la migracion 108';
+  RAISE NOTICE 'rollback s7_87: OK — base de vuelta al estado previo a la migracion 108';
 END $ROLLBACK$;
