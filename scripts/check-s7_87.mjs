@@ -103,7 +103,10 @@ check('crea EXACTAMENTE 3 tablas', (ddl.match(/CREATE TABLE/g) || []).length, 3)
 
 console.log('\n1.b · identidad interna y opaca');
 has('countries.id es smallint identity', ddl,
-  'id                smallint GENERATED ALWAYS AS IDENTITY (START WITH 100) PRIMARY KEY');
+  'id                smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY');
+// La PK es opaca de verdad: no se le fija arranque especial. Desplazar la
+// secuencia no impide un hardcode, solo cambia el número mágico.
+check('la secuencia no lleva START WITH', /START WITH/i.test(ddl), false);
 has('administrative_units.id es bigint identity', ddl,
   'id               bigint   GENERATED ALWAYS AS IDENTITY PRIMARY KEY');
 check('ninguna PK es un código externo',
@@ -263,16 +266,12 @@ check('el archivo completo produce falsos positivos (por eso se aísla el DDL)',
 // ═══════════════════════════════════════════════════════════
 // 5.d · LA PK DE PAÍS NO SE HARDCODEA
 // ═══════════════════════════════════════════════════════════
-// Resolver un país se hace SIEMPRE por `iso_alpha2`. La secuencia arranca en
-// 100 para que un `country_id = 1` no funcione ni por casualidad: así el fallo
-// aparece de inmediato y no el día que cambie el orden de siembra.
-console.log('\n5.d · la PK de país no se hardcodea');
-has('la secuencia arranca lejos de 1', ddl, 'GENERATED ALWAYS AS IDENTITY (START WITH 100)');
+// El invariante es: NINGÚN consumidor depende del valor numérico de
+// `countries.id`. Resolver un país se hace siempre por `iso_alpha2`.
+console.log('\n5.d · nadie depende del valor numérico de countries.id');
 has('la semilla de niveles resuelve por iso_alpha2', ddl, "WHERE c.iso_alpha2 = 'SV'");
 check('el DDL nunca escribe un country_id literal',
   /country_id\s*(=|:)\s*\d/.test(ddl), false);
-has('el POST prohíbe explícitamente que SV sea el 1', raw,
-  'SV obtuvo countries.id = 1');
 has('el POST comprueba que los niveles cuelgan del id REAL', raw,
   'no quedaron colgados del id real de SV');
 

@@ -123,14 +123,16 @@ BEGIN;
 -- `clinics.country_id` sera la columna mas caliente del modelo territorial.
 -- Dos bytes por fila valen la pena ahi.
 --
--- ⚠️ `START WITH 100` NO es decorativo. La PK interna JAMAS se hardcodea: para
--- resolver El Salvador se consulta `iso_alpha2 = 'SV'`. Arrancando la secuencia
--- lejos de 1, cualquier codigo que asuma `country_id = 1` **no funciona ni por
--- casualidad**: falla de inmediato en vez de andar bien hasta el dia en que el
--- orden de siembra cambie. Convierte una convencion en un hecho.
+-- ⚠️ INVARIANTE: ningun consumidor debe depender del VALOR NUMERICO de
+-- `countries.id`. Para resolver un pais se consulta `iso_alpha2`, siempre — la
+-- semilla de niveles de mas abajo es el primer ejemplo y lo hace asi.
+-- La PK es completamente opaca: no se le fija un valor de arranque especial,
+-- porque desplazar la secuencia no impediria un hardcode, solo cambiaria el
+-- numero magico. La proteccion real es la resolucion por iso_alpha2 y la
+-- guarda estatica de `check-s7_87` sobre el codigo.
 
 CREATE TABLE public.countries (
-  id                smallint GENERATED ALWAYS AS IDENTITY (START WITH 100) PRIMARY KEY,
+  id                smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   iso_alpha2        text     NOT NULL,
   name              text     NOT NULL,
   directory_enabled boolean  NOT NULL DEFAULT false,
@@ -141,10 +143,9 @@ CREATE TABLE public.countries (
 );
 
 COMMENT ON COLUMN public.countries.id IS
-  'Identidad INTERNA y opaca. No es el codigo ISO y no debe usarse como tal. '
-  'NUNCA se hardcodea: para resolver un pais se consulta por iso_alpha2. La '
-  'secuencia arranca en 100 justamente para que nadie pueda depender de que '
-  'El Salvador sea el 1.';
+  'Identidad INTERNA y completamente opaca. No es el codigo ISO y no debe '
+  'usarse como tal. NINGUN consumidor debe depender de su valor numerico: para '
+  'resolver un pais se consulta por iso_alpha2.';
 
 COMMENT ON COLUMN public.countries.iso_alpha2 IS
   'ISO 3166-1 alpha-2. Metadato EXTERNO: debe casar verbatim con la cabecera '
@@ -397,16 +398,10 @@ BEGIN
     RAISE EXCEPTION 's7_87 POST: la semilla de El Salvador no quedo como se esperaba';
   END IF;
 
-  -- La PK interna NO se hardcodea. Esta guarda hace ejecutable esa regla: si SV
-  -- saliera con id = 1, cualquier codigo que asumiera ese valor «funcionaria»
-  -- por casualidad y el fallo aparecería mucho despues, en otro pais.
-  SELECT id INTO v_n FROM public.countries WHERE iso_alpha2 = 'SV';
-  IF v_n = 1 THEN
-    RAISE EXCEPTION 's7_87 POST: SV obtuvo countries.id = 1 — la secuencia debe arrancar en 100 para que nadie pueda depender de ese valor';
-  END IF;
-
-  -- Y la semilla de niveles tiene que haber resuelto el pais POR iso_alpha2,
-  -- no por un literal: si lo hubiera hecho por id, no casaria con el generado.
+  -- La semilla de niveles tiene que haber resuelto el pais POR iso_alpha2, no
+  -- por un literal numerico: si lo hubiera hecho por id, no casaria con el
+  -- valor generado. Es la forma ejecutable del invariante — ningun consumidor
+  -- depende del valor numerico de countries.id.
   SELECT count(*) INTO v_n
     FROM public.country_levels cl
    WHERE cl.country_id = (SELECT id FROM public.countries WHERE iso_alpha2 = 'SV');
