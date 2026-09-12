@@ -47,8 +47,35 @@
 -- hacia ninguna parte.
 --
 -- ⚠️ `official_code` queda NULL en las 320. El decreto NO asigna codigos y no
--- se infiere ninguno. `official_source` y `official_source_date` SI se
--- registran, con la fecha de la reforma vigente.
+-- se infiere ninguno.
+--
+-- ⚠️ QUE SIGNIFICAN `official_source` Y `official_source_date`, EXACTAMENTE:
+--
+--   `official_source`      identifica la NORMA de la que sale el dato:
+--                          DL 762 mas su reforma DL 978, con sus respectivas
+--                          referencias de Diario Oficial. Es una sola cadena
+--                          para las 320 porque las 320 salen del mismo texto.
+--
+--   `official_source_date` es la fecha de la ULTIMA REFORMA INCORPORADA al
+--                          texto consolidado — la publicacion del DL 978, el
+--                          05/04/2024. Es la fecha de la FUENTE, no de la
+--                          unidad.
+--
+-- ⛔ `official_source_date` NO es la fecha de creacion de cada unidad, ni la
+-- fecha en que un departamento o un distrito existe. Los 14 departamentos son
+-- anteriores por decadas; los 44 municipios nacen con el DL 762 de 2023; los
+-- 262 distritos son los municipios previos reclasificados. La columna fecha la
+-- FUENTE CONSULTADA, y por eso vale lo mismo en las 320 filas. No usarla como
+-- antiguedad, ni como fecha de alta, ni para ordenar por historia.
+--
+-- ── RESOLUCION POR NOMBRE: ALCANCE ACOTADO A ESTE SEED ──
+-- Resolver los padres por nombre es legitimo AQUI porque la unicidad se midio
+-- sobre este catalogo concreto: 14 de 14 y 44 de 44. Es una propiedad del dato
+-- cargado, no una garantia del modelo.
+--
+-- ⛔ El futuro `GEO-CATALOG-ADMIN/P1` debera operar por IDs INTERNOS, nunca
+-- por nombres: en cuanto exista edicion, dos unidades podrian compartir nombre
+-- y la resolucion por nombre dejaria de ser deterministica.
 --
 -- ── ATOMICIDAD ──
 -- El PASO 2 va envuelto en `BEGIN; ... COMMIT;` con las guardas POST DENTRO,
@@ -122,9 +149,12 @@ DO $CARGA$
 DECLARE
   v_pais smallint;
   v_n    int;
-  -- Procedencia, identica en las 320 filas.
+  -- Procedencia de la FUENTE, identica en las 320 filas porque las 320 salen
+  -- del mismo texto consolidado. `c_date` es la fecha de la ULTIMA REFORMA
+  -- INCORPORADA (publicacion del DL 978), NO la fecha de creacion de ninguna
+  -- unidad territorial.
   c_src  constant text := 'DL 762 (DO 110, T.439, 14/06/2023), reformado por DL 978 (DO 63, T.443, 05/04/2024)';
-  c_date constant date := DATE '2024-04-05';
+  c_date constant date := DATE '2024-04-05';  -- ultima reforma incorporada
 BEGIN
   SELECT id INTO STRICT v_pais FROM public.countries WHERE iso_alpha2 = 'SV';
 

@@ -192,6 +192,16 @@ check('official_code se inserta NULL en los 3 niveles',
 has('la fuente cita DL 762 y su reforma DL 978', exe,
   "'DL 762 (DO 110, T.439, 14/06/2023), reformado por DL 978 (DO 63, T.443, 05/04/2024)'");
 has('la fecha de fuente es la de la reforma vigente', exe, "DATE '2024-04-05'");
+// La semántica de esa fecha tiene que quedar escrita: es la fecha de la FUENTE,
+// no la de creación de ninguna unidad. Los 14 departamentos son anteriores por
+// décadas y las 320 comparten el valor.
+has('la migración declara que la fecha es de la fuente, no de la unidad', raw,
+  'NO es la fecha de creacion de cada unidad');
+has('la migración identifica DL 762 + DL 978 como la norma', raw,
+  'identifica la NORMA de la que sale el dato');
+// Y que la resolución por nombre queda acotada a este seed.
+has('la migración acota la resolución por nombre a este seed', raw,
+  'debera operar por IDs INTERNOS, nunca');
 has('el POST prohíbe cualquier official_code', raw,
   'unidades con official_code — no se infiere ninguno');
 has('el POST exige fuente y fecha en todas', raw, 'unidades sin fuente o sin fecha de fuente');
