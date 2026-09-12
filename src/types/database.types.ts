@@ -59,6 +59,60 @@ export type Database = {
           },
         ]
       }
+      administrative_units: {
+        Row: {
+          country_id: number
+          id: number
+          is_active: boolean
+          legacy_id: string | null
+          level: number
+          name: string
+          official_code: string | null
+          official_source: string | null
+          official_source_date: string | null
+          parent_id: number | null
+        }
+        Insert: {
+          country_id: number
+          id?: never
+          is_active?: boolean
+          legacy_id?: string | null
+          level: number
+          name: string
+          official_code?: string | null
+          official_source?: string | null
+          official_source_date?: string | null
+          parent_id?: number | null
+        }
+        Update: {
+          country_id?: number
+          id?: never
+          is_active?: boolean
+          legacy_id?: string | null
+          level?: number
+          name?: string
+          official_code?: string | null
+          official_source?: string | null
+          official_source_date?: string | null
+          parent_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "au_country_level_fkey"
+            columns: ["country_id", "level"]
+            isOneToOne: false
+            referencedRelation: "country_levels"
+            referencedColumns: ["country_id", "level"]
+          },
+          {
+            foreignKeyName: "au_parent_country_fkey"
+            columns: ["parent_id", "country_id"]
+            isOneToOne: false
+            referencedRelation: "administrative_units"
+            referencedColumns: ["id", "country_id"]
+          },
+        ]
+      }
       appointment_patient_cancellations: {
         Row: {
           appointment_id: string
@@ -1019,6 +1073,59 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      countries: {
+        Row: {
+          booking_enabled: boolean
+          directory_enabled: boolean
+          id: number
+          iso_alpha2: string
+          name: string
+        }
+        Insert: {
+          booking_enabled?: boolean
+          directory_enabled?: boolean
+          id?: never
+          iso_alpha2: string
+          name: string
+        }
+        Update: {
+          booking_enabled?: boolean
+          directory_enabled?: boolean
+          id?: never
+          iso_alpha2?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      country_levels: {
+        Row: {
+          country_id: number
+          label_plural: string
+          label_singular: string
+          level: number
+        }
+        Insert: {
+          country_id: number
+          label_plural: string
+          label_singular: string
+          level: number
+        }
+        Update: {
+          country_id?: number
+          label_plural?: string
+          label_singular?: string
+          level?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_levels_country_id_fkey"
+            columns: ["country_id"]
+            isOneToOne: false
+            referencedRelation: "countries"
             referencedColumns: ["id"]
           },
         ]
