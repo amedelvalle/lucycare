@@ -4,7 +4,72 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **ESTADO VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
+> 🟢 **BASELINE VIGENTE (2026-09-12) — post PR #365 en `main`.**
+>
+> ⚠️ **TRES BASELINES SEPARADOS. No confundirlos:**
+>
+> | | |
+> |---|---|
+> | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **comportamiento observable** sigue siendo **#361** |
+> | **Último baseline de esquema** | **PR #365 / `s7_87`** — **108 migraciones aplicadas**, la última `s7_87_geo_foundation_1.sql` |
+> | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
+>
+> ⚠️ **#365 NO es un cambio funcional.** Modificó el **esquema** sin cambiar
+> ningún comportamiento observable: crea tres tablas que **ningún runtime
+> consume**. No presentarlo como cambio funcional ni promoverlo a HEAD funcional.
+>
+> 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
+> VERIFIED** (2026-09-12). **El frente completo NO está cerrado**: Fundaciones 2
+> y 3 están **diseñadas y NO implementadas**.
+>
+> **📘 Referencia canónica del frente: `docs/ANALISIS_MULTICOUNTRY_GEO.md`.**
+> Ahí viven las opciones A/B/C y por qué se eligió B, el modelo objetivo, los
+> invariantes y qué está realmente implementado frente a lo solo diseñado.
+>
+> **Qué hizo Fundación 1:** `s7_87` (**migración 108**) crea `countries`,
+> `country_levels` y `administrative_units`, y siembra **solo El Salvador** con
+> sus tres niveles (`Departamento` / `Municipio` / `Distrito`).
+> **`administrative_units` quedó VACÍA a propósito** — el catálogo territorial es
+> Fundación 2. **`s7_87` = APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+> owner ANTES del merge; su guarda PRE aborta con `P0001` si se reintenta, y eso
+> es correcto, no un fallo.
+>
+> **Verificación real en la base: 24/24 PASS.** Forma de las tres tablas, PK
+> `IDENTITY`, semilla de SV, los tres niveles colgando del id **real** del país,
+> **`administrative_units` = 0**, constraints, índices, RLS, **cero privilegios
+> de cliente sobre tablas Y secuencias**, y **legacy intacto: 14 departamentos /
+> 262 registros / 7 FK / `clinics` sin columnas nuevas / `doctor_booking_ready`
+> en pie**.
+>
+> ⚠️ **CUATRO INVARIANTES VINCULANTES del modelo territorial:**
+> **(1)** un país se resuelve **siempre por `iso_alpha2`** — **ningún consumidor
+> debe depender del valor numérico de `countries.id`**. **(2)** las PK son
+> internas y opacas; ISO/INE y los IDs legacy de SV son **metadato**, nunca
+> identidad. **(3)** **`doctor_booking_ready` es independiente del gate
+> nacional**: sus cinco condiciones **no se tocan**, y la reservabilidad pública
+> se combinará FUERA de esa función. **(4)** sin N+1, sin recursión por médico,
+> country scope server-side, y **nunca** descargar médicos de otros países ni
+> catálogos territoriales globales.
+>
+> ⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2 — no es un frente abierto.**
+> Validar contra una **fuente oficial vigente y fechada** el catálogo completo de
+> El Salvador: 14 departamentos, 44 municipios, 262 distritos, **sus nombres** y
+> las relaciones departamento→municipio→distrito. Los resultados
+> `262 / 0 nulos / 44 grupos` medidos demuestran **consistencia interna de
+> nuestros datos, NO autoridad oficial**. La fuente INE localizada está **fechada
+> en 1974** y no sirve como catálogo productivo.
+>
+> ⚠️ **`s7_87` NO se modifica**, ni para corregir el comentario residual de su
+> línea 120 («secciones 1 a 4» cuando el POST es la 5). Una migración aplicada es
+> el registro de lo que se ejecutó; la cabecera «COMO APLICARLA» sí es correcta.
+>
+> ℹ️ **Nota histórica:** existe `claude/s7_87-geo` (`30649f7`), **prototipo local
+> descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
+> válido es el aplicado y mergeado mediante **#365**.
+>
+> **Fundación 2 NO iniciada. No abrir sin instrucción del owner.**
+
+> 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
 > **📗 Punto de entrada canónico:
 > `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-09-07.md` (leer PRIMERO).**
@@ -616,10 +681,14 @@
 >
 > **HEAD funcional canónico:
 > `e8e8c03d588b85cca32c81013befa312d14bef07` — PRs #359/#360/#361.** · **PRs funcionales
-> mergeados hasta #361** · **107 migraciones aplicadas** (hasta
-> `s7_86_admin_doctor_export_onboarding.sql`) · `main == origin/main` · árbol limpio ·
+> mergeados hasta #361** · `main == origin/main` · árbol limpio ·
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
+>
+> ⚠️ **El baseline de ESQUEMA es posterior y va por separado: PR #365 / `s7_87`,
+> con 108 migraciones aplicadas** (hasta `s7_87_geo_foundation_1.sql`). #365
+> cambió el esquema **sin cambiar comportamiento observable**, así que **no mueve
+> este HEAD funcional**. Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
@@ -866,6 +935,13 @@
 > `set_config`/`current_setting` dentro de `BEGIN … ROLLBACK`
 > (ver `docs/OWNER_S7_69_SMOKE.md`).
 >
+> **Regla de selección en el SQL Editor (2026-09-12):** un bloque se selecciona
+> **desde su apertura real —`DO $tag$` o `BEGIN;`— hasta su terminador
+> completo**. **No iniciar la ejecución desde el `BEGIN` interno de un bloque
+> PL/pgSQL**: sin el `DO $tag$` delante, PostgreSQL lee ese `BEGIN` como apertura
+> de transacción y falla con `42601 syntax error at or near "SELECT"`. Ocurrió
+> aplicando `s7_87`.
+>
 > **Identidad de git (corregida 2026-08-03):** local en este repo
 > `amedelvalle / lucycare.digital@gmail.com`; global
 > `amedelvalle / 240200944+amedelvalle@users.noreply.github.com`. No se reescribió
@@ -908,6 +984,16 @@ Luego leé los documentos oficiales según el objetivo del día:
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-28_POST_PR353.txt` — **HISTÓRICO**, superado por el `2026-09-07`. Su baseline (`55af306`, 103 migraciones) ya no es válido. Autosuficiente: baseline Git en `55af306`, las 103 migraciones, el frente `DOCTOR-OWNER-NOTIFICATIONS-P0` **CLOSED** con su configuración completa y sus prohibiciones, los frentes cerrados recientes, Auth/Twilio/Turnstile, prohibiciones consolidadas, pendientes (ninguno bloqueante) y las lecciones de método —incluidas las dos que costaron caro: `prosrc` incluye comentarios, y `String.replace` interpreta `$$`—.
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-27_POST_PR352.txt` — **HISTÓRICO**, superado por el `2026-08-28`. Su baseline (`f7213d2`, 100 migraciones) y su descripción de `DOCTOR-OWNER-NOTIFICATIONS-P0` como frente «NO abierto» **ya no son válidos**. Sigue siendo buena referencia de los dos exports de médicos (#351/#352).
 - `docs/HANDOFF_CHATGPT_LUCYCARE_NUEVA_VENTANA_2026-08-24_PATIENT_CRM_P0.md` — **histórico**. Cubre el frente `PATIENT-CRM-P0`: baseline, objetivo y principios, diagnóstico de `/admin/pacientes`, modelo observado, decisiones **D1–D5**, frontera clínica, timeline, performance, seguridad, evolución del predicado **P1/P1.1**, **P2–P5**, y el estado real del backend — `s7_76` y `s7_77` **aplicadas y verificadas**. Cerró el frente: PR #349 **MERGED**, producción **PASS**.
+- `docs/ANALISIS_MULTICOUNTRY_GEO.md` — **referencia canónica de
+  `MULTICOUNTRY-GEO-P0`, frente EN CURSO**: las opciones A/B/C y por qué se
+  eligió la jerarquía genérica, el modelo objetivo, las PK internas opacas con
+  los códigos oficiales como metadato, la transición shadow/aditiva sobre el
+  legacy, el puente SV 14 → 44 → 262, `clinics.country_id` como filtro nacional
+  directo y la closure table como diseño **no implementado**, los invariantes de
+  rendimiento y UX, la independencia del gate nacional respecto de
+  `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
+  implementado frente a lo solo diseñado. **Fundación 1 aplicada; el frente no
+  está cerrado.**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1013,6 +1099,19 @@ squash-merge, la rama puede borrarse.
   `service_role`**. Destinatario desde `doctor_affiliation_requests.email`,
   nunca `profiles.email`. **E2E real PASS** y cleanup con 0 residuales
   funcionales → [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#365** 🚧 — **MULTICOUNTRY-GEO-P0 · Fundación 1 = CLOSED / APPLIED /
+  VERIFIED. El FRENTE sigue EN CURSO.** `s7_87` (**migración 108**, aplicada
+  antes del merge) crea `countries`, `country_levels` y `administrative_units` y
+  siembra **solo El Salvador**; `administrative_units` queda **vacía**. PK
+  `IDENTITY` **opacas**, con ISO/INE y los IDs legacy de SV como **metadato
+  anulable**. **Estrictamente aditiva y desconectada:** cero `ALTER` sobre
+  objetos existentes, cero FK previas tocadas, cero filas existentes leídas o
+  escritas, y ningún objeto actual referencia a los nuevos. RLS con **cero
+  policies y cero grants**, también sobre las dos secuencias. **Verificación real
+  en la base 24/24 PASS** con legacy intacto. **Fundaciones 2 y 3 diseñadas y NO
+  implementadas** → [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
@@ -1406,6 +1505,27 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_87` MULTICOUNTRY-GEO-P0 · Fundación 1 (**migración 108**): tres tablas
+  nuevas y cuatro filas de semilla. `countries` (PK `smallint IDENTITY` **opaca**
+  + `iso_alpha2 UNIQUE` como metadato externo + `directory_enabled` y
+  `booking_enabled` **independientes entre sí**) · `country_levels` (etiquetas
+  por país, para que la UI no hardcodee «Departamento») ·
+  `administrative_units` (jerarquía genérica de cualquier profundidad: PK
+  `bigint IDENTITY`, `parent_id`, `level`, `legacy_id` y
+  `official_code`/`official_source`/`official_source_date` **anulables**, FK
+  `(country_id, level)` que garantiza etiqueta, FK compuesta
+  `(parent_id, country_id)` que fuerza al padre al mismo país, y `CHECK` raíz ⇔
+  nivel 1). **Semilla: solo El Salvador con sus tres niveles;
+  `administrative_units` queda VACÍA.** **Sin unique sobre `official_code`** —
+  se decide en Fundación 2 con datos reales. RLS habilitada con **cero policies y
+  cero grants** a `anon`/`authenticated`/`service_role`, **también sobre las dos
+  secuencias `IDENTITY`** (una secuencia tiene privilegios propios y revocar la
+  tabla no la alcanza); los `ALTER DEFAULT PRIVILEGES` globales **no se tocan**.
+  El paso modificador corre como **`BEGIN → DDL/semilla/permisos → POST →
+  COMMIT`**, así que una guarda POST fallida **revierte la fundación entera**.
+  **Estrictamente aditiva:** ningún `ALTER` sobre objetos existentes, ninguna FK
+  previa tocada, ninguna fila existente leída ni escrita. Verificada en la base
+  con **24/24 PASS**. **No se modifica** tras aplicarse.
 - `s7_86` DOCTOR-ONBOARDING-READINESS-P0 (**migración 107**): `CREATE OR
   REPLACE` de `admin_export_doctors` con **DOS ediciones** sobre `s7_79` — un
   `LEFT JOIN LATERAL public._doctor_onboarding(d.id)` y tres claves que leen ese
