@@ -201,14 +201,17 @@ Los 262 registros legacy **no representan por sí solos los tres niveles**: lo
 que traen es la pertenencia, en `district`. Los IDs actuales se conservan en
 `legacy_id`, sin renombrar nada.
 
-⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2.** Los resultados
-`262 / 0 nulos / 0 vacíos / 44 grupos / 14 departamentos` demuestran
-**consistencia interna de nuestros datos, NO autoridad oficial**. Antes de crear
-unidades canónicas hay que validar contra una **fuente oficial vigente y
-fechada** el catálogo completo: los 14 departamentos, los 44 municipios, los 262
-distritos, **sus nombres** y las relaciones
-departamento → municipio → distrito. La fuente INE localizada durante el
-análisis está **fechada en 1974** y no sirve como catálogo productivo actual.
+⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2.** La **estructura vigente** de El
+Salvador —**14 departamentos / 44 municipios / 262 distritos**— está
+**respaldada por fuentes oficiales salvadoreñas**. Antes de Fundación 2 sigue
+siendo **bloqueante validar contra fuente oficial vigente y fechada los nombres
+y las relaciones exactas del catálogo completo**. La consistencia interna
+`262 / 0 nulos / 0 vacíos / 44 grupos / 14 departamentos` de nuestra base **no
+sustituye esa validación**.
+
+ℹ️ **No se fija todavía una fuente única canónica para los 262 nombres:** no ha
+sido revisada completa. Se establecerá en Fundación 2, y hasta entonces
+`official_source` y `official_source_date` quedan `NULL`.
 
 ---
 

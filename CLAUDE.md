@@ -52,12 +52,12 @@
 > catálogos territoriales globales.
 >
 > ⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2 — no es un frente abierto.**
-> Validar contra una **fuente oficial vigente y fechada** el catálogo completo de
-> El Salvador: 14 departamentos, 44 municipios, 262 distritos, **sus nombres** y
-> las relaciones departamento→municipio→distrito. Los resultados
-> `262 / 0 nulos / 44 grupos` medidos demuestran **consistencia interna de
-> nuestros datos, NO autoridad oficial**. La fuente INE localizada está **fechada
-> en 1974** y no sirve como catálogo productivo.
+> La **estructura vigente** de El Salvador —**14 departamentos / 44 municipios /
+> 262 distritos**— está **respaldada por fuentes oficiales salvadoreñas**. Antes
+> de Fundación 2 sigue siendo **bloqueante validar contra fuente oficial vigente
+> y fechada los nombres y las relaciones exactas del catálogo completo**. La
+> consistencia interna `262 / 0 nulos / 44 grupos` de nuestra base **no
+> sustituye esa validación**.
 >
 > ⚠️ **`s7_87` NO se modifica**, ni para corregir el comentario residual de su
 > línea 120 («secciones 1 a 4» cuando el POST es la 5). Una migración aplicada es

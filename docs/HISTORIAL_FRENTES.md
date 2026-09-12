@@ -1273,12 +1273,15 @@ condiciones quedan intactas y el gate nacional es un **eje separado**.
 
 ### Precondición bloqueante de Fundación 2
 
-⛔ Validar contra una **fuente oficial vigente y fechada** el catálogo completo
-de El Salvador: 14 departamentos, 44 municipios, 262 distritos, **sus nombres** y
-las relaciones departamento→municipio→distrito. Los resultados medidos
-demuestran **consistencia interna de nuestros datos, NO autoridad oficial**. La
-fuente INE localizada durante el análisis está **fechada en 1974** y no sirve
-como catálogo productivo. **No es un frente abierto: es un requisito previo.**
+⛔ La **estructura vigente** de El Salvador —**14 departamentos / 44 municipios /
+262 distritos**— está **respaldada por fuentes oficiales salvadoreñas**. Antes de
+Fundación 2 sigue siendo **bloqueante validar contra fuente oficial vigente y
+fechada los nombres y las relaciones exactas del catálogo completo**. La
+consistencia interna `14/44/262` de nuestra base **no sustituye esa validación**.
+**No es un frente abierto: es un requisito previo.**
+
+ℹ️ No se fija todavía una fuente única canónica para los 262 nombres: no ha sido
+revisada completa.
 
 ### Lecciones de método
 
