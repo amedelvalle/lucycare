@@ -1144,3 +1144,182 @@ check NO debe cazar— para probar la ausencia de falsos positivos.
 
 El apply fallido fue **atómico** (DDL transaccional): no dejó función ni
 trigger. Se verificó antes de reintentar, no se supuso.
+
+---
+
+## #365 · MULTICOUNTRY-GEO-P0 · Fundación 1 (2026-09-12)
+
+> 🚧 **Fundación 1 = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md`.
+
+Squash merge; `main` quedó en
+**`6cfe90e89fd08603e9c486b42051b4b8b1a4a828`**. **`s7_87` = migración 108,
+APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-12
+**antes** del merge; el PR la incorpora solo como registro versionado.
+
+⚠️ **No es un cambio funcional.** Modificó el esquema **sin cambiar ningún
+comportamiento observable**: crea tres tablas que **ningún runtime consume**. El
+último HEAD funcional sigue siendo `e8e8c03` (#361).
+
+### Qué crea
+
+`countries` — PK `smallint IDENTITY` **opaca**, `iso_alpha2 UNIQUE` como
+metadato externo con `CHECK` de formato (debe casar verbatim con
+`x-vercel-ip-country`), y `directory_enabled` / `booking_enabled`
+**independientes entre sí**.
+
+`country_levels` — etiquetas por país y nivel, PK `(country_id, level)`. Existe
+para que la UI **no hardcodee «Departamento»**: otro país usará Provincia,
+Cantón o Distrito y ninguno es un caso especial.
+
+`administrative_units` — jerarquía genérica de **cualquier profundidad, sin DDL
+nuevo por país**. PK `bigint IDENTITY`, `parent_id`, `level`, `name`,
+`legacy_id` y `official_code` / `official_source` / `official_source_date`
+**anulables**. Tres constraints hacen el trabajo pesado: FK `(country_id, level)`
+hacia `country_levels`, que garantiza que **toda unidad tiene etiqueta**; FK
+compuesta `(parent_id, country_id)` que fuerza al padre al **mismo país** —con
+`MATCH SIMPLE`, de modo que una raíz con `parent_id NULL` pasa sin excepción—; y
+`CHECK ((parent_id IS NULL) = (level = 1))`, raíz **si y solo si** nivel 1.
+
+**Semilla: solo El Salvador**, niveles `Departamento` / `Municipio` /
+`Distrito`. **`administrative_units` queda VACÍA a propósito** — el catálogo
+14/44/262 es Fundación 2.
+
+### Decisiones de identidad
+
+**Las PK no significan nada fuera de la base.** ISO/INE y los IDs territoriales
+legacy de SV (`'SS'`, `'SS-12'`) son **metadato anulable**, nunca identidad, así
+que nombres, códigos y estructura pueden cambiar sin tocar una clave ni una FK.
+
+⚠️ **Ningún consumidor debe depender del valor numérico de `countries.id`.** Un
+país se resuelve **siempre** por `iso_alpha2`; la semilla de `country_levels` es
+el primer ejemplo y lo hace así. Una guarda POST comprueba que los tres niveles
+cuelgan del id **realmente generado**, y `check-s7_87` barre `src/` buscando ids
+numéricos escritos a mano.
+
+**Fecha y versión no se mezclan:** el campo es `official_source_date date`. Una
+versión textual, si algún día existe, irá en su propia columna.
+
+**Sin unique sobre `official_code`:** no hay códigos cargados y no está
+establecido que todo sistema oficial futuro respete la misma regla de unicidad.
+Se decide en Fundación 2, contra datos reales.
+
+### Por qué no puede romper nada
+
+**No es que sea pequeña: está desconectada.** Cero `ALTER` sobre objetos
+existentes, cero FK previas tocadas, cero filas existentes leídas o escritas, y
+ningún objeto actual referencia a los nuevos.
+
+**Mínimo privilegio estricto:** RLS habilitada con **cero policies y cero
+grants** a `anon`, `authenticated` y `service_role`. Ningún runtime las consume,
+así que ningún rol necesita leerlas; el privilegio llegará con su primer
+consumidor. Los `REVOKE` no son decorativos —los DEFAULT PRIVILEGES del proyecto
+pueden hacer legibles las tablas nuevas al crearse—, y alcanzan **también a las
+dos secuencias `IDENTITY`**: una secuencia tiene privilegios propios y revocar la
+tabla no la cubre. El nombre se resuelve con `pg_get_serial_sequence`, no a mano.
+**Los `ALTER DEFAULT PRIVILEGES` globales del proyecto NO se tocan.**
+
+**Atomicidad garantizada por el archivo, no por el cliente:** el paso modificador
+corre como **`BEGIN` → DDL/semilla/permisos → POST → `COMMIT`**, con las guardas
+POST **dentro** de la transacción. Una verificación fallida aborta y **revierte
+la fundación entera**. La transacción implícita que el SQL Editor pone alrededor
+de una selección multi-sentencia es propiedad del *cliente*: pegar las sentencias
+de a una haría autocommit y un fallo a mitad dejaría tablas sin semilla.
+**«Todo es `CREATE`» describe el contenido y no garantiza nada.** El rollback
+también es atómico, con `COMMIT` solo después de que su autoverificación pase.
+
+### Mediciones que respaldan el diseño
+
+Read-only, en la base real: **14** departamentos con `id` de 2 caracteres ·
+**262** municipios legacy, **14/14** grupos prefijados por su departamento ·
+**29** filas dependientes (23 clínicas + 2 perfiles + 4 solicitudes) · **7** FK
+territoriales, todas `ON UPDATE NO ACTION` · `district` con **0 nulos, 0
+vacíos** y `count(DISTINCT (department_id, district))` = **44**.
+
+⚠️ **Los IDs actuales NO son ISO 3166-2:** La Paz es `'LP'` (ISO `PA`) y La
+Unión `'LU'` (ISO `UN`) — coinciden en 12 de 14 por casualidad. Eso descartó el
+relato de «renombrar solo añade el prefijo del país».
+
+⚠️ **Ningún código depende del formato de esos IDs:** cero parsing en frontend,
+cero en SQL, cero `CHECK` de formato, y la coherencia municipio↔departamento se
+valida **relacionalmente** (`s7_32:66`, `s7_25:73,81`). Por eso se conservan como
+claves internas opacas y no se renombran.
+
+### Evidencia de cierre
+
+**Verificación real en la base: 24/24 PASS** — forma de las tres tablas (5/4/10
+columnas), PK `IDENTITY` con su tipo, semilla de SV con ambos flags, los tres
+niveles colgando del id real, **`administrative_units` = 0**, las 6 constraints
+clave, la FK del padre compuesta de 2 columnas, los 3 índices, cero unique sobre
+`official_code`, RLS en las tres, cero policies, cero privilegios de cliente
+sobre tablas **y** secuencias, y **legacy intacto: 14 departamentos / 262
+registros / 7 FK / `clinics` sin columnas nuevas / `doctor_booking_ready` en
+pie**.
+
+**Validación estática:** `check-s7_87` **126/126**, con tests de mutación de
+**expectativa invertida** sobre las nueve guardas de aditividad. La aserción
+decisiva: **el DDL no puede nombrar ningún objeto preexistente**; las guardas
+PRE/POST sí los nombran —es su trabajo— y por eso se miden aparte. Regresiones
+`check-s7_85` 98/98, `check-s7_86` 54/54, `check-admin-doctor-csv` 75/75,
+`check-directory-booking-ready` 20/20. `tsc -b` **427 vs 427** de baseline,
+`build` y `git diff --check` PASS.
+
+### Lo que NO entra
+
+`administrative_unit_paths` · funciones de rebuild/verify · las 14/44/262
+unidades · columnas nuevas en `clinics` · Honduras · cambios al modelo legacy ·
+lectores, writers o frontend. **`doctor_booking_ready` no se toca:** sus cinco
+condiciones quedan intactas y el gate nacional es un **eje separado**.
+
+### Precondición bloqueante de Fundación 2
+
+⛔ La **estructura vigente** de El Salvador —**14 departamentos / 44 municipios /
+262 distritos**— está **respaldada por fuentes oficiales salvadoreñas**. Antes de
+Fundación 2 sigue siendo **bloqueante validar contra fuente oficial vigente y
+fechada los nombres y las relaciones exactas del catálogo completo**. La
+consistencia interna `14/44/262` de nuestra base **no sustituye esa validación**.
+**No es un frente abierto: es un requisito previo.**
+
+ℹ️ No se fija todavía una fuente única canónica para los 262 nombres: no ha sido
+revisada completa.
+
+### Lecciones de método
+
+**1 · «Todo es `CREATE`» no es una garantía de atomicidad.** Se había afirmado
+que un fallo a mitad no dejaría residuo *porque todas las sentencias eran
+`CREATE`*. Eso describe el contenido, no el comportamiento transaccional. La
+garantía vino de envolver el paso modificador en un `BEGIN`/`COMMIT` explícito y
+de meter el POST dentro. Corregido antes de aplicar.
+
+**2 · Desplazar una secuencia no protege una PK opaca.** Una versión intermedia
+arrancaba `countries.id` en 100 para que nadie pudiera asumir `= 1`. **Solo
+cambiaba el número mágico.** La protección real es resolver por `iso_alpha2` más
+la guarda estática sobre el código.
+
+**3 · Revocar una tabla no revoca su secuencia.** Las columnas `IDENTITY` crean
+un objeto con privilegios propios, y los DEFAULT PRIVILEGES del proyecto pueden
+otorgar sobre `SEQUENCES`. El hueco se cerró antes de aplicar.
+
+**4 · Regla de selección en el SQL Editor.** Un bloque se selecciona **desde su
+apertura real —`DO $tag$` o `BEGIN;`— hasta su terminador completo**. Empezar en
+el `BEGIN` interno de un bloque PL/pgSQL produce
+`42601 syntax error at or near "SELECT"`, porque sin el `DO $tag$` delante
+PostgreSQL lee ese `BEGIN` como apertura de transacción. Pasó aplicando `s7_87`.
+
+**5 · Un `P0001` de una guarda PRE no es un fallo.** Al reintentar el PASO 1
+sobre una migración ya aplicada, la guarda de idempotencia abortó como debía. Lo
+correcto fue **medir el estado real** con un bloque read-only de 24
+comprobaciones en vez de deducir si la aplicación había quedado completa.
+
+### Nota histórica
+
+ℹ️ Existe `claude/s7_87-geo` (`30649f7`): **prototipo local descartado, nunca
+aplicado, nunca mergeado, no canónico.** Proponía una variante aditiva sobre el
+modelo legacy —`departments.country_id` y `clinics.country_id DEFAULT 'SV'`— que
+se abandonó al seleccionar la jerarquía genérica. **El único `s7_87` válido es el
+aplicado y mergeado mediante #365.**
+
+⚠️ **`s7_87` no se modifica tras aplicarse**, ni para corregir el comentario
+residual de su línea 120 («secciones 1 a 4» cuando el POST es la 5). Una
+migración aplicada es el registro de lo que se ejecutó; la cabecera «COMO
+APLICARLA» sí es correcta.
