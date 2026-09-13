@@ -1323,3 +1323,158 @@ aplicado y mergeado mediante #365.**
 residual de su línea 120 («secciones 1 a 4» cuando el POST es la 5). Una
 migración aplicada es el registro de lo que se ejecutó; la cabecera «COMO
 APLICARLA» sí es correcta.
+
+---
+
+## Fundación 2A · MULTICOUNTRY-GEO-P0 · carga del catálogo de El Salvador (2026-09-13)
+
+> 🚧 **Fundación 2A = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §6 y §10.b.
+
+**`s7_88` = migración 109, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+owner el 2026-09-13 **antes** de su PR, que la incorpora solo como registro
+versionado.
+
+⚠️ **No es un cambio funcional ni de esquema.** Es un **seed de datos** sin DDL, y
+ningún runtime lee `administrative_units`. El último HEAD funcional sigue siendo
+`e8e8c03` (#361) y el último cambio de esquema, `s7_87` (#365).
+
+### Qué carga
+
+**320 filas** en `administrative_units`, y nada más:
+
+| Nivel | Qué es | Filas | `legacy_id` |
+|---|---|---:|---|
+| 1 | Departamento | 14 | `departments.id` |
+| 2 | Municipio (reforma de 2023) | 44 | **NULL** |
+| 3 | Distrito (antiguo municipio) | 262 | `municipalities.id` |
+
+Los nombres **no salen de las tablas legacy**: salen del **catálogo candidato**, que
+corrige siete errores que esas tablas siguen conteniendo. Los 320 se **generaron**
+del CSV candidato con un script, no se teclearon.
+
+### La precondición: B1 y B2
+
+Fundación 2 estaba bloqueada hasta validar nombres y relaciones contra fuente
+oficial vigente. Se cumplió en dos fases.
+
+**B1 · snapshot de la base = PASS.** 262 filas, 14 / 44, `legacy_id` únicos,
+cero vacíos, cero anomalías de espaciado o caracteres invisibles. SHA-256
+`416e6fa5bbf130e21c18308d4519e6abbc392e46fd23e4826b43e8b30849ad69`.
+
+**B2 · reconciliación contra DL 762 reformado por DL 978 = PASS.** Texto
+consolidado de la bóveda de la CSJ (DO 110 / T.439, 14/06/2023; reforma DO 63 /
+T.443, 05/04/2024). Resultado: un catálogo candidato con **exactamente 7
+correcciones**, SHA-256
+`63d40d8ab28dc3ea192a5b340625cc10904891eb5a84a0e618b6dcee98934f74`.
+
+| `legacy_id` | Corrección |
+|---|---|
+| `CH-16` | Cancasque → **San Miguel de Mercedes** |
+| `SS-12` | San Salvador → **San Salvador y Capital de la República** |
+| `LU-09` | San José → **San José La Fuente** |
+| `SM-07` | San Antonio → **San Antonio del Mosco** |
+| `CU-06` | padre Cuscatlán Norte → **Cuscatlán Sur** |
+| `CU-07` | padre Cuscatlán Norte → **Cuscatlán Sur** |
+| `US-23` | padre Usulután Norte → **Usulután Este** |
+
+Cuatro diferencias tipográficas se conservan a propósito —`Juayúa` con tilde y
+tres `de la` en minúscula—, documentadas y no bloqueantes.
+
+### Diseño de la carga
+
+**Sin IDs mágicos.** El país se resuelve con
+`SELECT id INTO STRICT … WHERE iso_alpha2 = 'SV'`. Los padres se resuelven
+**relacionalmente, por nombre dentro del nivel superior** — legítimo **solo**
+porque la unicidad se midió: 14 de 14 departamentos y 44 de 44 municipios. Los
+nombres de distrito **no** son únicos —cinco se repiten entre departamentos—, así
+que el nivel 3 resuelve su padre por el municipio. Cada `INSERT` comprueba su
+`ROW_COUNT`: un JOIN que no encuentre padre aborta en vez de cargar menos filas.
+
+**`legacy_id` solo donde hay puente real.** Los 44 municipios de 2023 no tienen
+contraparte en el modelo anterior; un valor inventado sería un puente hacia
+ninguna parte.
+
+**Metadatos.** `official_code` NULL en las 320 —el decreto no asigna códigos—.
+`official_source` identifica DL 762 + DL 978. ⚠️ **`official_source_date` =
+2024-04-05 es la fecha de la última reforma incorporada al texto consolidado, NO
+la de creación de ninguna unidad.**
+
+**Atomicidad.** `BEGIN → carga → POST → COMMIT`, con las guardas POST dentro de la
+transacción: una verificación fallida revierte la carga entera y deja la tabla
+vacía. El PRE aborta si falta Fundación 1, si falta SV o sus tres niveles, o si ya
+hay unidades de SV. Rollback atómico que borra nivel 3, luego 2, luego 1, acotado
+a SV.
+
+**Estrictamente aditiva.** Cero `ALTER`, cero `DROP`, tres `INSERT` en una tabla
+vacía. `departments`, `municipalities`, `clinics`, `profiles`,
+`doctor_affiliation_requests`, `countries`, `country_levels`,
+`doctor_booking_ready`, frontend y Auth intactos. Cero grants y cero policies.
+Sin cambio de tipos: no hay DDL.
+
+### `CH-16`: el único puente que cambia de entidad
+
+Seis de las siete correcciones conservan la identidad de la entidad. **`CH-16` no**:
+la base legacy lo cargó como «Cancasque», que el decreto no reconoce, y el puente
+pasa a denotar San Miguel de Mercedes.
+
+Antes de aplicar se midió, **descubriendo las FK desde `pg_constraint`** en vez de
+enumerar tablas: **3 FK hacia `municipalities.id`, 0 referencias vivas, 0
+columnas municipales sin FK**, sobre 23 clínicas con municipio cargado. `CH-16`
+queda como **registro legacy mal rotulado sin dependencias**.
+
+⛔ **Precondición obligatoria de Fundación 3:** repetir ese precheck
+**inmediatamente antes de cualquier backfill o mapeo**. El cero describe el
+2026-09-13 y el legacy sigue escribible. La consulta está versionada en
+`docs/ANALISIS_MULTICOUNTRY_GEO.md` §6.4.
+
+### Evidencia de cierre
+
+**Verificación real en la base: 24/24 PASS**, con controles independientes del
+owner: 320 / 14 / 44 / 262, cero unidades de otro país, cero padres inválidos o
+cross-country, `legacy_id` 14 / 0 / 262 con **correspondencia biyectiva**,
+`official_code` NULL, fuente y fecha correctas, cero inactivas, **cero
+discrepancias con las 7 correcciones**, legacy en 14 / 262, cero grants y cero
+policies. Las 7 FK legacy y `doctor_booking_ready` quedaron verificados por las
+guardas POST dentro de la transacción comiteada.
+
+**Reconciliación del archivo:** sin cambios desde el commit enviado a aplicar;
+SHA-256 en git `afce37bcd31d00a164b355e871b72fef5e61c01670d12fe88e46c1f397d004e0`,
+idéntico al que produjo el generador.
+
+**Validación estática:** `check-s7_88` **123/123** con nueve tests de mutación de
+expectativa invertida · `check-s7_87` 126/126 · `check-s7_85` 98/98 ·
+`check-s7_86` 54/54 · `check-admin-doctor-csv` 75/75 ·
+`check-directory-booking-ready` 20/20.
+
+### Decisiones de arquitectura registradas
+
+- **El catálogo es data-driven.** Ningún frontend ni lógica de negocio puede
+  hardcodear países, departamentos, municipios ni distritos. La lista vive solo
+  como seed en `s7_88`; `administrative_units` será la fuente operativa.
+- ⛔ **`GEO-CATALOG-ADMIN/P1` = DIFERIDO.** Deberá operar **por IDs internos,
+  nunca por nombres**.
+
+### Lecciones de método
+
+**1 · Un preflight de dependencias no enumera tablas: las descubre.** La primera
+versión del precheck de `CH-16` listaba tres tablas escritas a mano. El owner
+exigió cubrir **toda** FK hacia `municipalities.id`, y la versión final la descubre
+desde `pg_constraint`, incluidas compuestas y columnas sin FK. Es la misma lección
+de #357, reaplicada.
+
+**2 · Una sonda tiene que reportar su propia completitud.** El primer export de B1
+devolvió 100 filas de 262 **sin ninguna señal** de estar truncado: el panel del SQL
+Editor corta en 100. La segunda versión añadió `n` y `total_esperado`, y un corte
+pasó a ser visible en el propio dato. Y el precheck de `CH-16` reporta cuántas
+columnas inspeccionó, para que un cero no pueda ser un silencio.
+
+**3 · Medir la unicidad antes de resolver por nombre.** El diseño asumía resolver
+padres por nombre; la medición mostró que funciona para departamentos y municipios
+pero **no** para distritos. Resolver el nivel 3 por su propio nombre habría
+colgado distritos del padre equivocado.
+
+**4 · Un artefacto del instrumento no es un hallazgo.** El extractor de PDF metió
+espacios dentro de palabras por los saltos de línea del original. La
+reconciliación los separó explícitamente como artefactos propios en vez de
+reportarlos como discrepancias del decreto.

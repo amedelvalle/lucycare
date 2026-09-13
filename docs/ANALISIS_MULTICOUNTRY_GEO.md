@@ -1,8 +1,10 @@
 # MULTICOUNTRY-GEO-P0 — modelo territorial multipaís
 
-> **Estado del frente: EN CURSO.** Fundación 1 = **CLOSED / APPLIED / VERIFIED**
-> (PR #365, `s7_87`, migración 108, 2026-09-12). Fundaciones 2 y 3 **diseñadas y
-> NO implementadas**.
+> **Estado del frente: EN CURSO.**
+> **Fundación 1 = CLOSED / APPLIED / VERIFIED** (PR #365, `s7_87`, migración 108,
+> 2026-09-12). **Fundación 2A = CLOSED / APPLIED / VERIFIED** (`s7_88`,
+> migración 109, 2026-09-13). La closure table y **Fundación 3** están
+> **diseñadas y NO implementadas**. **Ningún runtime lee el catálogo todavía.**
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -148,7 +150,8 @@ verifica cuando alguna columna es `NULL`: así una raíz pasa sin necesidad de
 excepción, y cuando hay padre se exige que comparta país.
 
 **Semilla:** solo El Salvador, con niveles 1 `Departamento`, 2 `Municipio`,
-3 `Distrito`. **`administrative_units` quedó vacía a propósito.**
+3 `Distrito`. **`administrative_units` quedó vacía a propósito** en Fundación 1.
+ℹ️ Desde **Fundación 2A** contiene las **320 unidades de El Salvador** — ver §6.
 
 **Privilegios:** RLS habilitada, **cero policies y cero grants** a `anon`,
 `authenticated` y `service_role`, sobre las tres tablas **y sobre las dos
@@ -158,7 +161,9 @@ con su primer consumidor.
 
 **Sin unique sobre `official_code`:** no hay códigos cargados y no está
 establecido que todo sistema oficial futuro respete la misma regla de unicidad.
-Se evalúa en Fundación 2, contra datos reales.
+**Sigue pendiente**: Fundación 2A cargó `official_code` NULL en las 320 unidades
+—el decreto no asigna códigos—, así que no hubo datos reales contra los que
+decidirlo. Se evaluará cuando se carguen códigos de una fuente oficial.
 
 ### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
 
@@ -189,29 +194,224 @@ fundación**.
 
 ## 6 · El Salvador vigente: 14 → 44 → 262
 
-📐 **DISEÑADO, NO IMPLEMENTADO.**
+✅ **IMPLEMENTADO — Fundación 2A** (`s7_88`, migración 109, aplicada y
+verificada el 2026-09-13).
 
-| Nivel | Qué es | Filas | Origen |
-|---|---|---:|---|
-| 1 | Departamento | 14 | migración desde `departments`, `legacy_id` = `'SS'` |
-| 2 | Municipio (reforma 2023) | 44 | **nuevas**, derivadas de `(department_id, district)` |
-| 3 | Distrito (antiguo municipio) | 262 | migración desde `municipalities`, `legacy_id` = `'SS-12'` |
+| Nivel | Qué es | Filas | Nombres | `legacy_id` |
+|---|---|---:|---|---|
+| 1 | Departamento | 14 | catálogo candidato | `departments.id` — `'SS'` |
+| 2 | Municipio (reforma 2023) | 44 | catálogo candidato | **NULL** — no existe equivalente legacy |
+| 3 | Distrito (antiguo municipio) | 262 | catálogo candidato | `municipalities.id` — `'SS-12'` |
+| | | **320** | | |
 
-Los 262 registros legacy **no representan por sí solos los tres niveles**: lo
-que traen es la pertenencia, en `district`. Los IDs actuales se conservan en
-`legacy_id`, sin renombrar nada.
+⚠️ **Los nombres NO salen de las tablas legacy**: salen del **catálogo
+candidato**, que corrige siete errores que las tablas legacy siguen conteniendo.
+Del modelo legacy solo se toma el **`legacy_id`**, como puente.
 
-⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2.** La **estructura vigente** de El
-Salvador —**14 departamentos / 44 municipios / 262 distritos**— está
-**respaldada por fuentes oficiales salvadoreñas**. Antes de Fundación 2 sigue
-siendo **bloqueante validar contra fuente oficial vigente y fechada los nombres
-y las relaciones exactas del catálogo completo**. La consistencia interna
-`262 / 0 nulos / 0 vacíos / 44 grupos / 14 departamentos` de nuestra base **no
-sustituye esa validación**.
+Los 44 municipios de 2023 **no llevan `legacy_id`**: no tienen contraparte en el
+modelo anterior, y un valor inventado sería un puente hacia ninguna parte.
 
-ℹ️ **No se fija todavía una fuente única canónica para los 262 nombres:** no ha
-sido revisada completa. Se establecerá en Fundación 2, y hasta entonces
-`official_source` y `official_source_date` quedan `NULL`.
+### 6.1 · Cómo se cumplió la precondición: auditorías B1 y B2
+
+La precondición exigía validar nombres y relaciones contra fuente oficial
+vigente, porque la consistencia interna de nuestra base no sustituye la autoridad
+del catálogo. Se cumplió en dos fases.
+
+**B1 · snapshot de la base = PASS.** Export read-only de las 262 filas de
+`municipalities` con su departamento y agrupador. Se obtuvo en cuatro tramos
+—el panel del SQL Editor trunca en 100 filas— con columnas autoverificables
+(`n`, `total_esperado`) para que un truncamiento fuera visible en el propio dato.
+Resultado: 262 filas, 14 departamentos, 44 agrupadores, `legacy_id` únicos, cero
+campos vacíos, **cero anomalías de espaciado o caracteres invisibles**, cobertura
+`n = 1..262` exacta. SHA-256 del snapshot reconstruido
+`416e6fa5bbf130e21c18308d4519e6abbc392e46fd23e4826b43e8b30849ad69`.
+
+**B2 · reconciliación contra la fuente jurídica = PASS.**
+
+| | |
+|---|---|
+| Norma | **Decreto Legislativo N.° 762** — Ley Especial para la Reestructuración Municipal |
+| Emisión y publicación | 13/06/2023 · **Diario Oficial N.° 110, Tomo 439, 14/06/2023** |
+| Reforma vigente | **DL 978** de 19/03/2024 · **Diario Oficial N.° 63, Tomo 443, 05/04/2024** — modifica el apartado de San Salvador Centro |
+| Ejemplar consultado | texto consolidado de la bóveda de jurisprudencia de la CSJ, `F9625.PDF`, SHA-256 `41c096af17e53e37c87d120f1d509928d65b37c44ea07a008816626d08c96dfa` |
+| Vigencia territorial | desde el 01/05/2024 |
+
+El consolidado trae la reforma incorporada y marca con `(1)` exactamente los cinco
+distritos de San Salvador Centro que DL 978 redefine. DL 1004 es normativa de
+transición y no redistribuye territorio.
+
+El texto se extrajo con un extractor propio de PDF, porque el entorno no tenía
+herramientas de PDF. Se autovalidó: devolvió **14 departamentos, 44 municipios y
+262 distritos**, cuadrando con el Art. 1 del decreto. Las discrepancias
+estructurales se **corroboraron con fuentes independientes**, incluida la cuenta
+institucional de la Asamblea Legislativa.
+
+### 6.2 · El catálogo candidato: exactamente 7 correcciones
+
+SHA-256 del candidato:
+`63d40d8ab28dc3ea192a5b340625cc10904891eb5a84a0e618b6dcee98934f74`.
+
+| `legacy_id` | Campo | Snapshot | Candidato | Clase |
+|---|---|---|---|---|
+| `CH-16` | distrito | Cancasque | **San Miguel de Mercedes** | faltante + sobrante |
+| `SS-12` | distrito | San Salvador | **San Salvador y Capital de la República** | nombre oficial |
+| `LU-09` | distrito | San José | **San José La Fuente** | nombre oficial |
+| `SM-07` | distrito | San Antonio | **San Antonio del Mosco** | nombre oficial |
+| `CU-06` | municipio | Cuscatlán Norte | **Cuscatlán Sur** | padre |
+| `CU-07` | municipio | Cuscatlán Norte | **Cuscatlán Sur** | padre |
+| `US-23` | municipio | Usulután Norte | **Usulután Este** | padre |
+
+Ningún `legacy_id` ni `department_id` cambió. Reconciliado de nuevo contra el
+decreto, el candidato quedó con **cero faltantes, cero sobrantes, cero nombres
+oficiales distintos y cero padres incorrectos**.
+
+**Cuatro diferencias conservadas a propósito**, por decisión del owner, no
+bloqueantes:
+
+| `legacy_id` | Cargado | Decreto | Decisión |
+|---|---|---|---|
+| `SO-01` | **Juayúa** | Juayua | resuelto a favor de la grafía con tilde |
+| `CH-27` | San Antonio de la Cruz | de La Cruz | tipográfica no sustantiva |
+| `SA-13` | Santiago de la Frontera | de La Frontera | tipográfica no sustantiva |
+| `SM-05` | San Luis de la Reina | de La Reina | tipográfica no sustantiva |
+
+Los CSV del snapshot y del candidato **no están versionados** en el repositorio,
+por decisión del owner: representan estados de trabajo, no catálogo canónico.
+Sus huellas SHA-256 quedan registradas aquí y en la cabecera de `s7_88`.
+
+### 6.3 · `CH-16`: el único puente que cambia de entidad
+
+De las 7 correcciones, **seis conservan la identidad** de la entidad —tres
+completan un nombre abreviado y tres corrigen el padre—. **`CH-16` es distinto**:
+la base legacy lo cargó como «Cancasque», un distrito que el decreto no reconoce,
+y el candidato lo corrige a San Miguel de Mercedes. **El `legacy_id` pasa a
+denotar otra entidad.**
+
+Antes de aplicar `s7_88` se midió si algo lo referenciaba. La consulta **descubre
+las referencias desde `pg_constraint`** en vez de enumerar tablas a mano —el
+fallo que el proyecto ya pagó en #357—.
+
+**Resultado, 2026-09-13:**
+
+| FK | Tabla · columna | Referencias a `CH-16` |
+|---|---|---:|
+| `fk_clinics_municipality` | `clinics` · `municipality_id` | 0 |
+| `doctor_affiliation_requests_municipality_id_fkey` | `doctor_affiliation_requests` · `municipality_id` | 0 |
+| `profiles_municipality_id_fkey` | `profiles` · `municipality_id` | 0 |
+| | **Total** | **0** |
+
+**Es un cero medido**: se inspeccionaron 3 columnas, que son exactamente las 3 FK
+que apuntan a `municipalities.id`, y no apareció ninguna columna municipal sin FK.
+Contexto: 23 clínicas con municipio cargado, ninguna en `CH-16`.
+
+**Decisión:** `CH-16` queda documentado como **registro legacy mal rotulado sin
+dependencias**, y `legacy_id = 'CH-16'` es un puente válido hacia **San Miguel de
+Mercedes**.
+
+El cero cubre los **datos referenciales vivos**, no menciones históricas en
+payloads de `audit_log`. Ese es el alcance correcto: `audit_log` registra lo que
+pasó, y reinterpretar `CH-16` no reescribe una traza.
+
+### 6.4 · ⛔ PRECONDICIÓN OBLIGATORIA DE FUNDACIÓN 3
+
+**Repetir este precheck inmediatamente antes de cualquier backfill o mapeo de
+referencias.** El cero de §6.3 describe el estado del **2026-09-13**. El modelo
+legacy sigue operativo y escribible después de Fundación 2A: una clínica podría
+registrarse en `CH-16` en cualquier momento. Si eso ocurre, mapear siguiendo el
+puente la convertiría en una clínica de San Miguel de Mercedes sin que nadie lo
+decida.
+
+**Total mayor que 0 → detenerse y decidir caso por caso antes de mapear.**
+
+```sql
+-- READ-ONLY. Una sola sentencia: seleccionarla entera y ejecutar.
+-- Es la consulta EXACTA que produjo el cero del 2026-09-13.
+WITH refs_fk AS (
+  -- Toda FK que apunte a municipalities.id, descubierta, no enumerada.
+  SELECT con.conname                AS fk,
+         src_ns.nspname             AS esquema,
+         src.relname                AS tabla,
+         a_src.attname              AS columna
+    FROM pg_constraint con
+    JOIN pg_class     src    ON src.oid = con.conrelid
+    JOIN pg_namespace src_ns ON src_ns.oid = src.relnamespace
+    JOIN pg_class     tgt    ON tgt.oid = con.confrelid
+    JOIN unnest(con.conkey, con.confkey) AS k(src_att, tgt_att) ON true
+    JOIN pg_attribute a_src  ON a_src.attrelid = con.conrelid  AND a_src.attnum = k.src_att
+    JOIN pg_attribute a_tgt  ON a_tgt.attrelid = con.confrelid AND a_tgt.attnum = k.tgt_att
+   WHERE con.contype = 'f'
+     AND tgt.relname = 'municipalities'
+     AND a_tgt.attname = 'id'
+),
+refs_sin_fk AS (
+  -- Columnas que huelen a municipio y NO están cubiertas por ninguna FK.
+  SELECT '(sin FK)'::name        AS fk,
+         c.table_schema::name    AS esquema,
+         c.table_name::name      AS tabla,
+         c.column_name::name     AS columna
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public'
+     AND c.column_name ILIKE '%municipality%'
+     AND c.table_name <> 'municipalities'
+     AND NOT EXISTS (SELECT 1 FROM refs_fk f
+                      WHERE f.esquema = c.table_schema
+                        AND f.tabla   = c.table_name
+                        AND f.columna = c.column_name)
+),
+todas AS (
+  SELECT * FROM refs_fk UNION ALL SELECT * FROM refs_sin_fk
+),
+conteos AS (
+  SELECT t.fk, t.esquema, t.tabla, t.columna,
+         (xpath('/row/c/text()',
+                query_to_xml(format('SELECT count(*) AS c FROM %I.%I WHERE %I = %L',
+                                    t.esquema, t.tabla, t.columna, 'CH-16'),
+                             false, true, '')))[1]::text::bigint AS referencias
+    FROM todas t
+)
+SELECT * FROM (
+  -- Detalle por FK / columna.
+  SELECT 1 AS orden,
+         c.fk::text                                  AS fk_o_nota,
+         (c.esquema || '.' || c.tabla)::text         AS tabla,
+         c.columna::text                             AS columna,
+         c.referencias
+    FROM conteos c
+
+  UNION ALL
+
+  -- Total agregado.
+  SELECT 2, '── TOTAL DE REFERENCIAS A CH-16 ──', '', '', sum(c.referencias)
+    FROM conteos c
+
+  UNION ALL
+
+  -- Cuántas columnas se inspeccionaron: si esto diera 0, la sonda no midió nada.
+  SELECT 3, '── columnas inspeccionadas ──', '', '', count(*)::bigint
+    FROM conteos c
+
+  UNION ALL
+
+  -- Contexto: qué nombre tiene HOY ese id en el catálogo legacy.
+  SELECT 4, '── nombre legacy actual de CH-16 ──',
+         coalesce(m.name, '(el id no existe)')::text,
+         coalesce(m.department_id, '')::text,
+         NULL::bigint
+    FROM (SELECT 1) AS u
+    LEFT JOIN public.municipalities m ON m.id = 'CH-16'
+
+  UNION ALL
+
+  -- Contexto: volumen total de referencias territoriales, para dimensionar.
+  SELECT 5, '── clinics con municipio cargado (contexto) ──', '', '',
+         count(*)::bigint
+    FROM public.clinics WHERE municipality_id IS NOT NULL
+) s
+ ORDER BY s.orden, s.referencias DESC NULLS LAST, s.tabla;
+```
+
+⚠️ Si `columnas inspeccionadas` diera **0**, la sonda no midió nada y el total
+sería un falso limpio: tratarlo como fallo, no como cero.
 
 ---
 
@@ -307,8 +507,9 @@ de admitir reservas.
 | | Alcance | Estado |
 |---|---|---|
 | **F1** | tablas genéricas nuevas, cero cambios a legacy o consumidores | ✅ **CLOSED / APPLIED / VERIFIED** — PR #365, `s7_87` |
-| **F2** | catálogo y mapeo de SV 14 → 44 → 262 | 📐 diseñada · ⛔ bloqueada por la validación oficial del §6 |
-| **F3** | `clinics.country_id` y `territory_unit_id`, nullable y con backfill | 📐 diseñada |
+| **F2A** | carga del catálogo de SV 14 → 44 → 262 en `administrative_units` | ✅ **CLOSED / APPLIED / VERIFIED** — `s7_88` |
+| — | closure table `administrative_unit_paths` + rebuild/verify | 📐 diseñada, no implementada |
+| **F3** | `clinics.country_id` y `territory_unit_id`, nullable y con backfill | 📐 diseñada · ⛔ **exige repetir el precheck de `CH-16` (§6.4)** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -361,10 +562,87 @@ registro de lo que se ejecutó. La cabecera «COMO APLICARLA» sí es correcta.
 descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 válido es el aplicado y mergeado mediante **#365**.
 
+## 10.b · Evidencia de cierre de Fundación 2A
+
+`s7_88` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+2026-09-13 **antes** de su PR, que la incorpora solo como registro versionado.
+PASO 1 (PRE) y PASO 2 (transacción completa) terminaron sin error.
+
+**Reconciliación del archivo aplicado con el repositorio:** el archivo no cambió
+desde el commit enviado a aplicar, y su SHA-256 en git
+(`afce37bcd31d00a164b355e871b72fef5e61c01670d12fe88e46c1f397d004e0`) es el mismo
+que imprimió el generador al producir esa versión.
+
+**Verificación real en la base: 24/24 PASS**, con controles read-only
+independientes del owner:
+
+| Control | Resultado |
+|---|---|
+| País SV único | 1 |
+| Unidades de SV | **320** |
+| Nivel 1 / 2 / 3 | **14 / 44 / 262** |
+| Unidades de otros países | 0 |
+| Raíces o padres inválidos | 0 |
+| Enlaces padre incorrectos o cross-country | 0 |
+| `legacy_id` por nivel | **14 / 0 / 262** |
+| Correspondencia con `departments` y `municipalities` | **completa y biyectiva** |
+| `official_code` no NULL | 0 |
+| `official_source_date` incorrecta | 0 |
+| Fuente con DL 762 + DL 978 | 320 de 320 |
+| Unidades inactivas | 0 |
+| Discrepancias con las 7 correcciones B2 | **0** |
+| Legacy `departments` / `municipalities` | 14 / 262 |
+| Grants `anon` / `authenticated` sobre `administrative_units` | 0 |
+| Policies sobre `administrative_units` | 0 |
+
+Las **7 FK legacy** y **`doctor_booking_ready`** no figuran en esa lista, pero
+quedaron verificados por las guardas POST de `s7_88`, que corren **dentro** de la
+transacción, entre su `BEGIN` y su `COMMIT`. Como el PASO 2 comiteó, se cumplieron
+en el momento del commit.
+
+**Validación estática:** `check-s7_88` **123/123**, con nueve tests de mutación de
+expectativa invertida que demuestran que las guardas detectan una lista
+corrompida. Regresiones `check-s7_87` 126/126, `check-s7_85` 98/98,
+`check-s7_86` 54/54, `check-admin-doctor-csv` 75/75,
+`check-directory-booking-ready` 20/20.
+
+⚠️ **`s7_88` no se modifica** tras aplicarse.
+
 ---
 
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
+- **El catálogo territorial es DATA-DRIVEN.** La lista de 320 unidades vive
+  **únicamente** como seed dentro de `s7_88`. **Ningún frontend ni lógica de
+  negocio puede hardcodear países, departamentos, municipios ni distritos.**
+  `administrative_units` será la fuente operativa. Hoy **ningún runtime la lee**:
+  la tabla no tiene grants ni policies, y conectarla es Fundación 3.
+- ⛔ **`GEO-CATALOG-ADMIN/P1` = DIFERIDO, NO abierto.** Mantenimiento controlado
+  del catálogo desde LucyAdmin. **Deberá operar por IDs internos, NUNCA por
+  nombres.** `s7_88` resolvió padres por nombre **solo porque la unicidad se midió
+  sobre ese catálogo concreto** (14 de 14 departamentos, 44 de 44 municipios; los
+  distritos **no** son únicos). Es una propiedad del dato cargado, no una garantía
+  del modelo: en cuanto exista edición, dos unidades podrían compartir nombre y la
+  resolución por nombre dejaría de ser determinista.
+
+  Lo que el modelo **ya** le deja preparado, sin haber añadido nada del módulo:
+  `is_active` para retirar sin borrar · PK opaca con `legacy_id` y
+  `official_code` como metadato, para renombrar o recodificar sin tocar claves ·
+  `country_levels` para que los rótulos sean dato · FK `(country_id, level)` que
+  impide crear una unidad en un nivel no declarado · FK compuesta
+  `(parent_id, country_id)` que impide reparentar entre países · `CHECK` raíz ⇔
+  nivel 1 que impide huérfanas · `official_source` / `official_source_date` para
+  registrar la procedencia de cada edición · **cero grants**, así que no existe
+  ninguna vía de escritura accidental.
+
+  Lo que P1 **tendrá que añadir**: RPCs de escritura con gate `is_admin()`,
+  mantenimiento de la closure table al mover un nodo, y traza de auditoría.
+- ⚠️ **`official_source_date` no es una fecha de la unidad.** En las 320 filas vale
+  **2024-04-05**: la fecha de la **última reforma incorporada al texto
+  consolidado** (publicación del DL 978). Los 14 departamentos son anteriores por
+  décadas, los 44 municipios nacen con el DL 762 de 2023 y los 262 distritos son
+  los municipios previos reclasificados. **No usarla como antigüedad, fecha de alta
+  ni clave de orden.**
 - **Labels territoriales:** `country_levels` existe para que la UI no hardcodee
   «Departamento». **No asumir que todos los países llaman igual a sus
   divisiones** y no crear dependencias nuevas a esos rótulos.

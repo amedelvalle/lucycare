@@ -4,23 +4,54 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-12) — post PR #365 en `main`.**
+> 🟢 **BASELINE VIGENTE (2026-09-13) — post Fundación 2A (`s7_88`).**
 >
-> ⚠️ **TRES BASELINES SEPARADOS. No confundirlos:**
+> ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **comportamiento observable** sigue siendo **#361** |
-> | **Último baseline de esquema** | **PR #365 / `s7_87`** — **108 migraciones aplicadas**, la última `s7_87_geo_foundation_1.sql` |
+> | **Migraciones aplicadas** | **109**, la última **`s7_88_geo_foundation_2a_sv_catalog.sql`** |
+> | **Último cambio de esquema** | **PR #365 / `s7_87`** — `s7_88` **no tiene DDL**: es un seed de datos |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
-> ⚠️ **#365 NO es un cambio funcional.** Modificó el **esquema** sin cambiar
-> ningún comportamiento observable: crea tres tablas que **ningún runtime
-> consume**. No presentarlo como cambio funcional ni promoverlo a HEAD funcional.
+> ⚠️ **Ni #365 ni `s7_88` son cambios funcionales.** `s7_87` modificó el
+> **esquema** y `s7_88` cargó **datos**, pero ningún runtime consume
+> `administrative_units`: cero cambios de comportamiento observable. No
+> presentarlos como cambios funcionales ni promoverlos a HEAD funcional.
 >
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
-> VERIFIED** (2026-09-12). **El frente completo NO está cerrado**: Fundaciones 2
-> y 3 están **diseñadas y NO implementadas**.
+> VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
+> (2026-09-13). **El frente completo NO está cerrado**: la closure table y
+> **Fundación 3** están **diseñadas y NO implementadas**.
+>
+> **Qué hizo Fundación 2A:** `s7_88` (**migración 109**) cargó el catálogo
+> territorial de El Salvador en `administrative_units`: **14 departamentos +
+> 44 municipios + 262 distritos = 320 unidades**. Solo `INSERT` en una tabla que
+> estaba vacía — cero `ALTER`, cero `DROP`, cero cambios al modelo legacy.
+> **`s7_88` = APPLIED / VERIFIED / NO REAPLICAR**; su guarda PRE aborta si ya hay
+> unidades de SV.
+>
+> **Verificación real en la base: 24/24 PASS**, con controles independientes del
+> owner: 320 / 14 / 44 / 262, cero unidades de otro país, cero raíces o padres
+> inválidos, cero enlaces cross-country, `legacy_id` en 14 + 0 + 262 con
+> **correspondencia biyectiva** contra `departments` y `municipalities`,
+> `official_code` NULL en las 320, fuente y fecha correctas, cero inactivas,
+> **cero discrepancias con las 7 correcciones B2**, legacy en 14 / 262, y **cero
+> grants ni policies** sobre `administrative_units`. Las 7 FK legacy y
+> `doctor_booking_ready` quedaron verificados por las guardas POST que corren
+> **dentro** de la transacción comiteada.
+>
+> **El catálogo es data-driven.** La lista de 320 vive **solo** como seed dentro
+> de `s7_88`; **ningún frontend ni lógica de negocio puede hardcodear países,
+> departamentos, municipios ni distritos**. `administrative_units` será la
+> fuente operativa. **Hoy ningún runtime la lee** — conectarla es Fundación 3.
+>
+> ⛔ **`GEO-CATALOG-ADMIN/P1` = DIFERIDO, NO abierto.** Mantenimiento controlado
+> del catálogo desde LucyAdmin. **Deberá operar por IDs internos, NUNCA por
+> nombres**: `s7_88` resolvió padres por nombre **solo porque la unicidad se
+> midió sobre ese catálogo concreto** (14 de 14, 44 de 44). En cuanto exista
+> edición, dos unidades podrían compartir nombre.
 >
 > **📘 Referencia canónica del frente: `docs/ANALISIS_MULTICOUNTRY_GEO.md`.**
 > Ahí viven las opciones A/B/C y por qué se eligió B, el modelo objetivo, los
@@ -51,23 +82,36 @@
 > country scope server-side, y **nunca** descargar médicos de otros países ni
 > catálogos territoriales globales.
 >
-> ⛔ **PRECONDICIÓN BLOQUEANTE de Fundación 2 — no es un frente abierto.**
-> La **estructura vigente** de El Salvador —**14 departamentos / 44 municipios /
-> 262 distritos**— está **respaldada por fuentes oficiales salvadoreñas**. Antes
-> de Fundación 2 sigue siendo **bloqueante validar contra fuente oficial vigente
-> y fechada los nombres y las relaciones exactas del catálogo completo**. La
-> consistencia interna `262 / 0 nulos / 44 grupos` de nuestra base **no
-> sustituye esa validación**.
+> ✅ **La precondición de Fundación 2 quedó CUMPLIDA.** El catálogo cargado se
+> reconcilió contra la fuente jurídica vigente —**DL 762** (DO 110, T.439,
+> 14/06/2023) **reformado por DL 978** (DO 63, T.443, 05/04/2024)— en dos fases:
+> **B1 PASS** (snapshot de la base: 262 filas, 14 / 44, 0 anomalías) y **B2 PASS**
+> (reconciliación distrito por distrito). Resultado: un **catálogo candidato**
+> con **exactamente 7 correcciones sustantivas**, que es lo que se cargó.
+> Detalle, correcciones, fuentes y huellas en
+> `docs/ANALISIS_MULTICOUNTRY_GEO.md`.
 >
-> ⚠️ **`s7_87` NO se modifica**, ni para corregir el comentario residual de su
-> línea 120 («secciones 1 a 4» cuando el POST es la 5). Una migración aplicada es
-> el registro de lo que se ejecutó; la cabecera «COMO APLICARLA» sí es correcta.
+> ⚠️ **`CH-16` = registro legacy MAL ROTULADO, sin dependencias.** Se cargó como
+> «Cancasque», un distrito que el decreto no reconoce; `legacy_id = 'CH-16'` es el
+> puente hacia **San Miguel de Mercedes**. Antes de aplicar `s7_88` se midió con
+> **descubrimiento sobre `pg_constraint`**: 3 FK hacia `municipalities.id`, **0
+> referencias vivas**, 0 columnas municipales sin FK.
+>
+> ⛔ **PRECONDICIÓN OBLIGATORIA DE FUNDACIÓN 3:** **repetir el precheck de
+> `CH-16` inmediatamente antes de cualquier backfill o mapeo de referencias.** El
+> cero describe el estado del **2026-09-13**; el modelo legacy sigue operativo y
+> escribible, así que una clínica podría registrarse en `CH-16` después. La
+> consulta está versionada en `docs/ANALISIS_MULTICOUNTRY_GEO.md`.
+>
+> ⚠️ **`s7_87` y `s7_88` NO se modifican.** Una migración aplicada es el registro
+> de lo que se ejecutó — incluido el comentario residual de `s7_87` línea 120.
 >
 > ℹ️ **Nota histórica:** existe `claude/s7_87-geo` (`30649f7`), **prototipo local
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **Fundación 2 NO iniciada. No abrir sin instrucción del owner.**
+> **Fundación 3 NO iniciada. No conectar frontend ni runtime al catálogo sin
+> instrucción del owner.**
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -685,10 +729,11 @@
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
 >
-> ⚠️ **El baseline de ESQUEMA es posterior y va por separado: PR #365 / `s7_87`,
-> con 108 migraciones aplicadas** (hasta `s7_87_geo_foundation_1.sql`). #365
-> cambió el esquema **sin cambiar comportamiento observable**, así que **no mueve
-> este HEAD funcional**. Ver el bloque de baseline al principio del archivo.
+> ⚠️ **Las migraciones van por separado: 109 aplicadas** (hasta
+> `s7_88_geo_foundation_2a_sv_catalog.sql`). El último cambio de **esquema** es
+> `s7_87` (#365) y `s7_88` es un **seed de datos** sin DDL. Ninguno de los dos
+> cambió comportamiento observable, así que **no mueven este HEAD funcional**.
+> Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
@@ -1109,8 +1154,22 @@ squash-merge, la rama puede borrarse.
   objetos existentes, cero FK previas tocadas, cero filas existentes leídas o
   escritas, y ningún objeto actual referencia a los nuevos. RLS con **cero
   policies y cero grants**, también sobre las dos secuencias. **Verificación real
-  en la base 24/24 PASS** con legacy intacto. **Fundaciones 2 y 3 diseñadas y NO
-  implementadas** → [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  en la base 24/24 PASS** con legacy intacto →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **Fundación 2A** 🚧 — **MULTICOUNTRY-GEO-P0 · F2A = CLOSED / APPLIED /
+  VERIFIED. El FRENTE sigue EN CURSO.** `s7_88` (**migración 109**, aplicada
+  antes del PR) carga el catálogo de El Salvador en `administrative_units`:
+  **14 + 44 + 262 = 320 unidades**, derivadas del **catálogo candidato** que
+  resultó de las auditorías **B1 PASS** y **B2 PASS** contra DL 762 reformado por
+  DL 978, con **exactamente 7 correcciones**. País resuelto por `iso_alpha2`,
+  padres resueltos **relacionalmente**, `legacy_id` **solo donde hay puente real**
+  (14 + 0 + 262), `official_code` NULL. **Solo `INSERT`, cero DDL.** `CH-16` se
+  midió **sin referencias vivas** y queda como puente de San Miguel de Mercedes,
+  con **precheck obligatorio antes de Fundación 3**. **Verificación real en la
+  base 24/24 PASS.** **Ningún runtime lee el catálogo todavía** →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
@@ -1505,6 +1564,23 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_88` MULTICOUNTRY-GEO-P0 · Fundación 2A (**migración 109**): **seed de
+  datos, sin DDL.** Carga en `administrative_units` el catálogo de El Salvador —
+  **14 departamentos, 44 municipios, 262 distritos = 320 unidades**—, derivado del
+  catálogo candidato validado contra DL 762 reformado por DL 978, con exactamente
+  7 correcciones. Los 320 nombres se **generaron** del CSV candidato, no se
+  teclearon. País resuelto por `iso_alpha2 = 'SV'` con `INTO STRICT`; padres
+  resueltos **relacionalmente por nombre dentro del nivel superior**, legítimo
+  solo porque la unicidad se midió (14 de 14 y 44 de 44; los nombres de distrito
+  **no** son únicos, así que el nivel 3 resuelve por municipio). Cada `INSERT`
+  comprueba su `ROW_COUNT`. `legacy_id` = `departments.id` en nivel 1, **NULL en
+  los 44 municipios** (nuevos en 2023, sin equivalente legacy) y
+  `municipalities.id` en nivel 3. `official_code` NULL en las 320;
+  `official_source` identifica DL 762 + DL 978 y `official_source_date` =
+  **2024-04-05 es la fecha de la última reforma incorporada, NO la de creación de
+  ninguna unidad**. Corre como **`BEGIN → carga → POST → COMMIT`**. **Cero
+  `ALTER`/`DROP`, cero grants, legacy intacto.** Verificada en la base con
+  **24/24 PASS**. **No se modifica** tras aplicarse.
 - `s7_87` MULTICOUNTRY-GEO-P0 · Fundación 1 (**migración 108**): tres tablas
   nuevas y cuatro filas de semilla. `countries` (PK `smallint IDENTITY` **opaca**
   + `iso_alpha2 UNIQUE` como metadato externo + `directory_enabled` y
