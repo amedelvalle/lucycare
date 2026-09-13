@@ -4,15 +4,15 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-13) — post Fundación 3A (`s7_89`, PR #368).**
+> 🟢 **BASELINE VIGENTE (2026-09-13) — post F3B paso 1 (`s7_90`, PR #369).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
-> | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **comportamiento observable** sigue siendo **#361** |
-> | **Migraciones aplicadas** | **110**, la última **`s7_89_geo_foundation_3a_clinics_columns.sql`** |
-> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
+> | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **código** con comportamiento observable sigue siendo **#361** |
+> | **Migraciones aplicadas** | **111**, la última **`s7_90_geo_foundation_3b_ch16_name.sql`** |
+> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. `s7_90` **no tiene DDL**: corrige un dato. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -21,11 +21,29 @@
 > cero cambios de comportamiento observable. No presentarlos como cambios
 > funcionales ni promoverlos a HEAD funcional.
 >
+> ⚠️ **#369 / `s7_90` es una CORRECCIÓN DE DATO VISIBLE, no un cambio de UI ni de
+> código.** Cambió **un nombre** del catálogo legacy, y por eso los selectores de
+> Chalatenango muestran otro texto; ninguna pantalla, componente ni lógica cambió.
+> No mueve el HEAD funcional.
+>
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
-> (2026-09-13) · **Fundación 3A = CLOSED / APPLIED / VERIFIED** (2026-09-13).
-> **El frente completo NO está cerrado**: la closure table y **F3B en adelante**
-> están **diseñadas y NO implementadas**.
+> (2026-09-13) · **Fundación 3A = CLOSED / APPLIED / VERIFIED** (2026-09-13) ·
+> **F3B paso 1 (`s7_90`, M2 de `CH-16`) = APPLIED / VERIFIED / CLOSED**
+> (2026-09-13). **El frente completo NO está cerrado**: `s7_91`, `s7_92`, la
+> closure table y F3C en adelante están **diseñados y NO implementados**.
+>
+> **Qué hizo `s7_90`:** (**migración 111**) renombró **solo**
+> `municipalities.name` de `CH-16`, de «Cancasque» a **«San Miguel de
+> Mercedes»**, conservando id, `department_id = 'CH'` y `district = 'Chalatenango
+> Sur'`. Procedió porque el descubrimiento dinámico de referencias dio **0**, y lo
+> repitió **dentro de la transacción con la fila bloqueada `FOR UPDATE`**. POST
+> con huellas de las otras 261 filas, `departments` y `administrative_units`.
+> Verificación read-only **17/17 PASS, Z = 0**, y **QA visual en producción
+> PASS** en el formulario público «Soy médico»: Chalatenango muestra San Miguel
+> de Mercedes, ya no Cancasque, y **San José Cancasque sigue como distrito
+> distinto**. **`s7_90` = APPLIED / VERIFIED / NO REAPLICAR**; su PRE aborta si
+> `CH-16` ya no se llama Cancasque.
 >
 > **Qué hizo Fundación 3A:** `s7_89` (**migración 110**) añadió a `clinics`
 > `country_id smallint` y `territory_unit_id bigint`, **nullable, sin default y
@@ -112,22 +130,27 @@
 > Detalle, correcciones, fuentes y huellas en
 > `docs/ANALISIS_MULTICOUNTRY_GEO.md`.
 >
-> ⚠️ **`CH-16` = registro legacy MAL ROTULADO, sin dependencias.** Se cargó como
-> «Cancasque», un distrito que el decreto no reconoce; `legacy_id = 'CH-16'` es el
-> puente hacia **San Miguel de Mercedes**. Antes de aplicar `s7_88` se midió con
-> **descubrimiento sobre `pg_constraint`**: 3 FK hacia `municipalities.id`, **0
-> referencias vivas**, 0 columnas municipales sin FK.
+> ✅ **`CH-16` CORREGIDO (M2, `s7_90`).** La base legacy lo había cargado como
+> «Cancasque», un distrito que el decreto no reconoce; `legacy_id = 'CH-16'` era el
+> puente hacia **San Miguel de Mercedes**. Con **0 referencias vivas** medidas
+> (3 FK hacia `municipalities.id`, 0 columnas municipales sin FK), `s7_90` corrigió
+> la fila legacy: **legacy y catálogo nuevo ya dicen lo mismo para `CH-16`**. Las
+> otras seis correcciones de B2 siguen solo en el catálogo nuevo: el legacy **no**
+> se corrige salvo decisión explícita.
 >
-> ⛔ **F3B DEBE COMENZAR repitiendo el precheck dinámico de `CH-16`**
-> (descubrimiento de FK sobre `pg_constraint`), inmediatamente antes de cualquier
-> backfill o mapeo de referencias. El cero describe el **2026-09-13**; el legacy
-> sigue escribible. **Mitigación decidida: M2** — si el precheck **continúa con 0
-> referencias**, corregir de forma atómica **solo la fila legacy** `CH-16`
-> (`Cancasque` → `San Miguel de Mercedes`, conservando id, departamento y
-> agrupador). **Si aparece cualquier referencia: STOP y reportar.** La consulta
-> está versionada en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §6.4.
+> 🧭 **Decisiones del owner para el resto de F3B (2026-09-13):** **D1** rechazar
+> (`P0183`) cualquier escritura que fije `country_id` / `territory_unit_id` en
+> contradicción con el legacy · **D2** `s7_91` empareja departamento y municipio en
+> `admin_approve_and_create_doctor`, que hoy los mezcla campo a campo con
+> `COALESCE(override, lead)` · **D3** prueba de comportamiento del trigger sobre una
+> **tabla sonda transaccional** que nunca se comitea, nunca con `UPDATE` sobre
+> filas reales · **D4 trigger normal, SIN `ENABLE ALWAYS`**: no hay requerimiento
+> medido de replicación entrante · **D6** tres migraciones secuenciales: `s7_90`
+> ✅ → `s7_91` → `s7_92` (resolver + trigger + retiro de la guarda F3A **en la
+> misma transacción**). Diseño y preflight en
+> `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11. **`s7_91` y `s7_92` NO iniciadas.**
 >
-> ⚠️ **`s7_87`, `s7_88` y `s7_89` NO se modifican.** Una migración aplicada es el
+> ⚠️ **`s7_87`, `s7_88`, `s7_89` y `s7_90` NO se modifican.** Una migración aplicada es el
 > registro de lo que se ejecutó — incluido el comentario residual de `s7_87`
 > línea 120 y el `$PRE$` de un comentario de `s7_89` línea 83 (ver la regla del
 > SQL Editor más abajo).
@@ -136,8 +159,9 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3B NO iniciada. No conectar frontend ni runtime al catálogo ni a las
-> columnas nuevas de `clinics` sin instrucción del owner.**
+> **`s7_91` y `s7_92` NO iniciadas; la guarda F3A sigue en pie. No conectar
+> frontend ni runtime al catálogo ni a las columnas nuevas de `clinics` sin
+> instrucción del owner.**
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -755,11 +779,11 @@
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
 >
-> ⚠️ **Las migraciones van por separado: 110 aplicadas** (hasta
-> `s7_89_geo_foundation_3a_clinics_columns.sql`). El último cambio de **esquema**
-> es `s7_89` (#368); antes, `s7_87` (#365), y `s7_88` es un **seed de datos** sin
-> DDL. Ninguno cambió comportamiento observable, así que **no mueven este HEAD
-> funcional**.
+> ⚠️ **Las migraciones van por separado: 111 aplicadas** (hasta
+> `s7_90_geo_foundation_3b_ch16_name.sql`). El último cambio de **esquema** es
+> `s7_89` (#368); antes, `s7_87` (#365). `s7_88` es un **seed de datos** y `s7_90`
+> una **corrección de dato visible** (un nombre del catálogo legacy), ambos sin
+> DDL. Ninguno cambió código, así que **no mueven este HEAD funcional**.
 > Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
@@ -1076,7 +1100,7 @@ Luego leé los documentos oficiales según el objetivo del día:
   directo y la closure table como diseño **no implementado**, los invariantes de
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
-  implementado frente a lo solo diseñado. **Fundaciones 1, 2A y 3A aplicadas;
+  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B paso 1 aplicadas;
   el frente no está cerrado.**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
@@ -1225,6 +1249,18 @@ squash-merge, la rama puede borrarse.
   producción sin regresión → [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#369** 🚧 — **MULTICOUNTRY-GEO-P0 · F3B paso 1 = CLOSED / APPLIED /
+  VERIFIED. El FRENTE sigue EN CURSO.** `s7_90` (**migración 111**, aplicada
+  antes del merge) corrige **solo** el nombre legacy de `CH-16`: «Cancasque» →
+  **«San Miguel de Mercedes»**, con id, departamento y agrupador intactos. **Es una
+  corrección de dato visible, no un cambio de UI ni de código.** Procedió con **0
+  referencias** recontadas dentro de la transacción con la fila bloqueada
+  `FOR UPDATE`; POST con huellas de todo lo demás. **Verificación 17/17 PASS** y
+  **QA visual en producción PASS** en «Soy médico». `s7_91` / `s7_92` no
+  iniciadas; la guarda F3A sigue en pie →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
@@ -1237,6 +1273,7 @@ squash-merge, la rama puede borrarse.
 
 **Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
+- **Grants DML de cliente sobre `departments` y `municipalities`** (medido en el preflight de F3B, 2026-09-13): `anon` y `authenticated` tienen `INSERT`/`UPDATE`/`DELETE` de **tabla**; la RLS solo tiene policies `SELECT`, así que las escrituras de cliente quedan denegadas y la RLS es la única barrera. **Deuda de hardening registrada, NO corregida en F3B** por decisión del owner: sin `REVOKE` ni cambios de RLS por inercia.
 - **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
 - **`check-s7_76` incompatible con CRLF en Windows — da `329/353`.** Deuda **PREEXISTENTE**, detectada durante `CRM-CSV-FECHAS-P0` (#350) y **demostrada A/B contra el archivo original**: da exactamente lo mismo sin ese cambio, así que **no es una regresión**. Causa: `core.autocrlf=true` deja los `.sql` con **CRLF** en el working tree y los regex del check anclan en `;\n`, que no casa con `;\r\n`. En git el blob está en **LF**. **No afecta a producción** —esas migraciones ya están aplicadas— y **no se corrigió**: es un frente aparte. **No tratarla como fallo de un PR nuevo.**
@@ -1617,6 +1654,19 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_90` MULTICOUNTRY-GEO-P0 · F3B paso 1 (**migración 111**): **corrección de
+  dato visible, sin DDL.** `UPDATE` de **solo** `municipalities.name` en `CH-16`
+  («Cancasque» → «San Miguel de Mercedes»), con el valor previo exacto
+  (`Cancasque` · `CH` · `Chalatenango Sur`) en el `WHERE`. PRE fuera de la
+  transacción; `BEGIN → GUARDA → UPDATE → POST → COMMIT`. La guarda bloquea la fila
+  `FOR UPDATE` **antes** de repetir el descubrimiento dinámico de referencias
+  (toda FK hacia `municipalities.id` más columnas `*municipality*` sin FK, igual que
+  §6.4) y aborta con cualquiera. El POST compara huellas md5, locales a la
+  transacción, de las otras 261 filas, `departments` y `administrative_units`, y
+  exige 14 / 44 / 262, 0 referencias y la guarda F3A en pie. Comparación de
+  nombres **exacta**: existe «San José Cancasque», que no se toca. Rollback atómico
+  que **se niega a revertir** si `CH-16` ya tiene referencias. Verificada con
+  **17/17 PASS** y QA visual. **No se modifica** tras aplicarse.
 - `s7_89` MULTICOUNTRY-GEO-P0 · Fundación 3A (**migración 110**): primera
   fundación que **altera una tabla en uso**. Añade a `clinics`
   `country_id smallint` y `territory_unit_id bigint`, **nullable y sin default**;
