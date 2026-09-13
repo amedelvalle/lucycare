@@ -754,6 +754,7 @@ export type Database = {
       clinics: {
         Row: {
           address_line: string | null
+          country_id: number | null
           created_at: string
           department_id: string | null
           id: string
@@ -763,10 +764,12 @@ export type Database = {
           name: string
           owner_id: string
           phone: string | null
+          territory_unit_id: number | null
           timezone: string
         }
         Insert: {
           address_line?: string | null
+          country_id?: number | null
           created_at?: string
           department_id?: string | null
           id?: string
@@ -776,10 +779,12 @@ export type Database = {
           name: string
           owner_id: string
           phone?: string | null
+          territory_unit_id?: number | null
           timezone?: string
         }
         Update: {
           address_line?: string | null
+          country_id?: number | null
           created_at?: string
           department_id?: string | null
           id?: string
@@ -789,15 +794,30 @@ export type Database = {
           name?: string
           owner_id?: string
           phone?: string | null
+          territory_unit_id?: number | null
           timezone?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "clinics_country_fkey"
+            columns: ["country_id"]
+            isOneToOne: false
+            referencedRelation: "countries"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clinics_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinics_territory_unit_country_fkey"
+            columns: ["territory_unit_id", "country_id"]
+            isOneToOne: false
+            referencedRelation: "administrative_units"
+            referencedColumns: ["id", "country_id"]
           },
           {
             foreignKeyName: "fk_clinics_department"
