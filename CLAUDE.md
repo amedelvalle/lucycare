@@ -4,26 +4,47 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-13) — post Fundación 2A (`s7_88`).**
+> 🟢 **BASELINE VIGENTE (2026-09-13) — post Fundación 3A (`s7_89`, PR #368).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **comportamiento observable** sigue siendo **#361** |
-> | **Migraciones aplicadas** | **109**, la última **`s7_88_geo_foundation_2a_sv_catalog.sql`** |
-> | **Último cambio de esquema** | **PR #365 / `s7_87`** — `s7_88` **no tiene DDL**: es un seed de datos |
+> | **Migraciones aplicadas** | **110**, la última **`s7_89_geo_foundation_3a_clinics_columns.sql`** |
+> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
-> ⚠️ **Ni #365 ni `s7_88` son cambios funcionales.** `s7_87` modificó el
-> **esquema** y `s7_88` cargó **datos**, pero ningún runtime consume
-> `administrative_units`: cero cambios de comportamiento observable. No
-> presentarlos como cambios funcionales ni promoverlos a HEAD funcional.
+> ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
+> `s7_89` modificaron el **esquema** y `s7_88` cargó **datos**, pero ningún
+> runtime consume `administrative_units` ni las columnas nuevas de `clinics`:
+> cero cambios de comportamiento observable. No presentarlos como cambios
+> funcionales ni promoverlos a HEAD funcional.
 >
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
-> (2026-09-13). **El frente completo NO está cerrado**: la closure table y
-> **Fundación 3** están **diseñadas y NO implementadas**.
+> (2026-09-13) · **Fundación 3A = CLOSED / APPLIED / VERIFIED** (2026-09-13).
+> **El frente completo NO está cerrado**: la closure table y **F3B en adelante**
+> están **diseñadas y NO implementadas**.
+>
+> **Qué hizo Fundación 3A:** `s7_89` (**migración 110**) añadió a `clinics`
+> `country_id smallint` y `territory_unit_id bigint`, **nullable, sin default y
+> con 0 valores**, más la FK a `countries`, la FK compuesta
+> `(territory_unit_id, country_id) → administrative_units (id, country_id)`, el
+> `CHECK` estructural **permanente** `territory_unit_id IS NULL OR country_id IS
+> NOT NULL` y dos índices. **Sin backfill, sin helper, sin tocar escritores ni
+> lectores, sin grants ni cambios de RLS.** `s7_89` = **APPLIED / VERIFIED / NO
+> REAPLICAR**; verificación read-only en la base **28/28 PASS**.
+>
+> 🔒 **GUARDA TEMPORAL `clinics_geo_f3a_temp_null_chk`** =
+> `CHECK (country_id IS NULL AND territory_unit_id IS NULL)`. Existe porque la
+> base **midió** `INSERT`/`UPDATE` de **tabla** para `anon` y `authenticated`
+> sobre `clinics` (RLS por `owner_id = auth.uid()`), y las columnas nuevas lo
+> heredan: sin ella, un propietario podría poblarlas desde el cliente antes de
+> F3B. **Permanece hasta F3B y solo se retira DENTRO de la misma transición que
+> habilite el dual-write controlado.** Retirarla sola reabriría la escritura
+> directa. No es hardening general de `clinics`: grants, policies y RLS **no se
+> tocaron**.
 >
 > **Qué hizo Fundación 2A:** `s7_88` (**migración 109**) cargó el catálogo
 > territorial de El Salvador en `administrative_units`: **14 departamentos +
@@ -97,21 +118,26 @@
 > **descubrimiento sobre `pg_constraint`**: 3 FK hacia `municipalities.id`, **0
 > referencias vivas**, 0 columnas municipales sin FK.
 >
-> ⛔ **PRECONDICIÓN OBLIGATORIA DE FUNDACIÓN 3:** **repetir el precheck de
-> `CH-16` inmediatamente antes de cualquier backfill o mapeo de referencias.** El
-> cero describe el estado del **2026-09-13**; el modelo legacy sigue operativo y
-> escribible, así que una clínica podría registrarse en `CH-16` después. La
-> consulta está versionada en `docs/ANALISIS_MULTICOUNTRY_GEO.md`.
+> ⛔ **F3B DEBE COMENZAR repitiendo el precheck dinámico de `CH-16`**
+> (descubrimiento de FK sobre `pg_constraint`), inmediatamente antes de cualquier
+> backfill o mapeo de referencias. El cero describe el **2026-09-13**; el legacy
+> sigue escribible. **Mitigación decidida: M2** — si el precheck **continúa con 0
+> referencias**, corregir de forma atómica **solo la fila legacy** `CH-16`
+> (`Cancasque` → `San Miguel de Mercedes`, conservando id, departamento y
+> agrupador). **Si aparece cualquier referencia: STOP y reportar.** La consulta
+> está versionada en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §6.4.
 >
-> ⚠️ **`s7_87` y `s7_88` NO se modifican.** Una migración aplicada es el registro
-> de lo que se ejecutó — incluido el comentario residual de `s7_87` línea 120.
+> ⚠️ **`s7_87`, `s7_88` y `s7_89` NO se modifican.** Una migración aplicada es el
+> registro de lo que se ejecutó — incluido el comentario residual de `s7_87`
+> línea 120 y el `$PRE$` de un comentario de `s7_89` línea 83 (ver la regla del
+> SQL Editor más abajo).
 >
 > ℹ️ **Nota histórica:** existe `claude/s7_87-geo` (`30649f7`), **prototipo local
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **Fundación 3 NO iniciada. No conectar frontend ni runtime al catálogo sin
-> instrucción del owner.**
+> **F3B NO iniciada. No conectar frontend ni runtime al catálogo ni a las
+> columnas nuevas de `clinics` sin instrucción del owner.**
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -729,10 +755,11 @@
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
 >
-> ⚠️ **Las migraciones van por separado: 109 aplicadas** (hasta
-> `s7_88_geo_foundation_2a_sv_catalog.sql`). El último cambio de **esquema** es
-> `s7_87` (#365) y `s7_88` es un **seed de datos** sin DDL. Ninguno de los dos
-> cambió comportamiento observable, así que **no mueven este HEAD funcional**.
+> ⚠️ **Las migraciones van por separado: 110 aplicadas** (hasta
+> `s7_89_geo_foundation_3a_clinics_columns.sql`). El último cambio de **esquema**
+> es `s7_89` (#368); antes, `s7_87` (#365), y `s7_88` es un **seed de datos** sin
+> DDL. Ninguno cambió comportamiento observable, así que **no mueven este HEAD
+> funcional**.
 > Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
@@ -987,6 +1014,18 @@
 > de transacción y falla con `42601 syntax error at or near "SELECT"`. Ocurrió
 > aplicando `s7_87`.
 >
+> ⚠️ **Dos reglas nuevas (2026-09-13), por un incidente real aplicando `s7_89`:**
+> **(1) No usar etiquetas `$…$` dentro de comentarios de migraciones.** El PASO 1
+> de `s7_89` se ejecutó seleccionando desde la línea 1, y el comentario de la
+> línea 83 contenía `` `DO $PRE$` ``: el SQL Editor lo tomó como apertura de
+> bloque y el `DO` falló con `42P01 relation "v_n" does not exist`. PostgreSQL
+> por sí solo lo habría ignorado; el problema está en el editor. `s7_87` y
+> `s7_88` no tenían etiquetas en comentarios. Sin efecto en la base: una sonda
+> confirmó cero residuos. **(2) Para SQL manual, entregar BLOQUES AUTÓNOMOS
+> listos para pegar en una pestaña nueva** —primera y última línea explícitas—,
+> en lugar de depender de seleccionar un rango dentro del archivo completo. Con el
+> bloque aislado en pestaña nueva, el mismo PRE de `s7_89` dio `Success`.
+>
 > **Identidad de git (corregida 2026-08-03):** local en este repo
 > `amedelvalle / lucycare.digital@gmail.com`; global
 > `amedelvalle / 240200944+amedelvalle@users.noreply.github.com`. No se reescribió
@@ -1037,8 +1076,8 @@ Luego leé los documentos oficiales según el objetivo del día:
   directo y la closure table como diseño **no implementado**, los invariantes de
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
-  implementado frente a lo solo diseñado. **Fundación 1 aplicada; el frente no
-  está cerrado.**
+  implementado frente a lo solo diseñado. **Fundaciones 1, 2A y 3A aplicadas;
+  el frente no está cerrado.**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1170,6 +1209,20 @@ squash-merge, la rama puede borrarse.
   con **precheck obligatorio antes de Fundación 3**. **Verificación real en la
   base 24/24 PASS.** **Ningún runtime lee el catálogo todavía** →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#368** 🚧 — **MULTICOUNTRY-GEO-P0 · Fundación 3A = CLOSED / APPLIED /
+  VERIFIED. El FRENTE sigue EN CURSO.** `s7_89` (**migración 110**, aplicada
+  antes del merge) añade a `clinics` `country_id` y `territory_unit_id`,
+  **nullable, sin default y con 0 valores**, con FK individual, FK compuesta
+  hacia `administrative_units (id, country_id)`, `CHECK` estructural permanente y
+  dos índices. Un precheck read-only **midió** `INSERT`/`UPDATE` de tabla para
+  `anon`/`authenticated` sobre `clinics`, así que las columnas nacen bloqueadas
+  por la **guarda temporal `clinics_geo_f3a_temp_null_chk`**, que solo se retira
+  en F3B junto al dual-write. **Grants, RLS y policies sin tocar.** Barrido de
+  consumidores y de **lectores comodín** con controles positivos y control
+  cruzado contra la base. **Verificación real en la base 28/28 PASS**, smoke de
+  producción sin regresión → [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
@@ -1564,6 +1617,21 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_89` MULTICOUNTRY-GEO-P0 · Fundación 3A (**migración 110**): primera
+  fundación que **altera una tabla en uso**. Añade a `clinics`
+  `country_id smallint` y `territory_unit_id bigint`, **nullable y sin default**;
+  FK `clinics_country_fkey → countries(id)`; FK compuesta
+  `clinics_territory_unit_country_fkey (territory_unit_id, country_id) →
+  administrative_units (id, country_id)` (reutiliza `au_id_country_key`);
+  `CHECK clinics_territory_requires_country_chk` **permanente** —sin él, `MATCH
+  SIMPLE` dejaría pasar una unidad sin país—; **guarda temporal
+  `clinics_geo_f3a_temp_null_chk`** (ambas columnas NULL, con `COMMENT` que la
+  marca TEMPORAL y removible solo en F3B junto al dual-write); dos índices. **Sin
+  backfill, helper, trigger, grants, REVOKE ni policies.** PRE fuera de la
+  transacción; `BEGIN → DDL → POST → COMMIT`, con el POST comparando la
+  definición desparseada de los CHECK, `convalidated`, la marca TEMPORAL, los
+  valores NULL, el legacy y los privilegios medidos. Verificada en la base con
+  **28/28 PASS**. **No se modifica** tras aplicarse.
 - `s7_88` MULTICOUNTRY-GEO-P0 · Fundación 2A (**migración 109**): **seed de
   datos, sin DDL.** Carga en `administrative_units` el catálogo de El Salvador —
   **14 departamentos, 44 municipios, 262 distritos = 320 unidades**—, derivado del

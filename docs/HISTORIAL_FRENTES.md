@@ -1478,3 +1478,125 @@ colgado distritos del padre equivocado.
 espacios dentro de palabras por los saltos de línea del original. La
 reconciliación los separó explícitamente como artefactos propios en vez de
 reportarlos como discrepancias del decreto.
+
+---
+
+## #368 · MULTICOUNTRY-GEO-P0 · Fundación 3A · columnas territoriales en `clinics` (2026-09-13)
+
+> 🚧 **Fundación 3A = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §6.4, §9, §10.c y §11.
+
+**`s7_89` = migración 110, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+owner el 2026-09-13 **antes** del merge de #368, que la incorpora como registro
+versionado.
+
+⚠️ **Cambio de esquema, NO funcional.** Es la primera fundación que altera una
+tabla en uso, pero las columnas nacen vacías y bloqueadas, y nada las lee ni las
+escribe. El último HEAD funcional sigue siendo `e8e8c03` (#361); el último cambio
+de esquema pasa a ser `s7_89`.
+
+### Qué añade
+
+A `clinics`: `country_id smallint` y `territory_unit_id bigint`, **nullable y sin
+default**; FK a `countries(id)`; FK compuesta
+`(territory_unit_id, country_id) → administrative_units (id, country_id)`;
+`CHECK` estructural **permanente** `territory_unit_id IS NULL OR country_id IS NOT
+NULL`, obligatorio porque `MATCH SIMPLE` no verifica nada si una columna es NULL;
+**guarda temporal** `clinics_geo_f3a_temp_null_chk` (ambas columnas NULL); dos
+índices.
+
+**No hace:** backfill, helper, trigger, grants, `REVOKE` ni policies. No toca los
+3 escritores de ubicación, sus lectores, las columnas legacy ni sus 7 FK,
+`profiles`, `doctor_affiliation_requests` ni `doctor_booking_ready`.
+
+### Por qué hay una guarda temporal
+
+El diseño original solo exigía que las columnas nuevas no quedaran **más**
+accesibles que `department_id`. El owner pidió medirlo antes de aplicar, y la sonda
+read-only lo cambió todo: **`anon` y `authenticated` tienen `INSERT` y `UPDATE` de
+TABLA sobre `clinics`** (`relacl arwdDxtm`), con RLS por `owner_id = auth.uid()`.
+Las columnas nuevas lo heredan: el propietario de una clínica podría poblarlas
+desde el cliente antes de F3B. Regla del owner: **STOP y analizar, y no cambiar
+grants ni RLS por inercia.**
+
+La solución fue acotada: `CHECK (country_id IS NULL AND territory_unit_id IS NULL)`.
+Bloquea las columnas sea cual sea el grant, deja funcionando todo el runtime —que
+las omite— y **no** es hardening general de `clinics`. Lleva un
+`COMMENT ON CONSTRAINT` que la marca como TEMPORAL en la propia base. ⛔ **Permanece
+hasta F3B y solo se retira dentro de la misma transición que habilite el
+dual-write controlado.**
+
+### Lectores comodín
+
+Un consumidor que recibe la fila completa de `clinics` sin nombrar columnas
+—`select('*')`, `clinics(*)`, `SELECT *`, `alias.*`, `RETURNS SETOF clinics`—
+obtendría las columnas nuevas sin pedirlas. **Cero en la app**: los 5 lectores
+nombran columnas. **Cero en la base** en funciones de tipo `clinics`. La sonda
+marcó por un patrón grueso 5 cuerpos y 1 vista; confrontados con sus
+**definiciones vivas**, los 6 resultaron falsos positivos. Cuatro cuerpos
+coincidieron **byte a byte** con el repositorio en CRLF; el quinto
+(`admin_list_patient_merge_candidates`) es el mismo cuerpo sin sus 3 líneas de
+comentario. `check-s7_89` incorporó ese barrido como protección contra
+regresiones, con un **control cruzado**: el patrón grueso aplicado al repositorio
+reproduce exactamente los 5 nombres de la base.
+
+### Evidencia de cierre
+
+**Verificación read-only en la base: 28/28 PASS**, veredicto 0 FAIL. Columnas
+nullable y sin default con **0 valores** · ambas FK validadas · `CHECK`
+estructural validado · **guarda temporal validada y marcada TEMPORAL** · índices
+válidos · **`doctor_booking_ready` con cuerpo idéntico a `s7_85` por md5** ·
+legacy 14 / 262 / 7 FK · catálogo 1 / 3 / 320 · `relacl`, RLS, policies y trigger
+de `clinics` idénticos al precheck · 0 funciones y 0 vistas usan las columnas
+nuevas · 0 residuos.
+
+**Smoke de producción tras el `COMMIT`:** `sitemap.xml` con 46 `<loc>` y 45
+médicos, y el perfil del médico demo con `addressLocality` resuelto. Ambas rutas
+leen `clinics!inner(...)`.
+
+**Reconciliación del archivo:** aplicado desde el commit `1b29e9b` (PASO 1
+L88–L156, PASO 2 L162–L385), sin cambios posteriores; SHA-256 del blob
+`004d051db35086b431dd4db6f8e10e50d66b32b9c74163042c06b380fcbd17a7`.
+
+**Validación estática:** `check-s7_89` **186/186**; contra la versión sin guarda,
+**160/186**, con los 26 FAIL exactamente en la guarda · `check-s7_88` 123/123 ·
+`check-s7_87` 126/126 · `check-s7_85` 98/98 · `check-s7_86` 54/54 ·
+`check-admin-doctor-csv` 75/75 · `check-directory-booking-ready` 20/20 · `tsc -b`
+427 vs 427 · `build` y `git diff --check` PASS.
+
+**Fuera de la migración:** `check-s7_87` se reancló. Verificaba sobre el
+`database.types.ts` vivo que `clinics` no tuviera columnas nuevas, algo que F3A
+cambia legítimamente; ahora lo verifica sobre el DDL de `s7_87`, sin debilitarse.
+
+### Decisiones del owner para F3B en adelante
+
+- ⛔ **F3B empieza repitiendo el precheck dinámico de `CH-16`.** Mitigación **M2**:
+  corregir de forma atómica solo la fila legacy (`Cancasque` → `San Miguel de
+  Mercedes`), **solo si continúa con 0 referencias**; si no, STOP.
+- **Backfill de país sin teléfonos** como evidencia.
+- **`profiles` y `doctor_affiliation_requests` no se migran dentro de F3.**
+- **SEO fuera de F3.**
+
+### Lecciones de método
+
+**1 · Medir los privilegios, no deducirlos.** «Sin grants nuevos» era verdad y
+no alcanzaba: las columnas heredan el privilegio de tabla, y eso solo se ve en
+la base. Sin la sonda, F3A habría dejado dos columnas escribibles desde el
+cliente.
+
+**2 · Un patrón grueso sirve para encontrar candidatos, no para concluir.**
+`prosrc` incluye comentarios, así que un `SELECT *` escrito en un comentario de
+`admin_export_doctors` cuenta como hallazgo. Cada candidato se resolvió contra su
+definición viva, y la diferencia entre instrumentos se convirtió en un control
+cruzado.
+
+**3 · Los controles positivos destaparon dos defectos del propio barrido.** Un
+`DROP` + `CREATE` en el mismo archivo dejaba la función como eliminada, y un `;`
+dentro de un comentario cortaba la definición de una vista. Sin controles, ambos
+habrían dado un cero falso.
+
+**4 · Una etiqueta `$…$` en un comentario rompió el SQL Editor.** El PASO 1 se
+ejecutó desde la línea 1 y el `` `DO $PRE$` `` del comentario de L83 se tomó como
+apertura de bloque: `42P01`. Sin efecto, confirmado con una sonda de residuos.
+Reglas nuevas: **no usar `$…$` en comentarios de migraciones** y **entregar el
+SQL manual como bloques autónomos para pegar en una pestaña nueva**.

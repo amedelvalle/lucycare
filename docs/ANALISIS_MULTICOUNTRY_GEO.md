@@ -3,8 +3,10 @@
 > **Estado del frente: EN CURSO.**
 > **Fundación 1 = CLOSED / APPLIED / VERIFIED** (PR #365, `s7_87`, migración 108,
 > 2026-09-12). **Fundación 2A = CLOSED / APPLIED / VERIFIED** (`s7_88`,
-> migración 109, 2026-09-13). La closure table y **Fundación 3** están
-> **diseñadas y NO implementadas**. **Ningún runtime lee el catálogo todavía.**
+> migración 109, 2026-09-13). **Fundación 3A = CLOSED / APPLIED / VERIFIED**
+> (PR #368, `s7_89`, migración 110, 2026-09-13). La closure table y **F3B en
+> adelante** están **diseñadas y NO implementadas**. **Ningún runtime lee el
+> catálogo ni las columnas nuevas de `clinics` todavía.**
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -165,13 +167,44 @@ establecido que todo sistema oficial futuro respete la misma regla de unicidad.
 —el decreto no asigna códigos—, así que no hubo datos reales contra los que
 decidirlo. Se evaluará cuando se carguen códigos de una fuente oficial.
 
-### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
+### ✅ IMPLEMENTADO — Fundación 3A (`s7_89`, migración 110)
 
 ```
 clinics  (+2 columnas, ninguna existente se toca)
-  country_id        smallint  -> countries(id)          -- filtro nacional directo
-  territory_unit_id bigint    -> administrative_units(id) -- unidad más específica conocida
+  country_id        smallint NULL  -> countries(id)                       -- filtro nacional directo
+  territory_unit_id bigint   NULL                                         -- unidad más específica conocida
+  FK (territory_unit_id, country_id) -> administrative_units (id, country_id)
+  CHECK clinics_territory_requires_country_chk                            -- PERMANENTE
+        territory_unit_id IS NULL OR country_id IS NOT NULL
+  CHECK clinics_geo_f3a_temp_null_chk                                     -- TEMPORAL F3A
+        country_id IS NULL AND territory_unit_id IS NULL
+  índices clinics_country_id_idx, clinics_territory_unit_id_idx
+```
 
+**Las columnas existen y no contienen nada**: sin default, sin backfill y con 0
+valores en producción. Ningún escritor, lector, función ni vista las usa.
+
+**La FK es compuesta, no simple** como decía el diseño previo: garantiza que la
+unidad pertenece **al mismo país** que la clínica. Usa `MATCH SIMPLE`, que no
+verifica nada si alguna columna es NULL; por eso el `CHECK` estructural es
+**obligatorio y permanente**: si hay unidad, hay país, y entonces la FK sí
+comprueba el par.
+
+**🔒 La guarda temporal.** Un precheck read-only midió que `anon` y
+`authenticated` tienen `SELECT`, `INSERT` y `UPDATE` **de tabla** sobre `clinics`
+(`relacl arwdDxtm`, sin grants por columna), con RLS activa por
+`owner_id = auth.uid()`. Las columnas nuevas **heredan** ese privilegio. Sin la
+guarda, el propietario de una clínica podría poblarlas desde el cliente antes de
+que exista el camino controlado. `clinics_geo_f3a_temp_null_chk` lo impide sea
+cual sea el grant o la policy, y deja funcionando todo `INSERT`/`UPDATE` que omita
+las columnas —el runtime entero—. **Permanece hasta F3B y solo se retira dentro de
+la misma transición que habilite el dual-write controlado.** Lleva un
+`COMMENT ON CONSTRAINT` que lo dice en la propia base. No es hardening general:
+grants, RLS y policies **no se tocaron**.
+
+### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
+
+```
 administrative_unit_paths                               -- closure table
   ancestor_id bigint, unit_id bigint, depth smallint
   PK (ancestor_id, unit_id)
@@ -313,6 +346,16 @@ payloads de `audit_log`. Ese es el alcance correcto: `audit_log` registra lo que
 pasó, y reinterpretar `CH-16` no reescribe una traza.
 
 ### 6.4 · ⛔ PRECONDICIÓN OBLIGATORIA DE FUNDACIÓN 3
+
+**F3B debe COMENZAR repitiendo este precheck dinámico**, inmediatamente antes de
+cualquier backfill o mapeo de referencias. F3A no mapeó nada y no lo necesitó.
+
+**Mitigación decidida por el owner: M2** (no M1). Si el precheck **continúa con 0
+referencias**, corregir de forma **atómica solo la fila legacy** `CH-16`:
+`Cancasque` → `San Miguel de Mercedes`, conservando id, departamento y agrupador.
+**M2 solo procede con 0 referencias; si aparece cualquiera, STOP y reportar.** No
+se ofrece una opción seleccionable que después falle con error cuando el dato de
+origen puede corregirse con seguridad.
 
 **Repetir este precheck inmediatamente antes de cualquier backfill o mapeo de
 referencias.** El cero de §6.3 describe el estado del **2026-09-13**. El modelo
@@ -509,7 +552,10 @@ de admitir reservas.
 | **F1** | tablas genéricas nuevas, cero cambios a legacy o consumidores | ✅ **CLOSED / APPLIED / VERIFIED** — PR #365, `s7_87` |
 | **F2A** | carga del catálogo de SV 14 → 44 → 262 en `administrative_units` | ✅ **CLOSED / APPLIED / VERIFIED** — `s7_88` |
 | — | closure table `administrative_unit_paths` + rebuild/verify | 📐 diseñada, no implementada |
-| **F3** | `clinics.country_id` y `territory_unit_id`, nullable y con backfill | 📐 diseñada · ⛔ **exige repetir el precheck de `CH-16` (§6.4)** |
+| **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
+| **F3B** | precheck de `CH-16` + M2, mapeo y **dual-write controlado**; retira la guarda temporal **en la misma transición** | 📐 diseñada, no iniciada · ⛔ **empieza por el precheck de `CH-16` (§6.4)** |
+| **F3C** | backfill de `country_id` / `territory_unit_id` | 📐 diseñada, no iniciada · **sin teléfonos como evidencia de país (§11)** |
+| **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -608,9 +654,94 @@ corrompida. Regresiones `check-s7_87` 126/126, `check-s7_85` 98/98,
 
 ⚠️ **`s7_88` no se modifica** tras aplicarse.
 
+## 10.c · Evidencia de cierre de Fundación 3A
+
+`s7_89` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+2026-09-13 **antes** del merge de #368, que la incorpora como registro versionado.
+
+**Dos prechecks read-only antes de aplicar.**
+
+1. **Privilegios efectivos de `clinics`.** `anon` y `authenticated` con
+   `SELECT`/`INSERT`/`UPDATE` de **tabla**, heredados también por
+   `department_id`; `relacl` `arwdDxtm` para `anon`, `authenticated` y
+   `service_role`; 0 grants por columna; RLS activa y no forzada; 4 policies
+   (`clinics_insert` y `clinics_update` por `owner_id = auth.uid()`,
+   `clinics_public_read` y `clinics_select`); 1 trigger (`trg_clinics_updated_at`,
+   que no serializa la fila); 0 publicaciones. Veredicto **STOP**, resuelto **sin
+   cambiar grants ni RLS**, con la guarda temporal.
+2. **Lectores comodín de `clinics`** —consumidores que recibirían las columnas
+   nuevas sin pedirlas—. En la app, 0: los 5 lectores nombran columnas. En la
+   base, 0 funciones de tipo `clinics`. Un patrón **grueso** marcó 5 cuerpos y 1
+   vista; confrontados con sus **definiciones vivas**, los 6 resultaron falsos
+   positivos: `SELECT *` sobre otras tablas, un comentario, y `alias.*` sobre CTE
+   de columnas explícitas de `patients`. Cuatro cuerpos coincidieron byte a byte
+   con el repositorio en CRLF; el quinto es el mismo cuerpo sin 3 líneas de
+   comentario.
+
+**Reconciliación del archivo aplicado:** el PASO 1 fue L88–L156 y el PASO 2
+L162–L385 del commit `1b29e9b`, sin cambios posteriores; SHA-256 del blob
+`004d051db35086b431dd4db6f8e10e50d66b32b9c74163042c06b380fcbd17a7`.
+
+**Verificación read-only en la base: 28/28 PASS, veredicto 0 FAIL.**
+
+| Control | Resultado |
+|---|---|
+| Columnas | `smallint` / `bigint`, nullable, sin default · **0 clínicas con valores** |
+| FK individual y compuesta | definición exacta · validadas · `MATCH SIMPLE` |
+| `CHECK` estructural | definición exacta · validado |
+| Guarda temporal | definición exacta · **validada** · marcada `TEMPORAL DE FUNDACION 3A` · 4 constraints sobre las columnas nuevas, exactamente los previstos |
+| Índices | `btree` · válidos |
+| `doctor_booking_ready` | 1 definición · **cuerpo idéntico a `s7_85` por md5** · `STABLE`, `SECURITY DEFINER`, `EXECUTE` de `anon` |
+| Legacy | 2 columnas · 14 departamentos · 262 municipios · 7 FK NO ACTION |
+| Catálogo | 1 país · 3 niveles · 320 unidades |
+| `clinics` | `relacl`, RLS, 4 policies y trigger **idénticos al precheck** |
+| Consumidores | 0 funciones mencionan las columnas nuevas · 0 vistas dependen de ellas |
+| Residuos del intento fallido del PASO 1 | ninguno |
+
+**Smoke de producción tras el `COMMIT`**, con query string único: `sitemap.xml`
+con 46 `<loc>` y 45 médicos, por la ruta de éxito que lee `clinics!inner(...)`, y
+el perfil del médico demo con `addressLocality` resuelto. Vercel no expone la
+cabecera de caché, así que «fresco» es muy probable, no demostrado.
+
+**Validación estática:** `check-s7_89` **186/186**. **A/B del instrumento:** el
+mismo check contra la versión sin guarda da **160/186**, y los 26 FAIL son
+exactamente las aserciones de la guarda y sus mutaciones. Regresiones:
+`check-s7_88` 123/123, `check-s7_87` 126/126 (reanclado a su propio DDL),
+`check-s7_85` 98/98, `check-s7_86` 54/54, `check-admin-doctor-csv` 75/75,
+`check-directory-booking-ready` 20/20. `tsc -b` 427 vs 427, `build` y
+`git diff --check` PASS.
+
+**Incidente de aplicación, sin efecto.** El primer PASO 1 se ejecutó desde la
+línea 1 y falló con `42P01 relation "v_n" does not exist`: el comentario de la
+línea 83 contiene `` `DO $PRE$` `` y el SQL Editor lo tomó como apertura de bloque.
+Pegado como bloque autónomo en una pestaña nueva, el mismo PRE dio `Success`. De
+ahí salen dos reglas vinculantes (§11).
+
+⚠️ **`s7_89` no se modifica** tras aplicarse, incluido ese comentario de L83.
+
 ---
 
 ## 11 · Deudas y decisiones registradas, ninguna abierta
+
+- 🔒 **`clinics_geo_f3a_temp_null_chk` permanece hasta F3B** y **solo se retira
+  dentro de la misma transición que habilite el dual-write controlado** y su
+  protección. Retirarla sola reabriría la escritura directa desde el cliente, que
+  la tabla sigue admitiendo por sus grants.
+- ⛔ **F3B empieza repitiendo el precheck dinámico de `CH-16` (§6.4).** M2 —corregir
+  solo la fila legacy— **procede únicamente si continúa con 0 referencias**.
+- **Backfill de país (F3C): NO usar teléfonos como evidencia de país.** Una clínica
+  con ubicación legacy es de SV porque ese catálogo legacy es de SV. Las clínicas
+  **sin** ubicación se miden aparte; no se infiere su país por prefijo telefónico.
+- **`profiles` y `doctor_affiliation_requests` NO se migran dentro de F3.** Sus
+  consumidores legacy se mantienen por compatibilidad (`legacy_id` / adaptador) o
+  se separan de los selectores nuevos. No ampliar el frente a esas tablas.
+- **SEO fuera de F3.** No se decide todavía si `addressLocality` publica distrito o
+  municipio.
+- **Migraciones: no usar etiquetas `$…$` dentro de comentarios.** El SQL Editor de
+  Supabase puede tomarlas como apertura de un bloque (incidente de `s7_89`, §10.c).
+- **SQL manual: entregar bloques autónomos listos para pegar en una pestaña
+  nueva**, con primera y última línea explícitas, en lugar de depender de
+  seleccionar un rango dentro del archivo completo.
 
 - **El catálogo territorial es DATA-DRIVEN.** La lista de 320 unidades vive
   **únicamente** como seed dentro de `s7_88`. **Ningún frontend ni lógica de
@@ -668,5 +799,5 @@ corrompida. Regresiones `check-s7_87` 126/126, `check-s7_85` 98/98,
   de prefijos y que debería consumir una fuente única. Cuando `countries` tenga
   consumidores, será un candidato natural — **no resolverlo por duplicado**.
 - **Tipos:** `src/types/database.types.ts` se actualizó **a mano** para las tres
-  tablas nuevas. `TYPES-RECONCILIATION-P0` sigue siendo un frente aparte, no
+  tablas nuevas y para las dos columnas y dos relaciones nuevas de `clinics`. `TYPES-RECONCILIATION-P0` sigue siendo un frente aparte, no
   iniciado.
