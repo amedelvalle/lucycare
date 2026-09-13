@@ -13,7 +13,8 @@
 --   · `clinics.territory_unit_id bigint NULL`   -- unidad mas especifica conocida
 --   · FK `country_id -> countries(id)`
 --   · FK compuesta `(territory_unit_id, country_id) -> administrative_units(id, country_id)`
---   · CHECK `territory_unit_id IS NULL OR country_id IS NOT NULL`
+--   · CHECK `territory_unit_id IS NULL OR country_id IS NOT NULL`   -- permanente
+--   · CHECK `clinics_geo_f3a_temp_null_chk`: ambas columnas NULL    -- TEMPORAL F3A
 --   · un indice por cada columna nueva
 --
 -- ── QUE NO HACE ──
@@ -39,18 +40,40 @@
 --
 -- ── PRIVILEGIOS: SIN GRANTS NUEVOS, PERO HEREDADOS ──
 -- `clinics` no tiene ningun GRANT, REVOKE ni policy versionado: sus privilegios
--- vienen del esquema inicial. Si ese esquema dio un privilegio a NIVEL DE
--- TABLA, las columnas nuevas lo HEREDAN automaticamente, sin ningun GRANT en
--- esta migracion. Eso no se puede leer del repositorio. El POST lo MIDE y lo
--- reporta, y exige que las columnas nuevas no queden MAS accesibles que la
--- columna legacy `department_id`. Con todas las filas en NULL, no hay
--- exposicion de datos en esta fase.
+-- vienen del esquema inicial. Un privilegio a NIVEL DE TABLA lo HEREDAN las
+-- columnas nuevas automaticamente, sin ningun GRANT en esta migracion. El POST
+-- lo MIDE y lo reporta, y exige que las columnas nuevas no queden MAS
+-- accesibles que la columna legacy `department_id`.
+--
+-- MEDIDO en la base antes de aplicar (precheck read-only, 2026-09-13):
+--   · `anon` y `authenticated` tienen SELECT, INSERT y UPDATE de TABLA
+--     (relacl `arwdDxtm` para ambos), sin grants propios por columna.
+--   · RLS activa (no forzada) con 4 policies: `clinics_insert` y
+--     `clinics_update` por `owner_id = auth.uid()`, y dos de lectura.
+-- Es decir: el propietario de una clinica PUEDE escribir directamente desde el
+-- cliente cualquier columna de su fila, y las dos nuevas lo heredarian.
+--
+-- ── GUARDA TEMPORAL DE F3A: `clinics_geo_f3a_temp_null_chk` ──
+-- Por eso las columnas nacen BLOQUEADAS: `CHECK (country_id IS NULL AND
+-- territory_unit_id IS NULL)`. Durante F3A existen pero no pueden contener
+-- datos, sean cuales sean los grants de tabla o las policies. Ningun cliente
+-- puede anticiparse a F3B y poblarlas por su cuenta.
+--   · Los INSERT/UPDATE actuales de clinicas siguen funcionando: omiten las
+--     columnas nuevas, que quedan NULL. Es lo que hace todo el runtime vigente.
+--   · NO es hardening general de `clinics`: no toca grants, policies ni RLS, y
+--     no protege `department_id` / `municipality_id`, que siguen como estaban.
+--   · Es TEMPORAL. Solo puede retirarse en F3B, DENTRO de la misma transicion
+--     que establezca el camino controlado de dual-write y su proteccion
+--     correspondiente. Retirarla sola reabriria la escritura directa.
+--   · El CHECK estructural de arriba es PERMANENTE y NO la sustituye: mientras
+--     la guarda existe es redundante, y es el que sigue protegiendo cuando se
+--     retire.
 --
 -- ── LOCK ──
 -- ⚠️ Es la primera fundacion que altera una tabla EN USO por el runtime.
 -- `ALTER TABLE ... ADD COLUMN` sin DEFAULT es un cambio de catalogo, sin
 -- reescritura, pero toma ACCESS EXCLUSIVE sobre `clinics` durante la
--- transaccion: el directorio espera ese instante. Validar las FK y el CHECK
+-- transaccion: el directorio espera ese instante. Validar las FK y los CHECK
 -- escanea `clinics`, que tiene del orden de un centenar de filas. Aplicar en
 -- un momento de trafico bajo.
 --
@@ -98,6 +121,11 @@ BEGIN
      AND column_name IN ('country_id', 'territory_unit_id');
   IF v_n <> 0 THEN
     RAISE EXCEPTION 's7_89 PRE: clinics ya tiene % de las columnas nuevas — no reaplicar', v_n;
+  END IF;
+
+  -- Ningun constraint previo con el nombre de la guarda temporal.
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'clinics_geo_f3a_temp_null_chk') THEN
+    RAISE EXCEPTION 's7_89 PRE: ya existe clinics_geo_f3a_temp_null_chk — no reaplicar';
   END IF;
 
   -- Las columnas legacy siguen donde estaban.
@@ -164,10 +192,23 @@ ALTER TABLE public.clinics
   FOREIGN KEY (territory_unit_id, country_id)
   REFERENCES public.administrative_units (id, country_id);
 
--- Sin esto, MATCH SIMPLE dejaria pasar una unidad sin pais.
+-- Sin esto, MATCH SIMPLE dejaria pasar una unidad sin pais. PERMANENTE.
 ALTER TABLE public.clinics
   ADD CONSTRAINT clinics_territory_requires_country_chk
   CHECK (territory_unit_id IS NULL OR country_id IS NOT NULL);
+
+-- ⚠️ GUARDA TEMPORAL DE F3A. Las columnas existen pero no admiten datos: la
+-- tabla tiene INSERT/UPDATE de cliente y las columnas nuevas lo heredan. Solo
+-- se retira en F3B, en la misma transicion que el dual-write controlado.
+ALTER TABLE public.clinics
+  ADD CONSTRAINT clinics_geo_f3a_temp_null_chk
+  CHECK (country_id IS NULL AND territory_unit_id IS NULL);
+
+COMMENT ON CONSTRAINT clinics_geo_f3a_temp_null_chk ON public.clinics IS
+  'TEMPORAL DE FUNDACION 3A. Mantiene NULL country_id y territory_unit_id '
+  'mientras la tabla conserve INSERT/UPDATE de cliente. Solo puede retirarse en '
+  'Fundacion 3B, dentro de la misma transicion que establezca el dual-write '
+  'controlado y su proteccion. No retirarla sola.';
 
 
 -- ─── 3. Indices ─────────────────────────────────────────────
@@ -227,9 +268,37 @@ BEGIN
     RAISE EXCEPTION 's7_89 POST: la FK compuesta hacia administrative_units no existe o no tiene 2 columnas (%)', coalesce(v_n, 0);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conname = 'clinics_territory_requires_country_chk' AND contype = 'c') THEN
-    RAISE EXCEPTION 's7_89 POST: falta el CHECK que exige pais cuando hay unidad';
+  -- Los dos CHECK se comparan por su definicion DESPARSEADA, sin parentesis ni
+  -- espacios: pg_get_constraintdef los devuelve con parentesis anidados.
+  SELECT lower(regexp_replace(pg_get_constraintdef(con.oid), '[()[:space:]]', '', 'g'))
+    INTO v_txt
+    FROM pg_constraint con
+   WHERE con.conname = 'clinics_territory_requires_country_chk' AND con.contype = 'c'
+     AND con.conrelid = 'public.clinics'::regclass AND con.convalidated;
+  IF v_txt IS DISTINCT FROM 'checkterritory_unit_idisnullorcountry_idisnotnull' THEN
+    RAISE EXCEPTION 's7_89 POST: falta el CHECK que exige pais cuando hay unidad, o no es el esperado (%)', v_txt;
+  END IF;
+
+  -- ── Guarda temporal de F3A ──
+  SELECT lower(regexp_replace(pg_get_constraintdef(con.oid), '[()[:space:]]', '', 'g')),
+         con.convalidated
+    INTO v_txt, v_bool
+    FROM pg_constraint con
+   WHERE con.conname = 'clinics_geo_f3a_temp_null_chk' AND con.contype = 'c'
+     AND con.conrelid = 'public.clinics'::regclass;
+  IF v_txt IS DISTINCT FROM 'checkcountry_idisnullandterritory_unit_idisnull' THEN
+    RAISE EXCEPTION 's7_89 POST: la guarda temporal clinics_geo_f3a_temp_null_chk falta o no es la esperada (%)', v_txt;
+  END IF;
+  IF v_bool IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 's7_89 POST: la guarda temporal no esta validada (convalidated=%)', v_bool;
+  END IF;
+
+  SELECT obj_description(con.oid, 'pg_constraint') INTO v_txt
+    FROM pg_constraint con
+   WHERE con.conname = 'clinics_geo_f3a_temp_null_chk'
+     AND con.conrelid = 'public.clinics'::regclass;
+  IF v_txt IS NULL OR v_txt NOT LIKE 'TEMPORAL DE FUNDACION 3A.%' THEN
+    RAISE EXCEPTION 's7_89 POST: la guarda temporal no esta marcada como temporal de F3A';
   END IF;
 
   SELECT count(*) INTO v_n FROM pg_indexes
@@ -309,7 +378,7 @@ BEGIN
    WHERE n.nspname = 'public' AND c.relname = 'clinics';
   RAISE NOTICE 's7_89 RLS de clinics (sin cambios, informativo): %', v_bool;
 
-  RAISE NOTICE 's7_89: guardas POST OK — columnas NULL, integridad lista, legacy y runtime intactos';
+  RAISE NOTICE 's7_89: guardas POST OK — columnas NULL y bloqueadas por la guarda temporal, integridad lista, legacy y runtime intactos';
 END $POST$;
 
 

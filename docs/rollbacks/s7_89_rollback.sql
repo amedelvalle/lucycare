@@ -3,8 +3,8 @@
 --
 -- ⛔ NO EJECUTAR salvo FAIL explicito y autorizacion del owner.
 --
--- s7_89 solo ANADIO a `clinics` dos columnas NULL, tres constraints y dos
--- indices. No relleno datos, no toco `department_id` / `municipality_id` ni
+-- s7_89 solo ANADIO a `clinics` dos columnas NULL, cuatro constraints —entre
+-- ellas la guarda temporal `clinics_geo_f3a_temp_null_chk`— y dos indices. No relleno datos, no toco `department_id` / `municipality_id` ni
 -- sus FK legacy, y ningun flujo lee ni escribe las columnas nuevas. Por eso
 -- este rollback es un DROP de lo que aquella creo y no restaura nada.
 --
@@ -12,8 +12,9 @@
 -- DESPUES de la verificacion: si algo no cuadra, la excepcion aborta y NO se
 -- borra nada.
 --
--- ⚠️ COMPROBACION PREVIA — si esto devuelve algo distinto de 0, ya se
---    ejecuto una fase posterior (F3B / F3C) y ESTE ROLLBACK PERDERIA DATOS o
+-- ⚠️ COMPROBACION PREVIA — mientras la guarda temporal exista, esto solo
+--    puede dar 0. Si devuelve algo distinto de 0, F3B ya retiro la guarda y
+--    se ejecuto una fase posterior (F3B / F3C): ESTE ROLLBACK PERDERIA DATOS o
 --    romperia escritores que ya dependen de las columnas. Detenerse y
 --    consultar al owner:
 --
@@ -42,6 +43,7 @@ DROP INDEX IF EXISTS public.clinics_territory_unit_id_idx;
 DROP INDEX IF EXISTS public.clinics_country_id_idx;
 
 ALTER TABLE public.clinics
+  DROP CONSTRAINT IF EXISTS clinics_geo_f3a_temp_null_chk,
   DROP CONSTRAINT IF EXISTS clinics_territory_requires_country_chk,
   DROP CONSTRAINT IF EXISTS clinics_territory_unit_country_fkey,
   DROP CONSTRAINT IF EXISTS clinics_country_fkey;
@@ -59,6 +61,12 @@ BEGIN
    WHERE table_schema = 'public' AND table_name = 'clinics'
      AND column_name IN ('country_id', 'territory_unit_id');
   IF v_n <> 0 THEN RAISE EXCEPTION 'rollback s7_89: quedan % columnas nuevas', v_n; END IF;
+
+  SELECT count(*) INTO v_n FROM pg_constraint
+   WHERE conrelid = 'public.clinics'::regclass
+     AND conname IN ('clinics_geo_f3a_temp_null_chk', 'clinics_territory_requires_country_chk',
+                     'clinics_territory_unit_country_fkey', 'clinics_country_fkey');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'rollback s7_89: quedan % constraints de s7_89', v_n; END IF;
 
   -- Lo que el rollback NO puede llevarse por delante.
   SELECT count(*) INTO v_n FROM information_schema.columns
