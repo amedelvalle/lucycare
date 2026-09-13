@@ -4,9 +4,11 @@
 > **Fundación 1 = CLOSED / APPLIED / VERIFIED** (PR #365, `s7_87`, migración 108,
 > 2026-09-12). **Fundación 2A = CLOSED / APPLIED / VERIFIED** (`s7_88`,
 > migración 109, 2026-09-13). **Fundación 3A = CLOSED / APPLIED / VERIFIED**
-> (PR #368, `s7_89`, migración 110, 2026-09-13). La closure table y **F3B en
-> adelante** están **diseñadas y NO implementadas**. **Ningún runtime lee el
-> catálogo ni las columnas nuevas de `clinics` todavía.**
+> (PR #368, `s7_89`, migración 110, 2026-09-13). **F3B paso 1 = APPLIED /
+> VERIFIED / CLOSED** (PR #369, `s7_90`, migración 111, 2026-09-13: M2 de
+> `CH-16`). `s7_91`, `s7_92`, la closure table y F3C en adelante están
+> **diseñados y NO implementados**. **Ningún runtime lee el catálogo ni las
+> columnas nuevas de `clinics` todavía.**
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -341,11 +343,23 @@ Contexto: 23 clínicas con municipio cargado, ninguna en `CH-16`.
 dependencias**, y `legacy_id = 'CH-16'` es un puente válido hacia **San Miguel de
 Mercedes**.
 
+✅ **Resuelto el 2026-09-13 con M2 (`s7_90`, §10.d).** Con el precheck de nuevo en
+0, la fila legacy se renombró a «San Miguel de Mercedes». Legacy y catálogo nuevo
+coinciden ya para `CH-16`, y el puente dejó de cambiar de entidad.
+
 El cero cubre los **datos referenciales vivos**, no menciones históricas en
 payloads de `audit_log`. Ese es el alcance correcto: `audit_log` registra lo que
 pasó, y reinterpretar `CH-16` no reescribe una traza.
 
-### 6.4 · ⛔ PRECONDICIÓN OBLIGATORIA DE FUNDACIÓN 3
+### 6.4 · ✅ PRECONDICIÓN DE FUNDACIÓN 3 — CUMPLIDA (2026-09-13)
+
+> **Cumplida por `s7_90`.** El owner repitió este precheck antes de F3B (**0
+> referencias sobre 3 columnas**), y `s7_90` lo repitió **dentro** de su
+> transacción con la fila bloqueada `FOR UPDATE` antes de renombrar. Tras M2,
+> `CH-16` significa San Miguel de Mercedes **también en el legacy**: una referencia
+> nueva ya es correcta y no hay que bloquear el mapeo por ella. La consulta se
+> conserva como registro de la medición. El texto siguiente describe la
+> precondición tal como se definió.
 
 **F3B debe COMENZAR repitiendo este precheck dinámico**, inmediatamente antes de
 cualquier backfill o mapeo de referencias. F3A no mapeó nada y no lo necesitó.
@@ -553,7 +567,9 @@ de admitir reservas.
 | **F2A** | carga del catálogo de SV 14 → 44 → 262 en `administrative_units` | ✅ **CLOSED / APPLIED / VERIFIED** — `s7_88` |
 | — | closure table `administrative_unit_paths` + rebuild/verify | 📐 diseñada, no implementada |
 | **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
-| **F3B** | precheck de `CH-16` + M2, mapeo y **dual-write controlado**; retira la guarda temporal **en la misma transición** | 📐 diseñada, no iniciada · ⛔ **empieza por el precheck de `CH-16` (§6.4)** |
+| **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
+| **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | 📐 decidida (D2), no iniciada |
+| **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | 📐 diseñada (D1, D3, D4), no iniciada |
 | **F3C** | backfill de `country_id` / `territory_unit_id` | 📐 diseñada, no iniciada · **sin teléfonos como evidencia de país (§11)** |
 | **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
 
@@ -719,6 +735,52 @@ ahí salen dos reglas vinculantes (§11).
 
 ⚠️ **`s7_89` no se modifica** tras aplicarse, incluido ese comentario de L83.
 
+## 10.d · Evidencia de cierre de F3B paso 1 (`s7_90`, M2 de `CH-16`)
+
+`s7_90` = **APPLIED / VERIFIED / CLOSED / NO REAPLICAR**, aplicada por el owner el
+2026-09-13 **antes** del merge de #369. **Es una corrección de dato visible, no un
+cambio de UI ni de código.**
+
+**Qué cambió:** solo `municipalities.name` de `CH-16`, de «Cancasque» a «San Miguel
+de Mercedes». Id, `department_id = 'CH'` y `district = 'Chalatenango Sur'` intactos.
+
+**Preflight read-only antes de aplicar:**
+- **`CH-16`:** 0 referencias sobre 3 columnas (`clinics`, `doctor_affiliation_requests`, `profiles`).
+- **Clínicas:** 118 — 23 con ubicación y todas coherentes, 95 sin ubicación.
+- **Solicitudes de afiliación incoherentes:** 0.
+- **Puente legacy → catálogo nuevo:** total, sin huérfanos ni ids solapados.
+- **Escritores de `clinics`:** solo los 3 versionados.
+- **Estado F3A:** intacto.
+
+**Diseño de la migración:**
+- **PRE fuera de la transacción:** exige el valor previo exacto, 1 «Cancasque» y 0 «San Miguel de Mercedes», legacy 14 / 262 / 7 FK, 320 unidades, que el catálogo nuevo ya diga San Miguel de Mercedes bajo Chalatenango Sur / `CH`, y 0 referencias.
+- **Guarda dentro de la transacción:** **bloquea `CH-16` con `FOR UPDATE` antes de recontar**. Toda escritura que quiera referenciarla necesita `FOR KEY SHARE` y espera al commit, así que recuento y cambio son atómicos.
+- **`UPDATE`:** lleva el valor previo exacto en el `WHERE`.
+- **POST:** compara contra huellas md5 locales a la transacción (las otras 261 filas, `departments`, `administrative_units`) y exige 14 / 44 / 262, 0 referencias y la guarda F3A en pie.
+- **Descubrimiento de referencias:** idéntico en PRE, guarda, POST y rollback.
+- **Nombres:** comparación **exacta**, porque existe un distrito distinto llamado «San José Cancasque».
+
+**Verificación read-only posterior: 17/17 PASS, veredicto Z = 0.** Incluye la
+simulación exacta del selector legacy de Chalatenango: ofrece San Miguel de
+Mercedes y no Cancasque.
+
+**QA visual en producción: PASS.** En el formulario público «Soy médico», el
+selector de Chalatenango muestra San Miguel de Mercedes, ya no muestra Cancasque y
+mantiene San José Cancasque como distrito distinto.
+
+**Reconciliación del archivo:** aplicado desde el commit `faa540b`, sin cambios
+posteriores. SHA-256 del blob
+`3eb229c7596a4308ebc319ba5e85240639de3442f946bcfe04561316f4fb77b9`, confirmado
+también en el archivo servido por GitHub en el head del PR. Bloques autónomos
+PASO 1 (L53–L150) y PASO 2 (L156–L353) extraídos byte a byte.
+
+**Validación estática:**
+- `check-s7_90` **126/126**, con 11 mutaciones invertidas.
+- A/B contra una migración sin `FOR UPDATE` y tolerante a referencias: **117/126**, con los 9 FAIL exactamente en esas reglas.
+- Regresiones: `check-s7_89` 186, `check-s7_88` 123, `check-s7_87` 126, `check-s7_85` 98, `check-s7_86` 54, `check-directory-booking-ready` 20, `check-admin-doctor-csv` 75.
+
+⚠️ **`s7_90` no se modifica** tras aplicarse.
+
 ---
 
 ## 11 · Deudas y decisiones registradas, ninguna abierta
@@ -727,8 +789,40 @@ ahí salen dos reglas vinculantes (§11).
   dentro de la misma transición que habilite el dual-write controlado** y su
   protección. Retirarla sola reabriría la escritura directa desde el cliente, que
   la tabla sigue admitiendo por sus grants.
-- ⛔ **F3B empieza repitiendo el precheck dinámico de `CH-16` (§6.4).** M2 —corregir
-  solo la fila legacy— **procede únicamente si continúa con 0 referencias**.
+- ✅ **M2 de `CH-16` aplicada (`s7_90`, §10.d).** Procedió porque el precheck
+  dinámico siguió en 0.
+- 🧭 **Decisiones del owner para el resto de F3B (2026-09-13):**
+  - **D1 · rechazar la contradicción.** El trigger de `s7_92` deriva `country_id` /
+    `territory_unit_id` del legacy y **rechaza con `P0183`** toda escritura que
+    intente fijarlas con otro valor. Acepta un valor idéntico al derivado.
+  - **D2 · `s7_91`.** Emparejar departamento y municipio en
+    `admin_approve_and_create_doctor`. Hoy resuelve cada campo por separado con
+    `COALESCE(override, lead)`: si LucyAdmin cambia el departamento y deja el
+    municipio vacío, recupera el municipio del lead, que es de otro departamento.
+    Con el trigger de `s7_92` esa aprobación fallaría.
+  - **D3 · tabla sonda transaccional.** La prueba de comportamiento del trigger va
+    sobre una tabla creada y borrada dentro de la propia transacción, incluido
+    `SET LOCAL ROLE authenticated`. **Nunca** `UPDATE` sobre filas reales.
+  - **D4 · trigger normal, SIN `ENABLE ALWAYS`.** No hay requerimiento medido de
+    replicación entrante.
+  - **D5 · cerrada.** 0 datos incoherentes medidos.
+  - **D6 · tres migraciones secuenciales:** `s7_90` ✅ → `s7_91` → `s7_92`. En
+    `s7_92`, el resolver, el trigger y el **retiro de la guarda F3A van en la misma
+    transacción**. El resolver es el único punto de resolución legacy → modelo
+    nuevo: SV por `iso_alpha2`, nivel 1 si solo hay departamento, nivel 3 si hay
+    municipio coherente, nunca nivel 2. La única `SECURITY DEFINER` es la función
+    del trigger, con `search_path` fijo.
+- **Las 95 clínicas sin ubicación legacy (de 118) quedan SIN decisión de país.**
+  F3C deberá resolver su tratamiento explícitamente: sin teléfonos y **sin asumir**
+  que deban quedar NULL para siempre.
+- **Deuda de hardening, NO corregida en F3B:** `departments` y `municipalities`
+  tienen `INSERT`/`UPDATE`/`DELETE` de tabla para `anon`/`authenticated`, con RLS
+  que solo tiene policies `SELECT`. Las escrituras de cliente quedan denegadas y la
+  RLS es la única barrera. Sin `REVOKE` ni cambios de RLS por inercia.
+- **Requisito para `GEO-CATALOG-ADMIN/P1`:** si edita `legacy_id`, `parent_id` o
+  reparenta unidades, deberá revalidar las clínicas cuyo país o unidad derive de
+  ellas, o prohibir esas ediciones: el trigger de `s7_92` solo actúa al escribir
+  `clinics`.
 - **Backfill de país (F3C): NO usar teléfonos como evidencia de país.** Una clínica
   con ubicación legacy es de SV porque ese catálogo legacy es de SV. Las clínicas
   **sin** ubicación se miden aparte; no se infiere su país por prefijo telefónico.

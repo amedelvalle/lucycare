@@ -1600,3 +1600,84 @@ ejecutó desde la línea 1 y el `` `DO $PRE$` `` del comentario de L83 se tomó 
 apertura de bloque: `42P01`. Sin efecto, confirmado con una sonda de residuos.
 Reglas nuevas: **no usar `$…$` en comentarios de migraciones** y **entregar el
 SQL manual como bloques autónomos para pegar en una pestaña nueva**.
+
+---
+
+## #369 · MULTICOUNTRY-GEO-P0 · F3B paso 1 · M2 de `CH-16` (2026-09-13)
+
+> 🚧 **F3B paso 1 = APPLIED / VERIFIED / CLOSED. El FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §6.3, §6.4, §9, §10.d y §11.
+
+**`s7_90` = migración 111, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+owner el 2026-09-13 **antes** del merge de #369.
+
+⚠️ **Corrección de dato visible, no cambio de UI ni de código.** Cambió un nombre
+del catálogo legacy y, por eso, un texto de los selectores. Sin DDL: el último
+cambio de esquema sigue siendo `s7_89` y el HEAD funcional sigue siendo `e8e8c03`.
+
+### Qué cambió
+
+`municipalities.name` de `CH-16`: **«Cancasque» → «San Miguel de Mercedes»**. Id,
+`department_id = 'CH'` y `district = 'Chalatenango Sur'` intactos. La base legacy
+había cargado un distrito que DL 762 reformado por DL 978 no reconoce; `s7_88` ya
+lo había cargado bien en `administrative_units`. **Ahora ambos modelos coinciden
+para `CH-16`.**
+
+### Por qué ahora y así
+
+**M2** (mitigación elegida por el owner frente a M1) solo procedía con **0
+referencias vivas**: renombrar cambia el significado de toda fila que apunte a
+`CH-16`. Las referencias se **descubren** —toda FK hacia `municipalities.id` más
+columnas `*municipality*` sin FK— con la semántica del precheck versionado en §6.4.
+
+- **Preflight del owner:** 0 referencias sobre 3 columnas. Además midió 23 clínicas
+  con ubicación, todas coherentes, 95 sin ubicación, 0 solicitudes incoherentes, un
+  puente legacy completo y solo los 3 escritores versionados de `clinics`.
+- **Dentro de la transacción:** la fila se **bloquea `FOR UPDATE` antes de
+  recontar**. Toda escritura que quiera referenciarla necesita `FOR KEY SHARE` y
+  espera al commit, así que el recuento y el cambio son atómicos.
+- **El `UPDATE` lleva el valor previo exacto en el `WHERE`.**
+- **El POST** compara contra huellas md5 de las otras 261 filas, `departments` y
+  `administrative_units`, tomadas dentro de la transacción. Exige además
+  14 / 44 / 262, 0 referencias y la guarda F3A en pie.
+
+### Evidencia de cierre
+
+**Verificación read-only: 17/17 PASS, Z = 0**, con la simulación del selector legacy
+de Chalatenango. **QA visual en producción: PASS** en el formulario público «Soy
+médico»: muestra San Miguel de Mercedes, ya no Cancasque, y **San José Cancasque
+sigue como distrito distinto**.
+
+**Reconciliación:** aplicada desde `faa540b`; SHA-256 del blob
+`3eb229c7596a4308ebc319ba5e85240639de3442f946bcfe04561316f4fb77b9`, confirmado
+también en el archivo servido por GitHub en el head del PR.
+
+**Validación estática:** `check-s7_90` **126/126** con 11 mutaciones invertidas; A/B
+contra una migración sin bloqueo y tolerante a referencias: **117/126**, con los 9
+FAIL exactamente en esas reglas. Regresiones: `s7_89` 186, `s7_88` 123, `s7_87` 126,
+`s7_85` 98, `s7_86` 54, `booking-ready` 20, `csv` 75.
+
+### Decisiones del owner para el resto de F3B
+
+**D1** rechazar la contradicción (`P0183`) · **D2** `s7_91` empareja la ubicación en
+la aprobación · **D3** prueba de comportamiento sobre una tabla sonda transaccional ·
+**D4** trigger normal, **sin `ENABLE ALWAYS`** · **D5** cerrada (0 incoherentes) ·
+**D6** tres migraciones secuenciales. Además: las **95 clínicas sin ubicación** quedan
+sin decisión de país hasta F3C, y los **grants DML de cliente sobre `departments` /
+`municipalities`** quedan como deuda de hardening sin corregir.
+
+### Lecciones de método
+
+**1 · Existe «San José Cancasque».** Una comparación difusa sobre el nombre habría
+alcanzado a otro distrito. La migración compara con igualdad exacta y el check lo
+prohíbe. La primera versión de esa regla del check dio un **falso positivo** con el
+`column_name ILIKE` del propio descubrimiento, y se corrigió con controles en ambos
+sentidos.
+
+**2 · No leer campos de un `record` vacío.** `IF NOT FOUND OR v_fila.name …` dependía
+de que PL/pgSQL no evaluara los campos cuando no hay fila. Ahora `FOUND` va en su
+propio `IF`.
+
+**3 · Reutilizar lo que ya pasó por el SQL Editor.** El recuento dinámico usa
+`format(… %L …)`, la forma del precheck ya ejecutado, en vez de un `$1` sin
+precedente en las migraciones aplicadas.
