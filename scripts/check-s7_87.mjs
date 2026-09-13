@@ -375,8 +375,15 @@ has('relación au_parent_country_fkey', types, 'foreignKeyName: "au_parent_count
 has('la FK compuesta declara sus dos columnas', types, 'columns: ["parent_id", "country_id"]');
 check('los tipos NO declaran administrative_unit_paths',
   types.includes('administrative_unit_paths'), false);
-check('clinics NO gana columnas en los tipos',
-  /clinics: \{[\s\S]{0,600}?territory_unit_id/.test(types), false);
+// F1 no tocó `clinics`. Se verifica sobre el DDL de s7_87, NO sobre el
+// `database.types.ts` vivo: ese archivo es compartido, y una fundación
+// posterior —F3A, `s7_89`— añade columnas a `clinics` legítimamente. Una
+// aserción sobre el estado actual del repositorio no puede cargar un
+// invariante histórico: la versión anterior de este check lo hacía, y F3A la
+// rompió sin que s7_87 hubiera cambiado. La misma garantía, con su test de
+// mutación, vive también en la guarda «el DDL no nombra clinics».
+check('F1 no tocó clinics (sobre el DDL de s7_87, no sobre los tipos vivos)',
+  /\bclinics\b/i.test(ddlIdent(raw)), false);
 
 console.log(`\n${pass} ok · ${fail} FAIL   (${pass}/${pass + fail})\n`);
 process.exit(fail === 0 ? 0 : 1);
