@@ -311,12 +311,20 @@ check('control positivo: el método SÍ encuentra los 3 escritores legacy de ubi
   escritoresLegacy.join(', '),
   'admin_approve_and_create_doctor, admin_create_seed_doctor, admin_update_doctor_clinic');
 
-// Los tres escritores de ubicación siguen en su definición previa a F3.
-for (const [fn, mig] of [['admin_update_doctor_clinic', 's7_57'],
-                         ['admin_approve_and_create_doctor', 's7_64'],
-                         ['admin_create_seed_doctor', 's7_75']]) {
-  check(`escritor ${fn} sigue definido en ${mig}`, vigentes.get(fn)?.archivo.startsWith(mig), true);
+// Los tres escritores de ubicación siguen en una definición conocida.
+// ⚠️ Reanclado en F3B paso 2: s7_91 redefine admin_approve_and_create_doctor
+// para EMPAREJAR departamento y municipio, sin tocar las columnas nuevas. La
+// garantía de F3A no era «el archivo se llama s7_64», sino «ningún escritor usa
+// el modelo nuevo», y eso lo siguen afirmando las aserciones de arriba sobre la
+// ÚLTIMA definición. Aquí solo se fija el conjunto de migraciones admitidas.
+for (const [fn, migs] of [['admin_update_doctor_clinic', ['s7_57']],
+                          ['admin_approve_and_create_doctor', ['s7_64', 's7_91']],
+                          ['admin_create_seed_doctor', ['s7_75']]]) {
+  check(`escritor ${fn} definido en ${migs.join(' o ')}`,
+    migs.some((m) => vigentes.get(fn)?.archivo.startsWith(m)), true);
 }
+check('control: la definición vigente del escritor de aprobación es la de s7_91',
+  vigentes.get('admin_approve_and_create_doctor')?.archivo.startsWith('s7_91'), true);
 
 // doctor_booking_ready: su última definición sigue siendo la de s7_85.
 check('doctor_booking_ready sigue definida en s7_85',
