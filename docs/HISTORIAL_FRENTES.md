@@ -1694,8 +1694,8 @@ owner el 2026-09-13 **antes** del merge de #370.
 
 ⚠️ **Cambio funcional de backend, acotado.** Solo cambia cómo
 `admin_approve_and_create_doctor` decide la ubicación de la clínica. Sin UI, sin
-`src/`, sin tipos ni DDL de tablas. **Por decisión del owner, el merge `6a0173f` es
-el HEAD funcional vigente** (antes `e8e8c03`). El último cambio de esquema sigue
+`src/`, sin tipos ni DDL de tablas. **Por decisión del owner, el merge `6a0173f` fue
+el HEAD funcional** (antes `e8e8c03`) hasta #372. El último cambio de esquema sigue
 siendo `s7_89`. `s7_90` (#369), en cambio, sigue clasificada como corrección visible
 de datos y no movió el baseline.
 
@@ -1774,8 +1774,10 @@ el 2026-09-13 **antes** del merge de #372.
 ⚠️ **Cambio de backend en las escrituras sobre `clinics`, sin UI ni `src/`.** Un
 cliente o RPC que escriba la ubicación legacy puebla ahora `country_id` /
 `territory_unit_id`, y los pares incoherentes o las contradicciones se rechazan en la
-tabla. Ningún lector consume todavía las columnas nuevas. **Si mueve el HEAD
-funcional (hoy `6a0173f`) lo decide el owner.** Último cambio de esquema: `s7_92`.
+tabla. Ningún lector consume todavía las columnas nuevas. **Por decisión del owner
+(2026-09-14), el merge `ecd636694c7f7093a000bd9f823040aa7795ff04` es el HEAD
+funcional vigente** (antes `6a0173f`); los commits de rama `c6d47d1` y `36b97d2` no
+lo son. Último cambio de esquema: `s7_92`.
 
 ### Qué cambió
 
