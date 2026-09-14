@@ -4,15 +4,15 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-13) — post F3B paso 1 (`s7_90`, PR #369).**
+> 🟢 **BASELINE VIGENTE (2026-09-13) — post F3B paso 2 (`s7_91`, PR #370).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
-> | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361. El último cambio de **código** con comportamiento observable sigue siendo **#361** |
-> | **Migraciones aplicadas** | **111**, la última **`s7_90_geo_foundation_3b_ch16_name.sql`** |
-> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. `s7_90` **no tiene DDL**: corrige un dato. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
+> | **Último HEAD funcional** | **`e8e8c03d588b85cca32c81013befa312d14bef07`** — PRs #359/#360/#361, último cambio de **aplicación** (frontend + RPCs del frente). ⚠️ **#370 / `s7_91` es una corrección de comportamiento de BACKEND** acotada a `admin_approve_and_create_doctor` (ver abajo): se registra aparte y **no mueve este HEAD mientras el owner no lo decida** |
+> | **Migraciones aplicadas** | **112**, la última **`s7_91_geo_foundation_3b_approve_location_pairing.sql`** |
+> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. `s7_90` corrige un dato y `s7_91` redefine una función: **ninguna tiene DDL de tablas**. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -26,12 +26,36 @@
 > Chalatenango muestran otro texto; ninguna pantalla, componente ni lógica cambió.
 > No mueve el HEAD funcional.
 >
+> ⚠️ **#370 / `s7_91` es una CORRECCIÓN DE COMPORTAMIENTO DE BACKEND**, acotada a la
+> ubicación en `admin_approve_and_create_doctor`. Sin UI, sin cambios en `src/`,
+> sin DDL de tablas. Ver «Qué hizo `s7_91`».
+>
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
 > (2026-09-13) · **Fundación 3A = CLOSED / APPLIED / VERIFIED** (2026-09-13) ·
 > **F3B paso 1 (`s7_90`, M2 de `CH-16`) = APPLIED / VERIFIED / CLOSED**
-> (2026-09-13). **El frente completo NO está cerrado**: `s7_91`, `s7_92`, la
-> closure table y F3C en adelante están **diseñados y NO implementados**.
+> (2026-09-13) · **F3B paso 2 (`s7_91`, ubicación emparejada en la aprobación) =
+> APPLIED / VERIFIED / CLOSED** (2026-09-13). **El frente completo NO está
+> cerrado**: `s7_92`, la closure table y F3C en adelante están **diseñados y NO
+> implementados**.
+>
+> **Qué hizo `s7_91`:** (**migración 112**) redefinió
+> `admin_approve_and_create_doctor` con el cuerpo **verbatim de `s7_64` más tres
+> hunks**. Antes resolvía departamento y municipio **por separado** con
+> `COALESCE(override, lead)`: si LucyAdmin cambiaba el departamento y dejaba vacío
+> el municipio, heredaba el municipio del lead, **de otro departamento**. Ahora,
+> con normalización `NULLIF(valor, '')` (la misma de `s7_64`):
+> - override **sin** departamento → **par del lead**;
+> - departamento de override + municipio ausente → **municipio NULL**;
+> - municipio de override **sin** departamento de override → **`P0024`**, nunca se combina con el departamento del lead.
+>
+> **El par final se valida SIEMPRE, también el heredado del lead:** municipio sin
+> departamento → `P0024`; inexistente o de otro departamento → **`P0025`**. Las
+> validaciones van **después** de todas las existentes y **antes** de la primera
+> escritura, así que el orden de errores previo se conserva. Firma, retorno,
+> `SECURITY DEFINER`, `search_path`, dueño y privilegios intactos. Verificación
+> read-only **16/16 PASS, Z = 0**. **`s7_91` = APPLIED / VERIFIED / NO
+> REAPLICAR**; su PRE aborta si el cuerpo vivo ya no es el de `s7_64`.
 >
 > **Qué hizo `s7_90`:** (**migración 111**) renombró **solo**
 > `municipalities.name` de `CH-16`, de «Cancasque» a **«San Miguel de
@@ -140,17 +164,17 @@
 >
 > 🧭 **Decisiones del owner para el resto de F3B (2026-09-13):** **D1** rechazar
 > (`P0183`) cualquier escritura que fije `country_id` / `territory_unit_id` en
-> contradicción con el legacy · **D2** `s7_91` empareja departamento y municipio en
-> `admin_approve_and_create_doctor`, que hoy los mezcla campo a campo con
-> `COALESCE(override, lead)` · **D3** prueba de comportamiento del trigger sobre una
+> contradicción con el legacy · **D2 ✅ aplicada** (`s7_91`): departamento y municipio
+> emparejados en `admin_approve_and_create_doctor` · **D3** prueba de comportamiento del trigger sobre una
 > **tabla sonda transaccional** que nunca se comitea, nunca con `UPDATE` sobre
 > filas reales · **D4 trigger normal, SIN `ENABLE ALWAYS`**: no hay requerimiento
 > medido de replicación entrante · **D6** tres migraciones secuenciales: `s7_90`
-> ✅ → `s7_91` → `s7_92` (resolver + trigger + retiro de la guarda F3A **en la
+> ✅ → `s7_91` ✅ → `s7_92` (resolver + trigger + retiro de la guarda F3A **en la
 > misma transacción**). Diseño y preflight en
-> `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11. **`s7_91` y `s7_92` NO iniciadas.**
+> `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11. **`s7_92` NO iniciada: requiere nueva
+> autorización del owner.**
 >
-> ⚠️ **`s7_87`, `s7_88`, `s7_89` y `s7_90` NO se modifican.** Una migración aplicada es el
+> ⚠️ **`s7_87`, `s7_88`, `s7_89`, `s7_90` y `s7_91` NO se modifican.** Una migración aplicada es el
 > registro de lo que se ejecutó — incluido el comentario residual de `s7_87`
 > línea 120 y el `$PRE$` de un comentario de `s7_89` línea 83 (ver la regla del
 > SQL Editor más abajo).
@@ -159,7 +183,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **`s7_91` y `s7_92` NO iniciadas; la guarda F3A sigue en pie. No conectar
+> **`s7_92` NO iniciada; la guarda F3A sigue en pie. No conectar
 > frontend ni runtime al catálogo ni a las columnas nuevas de `clinics` sin
 > instrucción del owner.**
 
@@ -779,11 +803,13 @@
 > **0 PRs abiertos** · producción desplegada y **validada** contra el dominio ·
 > **ningún frente funcional abierto**.
 >
-> ⚠️ **Las migraciones van por separado: 111 aplicadas** (hasta
-> `s7_90_geo_foundation_3b_ch16_name.sql`). El último cambio de **esquema** es
-> `s7_89` (#368); antes, `s7_87` (#365). `s7_88` es un **seed de datos** y `s7_90`
-> una **corrección de dato visible** (un nombre del catálogo legacy), ambos sin
-> DDL. Ninguno cambió código, así que **no mueven este HEAD funcional**.
+> ⚠️ **Las migraciones van por separado: 112 aplicadas** (hasta
+> `s7_91_geo_foundation_3b_approve_location_pairing.sql`). El último cambio de
+> **esquema** es `s7_89` (#368); antes, `s7_87` (#365). `s7_88` es un **seed de
+> datos** y `s7_90` una **corrección de dato visible**, ambos sin código.
+> **`s7_91` (#370) sí cambia código de backend**: corrige la ubicación en
+> `admin_approve_and_create_doctor`. Se registra como corrección acotada y **no
+> mueve este HEAD mientras el owner no lo decida**.
 > Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`e8e8c03` es el HEAD funcional confirmado, NO el tip eterno del
@@ -1100,7 +1126,7 @@ Luego leé los documentos oficiales según el objetivo del día:
   directo y la closure table como diseño **no implementado**, los invariantes de
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
-  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B paso 1 aplicadas;
+  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B pasos 1 y 2 aplicados;
   el frente no está cerrado.**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
@@ -1258,6 +1284,20 @@ squash-merge, la rama puede borrarse.
   `FOR UPDATE`; POST con huellas de todo lo demás. **Verificación 17/17 PASS** y
   **QA visual en producción PASS** en «Soy médico». `s7_91` / `s7_92` no
   iniciadas; la guarda F3A sigue en pie →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#370** 🚧 — **MULTICOUNTRY-GEO-P0 · F3B paso 2 = CLOSED / APPLIED /
+  VERIFIED. El FRENTE sigue EN CURSO.** `s7_91` (**migración 112**, aplicada antes
+  del merge) corrige `admin_approve_and_create_doctor`: ya **no construye una
+  clínica con el departamento del override y el municipio heredado del lead**.
+  Departamento y municipio salen de la misma fuente; municipio de override sin
+  departamento → `P0024`; el par final, venga de donde venga, se valida
+  relacionalmente (`P0024` / `P0025`), después de todas las validaciones existentes
+  y antes de escribir. **Corrección de comportamiento de backend, sin UI.** Cuerpo
+  **verbatim de `s7_64` + 3 hunks**, probado con A/B estructural (byte a byte) y
+  smoke A/B de solo lectura con los fragmentos reales. **Verificación 16/16 PASS.**
+  `s7_92` no iniciada; la guarda F3A sigue en pie →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
@@ -1654,6 +1694,22 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_91` MULTICOUNTRY-GEO-P0 · F3B paso 2 (**migración 112**): `CREATE OR
+  REPLACE` de `admin_approve_and_create_doctor` con el cuerpo **verbatim de
+  `s7_64` más tres hunks** marcados `(s7_91)`: dos variables con el override
+  territorial crudo; **resolución emparejada** (override con departamento →
+  municipio solo del override, NULL si falta; sin departamento de override → par
+  del lead), y **validación del par final** (`P0024` municipio sin departamento,
+  incluido municipio de override sin departamento de override; `P0025` municipio
+  inexistente o de otro departamento), colocada tras las validaciones existentes
+  (42501, P0001–P0005, P0010–P0013) y antes de la primera escritura. Firma,
+  retorno, `SECURITY DEFINER`, `search_path`, dueño y privilegios intactos, sin
+  `GRANT`. PRE y guarda exigen el cuerpo vivo de `s7_64` por md5 (el CRLF
+  `73ffe497…` medido en vivo en F3A); POST exige el de `s7_91`, ACL y dueño
+  idénticos, y **ninguna otra función de `public` cambiada**. Rollback que
+  restaura `s7_64` byte a byte. Smoke A/B de solo lectura en
+  `docs/smokes/s7_91_ab_smoke.sql`. `check-s7_89` reanclado para admitir la
+  redefinición. Verificada con **16/16 PASS**. **No se modifica** tras aplicarse.
 - `s7_90` MULTICOUNTRY-GEO-P0 · F3B paso 1 (**migración 111**): **corrección de
   dato visible, sin DDL.** `UPDATE` de **solo** `municipalities.name` en `CH-16`
   («Cancasque» → «San Miguel de Mercedes»), con el valor previo exacto
