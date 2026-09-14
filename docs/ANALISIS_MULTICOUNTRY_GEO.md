@@ -785,9 +785,10 @@ PASO 1 (L53–L150) y PASO 2 (L156–L353) extraídos byte a byte.
 ## 10.e · Evidencia de cierre de F3B paso 2 (`s7_91`, ubicación emparejada)
 
 `s7_91` = **APPLIED / VERIFIED / CLOSED / NO REAPLICAR**, aplicada por el owner el
-2026-09-13 **antes** del merge de #370. **Es una corrección de comportamiento de
-backend, acotada a la ubicación en `admin_approve_and_create_doctor`.** Sin UI, sin
-cambios en `src/` ni en tipos, sin DDL de tablas.
+2026-09-13 **antes** del merge de #370. **Es un cambio funcional de backend,
+acotado a la ubicación en `admin_approve_and_create_doctor`**: por decisión del
+owner, el merge `6a0173f` es el **HEAD funcional vigente**. Sin UI, sin cambios en
+`src/` ni en tipos, sin DDL de tablas.
 
 **Estado medido antes:** la definición vigente era la de `s7_64`, y el md5 del
 cuerpo vivo (`73ffe4972c87e3ca580a8e40778d1328`) coincidía byte a byte con
@@ -818,9 +819,12 @@ Firma, retorno, `SECURITY DEFINER`, `search_path`, dueño y privilegios intactos
 **A/B:**
 - **Estructural (`check-s7_91` 114/114):** quitando los tres hunks, la definición es
   **byte a byte** la de `s7_64`, con 11 mutaciones invertidas.
-- **Conductual (`docs/smokes/s7_91_ab_smoke.sql`, solo lectura):** ejecuta los fragmentos
-  real de `s7_64` y de `s7_91`, verbatim, sobre 14 casos. Pasa solo si el actual produce
-  7 pares incoherentes y el corregido 0.
+- **Conductual: PREPARADO, NO ACREDITADO.** `docs/smokes/s7_91_ab_smoke.sql`, de solo
+  lectura, ejecuta los fragmentos reales de `s7_64` y de `s7_91`, verbatim, sobre 14
+  casos, y pasa solo si el actual produce 7 pares incoherentes y el corregido 0. **No
+  hay evidencia explícita de su ejecución en la base, así que no se registra como
+  PASS.** El cierre se apoya en el A/B estructural (114/114) y en la verificación
+  post-aplicación (16/16 PASS, Z = 0).
 
 **Reconciliación del archivo:** aplicado desde el commit `20d33f4`; SHA-256 del blob
 `cbaf5676b20b0aa8b9cb062f92e3b7e1c9f3d1a1e53ca93e61123402541ffaab`, confirmado
