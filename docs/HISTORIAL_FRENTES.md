@@ -1692,9 +1692,12 @@ precedente en las migraciones aplicadas.
 **`s7_91` = migración 112, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
 owner el 2026-09-13 **antes** del merge de #370.
 
-⚠️ **Corrección de comportamiento de backend, acotada.** Solo cambia cómo
+⚠️ **Cambio funcional de backend, acotado.** Solo cambia cómo
 `admin_approve_and_create_doctor` decide la ubicación de la clínica. Sin UI, sin
-`src/`, sin tipos ni DDL de tablas. El último cambio de esquema sigue siendo `s7_89`.
+`src/`, sin tipos ni DDL de tablas. **Por decisión del owner, el merge `6a0173f` es
+el HEAD funcional vigente** (antes `e8e8c03`). El último cambio de esquema sigue
+siendo `s7_89`. `s7_90` (#369), en cambio, sigue clasificada como corrección visible
+de datos y no movió el baseline.
 
 ### El bug
 
@@ -1734,7 +1737,7 @@ emparejamiento y validación relacional presentes · `P0024` / `P0025` · F3A in
 
 **A/B:**
 - **estructural (`check-s7_91` 114/114):** quitando los tres hunks, la función es byte a byte la de `s7_64`, con 11 mutaciones invertidas;
-- **conductual:** smoke de solo lectura con los fragmentos reales de `s7_64` y `s7_91` sobre 14 casos: el actual reproduce 7 pares incoherentes y el corregido ninguno.
+- **conductual: preparado, NO acreditado.** Smoke de solo lectura con los fragmentos reales de `s7_64` y `s7_91` sobre 14 casos, que pasa solo si el actual produce 7 pares incoherentes y el corregido ninguno. **No hay evidencia explícita de su ejecución en la base; no se registra como PASS.** El cierre se apoya en el A/B estructural y en la verificación 16/16.
 
 **Reconciliación:** aplicada desde `20d33f4`, SHA-256
 `cbaf5676b20b0aa8b9cb062f92e3b7e1c9f3d1a1e53ca93e61123402541ffaab`, confirmado
