@@ -827,7 +827,7 @@ PASO 1 (L53–L150) y PASO 2 (L156–L353) extraídos byte a byte.
 `s7_91` = **APPLIED / VERIFIED / CLOSED / NO REAPLICAR**, aplicada por el owner el
 2026-09-13 **antes** del merge de #370. **Es un cambio funcional de backend,
 acotado a la ubicación en `admin_approve_and_create_doctor`**: por decisión del
-owner, el merge `6a0173f` es el **HEAD funcional vigente**. Sin UI, sin cambios en
+owner, el merge `6a0173f` **fue el HEAD funcional** hasta #372 (`ecd6366`). Sin UI, sin cambios en
 `src/` ni en tipos, sin DDL de tablas.
 
 **Estado medido antes:** la definición vigente era la de `s7_64`, y el md5 del
@@ -883,8 +883,8 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
 
 `s7_92` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
 2026-09-13 **antes** del merge de #372. Cambia comportamiento de backend **solo en
-las escrituras sobre `clinics`**, sin UI ni `src/`. **Si mueve el HEAD funcional lo
-decide el owner.**
+las escrituras sobre `clinics`**, sin UI ni `src/`. **Por decisión del owner, el
+merge `ecd6366` es el HEAD funcional vigente** (antes `6a0173f`).
 
 **Preflight read-only A–H: PASS, Z = 0.**
 - 118 clínicas (95 sin ubicación + 23 con ubicación), 0 incoherentes, 0 con geo;

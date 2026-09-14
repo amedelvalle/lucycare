@@ -10,7 +10,7 @@
 >
 > | | |
 > |---|---|
-> | **Último HEAD funcional** | **`6a0173fdbd1bb1dec366860c0caf9c573e071a44`** — **PR #370 / `s7_91`**: cambia comportamiento observable de **backend** en `admin_approve_and_create_doctor` (ubicación emparejada). Promovido por decisión del owner (2026-09-13). Anterior: `e8e8c03` (#359/#360/#361). ⚠️ **Si `s7_92` (#372) mueve este HEAD está PENDIENTE de decisión del owner** (ver «Qué hizo `s7_92`») |
+> | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
 > | **Migraciones aplicadas** | **113**, la última **`s7_92_geo_foundation_3b_territory_sync.sql`** |
 > | **Último cambio de esquema** | **PR #372 / `s7_92`** — trigger `trg_clinics_territory_sync` en `clinics` y retiro de la guarda `clinics_geo_f3a_temp_null_chk`. Antes: `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
@@ -26,16 +26,18 @@
 > Chalatenango muestran otro texto; ninguna pantalla, componente ni lógica cambió.
 > No mueve el HEAD funcional.
 >
-> ⚠️ **#370 / `s7_91` SÍ es un cambio funcional y es el HEAD funcional vigente.**
-> Cambia comportamiento observable de **backend**, acotado a la ubicación en
-> `admin_approve_and_create_doctor`. Sin UI, sin cambios en `src/`, sin DDL de
-> tablas. En cambio, `s7_90` sigue clasificada como corrección visible de datos y
-> no movió el baseline. Ver «Qué hizo `s7_91`».
+> ⚠️ **#370 / `s7_91` SÍ fue un cambio funcional** y fue el HEAD funcional
+> (`6a0173f`) hasta #372. Cambia comportamiento observable de **backend**, acotado a
+> la ubicación en `admin_approve_and_create_doctor`. Sin UI, sin cambios en `src/`,
+> sin DDL de tablas. En cambio, `s7_90` sigue clasificada como corrección visible de
+> datos y no movió el baseline. Ver «Qué hizo `s7_91`».
 >
-> ⚠️ **#372 / `s7_92` cambia comportamiento de backend en las ESCRITURAS sobre
-> `clinics`**, sin UI ni cambios en `src/`. Ningún lector consume todavía las
-> columnas nuevas. **Si se promueve a HEAD funcional lo decide el owner**; hasta
-> esa decisión el HEAD funcional sigue siendo `6a0173f`.
+> ⚠️ **#372 / `s7_92` SÍ es un cambio funcional y es el HEAD funcional vigente
+> (`ecd6366`).** Cambia comportamiento observable de **backend** en las
+> **escrituras** sobre `clinics`: deriva `country_id` / `territory_unit_id` del
+> legacy y rechaza contradicciones. Sin UI ni cambios en `src/`; ningún lector
+> consume todavía las columnas nuevas. **No usar `c6d47d1` ni `36b97d2`** (commits
+> de la rama) como HEAD funcional.
 >
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
@@ -853,9 +855,9 @@
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **HEAD funcional canónico:
-> `6a0173fdbd1bb1dec366860c0caf9c573e071a44` — PR #370 / `s7_91`.** Promovido por
-> decisión del owner (2026-09-13): cambia comportamiento observable de backend en
-> `admin_approve_and_create_doctor`. · **PRs funcionales mergeados hasta #370** ·
+> `ecd636694c7f7093a000bd9f823040aa7795ff04` — PR #372 / `s7_92`.** Promovido por
+> decisión del owner (2026-09-14): cambia comportamiento observable de backend en
+> las escrituras de `clinics`. · **PRs funcionales mergeados hasta #372** ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos**.
 >
 > ⚠️ **Las migraciones van por separado: 113 aplicadas** (hasta
@@ -863,22 +865,25 @@
 > `s7_92` (#372: trigger en `clinics` + retiro de la guarda F3A); antes, `s7_89`
 > (#368) y `s7_87` (#365). `s7_88` es un **seed de datos** y `s7_90` una
 > **corrección visible de datos**: ninguno movió el HEAD funcional. **`s7_91` (#370)
-> sí lo movió**: redefine una función sin DDL de tablas. **Si `s7_92` lo mueve está
-> pendiente de decisión del owner.**
+> lo movió** (redefine una función sin DDL de tablas) y **`s7_92` (#372) lo movió
+> otra vez** (trigger de sincronización en `clinics`).
 > Ver el bloque de baseline al principio del archivo.
 >
-> ⚠️ **`6a0173f` es el HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`ecd6366` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> Ciclos anteriores, ya superados como HEAD: `e8e8c03` (#359/#360/#361),
-> `a0b974b` (#357), `0fc36b1` (#355), `55af306` (#353) y `f7213d2` (#352). **No
-> volver a citarlos como vigentes.**
+> Ciclos anteriores, ya superados como HEAD: `6a0173f` (#370 / `s7_91`), `e8e8c03`
+> (#359/#360/#361), `a0b974b` (#357), `0fc36b1` (#355), `55af306` (#353) y
+> `f7213d2` (#352). **No volver a citarlos como vigentes.**
 >
-> **Último cambio funcional:** #370 (`s7_91`: ubicación emparejada en
-> `admin_approve_and_create_doctor`; municipio de override sin departamento →
-> `P0024`; par final validado → `P0024` / `P0025`). Antes: #361 (onboarding derivado,
+> **Último cambio funcional:** #372 (`s7_92`: sincronización central legacy →
+> modelo territorial nuevo en las escrituras de `clinics`; resolver único, trigger
+> normal, `P0183` ante contradicción, guarda F3A retirada, sin backfill). Antes: #370
+> (`s7_91`: ubicación emparejada en `admin_approve_and_create_doctor`; municipio de
+> override sin departamento → `P0024`; par final validado → `P0024` / `P0025`).
+> Antes: #361 (onboarding derivado,
 > copy operativo y CSV; `s7_85` y `s7_86`, con el hotfix #360 del binding de
 > `doctor_booking_ready`). Antes: #357 (correo de bienvenida al médico desde
 > LucyAdmin, `s7_83` y `s7_84`), #355 (watchdog de arranque en
@@ -1365,8 +1370,8 @@ squash-merge, la rama puede borrarse.
   Departamento y municipio salen de la misma fuente; municipio de override sin
   departamento → `P0024`; el par final, venga de donde venga, se valida
   relacionalmente (`P0024` / `P0025`), después de todas las validaciones existentes
-  y antes de escribir. **Cambio funcional de backend, sin UI: es el HEAD funcional
-  vigente (`6a0173f`).** Cuerpo **verbatim de `s7_64` + 3 hunks**, demostrado con
+  y antes de escribir. **Cambio funcional de backend, sin UI: fue el HEAD funcional
+  (`6a0173f`) hasta #372.** Cuerpo **verbatim de `s7_64` + 3 hunks**, demostrado con
   A/B estructural byte a byte (`check-s7_91` 114/114). Se preparó un smoke A/B de
   solo lectura con los fragmentos reales, **cuya ejecución en la base no está
   acreditada**. **Verificación post-aplicación 16/16 PASS, Z = 0.**
@@ -1389,8 +1394,8 @@ squash-merge, la rama puede borrarse.
   control A/B. ⚠️ **El `42P01` que mostró el editor fue post-COMMIT.** Por A/B
   quedó demostrado que el texto con forma de `CREATE TABLE` lo dispara incluso en
   un literal; la consulta interna de Studio no se capturó.
-  Reglas (3) y (4) del SQL Editor. **Clasificación de HEAD funcional pendiente del
-  owner.** F3C no iniciada →
+  Reglas (3) y (4) del SQL Editor. **Cambio funcional de backend: es el HEAD
+  funcional vigente (`ecd6366`), por decisión del owner.** F3C no iniciada →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
