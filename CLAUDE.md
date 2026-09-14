@@ -43,7 +43,7 @@
 > **F3B paso 1 (`s7_90`, M2 de `CH-16`) = APPLIED / VERIFIED / CLOSED**
 > (2026-09-13) · **F3B paso 2 (`s7_91`, ubicación emparejada en la aprobación) =
 > APPLIED / VERIFIED / CLOSED** (2026-09-13) · **F3B paso 3 (`s7_92`,
-> sincronización central) = APPLIED / VERIFIED** (2026-09-13; incidente del SQL
+> sincronización central) = CLOSED / APPLIED / VERIFIED** (2026-09-13; incidente del SQL
 > Editor diagnosticado el 2026-09-14). **El frente completo NO está cerrado**: la
 > closure table y **F3C en adelante** están **diseñados y NO implementados**.
 >
@@ -86,12 +86,13 @@
 > terminar el PASO 2, el editor mostró
 > `ERROR: 42P01: relation "public._s7_92_probe" does not exist`. Estaba aplicada
 > completa: estado read-only, verificación 24 PASS y `pg_stat_statements` con todas
-> las sentencias completadas, `DROP` de la sonda y POST incluidos. **Causa demostrada
-> por A/B:** Supabase SQL Editor / Studio inspecciona el texto enviado, **literales
-> incluidos**, y ante texto con forma de `CREATE TABLE <nombre>` lanza una consulta
-> propia sobre esa relación. Si ya no existe, muestra `42P01` aunque la ejecución
-> haya terminado bien. Un `SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'`
-> lo reproduce. Detalle y reglas en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.f.
+> las sentencias completadas, `DROP` de la sonda y POST incluidos. **Demostrado
+> experimentalmente (A/B):** en Supabase SQL Editor / Studio, el texto con forma de
+> `CREATE TABLE <nombre>` **puede disparar un `42P01` sobre esa relación aunque
+> aparezca dentro de un literal**, si la relación no existe al terminar. Un
+> `SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'` lo reproduce. **La
+> consulta interna exacta que genera Studio NO se conoce**: no se capturó su
+> `STATEMENT`. Detalle y reglas en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.f.
 >
 > **Qué hizo `s7_91`:** (**migración 112**) redefinió
 > `admin_approve_and_create_doctor` con el cuerpo **verbatim de `s7_64` más tres
@@ -1136,9 +1137,9 @@
 > ⚠️ **Dos reglas más (2026-09-14), por el incidente post-COMMIT de `s7_92`:**
 > **(3) En bloques para el SQL Editor, no incluir texto con forma de DDL sobre
 > objetos que no existirán al terminar** —tampoco dentro de literales, regex o
-> diagnósticos read-only—. Supabase SQL Editor / Studio inspecciona el texto: ante
-> `CREATE TABLE <nombre>` lanza una consulta propia sobre esa relación, y si ya no
-> existe muestra `42P01` aunque todo haya ido bien. Esos patrones se **ensamblan en
+> diagnósticos read-only—. En Supabase SQL Editor / Studio, `CREATE TABLE <nombre>`
+> puede disparar un `42P01` sobre esa relación aunque esté en un literal y todo haya
+> ido bien. La consulta interna de Studio no se conoce. Esos patrones se **ensamblan en
 > tiempo de ejecución** (concatenación, `chr()`). Demostrado para `CREATE TABLE`;
 > `ALTER`/`DROP TABLE` e `INSERT INTO` no se aislaron. **(4) Un error mostrado por
 > el editor NO prueba que la transacción abortara.** Ante cualquier error en un
@@ -1373,7 +1374,7 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#372** 🚧 — **MULTICOUNTRY-GEO-P0 · F3B paso 3 = APPLIED / VERIFIED. F3B
+- **#372** 🚧 — **MULTICOUNTRY-GEO-P0 · F3B paso 3 = CLOSED / APPLIED / VERIFIED. F3B
   completa; el FRENTE sigue EN CURSO.** `s7_92` (**migración 113**, aplicada antes
   del merge):
   - resolver único `SECURITY INVOKER` y trigger `trg_clinics_territory_sync`
@@ -1385,8 +1386,9 @@ squash-merge, la rama puede borrarse.
   Probada dentro de la transacción: resolver 14 + 262 y sonda de 41 casos.
   **Verificación en producción 24 PASS, Z = 0**, con md5 vivos iguales al
   artefacto. `check-s7_92` 251/251, 18 mutaciones ejecutadas en un arnés local y
-  control A/B. ⚠️ **El `42P01` que mostró el editor fue post-COMMIT**, provocado
-  porque Studio inspecciona texto con forma de `CREATE TABLE`: demostrado por A/B.
+  control A/B. ⚠️ **El `42P01` que mostró el editor fue post-COMMIT.** Por A/B
+  quedó demostrado que el texto con forma de `CREATE TABLE` lo dispara incluso en
+  un literal; la consulta interna de Studio no se capturó.
   Reglas (3) y (4) del SQL Editor. **Clasificación de HEAD funcional pendiente del
   owner.** F3C no iniciada →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·

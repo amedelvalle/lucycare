@@ -1765,10 +1765,10 @@ check lo exige con una mutación.
 
 ## #372 · MULTICOUNTRY-GEO-P0 · F3B paso 3 · sincronización central de `clinics` (2026-09-13 / 2026-09-14)
 
-> 🚧 **F3B paso 3 = APPLIED / VERIFIED. F3B completa; el FRENTE sigue EN CURSO.**
+> 🚧 **F3B paso 3 = CLOSED / APPLIED / VERIFIED. F3B completa; el FRENTE sigue EN CURSO.**
 > Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.f y §11.
 
-**`s7_92` = migración 113, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
+**`s7_92` = migración 113, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
 el 2026-09-13 **antes** del merge de #372.
 
 ⚠️ **Cambio de backend en las escrituras sobre `clinics`, sin UI ni `src/`.** Un
@@ -1840,10 +1840,11 @@ terminar el PASO 2. El owner detuvo todo y no reintentó.
 - **T1** (`SELECT 'public._zz_editor_probe_t1'`): PASS.
 - **T2** (`SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'`): `42P01` sobre ese nombre.
 
-**Causa demostrada:** Supabase SQL Editor / Studio inspecciona el texto, literales
-incluidos, y ante `CREATE TABLE <nombre>` lanza una consulta propia sobre esa
-relación. La sonda ya no existía. `s7_87` no lo sufrió porque sus tablas seguían
-existiendo.
+**Demostrado experimentalmente:** en Supabase SQL Editor / Studio, el texto con forma
+de `CREATE TABLE <nombre>` puede disparar un `42P01` sobre esa relación **incluso
+dentro de un literal**, si no existe al terminar. La sonda ya no existía. `s7_87` no
+lo sufrió porque sus tablas seguían existiendo. **La consulta interna exacta de
+Studio no se conoce.**
 
 **No capturado:**
 - la sentencia literal de Studio, porque no se obtuvo el log de Postgres;

@@ -8,7 +8,7 @@
 > VERIFIED / CLOSED** (PR #369, `s7_90`, migración 111, 2026-09-13: M2 de
 > `CH-16`). **F3B paso 2 = APPLIED / VERIFIED / CLOSED** (PR #370, `s7_91`,
 > migración 112, 2026-09-13: ubicación emparejada en la aprobación). **F3B paso 3 =
-> APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
+> CLOSED / APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
 > central legacy → modelo nuevo y retiro de la guarda F3A). La closure table y
 > **F3C en adelante** están **diseñados y NO implementados**. **Ningún lector,
 > directorio ni frontend consume el catálogo ni las columnas nuevas de `clinics`**;
@@ -881,7 +881,7 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
 
 ## 10.f · Evidencia de cierre de F3B paso 3 (`s7_92`, sincronización central)
 
-`s7_92` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+`s7_92` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
 2026-09-13 **antes** del merge de #372. Cambia comportamiento de backend **solo en
 las escrituras sobre `clinics`**, sin UI ni `src/`. **Si mueve el HEAD funcional lo
 decide el owner.**
@@ -951,11 +951,12 @@ transacción, y el A/B en el propio editor identificó el disparador:
 | Bloques A y POST (el nombre sin esquema, sin forma de DDL) | sin error |
 | `s7_87` (`CREATE TABLE public.countries …`, tablas que siguen existiendo) | sin error |
 
-**Causa:** Supabase SQL Editor / Studio **inspecciona el texto enviado, literales
-incluidos**. Ante texto con forma de `CREATE TABLE <nombre>`, lanza **una consulta
-propia** sobre esa relación. Si la relación ya no existe —como la sonda, creada y
-borrada en la misma ejecución— muestra `42P01`, aunque el servidor haya completado
-todo.
+**Causa, demostrada experimentalmente:** en Supabase SQL Editor / Studio, el texto
+con forma de `CREATE TABLE <nombre>` **puede disparar un `42P01` sobre esa relación
+incluso cuando aparece dentro de un literal**. Ocurre si la relación no existe al
+terminar, como la sonda, creada y borrada en la misma ejecución, y aunque el servidor
+haya completado todo. **No se afirma cuál es la consulta interna que genera Studio**:
+no se capturó su `STATEMENT`.
 
 **Límites:**
 - **Sentencia literal no capturada:** la consulta interna de Studio no quedó registrada. `pg_stat_statements` no registra sentencias fallidas y no se obtuvo el log de Postgres. El disparador está demostrado por T2 y el par C/C2.
@@ -1057,9 +1058,10 @@ los mensajes de `s7_91`.
   nueva**, con primera y última línea explícitas, en lugar de depender de
   seleccionar un rango dentro del archivo completo.
 - **SQL Editor: no enviar texto con forma de DDL sobre objetos que no existirán al
-  terminar** —tampoco en literales, regex o diagnósticos read-only—. Studio lo
-  inspecciona y lanza su propia consulta sobre la relación (incidente de `s7_92`,
-  §10.f). Esos patrones se **ensamblan en tiempo de ejecución** (concatenación,
+  terminar** —tampoco en literales, regex o diagnósticos read-only—. Ese texto puede
+  disparar un `42P01` en Studio aunque todo haya ido bien; la consulta interna
+  exacta no se conoce (incidente de `s7_92`, §10.f). Esos patrones se **ensamblan en
+  tiempo de ejecución** (concatenación,
   `chr()`). Demostrado para `CREATE TABLE`; el resto de formas no se aisló.
 - **Un error mostrado por el SQL Editor no prueba que la transacción abortara.**
   Ante cualquier error en un PASO transaccional, correr **primero** un bloque
