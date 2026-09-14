@@ -1882,3 +1882,75 @@ aplicar. También apareció una mutación propia mal construida, que no desactiv
 afirmado que antes de `s7_92` la tabla solo validaba existencia. Las FK legacy de
 `clinics` no están versionadas, así que el texto final dice solo lo verificable: el
 emparejamiento lo validaban las RPC.
+
+## #374 · MULTICOUNTRY-GEO-P0 · F3C · backfill histórico de `clinics` (2026-09-14)
+
+> 🚧 **F3C = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3D en adelante).**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.g y §11.
+
+**`s7_93` = migración 114, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
+el 2026-09-14 **antes** del merge de #374. **Backfill de datos sin consumidores: no
+mueve el HEAD funcional** (`ecd6366`) ni deja cambios de esquema.
+
+### Qué cambió
+
+`country_id` / `territory_unit_id` de **exactamente 23 clínicas**: las de ubicación
+legacy coherente y geo NULL, medidas en el preflight v2 de producción (119 = 96 sin
+ubicación + 23; 0 incoherentes, 0 derivadas, 0 divergencias).
+
+- **Bajo lock `SHARE ROW EXCLUSIVE`** con `lock_timeout 5s`:
+  - huella bloqueante `63a5e35b…` sobre `id|department_id|municipality_id|country_id|territory_unit_id` de todas las clínicas;
+  - lista exacta C39.5 de pendientes.
+- **Un único `UPDATE`** sobre esos ids, con su legacy listado y geo NULL; valores **solo** del resolver vivo; **exactamente 23 filas**.
+- **Triggers:** `trg_clinics_territory_sync` siguió **activo** validando cada fila; solo se desactivó `trg_clinics_updated_at` alrededor del `UPDATE`. **`updated_at` conservado.**
+- **Clínicas sin ubicación:** las 96 siguen sin geo, sin inferencias.
+
+### Evidencia de cierre
+
+**Verificación post en producción: 19 PASS · 2 informativas · Z = 0.**
+- 23/23 en SV nivel 3 iguales al resolver; 0 pendientes; 0 divergencias; 0 geo fuera de la lista; 0 nivel 2;
+- ninguna de las 23 con `updated_at` posterior al preflight;
+- triggers en `O`; CHECK y FK, ACL, RLS y policies (md5 igual al preflight) intactos;
+- funciones previas intactas.
+
+**Artefacto:** blob `df00323b…7593`, confirmado en GitHub. PASO 1 `e5c5871e…` y PASO
+2 `a70b872f…` re-extraídos del archivo remoto.
+
+**Pruebas previas:**
+- `check-s7_93` 133/133;
+- **arnés local 43/43** con los ids y el legacy reales: aplicación como mensaje único, STOP con la huella real, deriva C2, `lock_timeout`, rollback R2 byte a byte y 6 mutaciones ejecutadas.
+
+### Rollback R2 exacto
+
+- **Alcance:** conjunto cerrado de los mismos 23 ids.
+- **Validez:** solo antes de F3D/F3E y sin consumidores.
+- **PREVIA:** verifica fila a fila legacy y geo derivada, y aborta si alguna cambió después.
+- **Vaciado:** ambos triggers desactivados solo durante el vaciado, con `updated_at` conservado.
+- **VERIFICA:** comprueba intacta la geo de las clínicas fuera de la lista.
+- **Orden, confirmado por el owner:** `s7_93` R2 → verificar estado → rollback de `s7_92`. El rollback de `s7_92` **no debe ejecutarse aisladamente**.
+
+### Fixtures seed
+
+12 de las 23 son clínicas `c0000001-…` de los seed de `s7_17`: owners y médicos
+`a0000001-…`, perfiles inactivos, `listed_only`, 0 operativos. Un médico figura
+publicado. **El owner decidió no excluirlas:** el formato de un id no tiene semántica
+de negocio y el invariante territorial aplica a toda clínica con legacy válido. Su
+limpieza es otro frente, no abierto.
+
+### Lecciones de método
+
+**1 · Probar el rollback ejecutándolo.** El check estático dio 133/133 con un rollback
+que PostgreSQL rechaza: comparaba `(a, b) IS DISTINCT FROM (SELECT …)` con dos columnas
+(`42601`). Solo la batería en el arnés lo destapó, antes del commit.
+
+**2 · El instrumento también falla.** La primera sonda de `lock_timeout` no llegó a
+retener el lock, así que su «PASS» no habría medido nada. Se añadió un control que
+verifica en `pg_locks` que la sesión bloqueante retiene el lock antes de medir.
+
+**3 · Huella mínima suficiente.** Hacer la huella solo sobre los cinco campos
+relevantes (decisión C2) evita abortar por cambios ajenos a geografía y sigue
+detectando cualquier deriva que afecte al backfill. Ambos lados se probaron en el arnés.
+
+**4 · Un id no es semántica.** Las 12 clínicas con id de forma sintética se revisaron
+en modo read-only y se incluyeron: la consistencia territorial no depende de si una
+fila es fixture.
