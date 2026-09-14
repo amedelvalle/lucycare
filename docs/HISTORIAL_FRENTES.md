@@ -1885,10 +1885,10 @@ emparejamiento lo validaban las RPC.
 
 ## #374 · MULTICOUNTRY-GEO-P0 · F3C · backfill histórico de `clinics` (2026-09-14)
 
-> 🚧 **F3C = APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3D en adelante).**
+> 🚧 **F3C = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3D en adelante).**
 > Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.g y §11.
 
-**`s7_93` = migración 114, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
+**`s7_93` = migración 114, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
 el 2026-09-14 **antes** del merge de #374. **Backfill de datos sin consumidores: no
 mueve el HEAD funcional** (`ecd6366`) ni deja cambios de esquema.
 
@@ -1927,7 +1927,7 @@ ubicación + 23; 0 incoherentes, 0 derivadas, 0 divergencias).
 - **PREVIA:** verifica fila a fila legacy y geo derivada, y aborta si alguna cambió después.
 - **Vaciado:** ambos triggers desactivados solo durante el vaciado, con `updated_at` conservado.
 - **VERIFICA:** comprueba intacta la geo de las clínicas fuera de la lista.
-- **Orden:** el rollback de `s7_92` **ya no es válido por sí solo**. Solo tras revertir `s7_93`.
+- **Orden, confirmado por el owner:** `s7_93` R2 → verificar estado → rollback de `s7_92`. El rollback de `s7_92` **no debe ejecutarse aisladamente**.
 
 ### Fixtures seed
 

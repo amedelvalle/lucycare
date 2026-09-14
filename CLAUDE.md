@@ -47,7 +47,7 @@
 > APPLIED / VERIFIED / CLOSED** (2026-09-13) · **F3B paso 3 (`s7_92`,
 > sincronización central) = CLOSED / APPLIED / VERIFIED** (2026-09-13; incidente del SQL
 > Editor diagnosticado el 2026-09-14) · **F3C (`s7_93`, backfill histórico) =
-> APPLIED / VERIFIED** (2026-09-14). **El frente completo NO está cerrado**: la
+> CLOSED / APPLIED / VERIFIED** (2026-09-14). **El frente completo NO está cerrado**: la
 > closure table y **F3D en adelante** están **diseñados y NO implementados**.
 >
 > **Qué hizo `s7_93`:** (**migración 114**) rellenó `country_id` /
@@ -70,8 +70,10 @@
 > - `updated_at` intacto; triggers en `O`;
 > - ACL, RLS y policies (md5 `20ad37b9…`, igual al preflight) y funciones previas intactas.
 >
-> **`s7_93` = APPLIED / VERIFIED / NO REAPLICAR**; su PRE aborta si la huella cambió.
-> **Backfill de datos sin consumidores: no mueve el HEAD funcional** (`ecd6366`).
+> **`s7_93` = CLOSED / APPLIED / VERIFIED / NO REAPLICAR**; su PRE aborta si la huella
+> cambió. **Backfill de datos históricos sin cambio de esquema ni de comportamiento de
+> código, y sin lectores: no mueve el HEAD funcional** (`ecd6366`, confirmado por el
+> owner el 2026-09-14).
 >
 > ℹ️ **12 de las 23 son fixtures seed históricos** (`c0000001-…`, owners y médicos del
 > rango seed `a0000001-…` de `s7_17`, perfiles inactivos, `listed_only`, 0 operativos).
@@ -272,10 +274,15 @@
 > sin geo y sin decisión de país (C5). **No conectar frontend ni lectores al catálogo
 > ni a las columnas nuevas de `clinics` sin instrucción del owner.**
 >
-> ⚠️ **Rollbacks, en orden inverso y solo antes de F3D/F3E:** primero el **R2 de
-> `s7_93`** (`docs/rollbacks/s7_93_rollback.sql`, 23 ids exactos), y solo después, si
-> hiciera falta, el de `s7_92`. **El rollback de `s7_92` ya NO es válido por sí solo**:
-> E5 lo limitaba a antes de F3C, y vaciaría también la geo del backfill.
+> ⚠️ **Rollbacks, en orden inverso y solo antes de F3D/F3E (confirmado por el owner):**
+> **`s7_93` R2 → verificar estado → rollback de `s7_92`**.
+> 1. El R2 (`docs/rollbacks/s7_93_rollback.sql`) revierte solo los 23 ids exactos.
+> 2. Se verifica con un bloque read-only que las 23 volvieron a geo NULL y que el
+>    resto está intacto.
+> 3. Solo entonces, si hiciera falta, se ejecuta el rollback de `s7_92`.
+>
+> **El rollback de `s7_92` NO debe ejecutarse aisladamente**: E5 lo limitaba a antes de
+> F3C, y vaciaría también la geo del backfill.
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -1433,7 +1440,7 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#374** 🚧 — **MULTICOUNTRY-GEO-P0 · F3C = APPLIED / VERIFIED. El FRENTE sigue EN
+- **#374** 🚧 — **MULTICOUNTRY-GEO-P0 · F3C = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN
   CURSO.** `s7_93` (**migración 114**, aplicada antes del merge): backfill histórico
   de `country_id` / `territory_unit_id` en **exactamente 23 clínicas**, medidas en el
   preflight v2 de producción.

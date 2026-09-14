@@ -9,7 +9,7 @@
 > `CH-16`). **F3B paso 2 = APPLIED / VERIFIED / CLOSED** (PR #370, `s7_91`,
 > migración 112, 2026-09-13: ubicación emparejada en la aprobación). **F3B paso 3 =
 > CLOSED / APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
-> central legacy → modelo nuevo y retiro de la guarda F3A). **F3C = APPLIED /
+> central legacy → modelo nuevo y retiro de la guarda F3A). **F3C = CLOSED / APPLIED /
 > VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
 > 23 clínicas con ubicación legacy). La closure table y **F3D en adelante** están
 > **diseñados y NO implementados**. **Ningún lector, directorio ni frontend consume
@@ -993,7 +993,7 @@ los mensajes de `s7_91`.
 
 ## 10.g · Evidencia de cierre de F3C (`s7_93`, backfill histórico)
 
-`s7_93` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-14
+`s7_93` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-14
 **antes** del merge de #374. **Backfill de datos sin consumidores: no mueve el HEAD
 funcional** (`ecd6366`).
 
@@ -1067,13 +1067,16 @@ PASO 1 L56–L150 `e5c5871e…`, PASO 2 L156–L367 `a70b872f…`):
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
-- **Rollbacks de F3, en orden inverso y solo antes de F3D/F3E:**
+- **Rollbacks de F3, en orden inverso y solo antes de F3D/F3E** (confirmado por el
+  owner): **`s7_93` R2 → verificar estado → rollback de `s7_92`**. El rollback de
+  `s7_92` no debe ejecutarse aisladamente.
   - **`s7_93` · R2** (`docs/rollbacks/s7_93_rollback.sql`): exclusivamente los 23 ids
     de C39.5. Aborta si alguna fila cambió después o si hay consumidores. Conserva
     `updated_at` y la geo de las clínicas fuera de la lista.
   - **`s7_92` (E5):** su validez era **solo antes de F3C/F3E**. **Con F3C aplicada ya
     no es válido por sí solo**, porque vaciaría también la geo del backfill; exige
-    revertir antes `s7_93` con R2. `docs/rollbacks/s7_92_rollback.sql` se niega si
+    revertir antes `s7_93` con R2 y verificar con un bloque read-only que las 23
+    volvieron a geo NULL. `docs/rollbacks/s7_92_rollback.sql` se niega si
     encuentra funciones o vistas que usen `country_id`, `territory_unit_id` o el
     catálogo.
 - **Decisiones de implementación de `s7_93` (C1–C6, owner, 2026-09-14):** C1 conservar
