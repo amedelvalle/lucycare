@@ -71,8 +71,10 @@ const sinDolarEnComentarios = (s) => s.split('\n').filter((l) => /^\s*--/.test(l
 // ═══════════════════════════════════════════════════════════
 console.log('0 · archivos');
 const migs = fs.readdirSync('migrations').filter((f) => f.endsWith('.sql'));
-check('migración 113', migs.length, 113);
-check('s7_92 es la última migración en orden', [...migs].sort().pop(), path.basename(P92));
+// ⚠️ Reanclado en F3C: s7_93 es posterior. Lo que se fija es la POSICIÓN de s7_92
+// (migración 113 en orden), no que sea la última.
+check('s7_92 es la migración 113 en orden', [...migs].sort().indexOf(path.basename(P92)) + 1, 113);
+check('control: hay al menos 113 migraciones', migs.length >= 113, true);
 const rastreado = (p) => { try { execSync(`git ls-files --error-unmatch "${p}"`, { stdio: 'ignore' }); return true; } catch { return false; } };
 check('el rollback está rastreado por git (la regla *.sql exige git add -f)', rastreado(PRB.split(path.sep).join('/')), true);
 check('sin etiquetas $…$ en comentarios de la migración', sinDolarEnComentarios(raw), true);
