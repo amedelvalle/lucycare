@@ -7,9 +7,12 @@
 > (PR #368, `s7_89`, migración 110, 2026-09-13). **F3B paso 1 = APPLIED /
 > VERIFIED / CLOSED** (PR #369, `s7_90`, migración 111, 2026-09-13: M2 de
 > `CH-16`). **F3B paso 2 = APPLIED / VERIFIED / CLOSED** (PR #370, `s7_91`,
-> migración 112, 2026-09-13: ubicación emparejada en la aprobación). `s7_92`, la
-> closure table y F3C en adelante están **diseñados y NO implementados**. **Ningún runtime lee el catálogo ni las
-> columnas nuevas de `clinics` todavía.**
+> migración 112, 2026-09-13: ubicación emparejada en la aprobación). **F3B paso 3 =
+> APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
+> central legacy → modelo nuevo y retiro de la guarda F3A). La closure table y
+> **F3C en adelante** están **diseñados y NO implementados**. **Ningún lector,
+> directorio ni frontend consume el catálogo ni las columnas nuevas de `clinics`**;
+> solo la sincronización de `s7_92` las escribe, al escribir `clinics`.
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -203,7 +206,44 @@ cual sea el grant o la policy, y deja funcionando todo `INSERT`/`UPDATE` que omi
 las columnas —el runtime entero—. **Permanece hasta F3B y solo se retira dentro de
 la misma transición que habilite el dual-write controlado.** Lleva un
 `COMMENT ON CONSTRAINT` que lo dice en la propia base. No es hardening general:
-grants, RLS y policies **no se tocaron**.
+grants, RLS y policies **no se tocaron**. **Retirada por `s7_92`**, en la misma
+transacción que instaló y verificó la sincronización (siguiente bloque).
+
+### ✅ IMPLEMENTADO — F3B paso 3 (`s7_92`, migración 113)
+
+```
+public._territory_from_legacy_sv(p_department_id text, p_municipality_id text,
+                                 OUT country_id smallint, OUT territory_unit_id bigint)
+  plpgsql · STABLE · SECURITY INVOKER · SET search_path = public, pg_temp
+  NULL, NULL        -> NULL | NULL
+  dept, NULL        -> SV | unidad nivel 1 (legacy_id = dept)
+  dept, muni        -> SV | unidad nivel 3 (legacy_id = muni, abuelo nivel 1 = dept)
+  NULL, muni        -> P0024      dept inexistente     -> P0026
+  muni incoherente  -> P0025      puente ausente       -> P0180     nunca nivel 2
+
+public._clinics_territory_sync()                 -- única SECURITY DEFINER, sin SQL dinámico
+  UPDATE sin cambios en las 4 columnas -> RETURN NEW (sin backfill)
+  r := resolver(NEW.department_id, NEW.municipality_id)
+  intento = no NULL en INSERT | distinto de OLD en UPDATE
+  intento distinto de r -> P0183
+  NEW.country_id, NEW.territory_unit_id := r        -- siempre
+
+trg_clinics_territory_sync  BEFORE INSERT OR UPDATE OF
+  department_id, municipality_id, country_id, territory_unit_id  ON public.clinics
+  FOR EACH ROW  · trigger normal (tgenabled = O), sin ENABLE ALWAYS
+
+REVOKE ALL de ambas funciones a PUBLIC, anon, authenticated, service_role
+```
+
+- **El legacy es la única autoridad de escritura.** Las columnas nuevas son una
+  proyección: el cliente puede enviarlas, pero solo prosperan con el valor
+  derivado. Esto sustituye a la guarda de F3A.
+- **Primer consumidor del catálogo**, y solo al escribir `clinics`. La función del
+  trigger es `SECURITY DEFINER` porque quien escribe `clinics` (`authenticated`,
+  `service_role`) no tiene ni debe tener `SELECT` sobre `administrative_units` /
+  `countries`. El resolver es INVOKER y no lo ejecuta ningún rol cliente.
+- **Sin backfill:** tras aplicar, 118 clínicas y 0 con geo. Las filas se proyectan
+  cuando se reescribe su ubicación legacy; el backfill explícito es F3C.
 
 ### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
 
@@ -570,7 +610,7 @@ de admitir reservas.
 | **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
 | **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
-| **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | 📐 diseñada (D1, D3, D4), no iniciada |
+| **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill de `country_id` / `territory_unit_id` | 📐 diseñada, no iniciada · **sin teléfonos como evidencia de país (§11)** |
 | **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
 
@@ -839,16 +879,125 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
 
 ---
 
+## 10.f · Evidencia de cierre de F3B paso 3 (`s7_92`, sincronización central)
+
+`s7_92` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+2026-09-13 **antes** del merge de #372. Cambia comportamiento de backend **solo en
+las escrituras sobre `clinics`**, sin UI ni `src/`. **Si mueve el HEAD funcional lo
+decide el owner.**
+
+**Preflight read-only A–H: PASS, Z = 0.**
+- 118 clínicas (95 sin ubicación + 23 con ubicación), 0 incoherentes, 0 con geo;
+- puente 14 / 262 completo, 0 unidades de nivel 2 con `legacy_id`;
+- solo `trg_clinics_updated_at`, sin reglas; guarda y CHECK estructural validados;
+- ACL, RLS y policies registradas; catálogo sin privilegios de cliente;
+- escritores de `clinics` = los 3 conocidos, aprobación = `s7_91`, `CH-16` corregido;
+- nombres y códigos `P0026` / `P0180` / `P0183` libres;
+- `postgres` dueño, `bypassrls` y miembro de `authenticated`;
+- privilegios por defecto que conceden `EXECUTE` a los roles cliente (de ahí el `REVOKE` obligatorio);
+- **H:** `anon`, `authenticated` y `PUBLIC` sin `CREATE` en `public`.
+
+**Transacción** (bloques autónomos PASO 1 L66–L177 y PASO 2 L183–L785, blob
+`d16360be86e4a3bd63bf98d1f2939eeba54133cc834ef4fa91991a7573c020e9`):
+- `lock_timeout = 5s`;
+- pruebas del resolver: 14 + 262, errores exactos, privilegio `EXECUTE` en falso y negativos bajo `SET LOCAL ROLE authenticated`;
+- sonda `public._s7_92_probe` con el mismo trigger y 41 casos (INSERT, UPDATE, upsert, 4 bajo `authenticated`), borrada antes del lock;
+- `LOCK clinics`, GUARDA con huellas, trigger, retiro de la guarda y POST.
+
+**Verificación post en producción: 24 PASS · 4 informativas · Z = 0.**
+- **Trigger:** `tgtype = 23`, `tgenabled = O`, exactamente las 4 columnas, solo 2 triggers de usuario.
+- **Funciones:** resolver INVOKER / `STABLE`, trigger DEFINER, ambos con `search_path = public, pg_temp`, dueño `postgres` y 0 `EXECUTE` de clientes o `PUBLIC`.
+- **Guarda y estructura:** guarda ausente, CHECK + 2 FK validadas, sonda ausente.
+- **Datos:** 118 clínicas, 0 con geo, 0 divergencias con lo que deriva su legacy.
+- **Seguridad:** ACL, RLS y policies iguales al preflight; catálogo sin privilegios de cliente.
+- **Resolver:** 262 → nivel 3, 14 → nivel 1, sin ubicación → NULL, CH-16 → SV.
+- **Resto:** `s7_91` y `doctor_booking_ready` intactas.
+- **md5 vivos** del resolver (`bdb0723c0257b31fe1aaa2bfc609dd6c`) y del trigger (`0cecd35ba759d9fbc84b1f98a82a0202`): exactamente los md5 CRLF de los cuerpos del artefacto de #372.
+
+**Pruebas previas (no son producción):**
+- **Estático:** `check-s7_92` 251/251, con 31 mutaciones invertidas y un modelo JS independiente de los 41 casos. `check-s7_89` (189/189) y `check-s7_91` (116/116), reanclados con allowlists cerradas.
+- **Arnés local desechable** (PostgreSQL 18 con roles y privilegios que simulan lo medido):
+  - cadena real `s7_87` → `s7_91`; preflight igual a producción salvo los 2 escritores no replicados;
+  - comportamiento sobre `clinics` como `authenticated` con RLS 10/10, con control A/B;
+  - 18 mutaciones ejecutadas, todas abortan dejando F3A;
+  - rollback: se niega con consumidores (E5), revierte con `updated_at` intacto y `s7_92` se reaplica;
+  - `lock_timeout`: aborta a los 5 s sin cambios.
+  - Las mutaciones destaparon que el negativo conductual de `EXECUTE` del resolver **no discriminaba**: el INVOKER da 42501 igual al leer el catálogo. Se añadió la aserción directa de `has_function_privilege` antes de aplicar.
+- **Rendimiento:** ventana con lock ~40 ms y transacción ~245 ms. Es **referencia del entorno desechable, NO SLA de producción**.
+
+### ⚠️ Incidente post-COMMIT del SQL Editor (`42P01`)
+
+Al terminar el PASO 2, el SQL Editor mostró
+`ERROR: 42P01: relation "public._s7_92_probe" does not exist`. **No fue un fallo de
+la migración.**
+
+| Evidencia | Resultado |
+|---|---|
+| Bloque read-only de estado | `S7_92 APLICADA COMPLETA`: guarda retirada, trigger y funciones instalados, sonda ausente, 0 geo, sin sesiones abortadas ni locks |
+| Verificación post | 24 PASS, Z = 0 |
+| `pg_stat_statements` (C2) | cada sentencia de `s7_92` completada **una vez**, del PRE al POST, **`DROP` de la sonda incluido** |
+| Event triggers vivos (B) | ninguno resuelve relaciones por nombre: `pgrst_*` hacen `NOTIFY`, `graphql_watch_*` incrementan la versión y los `issue_*` solo actúan sobre extensiones |
+| Lógica de la transacción | un error antes del `COMMIT` habría abortado todo y la base seguiría en F3A |
+
+**H2 (event trigger de la plataforma) descartada.** El error vino de fuera de la
+transacción, y el A/B en el propio editor identificó el disparador:
+
+| Bloque enviado al editor (solo lectura) | Resultado |
+|---|---|
+| **C** · consulta sobre `pg_stat_statements` con literales de regex `CREATE TABLE public._s7_92_probe`, `ALTER/DROP TABLE …`, `INSERT INTO …` | **`42P01` sobre `public._s7_92_probe`**, sin referenciar la tabla |
+| **C2** · la misma consulta con esos patrones ensamblados en ejecución | **PASS**, mismas filas que C (verificado en el arnés) |
+| **T1** · `SELECT 'public._zz_editor_probe_t1'` | **PASS** |
+| **T2** · `SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'` | **`42P01` sobre `public._zz_editor_probe_t2`** |
+| Bloques A y POST (el nombre sin esquema, sin forma de DDL) | sin error |
+| `s7_87` (`CREATE TABLE public.countries …`, tablas que siguen existiendo) | sin error |
+
+**Causa:** Supabase SQL Editor / Studio **inspecciona el texto enviado, literales
+incluidos**. Ante texto con forma de `CREATE TABLE <nombre>`, lanza **una consulta
+propia** sobre esa relación. Si la relación ya no existe —como la sonda, creada y
+borrada en la misma ejecución— muestra `42P01`, aunque el servidor haya completado
+todo.
+
+**Límites:**
+- **Sentencia literal no capturada:** la consulta interna de Studio no quedó registrada. `pg_stat_statements` no registra sentencias fallidas y no se obtuvo el log de Postgres. El disparador está demostrado por T2 y el par C/C2.
+- **Forma demostrada:** `CREATE TABLE`. `ALTER TABLE`, `DROP TABLE` e `INSERT INTO` no se aislaron.
+- **Qué hace esa consulta:** se desconoce. Solo consta que falla sobre relaciones inexistentes, y las pruebas se hicieron con nombres inexistentes.
+
+**Reglas que se derivan** (§11): no enviar texto con forma de DDL sobre objetos que
+no existirán, y no inferir el estado de una transacción a partir del error del
+editor. **`s7_92` no requiere cambios.**
+
+**Fuera de la migración:** `check-s7_89` y `check-s7_91` se reanclaron para admitir
+exactamente las dos funciones de `s7_92` y la reutilización de `P0024` / `P0025` con
+los mensajes de `s7_91`.
+
+⚠️ **`s7_92` no se modifica** tras aplicarse.
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
-- 🔒 **`clinics_geo_f3a_temp_null_chk` permanece hasta F3B** y **solo se retira
-  dentro de la misma transición que habilite el dual-write controlado** y su
-  protección. Retirarla sola reabriría la escritura directa desde el cliente, que
-  la tabla sigue admitiendo por sus grants.
+- 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
+  misma transacción que instaló y verificó la sincronización, como exigía F3A. La
+  protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
+- **Rollback de `s7_92` (E5):** válido **solo antes de F3C/F3E** y mientras nada
+  consuma el modelo nuevo. `docs/rollbacks/s7_92_rollback.sql` se niega a revertir
+  si encuentra funciones o vistas que usen `country_id`, `territory_unit_id` o el
+  catálogo.
+- **Decisiones de implementación de `s7_92` (E1–E5, owner, 2026-09-13):**
+  - **E1 · intento.** En UPDATE, un geo igual a OLD reenviado junto a un cambio
+    legacy no es contradicción: se recalcula. Una modificación directa del geo que
+    contradiga lo derivado aborta. En INSERT, intento = valor no NULL.
+  - **E2 · el cliente nunca es autoridad.** Aunque coincida, el trigger asigna
+    siempre el resultado del resolver.
+  - **E3 · códigos.** `P0024` / `P0025` con la semántica de `s7_91`; `P0026`
+    departamento inexistente; `P0180` puente del catálogo ausente; `P0183`
+    contradicción.
+  - **E4 · lock al final**, con `lock_timeout = 5s`, abortando si no se obtiene.
+  - **E5 · rollback** solo antes de F3C/F3E y sin consumidores.
 - ✅ **M2 de `CH-16` aplicada (`s7_90`, §10.d).** Procedió porque el precheck
   dinámico siguió en 0.
 - 🧭 **Decisiones del owner para el resto de F3B (2026-09-13):**
-  - **D1 · rechazar la contradicción.** El trigger de `s7_92` deriva `country_id` /
+  - **D1 · rechazar la contradicción ✅ (`s7_92`).** El trigger de `s7_92` deriva `country_id` /
     `territory_unit_id` del legacy y **rechaza con `P0183`** toda escritura que
     intente fijarlas con otro valor. Acepta un valor idéntico al derivado.
   - **D2 · `s7_91` ✅ aplicada (§10.e).** Departamento y municipio emparejados en
@@ -871,13 +1020,13 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
     - Sin `btrim`, igual que antes: un valor solo de espacios cuenta como «trae
       valor», pero no puede crear una clínica inválida (`P0025`, o la FK del
       `INSERT` para el departamento).
-  - **D3 · tabla sonda transaccional.** La prueba de comportamiento del trigger va
+  - **D3 · tabla sonda transaccional ✅ (`s7_92`, 41 casos).** La prueba de comportamiento del trigger va
     sobre una tabla creada y borrada dentro de la propia transacción, incluido
     `SET LOCAL ROLE authenticated`. **Nunca** `UPDATE` sobre filas reales.
-  - **D4 · trigger normal, SIN `ENABLE ALWAYS`.** No hay requerimiento medido de
+  - **D4 · trigger normal, SIN `ENABLE ALWAYS` ✅ (`tgenabled = O` verificado).** No hay requerimiento medido de
     replicación entrante.
   - **D5 · cerrada.** 0 datos incoherentes medidos.
-  - **D6 · tres migraciones secuenciales:** `s7_90` ✅ → `s7_91` → `s7_92`. En
+  - **D6 · tres migraciones secuenciales:** `s7_90` ✅ → `s7_91` ✅ → `s7_92` ✅. En
     `s7_92`, el resolver, el trigger y el **retiro de la guarda F3A van en la misma
     transacción**. El resolver es el único punto de resolución legacy → modelo
     nuevo: SV por `iso_alpha2`, nivel 1 si solo hay departamento, nivel 3 si hay
@@ -907,6 +1056,18 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
 - **SQL manual: entregar bloques autónomos listos para pegar en una pestaña
   nueva**, con primera y última línea explícitas, en lugar de depender de
   seleccionar un rango dentro del archivo completo.
+- **SQL Editor: no enviar texto con forma de DDL sobre objetos que no existirán al
+  terminar** —tampoco en literales, regex o diagnósticos read-only—. Studio lo
+  inspecciona y lanza su propia consulta sobre la relación (incidente de `s7_92`,
+  §10.f). Esos patrones se **ensamblan en tiempo de ejecución** (concatenación,
+  `chr()`). Demostrado para `CREATE TABLE`; el resto de formas no se aisló.
+- **Un error mostrado por el SQL Editor no prueba que la transacción abortara.**
+  Ante cualquier error en un PASO transaccional, correr **primero** un bloque
+  read-only de estado que clasifique aplicado / no aplicado / mixto, antes de
+  `ROLLBACK`, reintento o conclusión. Para migraciones futuras con objetos de
+  prueba creados y borrados en la misma ejecución, la forma de evitar el aviso
+  falso (p. ej. DDL de la sonda ensamblado en `EXECUTE`) se decidirá cuando haga
+  falta.
 
 - **El catálogo territorial es DATA-DRIVEN.** La lista de 320 unidades vive
   **únicamente** como seed dentro de `s7_88`. **Ningún frontend ni lógica de

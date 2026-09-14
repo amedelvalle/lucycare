@@ -4,22 +4,22 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-13) — post F3B paso 2 (`s7_91`, PR #370).**
+> 🟢 **BASELINE VIGENTE (2026-09-14) — post F3B paso 3 (`s7_92`, PR #372).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
-> | **Último HEAD funcional** | **`6a0173fdbd1bb1dec366860c0caf9c573e071a44`** — **PR #370 / `s7_91`**: cambia comportamiento observable de **backend** en `admin_approve_and_create_doctor` (ubicación emparejada). Promovido por decisión del owner (2026-09-13). Anterior: `e8e8c03` (#359/#360/#361) |
-> | **Migraciones aplicadas** | **112**, la última **`s7_91_geo_foundation_3b_approve_location_pairing.sql`** |
-> | **Último cambio de esquema** | **PR #368 / `s7_89`** — dos columnas nuevas en `clinics`, NULL y bloqueadas. `s7_90` corrige un dato y `s7_91` redefine una función: **ninguna tiene DDL de tablas**. Antes: `s7_87` (#365); `s7_88` fue un seed sin DDL |
+> | **Último HEAD funcional** | **`6a0173fdbd1bb1dec366860c0caf9c573e071a44`** — **PR #370 / `s7_91`**: cambia comportamiento observable de **backend** en `admin_approve_and_create_doctor` (ubicación emparejada). Promovido por decisión del owner (2026-09-13). Anterior: `e8e8c03` (#359/#360/#361). ⚠️ **Si `s7_92` (#372) mueve este HEAD está PENDIENTE de decisión del owner** (ver «Qué hizo `s7_92`») |
+> | **Migraciones aplicadas** | **113**, la última **`s7_92_geo_foundation_3b_territory_sync.sql`** |
+> | **Último cambio de esquema** | **PR #372 / `s7_92`** — trigger `trg_clinics_territory_sync` en `clinics` y retiro de la guarda `clinics_geo_f3a_temp_null_chk`. Antes: `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
-> `s7_89` modificaron el **esquema** y `s7_88` cargó **datos**, pero ningún
-> runtime consume `administrative_units` ni las columnas nuevas de `clinics`:
-> cero cambios de comportamiento observable. No presentarlos como cambios
-> funcionales ni promoverlos a HEAD funcional.
+> `s7_89` modificaron el **esquema** y `s7_88` cargó **datos**, pero cuando se
+> aplicaron ningún runtime consumía `administrative_units` ni las columnas nuevas
+> de `clinics`: cero cambios de comportamiento observable. No presentarlos como
+> cambios funcionales ni promoverlos a HEAD funcional.
 >
 > ⚠️ **#369 / `s7_90` es una CORRECCIÓN DE DATO VISIBLE, no un cambio de UI ni de
 > código.** Cambió **un nombre** del catálogo legacy, y por eso los selectores de
@@ -32,14 +32,66 @@
 > tablas. En cambio, `s7_90` sigue clasificada como corrección visible de datos y
 > no movió el baseline. Ver «Qué hizo `s7_91`».
 >
+> ⚠️ **#372 / `s7_92` cambia comportamiento de backend en las ESCRITURAS sobre
+> `clinics`**, sin UI ni cambios en `src/`. Ningún lector consume todavía las
+> columnas nuevas. **Si se promueve a HEAD funcional lo decide el owner**; hasta
+> esa decisión el HEAD funcional sigue siendo `6a0173f`.
+>
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
 > (2026-09-13) · **Fundación 3A = CLOSED / APPLIED / VERIFIED** (2026-09-13) ·
 > **F3B paso 1 (`s7_90`, M2 de `CH-16`) = APPLIED / VERIFIED / CLOSED**
 > (2026-09-13) · **F3B paso 2 (`s7_91`, ubicación emparejada en la aprobación) =
-> APPLIED / VERIFIED / CLOSED** (2026-09-13). **El frente completo NO está
-> cerrado**: `s7_92`, la closure table y F3C en adelante están **diseñados y NO
-> implementados**.
+> APPLIED / VERIFIED / CLOSED** (2026-09-13) · **F3B paso 3 (`s7_92`,
+> sincronización central) = APPLIED / VERIFIED** (2026-09-13; incidente del SQL
+> Editor diagnosticado el 2026-09-14). **El frente completo NO está cerrado**: la
+> closure table y **F3C en adelante** están **diseñados y NO implementados**.
+>
+> **Qué hizo `s7_92`:** (**migración 113**) instaló la **sincronización central
+> legacy → modelo territorial nuevo** en `clinics` y retiró la guarda temporal de
+> F3A **en la misma transacción**:
+> - **resolver único** `public._territory_from_legacy_sv(text, text)`, `SECURITY
+>   INVOKER`, `STABLE`: sin ubicación → NULL; solo departamento → SV + nivel 1;
+>   departamento + municipio → SV + nivel 3; **nunca nivel 2**; SV por
+>   `iso_alpha2`. Errores `P0024` / `P0025` (mismos mensajes que `s7_91`), `P0026`
+>   departamento inexistente y `P0180` catálogo sin puente;
+> - **`public._clinics_territory_sync()`**, la única `SECURITY DEFINER`, sin SQL
+>   dinámico. **El legacy es la autoridad**: el valor del resolver se asigna
+>   siempre, y un intento contradictorio → **`P0183`** (intento = no NULL en
+>   INSERT, distinto de OLD en UPDATE);
+> - **`trg_clinics_territory_sync`**, `BEFORE INSERT OR UPDATE OF department_id,
+>   municipality_id, country_id, territory_unit_id`, **trigger normal, sin
+>   `ENABLE ALWAYS`**;
+> - `REVOKE EXECUTE` explícito a `PUBLIC`, `anon`, `authenticated` y
+>   `service_role`; referencias `public.*` calificadas y `search_path = public,
+>   pg_temp`;
+> - **sin backfill**: un UPDATE que no cambia las 4 columnas no toca nada.
+>
+> Probada **dentro de la transacción** con el resolver exhaustivo (14 + 262) y una
+> **tabla sonda** de 41 casos, creada y borrada antes del `LOCK` (`lock_timeout =
+> 5s`). **Verificación post en producción: 24 PASS · 4 informativas · Z = 0**, con
+> los md5 vivos iguales a los cuerpos del artefacto (CRLF `bdb0723c…` /
+> `0cecd35b…`). 118 clínicas, 0 con geo, 0 divergencias. **`s7_92` = APPLIED /
+> VERIFIED / NO REAPLICAR**; su PRE aborta si la guarda F3A ya no está.
+>
+> **Cambio observable, solo en escrituras:** un cliente o RPC que escriba
+> `department_id` / `municipality_id` en `clinics` puebla ahora `country_id` /
+> `territory_unit_id`, y un par legacy incoherente se rechaza **a nivel de tabla**
+> (`P0024` / `P0025` / `P0026`). Según las migraciones versionadas, antes el
+> emparejamiento solo lo validaban las RPC (`admin_update_doctor_clinic` desde
+> `s7_25` y la aprobación desde `s7_91`), no la tabla. El preflight midió 0 clínicas
+> incoherentes.
+>
+> ⚠️ **INCIDENTE DEL SQL EDITOR — el `42P01` NO fue un fallo de `s7_92`.** Al
+> terminar el PASO 2, el editor mostró
+> `ERROR: 42P01: relation "public._s7_92_probe" does not exist`. Estaba aplicada
+> completa: estado read-only, verificación 24 PASS y `pg_stat_statements` con todas
+> las sentencias completadas, `DROP` de la sonda y POST incluidos. **Causa demostrada
+> por A/B:** Supabase SQL Editor / Studio inspecciona el texto enviado, **literales
+> incluidos**, y ante texto con forma de `CREATE TABLE <nombre>` lanza una consulta
+> propia sobre esa relación. Si ya no existe, muestra `42P01` aunque la ejecución
+> haya terminado bien. Un `SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'`
+> lo reproduce. Detalle y reglas en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.f.
 >
 > **Qué hizo `s7_91`:** (**migración 112**) redefinió
 > `admin_approve_and_create_doctor` con el cuerpo **verbatim de `s7_64` más tres
@@ -80,15 +132,14 @@
 > lectores, sin grants ni cambios de RLS.** `s7_89` = **APPLIED / VERIFIED / NO
 > REAPLICAR**; verificación read-only en la base **28/28 PASS**.
 >
-> 🔒 **GUARDA TEMPORAL `clinics_geo_f3a_temp_null_chk`** =
-> `CHECK (country_id IS NULL AND territory_unit_id IS NULL)`. Existe porque la
-> base **midió** `INSERT`/`UPDATE` de **tabla** para `anon` y `authenticated`
-> sobre `clinics` (RLS por `owner_id = auth.uid()`), y las columnas nuevas lo
-> heredan: sin ella, un propietario podría poblarlas desde el cliente antes de
-> F3B. **Permanece hasta F3B y solo se retira DENTRO de la misma transición que
-> habilite el dual-write controlado.** Retirarla sola reabriría la escritura
-> directa. No es hardening general de `clinics`: grants, policies y RLS **no se
-> tocaron**.
+> 🔓 **GUARDA TEMPORAL `clinics_geo_f3a_temp_null_chk` — RETIRADA por `s7_92`**,
+> dentro de la misma transacción que instaló y verificó la sincronización, como
+> exigía F3A. Era `CHECK (country_id IS NULL AND territory_unit_id IS NULL)` y
+> existía porque la base **midió** `INSERT`/`UPDATE` de **tabla** para `anon` y
+> `authenticated` sobre `clinics` (RLS por `owner_id = auth.uid()`). Hoy esa
+> protección la da el trigger: el cliente sigue pudiendo escribir las columnas,
+> pero **solo con el valor que deriva el legacy** (`P0183` en otro caso). Grants,
+> policies y RLS de `clinics` **no se tocaron** en ninguna fase.
 >
 > **Qué hizo Fundación 2A:** `s7_88` (**migración 109**) cargó el catálogo
 > territorial de El Salvador en `administrative_units`: **14 departamentos +
@@ -110,7 +161,8 @@
 > **El catálogo es data-driven.** La lista de 320 vive **solo** como seed dentro
 > de `s7_88`; **ningún frontend ni lógica de negocio puede hardcodear países,
 > departamentos, municipios ni distritos**. `administrative_units` será la
-> fuente operativa. **Hoy ningún runtime la lee** — conectarla es Fundación 3.
+> fuente operativa. **Hoy solo la lee la sincronización de `s7_92` al escribir
+> `clinics`**; ningún lector, directorio ni frontend la consume.
 >
 > ⛔ **`GEO-CATALOG-ADMIN/P1` = DIFERIDO, NO abierto.** Mantenimiento controlado
 > del catálogo desde LucyAdmin. **Deberá operar por IDs internos, NUNCA por
@@ -164,19 +216,18 @@
 > otras seis correcciones de B2 siguen solo en el catálogo nuevo: el legacy **no**
 > se corrige salvo decisión explícita.
 >
-> 🧭 **Decisiones del owner para el resto de F3B (2026-09-13):** **D1** rechazar
-> (`P0183`) cualquier escritura que fije `country_id` / `territory_unit_id` en
-> contradicción con el legacy · **D2 ✅ aplicada** (`s7_91`): departamento y municipio
-> emparejados en `admin_approve_and_create_doctor` · **D3** prueba de comportamiento del trigger sobre una
-> **tabla sonda transaccional** que nunca se comitea, nunca con `UPDATE` sobre
-> filas reales · **D4 trigger normal, SIN `ENABLE ALWAYS`**: no hay requerimiento
-> medido de replicación entrante · **D6** tres migraciones secuenciales: `s7_90`
-> ✅ → `s7_91` ✅ → `s7_92` (resolver + trigger + retiro de la guarda F3A **en la
-> misma transacción**). Diseño y preflight en
-> `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11. **`s7_92` NO iniciada: requiere nueva
-> autorización del owner.**
+> 🧭 **Decisiones del owner para F3B (2026-09-13), TODAS APLICADAS:** **D1 ✅**
+> rechazar (`P0183`) cualquier escritura que fije `country_id` / `territory_unit_id`
+> en contradicción con el legacy · **D2 ✅** (`s7_91`): departamento y municipio
+> emparejados en `admin_approve_and_create_doctor` · **D3 ✅** prueba de
+> comportamiento del trigger sobre una **tabla sonda transaccional**, nunca con
+> `UPDATE` sobre filas reales · **D4 ✅ trigger normal, SIN `ENABLE ALWAYS`** · **D6
+> ✅** `s7_90` → `s7_91` → `s7_92`, con resolver + trigger + retiro de la guarda F3A
+> **en la misma transacción**. **E1–E5** (semántica del intento, el legacy como
+> autoridad, códigos, lock al final, rollback solo antes de F3C/F3E) en
+> `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11.
 >
-> ⚠️ **`s7_87`, `s7_88`, `s7_89`, `s7_90` y `s7_91` NO se modifican.** Una migración aplicada es el
+> ⚠️ **`s7_87`, `s7_88`, `s7_89`, `s7_90`, `s7_91` y `s7_92` NO se modifican.** Una migración aplicada es el
 > registro de lo que se ejecutó — incluido el comentario residual de `s7_87`
 > línea 120 y el `$PRE$` de un comentario de `s7_89` línea 83 (ver la regla del
 > SQL Editor más abajo).
@@ -185,9 +236,10 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **`s7_92` NO iniciada; la guarda F3A sigue en pie. No conectar
-> frontend ni runtime al catálogo ni a las columnas nuevas de `clinics` sin
-> instrucción del owner.**
+> **F3C (backfill) NO iniciada.** Las 95 clínicas sin ubicación siguen sin decisión
+> de país. **No conectar frontend ni lectores al catálogo ni a las columnas nuevas
+> de `clinics` sin instrucción del owner.** El rollback de `s7_92` solo es válido
+> antes de F3C/F3E y sin consumidores del modelo nuevo.
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -805,12 +857,13 @@
 > `admin_approve_and_create_doctor`. · **PRs funcionales mergeados hasta #370** ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos**.
 >
-> ⚠️ **Las migraciones van por separado: 112 aplicadas** (hasta
-> `s7_91_geo_foundation_3b_approve_location_pairing.sql`). El último cambio de
-> **esquema** sigue siendo `s7_89` (#368); antes, `s7_87` (#365). `s7_88` es un
-> **seed de datos** y `s7_90` una **corrección visible de datos**: ninguno de los dos
-> movió el HEAD funcional. **`s7_91` (#370) sí lo movió**: redefine una función sin
-> DDL de tablas.
+> ⚠️ **Las migraciones van por separado: 113 aplicadas** (hasta
+> `s7_92_geo_foundation_3b_territory_sync.sql`). El último cambio de **esquema** es
+> `s7_92` (#372: trigger en `clinics` + retiro de la guarda F3A); antes, `s7_89`
+> (#368) y `s7_87` (#365). `s7_88` es un **seed de datos** y `s7_90` una
+> **corrección visible de datos**: ninguno movió el HEAD funcional. **`s7_91` (#370)
+> sí lo movió**: redefine una función sin DDL de tablas. **Si `s7_92` lo mueve está
+> pendiente de decisión del owner.**
 > Ver el bloque de baseline al principio del archivo.
 >
 > ⚠️ **`6a0173f` es el HEAD funcional confirmado, NO el tip eterno del
@@ -1080,6 +1133,19 @@
 > en lugar de depender de seleccionar un rango dentro del archivo completo. Con el
 > bloque aislado en pestaña nueva, el mismo PRE de `s7_89` dio `Success`.
 >
+> ⚠️ **Dos reglas más (2026-09-14), por el incidente post-COMMIT de `s7_92`:**
+> **(3) En bloques para el SQL Editor, no incluir texto con forma de DDL sobre
+> objetos que no existirán al terminar** —tampoco dentro de literales, regex o
+> diagnósticos read-only—. Supabase SQL Editor / Studio inspecciona el texto: ante
+> `CREATE TABLE <nombre>` lanza una consulta propia sobre esa relación, y si ya no
+> existe muestra `42P01` aunque todo haya ido bien. Esos patrones se **ensamblan en
+> tiempo de ejecución** (concatenación, `chr()`). Demostrado para `CREATE TABLE`;
+> `ALTER`/`DROP TABLE` e `INSERT INTO` no se aislaron. **(4) Un error mostrado por
+> el editor NO prueba que la transacción abortara.** Ante cualquier error en un
+> PASO transaccional, correr **primero** un bloque read-only de estado que
+> clasifique aplicado / no aplicado / mixto, **antes** de `ROLLBACK`, reintento o
+> conclusión. Con `s7_92` el error llegó con la migración ya comiteada.
+>
 > **Identidad de git (corregida 2026-08-03):** local en este repo
 > `amedelvalle / lucycare.digital@gmail.com`; global
 > `amedelvalle / 240200944+amedelvalle@users.noreply.github.com`. No se reescribió
@@ -1130,8 +1196,8 @@ Luego leé los documentos oficiales según el objetivo del día:
   directo y la closure table como diseño **no implementado**, los invariantes de
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
-  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B pasos 1 y 2 aplicados;
-  el frente no está cerrado.**
+  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B completa
+  (pasos 1, 2 y 3) aplicadas; el frente no está cerrado (F3C en adelante).**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1304,6 +1370,25 @@ squash-merge, la rama puede borrarse.
   solo lectura con los fragmentos reales, **cuya ejecución en la base no está
   acreditada**. **Verificación post-aplicación 16/16 PASS, Z = 0.**
   `s7_92` no iniciada; la guarda F3A sigue en pie →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#372** 🚧 — **MULTICOUNTRY-GEO-P0 · F3B paso 3 = APPLIED / VERIFIED. F3B
+  completa; el FRENTE sigue EN CURSO.** `s7_92` (**migración 113**, aplicada antes
+  del merge):
+  - resolver único `SECURITY INVOKER` y trigger `trg_clinics_territory_sync`
+    (función única `SECURITY DEFINER`, trigger normal) que deriva `country_id` /
+    `territory_unit_id` del legacy y rechaza contradicciones con `P0183`;
+  - retiro de la guarda F3A **en la misma transacción**; sin backfill;
+  - `REVOKE EXECUTE` a los cuatro roles, sin grants ni cambios de RLS.
+
+  Probada dentro de la transacción: resolver 14 + 262 y sonda de 41 casos.
+  **Verificación en producción 24 PASS, Z = 0**, con md5 vivos iguales al
+  artefacto. `check-s7_92` 251/251, 18 mutaciones ejecutadas en un arnés local y
+  control A/B. ⚠️ **El `42P01` que mostró el editor fue post-COMMIT**, provocado
+  porque Studio inspecciona texto con forma de `CREATE TABLE`: demostrado por A/B.
+  Reglas (3) y (4) del SQL Editor. **Clasificación de HEAD funcional pendiente del
+  owner.** F3C no iniciada →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
@@ -1700,6 +1785,21 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_92` MULTICOUNTRY-GEO-P0 · F3B paso 3 (**migración 113**): **sincronización
+  central legacy → modelo nuevo en `clinics`**.
+  - **Objetos creados:**
+    - `public._territory_from_legacy_sv(text, text)`: resolver único, `SECURITY INVOKER`, `STABLE`, `search_path = public, pg_temp`. Da SV por `iso_alpha2`, nivel 1 o 3 y nunca 2, con errores `P0024`/`P0025`/`P0026`/`P0180`;
+    - `public._clinics_territory_sync()`: única `SECURITY DEFINER`, sin SQL dinámico, legacy como autoridad y `P0183` ante contradicción;
+    - `trg_clinics_territory_sync`: `BEFORE INSERT OR UPDATE OF` las 4 columnas, trigger normal;
+    - `REVOKE ALL` de ambas funciones a `PUBLIC`/`anon`/`authenticated`/`service_role`.
+  - **Transacción:** PRE fuera; `BEGIN → lock_timeout 5s → huellas → funciones →
+    pruebas del resolver (14 + 262, negativos bajo authenticated) → sonda
+    public._s7_92_probe con 41 casos y DROP → LOCK clinics → GUARDA → trigger →
+    DROP CONSTRAINT clinics_geo_f3a_temp_null_chk → POST → COMMIT`.
+  - **Sin backfill, sin grants, sin cambios de RLS.**
+  - **Rollback** (`docs/rollbacks/s7_92_rollback.sql`): válido solo antes de F3C/F3E y sin consumidores; reinstala la guarda con su comentario byte a byte de `s7_89`.
+  - **Checks:** `check-s7_92` 251/251; `check-s7_89` y `check-s7_91` reanclados con allowlists cerradas.
+  - **Verificada en producción con 24 PASS, Z = 0.** El `42P01` del editor fue post-COMMIT (§10.f del análisis). **No se modifica** tras aplicarse.
 - `s7_91` MULTICOUNTRY-GEO-P0 · F3B paso 2 (**migración 112**): `CREATE OR
   REPLACE` de `admin_approve_and_create_doctor` con el cuerpo **verbatim de
   `s7_64` más tres hunks** marcados `(s7_91)`: dos variables con el override

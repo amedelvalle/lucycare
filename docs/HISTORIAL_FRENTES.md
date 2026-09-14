@@ -1762,3 +1762,120 @@ La comparación byte a byte con `s7_64` falló y lo señaló antes de entregar n
 al resolverla habría adelantado `P0024` / `P0025` sobre errores que hoy salen antes
 (especialidad, clasificación). Por eso la validación va después de todos ellos, y el
 check lo exige con una mutación.
+
+## #372 · MULTICOUNTRY-GEO-P0 · F3B paso 3 · sincronización central de `clinics` (2026-09-13 / 2026-09-14)
+
+> 🚧 **F3B paso 3 = APPLIED / VERIFIED. F3B completa; el FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.f y §11.
+
+**`s7_92` = migración 113, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner
+el 2026-09-13 **antes** del merge de #372.
+
+⚠️ **Cambio de backend en las escrituras sobre `clinics`, sin UI ni `src/`.** Un
+cliente o RPC que escriba la ubicación legacy puebla ahora `country_id` /
+`territory_unit_id`, y los pares incoherentes o las contradicciones se rechazan en la
+tabla. Ningún lector consume todavía las columnas nuevas. **Si mueve el HEAD
+funcional (hoy `6a0173f`) lo decide el owner.** Último cambio de esquema: `s7_92`.
+
+### Qué cambió
+
+- **Resolver único** `public._territory_from_legacy_sv(text, text)`:
+  - `SECURITY INVOKER`, `STABLE`, `search_path = public, pg_temp`, referencias `public.*`;
+  - SV por `iso_alpha2`; nivel 1 si solo hay departamento; nivel 3 si hay municipio coherente; **nunca nivel 2**;
+  - errores `P0024` / `P0025` (mensajes de `s7_91`), `P0026` y `P0180`.
+- **`public._clinics_territory_sync()`**, la única `SECURITY DEFINER`, sin SQL dinámico:
+  - el legacy es la autoridad y el valor del resolver se asigna siempre (E2);
+  - intento contradictorio → **`P0183`**, con intento = no NULL en INSERT o distinto de OLD en UPDATE (E1);
+  - un UPDATE que no cambia las 4 columnas no toca nada: **sin backfill**.
+- **`trg_clinics_territory_sync`**, `BEFORE INSERT OR UPDATE OF` las 4 columnas, **trigger normal**.
+- **`REVOKE EXECUTE`** de ambas funciones a `PUBLIC`, `anon`, `authenticated` y `service_role`.
+- **Retiro de `clinics_geo_f3a_temp_null_chk` en la misma transacción.**
+
+Grants, RLS y policies sin cambios.
+
+### Evidencia de cierre
+
+**Preflight A–H: PASS, Z = 0.**
+
+**En la transacción:**
+- pruebas del resolver: 14 + 262, errores exactos, privilegios y negativos bajo `authenticated`;
+- sonda transaccional de 41 casos, borrada antes del `LOCK`;
+- `lock_timeout = 5s`; GUARDA con huellas y POST.
+
+**Verificación post en producción: 24 PASS · 4 informativas · Z = 0.**
+- trigger normal con las 4 columnas;
+- seguridad y privilegios de ambas funciones correctos;
+- guarda retirada; CHECK y FK intactos; sonda ausente;
+- 118 clínicas, 0 con geo, 0 divergencias;
+- ACL, RLS y policies intactos; catálogo sin privilegios de cliente;
+- 14 → nivel 1 y 262 → nivel 3;
+- `s7_91` y `doctor_booking_ready` intactos;
+- md5 vivos iguales a los cuerpos CRLF del artefacto.
+
+**Artefacto:** blob SHA-256
+`d16360be86e4a3bd63bf98d1f2939eeba54133cc834ef4fa91991a7573c020e9`, confirmado también
+en GitHub. Bloques autónomos PASO 1 `f133afd2…` y PASO 2 `0c68fcbc…`, este último
+verificado por el owner antes de ejecutar.
+
+**Pruebas previas:**
+- `check-s7_92` 251/251 (31 mutaciones invertidas y modelo JS independiente de la matriz);
+- `check-s7_89` 189/189 y `check-s7_91` 116/116, reanclados con allowlists cerradas;
+- arnés local desechable: cadena real `s7_87` → `s7_91`, 18 mutaciones ejecutadas,
+  comportamiento con RLS 10/10 con control A/B, ciclo de rollback y `lock_timeout`.
+
+Los ~40 ms de lock y ~245 ms de transacción son **referencia del entorno desechable,
+no SLA**.
+
+### Incidente: `42P01` del SQL Editor después del COMMIT
+
+El editor mostró `ERROR: 42P01: relation "public._s7_92_probe" does not exist` al
+terminar el PASO 2. El owner detuvo todo y no reintentó.
+
+**Diagnóstico solo con bloques read-only:**
+- **A · estado:** `S7_92 APLICADA COMPLETA`.
+- **POST:** 24 PASS.
+- **B · event triggers:** ninguno resuelve relaciones por nombre. **H2 descartada**, también porque un error antes del `COMMIT` habría abortado todo.
+- **C · `pg_stat_statements`:** reprodujo **el mismo `42P01`** siendo un `SELECT` que solo contenía el nombre en literales de regex con forma de DDL.
+- **C2** (patrones ensamblados en ejecución): PASS. Mostró cada sentencia de `s7_92` completada una vez, del PRE al POST, **`DROP` de la sonda incluido**.
+- **T1** (`SELECT 'public._zz_editor_probe_t1'`): PASS.
+- **T2** (`SELECT 'CREATE TABLE public._zz_editor_probe_t2 (id int)'`): `42P01` sobre ese nombre.
+
+**Causa demostrada:** Supabase SQL Editor / Studio inspecciona el texto, literales
+incluidos, y ante `CREATE TABLE <nombre>` lanza una consulta propia sobre esa
+relación. La sonda ya no existía. `s7_87` no lo sufrió porque sus tablas seguían
+existiendo.
+
+**No capturado:**
+- la sentencia literal de Studio, porque no se obtuvo el log de Postgres;
+- si `ALTER`/`DROP TABLE` e `INSERT INTO` también lo disparan.
+
+**`s7_92` no requiere cambios.**
+
+### Lecciones de método
+
+**1 · El arnés no ejecutaba como el editor.** Aplicaba con `psql -f`, que parte el
+script y manda cada sentencia por separado; el editor manda el bloque entero. Se
+reprodujo después con un cliente mínimo del protocolo que envía **un solo mensaje
+`Query`**: en PostgreSQL puro el archivo exacto corre entero. Eso descartó el
+protocolo y apuntó a la plataforma.
+
+**2 · El mensaje de error no dice el estado.** Las dos hipótesis se reprodujeron en
+el arnés con **el mismo mensaje literal y estados finales opuestos** (todo aplicado
+frente a nada aplicado). Solo un bloque read-only que clasifica el estado podía
+decidir. De ahí la regla (4) del SQL Editor.
+
+**3 · El instrumento tropezó con la causa y eso la demostró.** El diagnóstico C
+contenía los mismos patrones de texto y falló igual sin tocar la tabla. El par C/C2
+y las sondas T1/T2, con nombres neutros inexistentes para que no pudieran tener
+efecto, aislaron el disparador. De ahí la regla (3).
+
+**4 · Mutar en ejecución, no solo en estático.** Las 18 mutaciones ejecutadas
+destaparon un negativo que no discriminaba: `EXECUTE` del resolver bajo
+`authenticated` daba 42501 también con el privilegio concedido, porque el INVOKER
+falla al leer el catálogo. Se corrigió exigiendo `has_function_privilege` antes de
+aplicar. También apareció una mutación propia mal construida, que no desactivaba nada.
+
+**5 · Una atribución se verifica antes de escribirla.** Al documentar se había
+afirmado que antes de `s7_92` la tabla solo validaba existencia. Las FK legacy de
+`clinics` no están versionadas, así que el texto final dice solo lo verificable: el
+emparejamiento lo validaban las RPC.
