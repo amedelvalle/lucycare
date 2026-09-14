@@ -140,8 +140,22 @@ has('regla 6: validación relacional municipality.department_id = department_id 
   "    PERFORM 1 FROM municipalities WHERE id = v_muni_id AND department_id = v_dept_id;\n    IF NOT FOUND THEN\n      RAISE EXCEPTION 'El municipio no existe o no pertenece al departamento indicado' USING ERRCODE = 'P0025';");
 check('los códigos nuevos solo aparecen en el hunk 3',
   (c91.match(/P002[45]/g) || []).length === (H3.match(/P002[45]/g) || []).length && /P0024/.test(H3) && /P0025/.test(H3), true);
-check('P0024/P0025 no se usan en ninguna otra migración',
-  fs.readdirSync('migrations').filter((f) => f !== path.basename(P91) && /P002[45]/.test(leerLF(path.join('migrations', f)))).join(','), '');
+// ⚠️ Reanclado en F3B paso 3: s7_92 reutiliza P0024/P0025 en su resolver con la
+// MISMA semántica y los MISMOS mensajes. Se admite solo ese archivo, y solo si
+// cada uso es uno de los dos mensajes de s7_91.
+const S92 = 's7_92_geo_foundation_3b_territory_sync.sql';
+check('P0024/P0025 no se usan en ninguna otra migración (salvo s7_92, con la misma semántica)',
+  fs.readdirSync('migrations').filter((f) => f !== path.basename(P91) && f !== S92 && /P002[45]/.test(leerLF(path.join('migrations', f)))).join(','), '');
+{
+  const c92 = sinComentarios(leerLF(path.join('migrations', S92)));
+  const usos = c92.match(/RAISE EXCEPTION '[^']*' USING ERRCODE = 'P002[45]'/g) || [];
+  check('s7_92 usa P0024/P0025 solo con los mensajes de s7_91',
+    usos.filter((u) => ![
+      "RAISE EXCEPTION 'El municipio no puede quedar sin departamento' USING ERRCODE = 'P0024'",
+      "RAISE EXCEPTION 'El municipio no existe o no pertenece al departamento indicado' USING ERRCODE = 'P0025'",
+    ].includes(u)).join(' | '), '');
+  check('s7_92 reutiliza ambos códigos (control: 2 usos en el resolver)', usos.length, 2);
+}
 
 // ═══════════════════════════════════════════════════════════
 // 3 · COLOCACIÓN: DESPUÉS DE TODAS LAS VALIDACIONES, ANTES DE ESCRIBIR

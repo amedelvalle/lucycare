@@ -288,8 +288,17 @@ const funcionesQueUsan = (mapa) => [...mapa]
                      && /c\.country_id|clinics\.country_id|clinics[^;]*country_id/.test(v.cuerpo))
   .map(([n, v]) => `${n} (${v.archivo})`);
 
-check('ninguna función SQL vigente usa las columnas nuevas de clinics',
-  funcionesQueUsan(vigentes).join(', '), '');
+// ⚠️ Reanclado en F3B paso 3: s7_92 instala el resolver y la función del trigger
+// de sincronización, que son EXACTAMENTE los dos únicos consumidores admitidos del
+// modelo nuevo. La allowlist es cerrada: nombre Y archivo. Cualquier otra función
+// —un lector, un escritor, un helper nuevo— sigue haciendo fallar el check.
+const SYNC_92 = ['_clinics_territory_sync (s7_92_geo_foundation_3b_territory_sync.sql)',
+                 '_territory_from_legacy_sv (s7_92_geo_foundation_3b_territory_sync.sql)'];
+const fueraDeAllowlist = (lista) => lista.filter((x) => !SYNC_92.includes(x)).join(', ');
+check('ninguna función SQL vigente usa las columnas nuevas de clinics (salvo la sincronización de s7_92)',
+  fueraDeAllowlist(funcionesQueUsan(vigentes)), '');
+check('control: la función del trigger de s7_92 SÍ se detecta como usuaria de las columnas nuevas',
+  funcionesQueUsan(vigentes).includes(SYNC_92[0]), true);
 
 // Más amplio: ninguna función vigente consulta el modelo territorial nuevo en
 // absoluto. Una función podría leerlo por `legacy_id` —`JOIN administrative_units
@@ -298,8 +307,10 @@ check('ninguna función SQL vigente usa las columnas nuevas de clinics',
 const funcionesDelModeloNuevo = (mapa) => [...mapa]
   .filter(([, v]) => /\b(administrative_units|administrative_unit_paths|country_levels|countries)\b/.test(v.cuerpo))
   .map(([n, v]) => `${n} (${v.archivo})`);
-check('ninguna función SQL vigente consulta el modelo territorial nuevo',
-  funcionesDelModeloNuevo(vigentes).join(', '), '');
+check('ninguna función SQL vigente consulta el modelo territorial nuevo (salvo el resolver de s7_92)',
+  fueraDeAllowlist(funcionesDelModeloNuevo(vigentes)), '');
+check('control: el resolver de s7_92 SÍ se detecta como lector del modelo nuevo',
+  funcionesDelModeloNuevo(vigentes).includes(SYNC_92[1]), true);
 check('se inspeccionaron las funciones vigentes (control: hay más de 100)', vigentes.size > 100, true);
 
 // Control positivo: el mismo método SÍ encuentra los 3 escritores legacy reales.
