@@ -6,8 +6,9 @@
 > migración 109, 2026-09-13). **Fundación 3A = CLOSED / APPLIED / VERIFIED**
 > (PR #368, `s7_89`, migración 110, 2026-09-13). **F3B paso 1 = APPLIED /
 > VERIFIED / CLOSED** (PR #369, `s7_90`, migración 111, 2026-09-13: M2 de
-> `CH-16`). `s7_91`, `s7_92`, la closure table y F3C en adelante están
-> **diseñados y NO implementados**. **Ningún runtime lee el catálogo ni las
+> `CH-16`). **F3B paso 2 = APPLIED / VERIFIED / CLOSED** (PR #370, `s7_91`,
+> migración 112, 2026-09-13: ubicación emparejada en la aprobación). `s7_92`, la
+> closure table y F3C en adelante están **diseñados y NO implementados**. **Ningún runtime lee el catálogo ni las
 > columnas nuevas de `clinics` todavía.**
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
@@ -568,7 +569,7 @@ de admitir reservas.
 | — | closure table `administrative_unit_paths` + rebuild/verify | 📐 diseñada, no implementada |
 | **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
 | **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
-| **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | 📐 decidida (D2), no iniciada |
+| **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | 📐 diseñada (D1, D3, D4), no iniciada |
 | **F3C** | backfill de `country_id` / `territory_unit_id` | 📐 diseñada, no iniciada · **sin teléfonos como evidencia de país (§11)** |
 | **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
@@ -781,6 +782,57 @@ PASO 1 (L53–L150) y PASO 2 (L156–L353) extraídos byte a byte.
 
 ⚠️ **`s7_90` no se modifica** tras aplicarse.
 
+## 10.e · Evidencia de cierre de F3B paso 2 (`s7_91`, ubicación emparejada)
+
+`s7_91` = **APPLIED / VERIFIED / CLOSED / NO REAPLICAR**, aplicada por el owner el
+2026-09-13 **antes** del merge de #370. **Es una corrección de comportamiento de
+backend, acotada a la ubicación en `admin_approve_and_create_doctor`.** Sin UI, sin
+cambios en `src/` ni en tipos, sin DDL de tablas.
+
+**Estado medido antes:** la definición vigente era la de `s7_64`, y el md5 del
+cuerpo vivo (`73ffe4972c87e3ca580a8e40778d1328`) coincidía byte a byte con
+`s7_64` en CRLF (medición del precheck de F3A).
+
+**El cambio:** cuerpo **verbatim de `s7_64` más tres hunks** marcados `(s7_91)`:
+1. dos variables con el override territorial crudo;
+2. **resolución emparejada**, que sustituye las dos líneas `COALESCE`;
+3. **validación del par final** (`P0024` / `P0025`), después de 42501, P0001–P0005 y
+   P0010–P0013 y antes de `UPDATE profiles` / `INSERT`.
+
+Firma, retorno, `SECURITY DEFINER`, `search_path`, dueño y privilegios intactos, sin
+`GRANT`. Semántica e interpretaciones en §11 (D2).
+
+**Guardas de aplicación:**
+- el PRE y la guarda exigieron el cuerpo vivo de `s7_64` por md5;
+- el POST exigió el cuerpo de `s7_91` (md5 LF `a249f92a…` / CRLF `d36698a9…`), ACL y
+  dueño idénticos, **ninguna otra función de `public` cambiada**, guarda F3A en pie y
+  ningún trigger nuevo en `clinics`.
+
+**Verificación read-only posterior: 16/16 PASS, Z = 0.**
+- **Función:** cuerpo vivo = `s7_91`; firma, definer, `search_path` y privilegios intactos.
+- **Semántica:** sin fallback independiente del municipio, emparejamiento presente,
+  validación relacional presente, `P0024` / `P0025` presentes.
+- **Fuera de alcance:** F3A intacta, 0 valores nuevos en `clinics`, `CH-16` intacto,
+  ninguna función de `s7_92`.
+
+**A/B:**
+- **Estructural (`check-s7_91` 114/114):** quitando los tres hunks, la definición es
+  **byte a byte** la de `s7_64`, con 11 mutaciones invertidas.
+- **Conductual (`docs/smokes/s7_91_ab_smoke.sql`, solo lectura):** ejecuta los fragmentos
+  real de `s7_64` y de `s7_91`, verbatim, sobre 14 casos. Pasa solo si el actual produce
+  7 pares incoherentes y el corregido 0.
+
+**Reconciliación del archivo:** aplicado desde el commit `20d33f4`; SHA-256 del blob
+`cbaf5676b20b0aa8b9cb062f92e3b7e1c9f3d1a1e53ca93e61123402541ffaab`, confirmado
+también en el archivo servido por GitHub en el head del PR. Bloques autónomos PASO 1
+(L56–L112) y PASO 2 (L118–L518) extraídos byte a byte.
+
+**Fuera de la migración:** `check-s7_89` se reancló para admitir la redefinición en
+`s7_91`. Sigue exigiendo, sobre la última definición, que ningún escritor use las
+columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187.**
+
+⚠️ **`s7_91` no se modifica** tras aplicarse.
+
 ---
 
 ## 11 · Deudas y decisiones registradas, ninguna abierta
@@ -795,11 +847,26 @@ PASO 1 (L53–L150) y PASO 2 (L156–L353) extraídos byte a byte.
   - **D1 · rechazar la contradicción.** El trigger de `s7_92` deriva `country_id` /
     `territory_unit_id` del legacy y **rechaza con `P0183`** toda escritura que
     intente fijarlas con otro valor. Acepta un valor idéntico al derivado.
-  - **D2 · `s7_91`.** Emparejar departamento y municipio en
-    `admin_approve_and_create_doctor`. Hoy resuelve cada campo por separado con
-    `COALESCE(override, lead)`: si LucyAdmin cambia el departamento y deja el
-    municipio vacío, recupera el municipio del lead, que es de otro departamento.
-    Con el trigger de `s7_92` esa aprobación fallaría.
+  - **D2 · `s7_91` ✅ aplicada (§10.e).** Departamento y municipio emparejados en
+    `admin_approve_and_create_doctor`. Antes resolvía cada campo por separado con
+    `COALESCE(override, lead)` y, si LucyAdmin cambiaba el departamento y dejaba
+    el municipio vacío, recuperaba el municipio del lead, de otro departamento.
+    **Interpretaciones confirmadas por el owner:**
+    - «el override trae departamento» = valor normalizado con `NULLIF(valor, '')` y
+      no NULL, la misma normalización que ya usaba `s7_64` para estos campos;
+    - departamento y municipio de override ausentes → par del lead;
+    - departamento de override + municipio ausente → municipio NULL;
+    - municipio de override sin departamento de override → `P0024`, **nunca** se
+      combina con el departamento del lead;
+    - **el par final se valida siempre**, también el heredado del lead: municipio
+      sin departamento → `P0024`; inexistente o de otro departamento → `P0025`.
+      Intencional: una solicitud incoherente se detiene en la aprobación antes de
+      crear una clínica inválida.
+    - Las validaciones van tras las existentes y la clasificación, y antes de la
+      primera escritura, para preservar el orden de errores previo.
+    - Sin `btrim`, igual que antes: un valor solo de espacios cuenta como «trae
+      valor», pero no puede crear una clínica inválida (`P0025`, o la FK del
+      `INSERT` para el departamento).
   - **D3 · tabla sonda transaccional.** La prueba de comportamiento del trigger va
     sobre una tabla creada y borrada dentro de la propia transacción, incluido
     `SET LOCAL ROLE authenticated`. **Nunca** `UPDATE` sobre filas reales.

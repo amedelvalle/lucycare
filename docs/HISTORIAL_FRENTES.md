@@ -1681,3 +1681,81 @@ propio `IF`.
 **3 · Reutilizar lo que ya pasó por el SQL Editor.** El recuento dinámico usa
 `format(… %L …)`, la forma del precheck ya ejecutado, en vez de un `$1` sin
 precedente en las migraciones aplicadas.
+
+---
+
+## #370 · MULTICOUNTRY-GEO-P0 · F3B paso 2 · ubicación emparejada en la aprobación (2026-09-13)
+
+> 🚧 **F3B paso 2 = APPLIED / VERIFIED / CLOSED. El FRENTE sigue EN CURSO.**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §9, §10.e y §11 (D2).
+
+**`s7_91` = migración 112, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+owner el 2026-09-13 **antes** del merge de #370.
+
+⚠️ **Corrección de comportamiento de backend, acotada.** Solo cambia cómo
+`admin_approve_and_create_doctor` decide la ubicación de la clínica. Sin UI, sin
+`src/`, sin tipos ni DDL de tablas. El último cambio de esquema sigue siendo `s7_89`.
+
+### El bug
+
+`s7_64` resolvía departamento y municipio **por separado** con
+`COALESCE(override, lead)`. En LucyAdmin, cambiar el departamento del override
+vacía el municipio; el service omite las claves vacías; y el RPC recuperaba el
+municipio **del lead, de otro departamento**, guardando la clínica sin error.
+Hallado al diseñar F3B: con el trigger de `s7_92` esa aprobación habría fallado.
+
+### La corrección
+
+Cuerpo **verbatim de `s7_64` más tres hunks** marcados `(s7_91)`:
+1. override territorial crudo en `DECLARE`;
+2. **resolución emparejada**;
+3. **validación del par final**.
+
+**Semántica confirmada por el owner** (normalización `NULLIF(valor, '')`, la de `s7_64`):
+- override sin departamento → par del lead;
+- departamento de override + municipio ausente → municipio NULL;
+- municipio de override sin departamento de override → **`P0024`**, nunca combinado con el departamento del lead;
+- **el par final se valida siempre**, también el del lead: municipio sin departamento → `P0024`; inexistente o de otro departamento → **`P0025`**.
+
+Las validaciones van **después** de las existentes y la clasificación, y **antes** de la
+primera escritura, para preservar el orden de errores. Firma, retorno,
+`SECURITY DEFINER`, `search_path`, dueño y privilegios intactos.
+
+### Evidencia de cierre
+
+**Verificación read-only: 16/16 PASS, Z = 0.** Cuerpo vivo = `s7_91` · firma, definer,
+`search_path` y privilegios intactos · sin fallback independiente del municipio ·
+emparejamiento y validación relacional presentes · `P0024` / `P0025` · F3A intacta ·
+0 valores nuevos en `clinics` · `CH-16` intacto · ninguna función de `s7_92`.
+
+**Guardas de aplicación:**
+- el PRE y la guarda exigieron el cuerpo vivo de `s7_64` por md5 (el CRLF `73ffe497…`, medido en F3A);
+- el POST exigió el cuerpo de `s7_91`, ACL y dueño idénticos y **ninguna otra función de `public` cambiada**.
+
+**A/B:**
+- **estructural (`check-s7_91` 114/114):** quitando los tres hunks, la función es byte a byte la de `s7_64`, con 11 mutaciones invertidas;
+- **conductual:** smoke de solo lectura con los fragmentos reales de `s7_64` y `s7_91` sobre 14 casos: el actual reproduce 7 pares incoherentes y el corregido ninguno.
+
+**Reconciliación:** aplicada desde `20d33f4`, SHA-256
+`cbaf5676b20b0aa8b9cb062f92e3b7e1c9f3d1a1e53ca93e61123402541ffaab`, confirmado
+también en GitHub.
+
+**Fuera de la migración:** `check-s7_89` se reancló para admitir la redefinición (187/187,
+con A/B del reanclaje).
+
+### Lecciones de método
+
+**1 · Generar, no transcribir.** La migración, el rollback y el smoke se ensamblaron
+desde el cuerpo real de `s7_64` y tres hunks escritos una sola vez, con `split` /
+`join` y no `String.replace`, que interpreta `$$`. Así el smoke prueba **exactamente**
+el código que se aplica y el rollback restaura **exactamente** `s7_64`, y el check lo
+demuestra.
+
+**2 · El A/B destapó un defecto del propio check.** El extractor del hunk 1 cortaba
+«hasta la línea en blanco» y se llevaba `v_override_email`, la declaración siguiente.
+La comparación byte a byte con `s7_64` falló y lo señaló antes de entregar nada.
+
+**3 · Colocar la validación sin cambiar el orden de errores.** Validar la ubicación
+al resolverla habría adelantado `P0024` / `P0025` sobre errores que hoy salen antes
+(especialidad, clasificación). Por eso la validación va después de todos ellos, y el
+check lo exige con una mutación.
