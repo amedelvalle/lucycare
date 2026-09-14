@@ -9,10 +9,12 @@
 > `CH-16`). **F3B paso 2 = APPLIED / VERIFIED / CLOSED** (PR #370, `s7_91`,
 > migración 112, 2026-09-13: ubicación emparejada en la aprobación). **F3B paso 3 =
 > CLOSED / APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
-> central legacy → modelo nuevo y retiro de la guarda F3A). La closure table y
-> **F3C en adelante** están **diseñados y NO implementados**. **Ningún lector,
-> directorio ni frontend consume el catálogo ni las columnas nuevas de `clinics`**;
-> solo la sincronización de `s7_92` las escribe, al escribir `clinics`.
+> central legacy → modelo nuevo y retiro de la guarda F3A). **F3C = APPLIED /
+> VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
+> 23 clínicas con ubicación legacy). La closure table y **F3D en adelante** están
+> **diseñados y NO implementados**. **Ningún lector, directorio ni frontend consume
+> el catálogo ni las columnas nuevas de `clinics`**; solo las escriben la
+> sincronización de `s7_92` y el backfill de `s7_93`.
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -244,6 +246,20 @@ REVOKE ALL de ambas funciones a PUBLIC, anon, authenticated, service_role
   `countries`. El resolver es INVOKER y no lo ejecuta ningún rol cliente.
 - **Sin backfill:** tras aplicar, 118 clínicas y 0 con geo. Las filas se proyectan
   cuando se reescribe su ubicación legacy; el backfill explícito es F3C.
+
+### ✅ IMPLEMENTADO — F3C (`s7_93`, migración 114): estado de los datos
+
+Sin objetos nuevos. Tras el backfill, en producción:
+
+| Clínicas | Legacy | Geo |
+|---|---|---|
+| 96 | sin ubicación | NULL (C5: sin inferencias ni decisión de país) |
+| 23 | departamento + municipio coherentes | SV + unidad de **nivel 3** de su municipio, igual al resolver |
+| 0 | solo departamento · incoherentes | — |
+
+**Invariante vigente:** toda clínica cumple `geo = _territory_from_legacy_sv(legacy)`,
+con 0 divergencias medidas en la tabla completa. Las nuevas escrituras lo mantienen
+por el trigger de `s7_92`.
 
 ### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
 
@@ -611,7 +627,7 @@ de admitir reservas.
 | **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
-| **F3C** | backfill de `country_id` / `territory_unit_id` | 📐 diseñada, no iniciada · **sin teléfonos como evidencia de país (§11)** |
+| **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
 | **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
@@ -975,15 +991,101 @@ los mensajes de `s7_91`.
 
 ---
 
+## 10.g · Evidencia de cierre de F3C (`s7_93`, backfill histórico)
+
+`s7_93` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-14
+**antes** del merge de #374. **Backfill de datos sin consumidores: no mueve el HEAD
+funcional** (`ecd6366`).
+
+**Preflight v2 de producción: Z = 0.**
+
+| Medida | Valor |
+|---|---|
+| Clínicas | 119 = 96 sin ubicación + 0 solo departamento + 23 coherentes + 0 incoherentes |
+| Geo previa | 0 ya derivadas, 0 divergencias, 0 anomalías |
+| Pendientes | 23, todas de nivel 3 |
+| Puente | completo |
+| Estructura | triggers en `O`, funciones de `s7_92` intactas |
+| Seguridad | ACL, RLS y policies (md5 `20ad37b9…`) |
+| Consumidores y publicaciones | 0 · `clinics` en ninguna publicación |
+
+- **`trg_clinics_updated_at`:** usa `update_updated_at()`, compartida con 6 tablas; por eso no se tocó la función.
+- **Huella C2:** `63a5e35b49e91f904df565b2d1717475`.
+- **Lista C39.5:** 23 entradas `id|department_id|municipality_id`.
+
+**Decisiones del owner (C1–C6):** conservar `updated_at` desactivando solo
+`trg_clinics_updated_at` · huella bloqueante sobre los cinco campos relevantes
+(los cambios ajenos a geografía no abortan) · rollback **R2 exacto** · STOP ante
+incoherencias o divergencias · las 96 sin ubicación sin geo · una sola transacción.
+
+**Transacción** (blob `df00323bd5d09e827f45b8fe4057624fe2dcebac9a40511393cb4ab0454d7593`;
+PASO 1 L56–L150 `e5c5871e…`, PASO 2 L156–L367 `a70b872f…`):
+
+1. `lock_timeout 5s` y `LOCK SHARE ROW EXCLUSIVE`, que bloquea escrituras y no lecturas;
+2. GUARDA con huella y lista exactas;
+3. `DISABLE TRIGGER trg_clinics_updated_at`;
+4. un único `UPDATE` sobre esos ids con su legacy listado y geo NULL, valores del resolver vivo y exactamente 23 filas;
+5. `ENABLE`;
+6. POST;
+7. `COMMIT`.
+
+**Verificación post en producción: 19 PASS · 2 informativas · Z = 0.**
+- **Triggers:** ambos en `O`.
+- **Recuentos:** 119 / 96 sin ubicación y sin geo / 0 sin ubicación con geo / 0 pendientes.
+- **Las 23:** legacy intacto, SV, nivel 3 de su municipio e iguales al resolver; 0 geo fuera de la lista.
+- **Toda la tabla:** 0 divergencias, 0 de nivel 2.
+- **`updated_at`:** 0 de las 23 con `updated_at` posterior al preflight.
+- **Estructura y seguridad:** guarda F3A ausente; CHECK y 2 FK; relacl; RLS y policies; catálogo sin privilegios de cliente.
+- **Funciones:** `s7_92`, `s7_91` y `s7_85` intactas.
+- **Informativas:** huella C2 tras el backfill `7c823ad1f5c30fc7a2b5a33fe62c68a7`; md5 de policies `20ad37b9…`, igual al preflight.
+
+**Pruebas previas (no son producción):**
+- **Estático:** `check-s7_93` 133/133, con 30 mutaciones invertidas.
+- **Arnés local desechable: 43/43.** Cadena real `s7_87` → `s7_92` con las 23 clínicas de ids y legacy reales; bloques como mensaje Query único.
+  - aplicación, con verificación y bloque de estado;
+  - STOP con la huella real de producción;
+  - deriva C2: `name` no aborta, clínica nueva o cambio de municipio sí;
+  - `lock_timeout` a 5 s;
+  - rollback R2 byte a byte, bloqueante ante filas cambiadas o consumidores, conservando geo orgánica fuera de la lista;
+  - 6 mutaciones ejecutadas.
+  - La batería **encontró un defecto real del rollback antes del commit**: comparación de fila contra subconsulta de dos columnas, `42601`.
+- **Tiempos del arnés:** LOCK → COMMIT ≈ 120 ms, referencia del entorno desechable, no SLA.
+
+**Revisión informativa de las 12 clínicas `c0000001-…` (read-only):**
+- **Existencia:** 12/12 existen y están activas.
+- **Owners y médicos:** del rango seed `a0000001-…` de `s7_17`; perfiles inactivos con correo `@lucycare.test`; médicos `listed_only`, 0 operativos, 0 con agenda.
+- **Publicado:** el médico de `…0009` figura `is_published = true`.
+- **Uso:** 4 clínicas con 1 cita histórica y 1 ficha de paciente; 1 `clinic_member` por clínica.
+- **Decisión del owner:** son fixtures históricos, **pero no se excluyen de F3C**. El formato de un id no tiene semántica de negocio y el invariante territorial aplica a toda clínica con legacy válido. Su limpieza es otro frente.
+
+⚠️ **`s7_93` no se modifica** tras aplicarse.
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
-- **Rollback de `s7_92` (E5):** válido **solo antes de F3C/F3E** y mientras nada
-  consuma el modelo nuevo. `docs/rollbacks/s7_92_rollback.sql` se niega a revertir
-  si encuentra funciones o vistas que usen `country_id`, `territory_unit_id` o el
-  catálogo.
+- **Rollbacks de F3, en orden inverso y solo antes de F3D/F3E:**
+  - **`s7_93` · R2** (`docs/rollbacks/s7_93_rollback.sql`): exclusivamente los 23 ids
+    de C39.5. Aborta si alguna fila cambió después o si hay consumidores. Conserva
+    `updated_at` y la geo de las clínicas fuera de la lista.
+  - **`s7_92` (E5):** su validez era **solo antes de F3C/F3E**. **Con F3C aplicada ya
+    no es válido por sí solo**, porque vaciaría también la geo del backfill; exige
+    revertir antes `s7_93` con R2. `docs/rollbacks/s7_92_rollback.sql` se niega si
+    encuentra funciones o vistas que usen `country_id`, `territory_unit_id` o el
+    catálogo.
+- **Decisiones de implementación de `s7_93` (C1–C6, owner, 2026-09-14):** C1 conservar
+  `updated_at` desactivando solo `trg_clinics_updated_at` · C2 huella bloqueante sobre
+  `id|department_id|municipality_id|country_id|territory_unit_id`; si cambia, STOP y
+  repetir preflight, sin regenerar constantes sin autorización · C3 rollback R2 exacto
+  (R1, vaciar toda la geo, **rechazado**) · C4 STOP ante incoherencias o divergencias ·
+  C5 las clínicas sin ubicación permanecen sin geo · C6 una sola transacción.
+- **Fixtures seed históricos (§10.g):** 12 clínicas `c0000001-…` con owners y médicos
+  del rango seed de `s7_17`. **Incluidas en F3C** por su legacy válido. Su limpieza, y
+  la anomalía del médico `…0009` con `is_published = true`, son un **frente aparte, no
+  abierto**.
 - **Decisiones de implementación de `s7_92` (E1–E5, owner, 2026-09-13):**
   - **E1 · intento.** En UPDATE, un geo igual a OLD reenviado junto a un cambio
     legacy no es contradicción: se recalcula. Una modificación directa del geo que
@@ -1033,9 +1135,10 @@ los mensajes de `s7_91`.
     nuevo: SV por `iso_alpha2`, nivel 1 si solo hay departamento, nivel 3 si hay
     municipio coherente, nunca nivel 2. La única `SECURITY DEFINER` es la función
     del trigger, con `search_path` fijo.
-- **Las 95 clínicas sin ubicación legacy (de 118) quedan SIN decisión de país.**
-  F3C deberá resolver su tratamiento explícitamente: sin teléfonos y **sin asumir**
-  que deban quedar NULL para siempre.
+- **Las 96 clínicas sin ubicación legacy (de 119) quedan SIN geo y SIN decisión de
+  país** (C5 de F3C). F3C no las tocó ni infirió nada. Cualquier tratamiento futuro
+  exige decisión explícita del owner: sin teléfonos y **sin asumir** que deban
+  quedar NULL para siempre.
 - **Deuda de hardening, NO corregida en F3B:** `departments` y `municipalities`
   tienen `INSERT`/`UPDATE`/`DELETE` de tabla para `anon`/`authenticated`, con RLS
   que solo tiene policies `SELECT`. Las escrituras de cliente quedan denegadas y la
@@ -1044,7 +1147,7 @@ los mensajes de `s7_91`.
   reparenta unidades, deberá revalidar las clínicas cuyo país o unidad derive de
   ellas, o prohibir esas ediciones: el trigger de `s7_92` solo actúa al escribir
   `clinics`.
-- **Backfill de país (F3C): NO usar teléfonos como evidencia de país.** Una clínica
+- **Backfill de país (F3C, aplicado respetándolo): NO usar teléfonos como evidencia de país.** Una clínica
   con ubicación legacy es de SV porque ese catálogo legacy es de SV. Las clínicas
   **sin** ubicación se miden aparte; no se infiere su país por prefijo telefónico.
 - **`profiles` y `doctor_affiliation_requests` NO se migran dentro de F3.** Sus

@@ -4,15 +4,15 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-14) — post F3B paso 3 (`s7_92`, PR #372).**
+> 🟢 **BASELINE VIGENTE (2026-09-14) — post F3C (`s7_93`, PR #374).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
-> | **Migraciones aplicadas** | **113**, la última **`s7_92_geo_foundation_3b_territory_sync.sql`** |
-> | **Último cambio de esquema** | **PR #372 / `s7_92`** — trigger `trg_clinics_territory_sync` en `clinics` y retiro de la guarda `clinics_geo_f3a_temp_null_chk`. Antes: `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
+> | **Migraciones aplicadas** | **114**, la última **`s7_93_geo_foundation_3c_clinics_backfill.sql`** (backfill de datos: **no mueve el HEAD funcional**, igual que `s7_88`) |
+> | **Último cambio de esquema** | **PR #372 / `s7_92`** — trigger `trg_clinics_territory_sync` en `clinics` y retiro de la guarda `clinics_geo_f3a_temp_null_chk`. `s7_93` no deja cambios de esquema: solo desactiva y reactiva un trigger dentro de su transacción. Antes: `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -46,8 +46,37 @@
 > (2026-09-13) · **F3B paso 2 (`s7_91`, ubicación emparejada en la aprobación) =
 > APPLIED / VERIFIED / CLOSED** (2026-09-13) · **F3B paso 3 (`s7_92`,
 > sincronización central) = CLOSED / APPLIED / VERIFIED** (2026-09-13; incidente del SQL
-> Editor diagnosticado el 2026-09-14). **El frente completo NO está cerrado**: la
-> closure table y **F3C en adelante** están **diseñados y NO implementados**.
+> Editor diagnosticado el 2026-09-14) · **F3C (`s7_93`, backfill histórico) =
+> APPLIED / VERIFIED** (2026-09-14). **El frente completo NO está cerrado**: la
+> closure table y **F3D en adelante** están **diseñados y NO implementados**.
+>
+> **Qué hizo `s7_93`:** (**migración 114**) rellenó `country_id` /
+> `territory_unit_id` de **exactamente las 23 clínicas históricas** con ubicación
+> legacy coherente y geo NULL, medidas en el preflight v2 de producción (119 = 96 sin
+> ubicación + 23 coherentes; 0 incoherentes, 0 derivadas, 0 divergencias). Decisiones
+> del owner:
+> - **C1:** `updated_at` conservado; solo se desactivó `trg_clinics_updated_at`
+>   alrededor del `UPDATE` y la sincronización siguió activa validando cada fila;
+> - **C2:** huella bloqueante `63a5e35b…` sobre `id|department_id|municipality_id|country_id|territory_unit_id`
+>   de todas las clínicas, más la lista exacta C39.5 de ids pendientes;
+> - **C3:** rollback **R2 exacto**, limitado a esos 23 ids y bloqueante ante cambios posteriores;
+> - **C4:** STOP ante incoherencias o divergencias;
+> - **C5:** las 96 sin ubicación siguen sin geo, sin inferencias;
+> - **C6:** una sola transacción.
+>
+> Valores **solo** del resolver vivo y **exactamente 23 filas**. **Verificación en
+> producción: 19 PASS · 2 informativas · Z = 0**:
+> - 23/23 en SV nivel 3; 0 pendientes; 0 divergencias; 0 geo fuera de la lista; 0 nivel 2;
+> - `updated_at` intacto; triggers en `O`;
+> - ACL, RLS y policies (md5 `20ad37b9…`, igual al preflight) y funciones previas intactas.
+>
+> **`s7_93` = APPLIED / VERIFIED / NO REAPLICAR**; su PRE aborta si la huella cambió.
+> **Backfill de datos sin consumidores: no mueve el HEAD funcional** (`ecd6366`).
+>
+> ℹ️ **12 de las 23 son fixtures seed históricos** (`c0000001-…`, owners y médicos del
+> rango seed `a0000001-…` de `s7_17`, perfiles inactivos, `listed_only`, 0 operativos).
+> **No se excluyeron**: el invariante territorial aplica a toda clínica con legacy
+> válido. Su limpieza es otro frente, no abierto.
 >
 > **Qué hizo `s7_92`:** (**migración 113**) instaló la **sincronización central
 > legacy → modelo territorial nuevo** en `clinics` y retiró la guarda temporal de
@@ -230,7 +259,7 @@
 > autoridad, códigos, lock al final, rollback solo antes de F3C/F3E) en
 > `docs/ANALISIS_MULTICOUNTRY_GEO.md` §11.
 >
-> ⚠️ **`s7_87`, `s7_88`, `s7_89`, `s7_90`, `s7_91` y `s7_92` NO se modifican.** Una migración aplicada es el
+> ⚠️ **`s7_87`, `s7_88`, `s7_89`, `s7_90`, `s7_91`, `s7_92` y `s7_93` NO se modifican.** Una migración aplicada es el
 > registro de lo que se ejecutó — incluido el comentario residual de `s7_87`
 > línea 120 y el `$PRE$` de un comentario de `s7_89` línea 83 (ver la regla del
 > SQL Editor más abajo).
@@ -239,10 +268,14 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3C (backfill) NO iniciada.** Las 95 clínicas sin ubicación siguen sin decisión
-> de país. **No conectar frontend ni lectores al catálogo ni a las columnas nuevas
-> de `clinics` sin instrucción del owner.** El rollback de `s7_92` solo es válido
-> antes de F3C/F3E y sin consumidores del modelo nuevo.
+> **F3C aplicada; F3D/F3E NO iniciadas.** Las 96 clínicas sin ubicación legacy siguen
+> sin geo y sin decisión de país (C5). **No conectar frontend ni lectores al catálogo
+> ni a las columnas nuevas de `clinics` sin instrucción del owner.**
+>
+> ⚠️ **Rollbacks, en orden inverso y solo antes de F3D/F3E:** primero el **R2 de
+> `s7_93`** (`docs/rollbacks/s7_93_rollback.sql`, 23 ids exactos), y solo después, si
+> hiciera falta, el de `s7_92`. **El rollback de `s7_92` ya NO es válido por sí solo**:
+> E5 lo limitaba a antes de F3C, y vaciaría también la geo del backfill.
 
 > 🟢 **ESTADO FUNCIONAL VIGENTE (2026-09-07) — post PRs #359, #360 y #361 en `main`. PILOTO = GO.**
 >
@@ -860,8 +893,9 @@
 > las escrituras de `clinics`. · **PRs funcionales mergeados hasta #372** ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos**.
 >
-> ⚠️ **Las migraciones van por separado: 113 aplicadas** (hasta
-> `s7_92_geo_foundation_3b_territory_sync.sql`). El último cambio de **esquema** es
+> ⚠️ **Las migraciones van por separado: 114 aplicadas** (hasta
+> `s7_93_geo_foundation_3c_clinics_backfill.sql`, **backfill de datos que no mueve el
+> HEAD funcional**). El último cambio de **esquema** es
 > `s7_92` (#372: trigger en `clinics` + retiro de la guarda F3A); antes, `s7_89`
 > (#368) y `s7_87` (#365). `s7_88` es un **seed de datos** y `s7_90` una
 > **corrección visible de datos**: ninguno movió el HEAD funcional. **`s7_91` (#370)
@@ -1202,8 +1236,8 @@ Luego leé los documentos oficiales según el objetivo del día:
   directo y la closure table como diseño **no implementado**, los invariantes de
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
-  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A y F3B completa
-  (pasos 1, 2 y 3) aplicadas; el frente no está cerrado (F3C en adelante).**
+  implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A, F3B completa
+  (pasos 1, 2 y 3) y F3C aplicadas; el frente no está cerrado (F3D en adelante).**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1399,6 +1433,25 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
+- **#374** 🚧 — **MULTICOUNTRY-GEO-P0 · F3C = APPLIED / VERIFIED. El FRENTE sigue EN
+  CURSO.** `s7_93` (**migración 114**, aplicada antes del merge): backfill histórico
+  de `country_id` / `territory_unit_id` en **exactamente 23 clínicas**, medidas en el
+  preflight v2 de producción.
+  - **Guardas:** huella C2 bloqueante y lista C39.5 exacta bajo lock
+    `SHARE ROW EXCLUSIVE`; valores solo del resolver vivo; exactamente 23 filas.
+  - **Triggers:** la sincronización siguió activa; solo se desactivó
+    `trg_clinics_updated_at` durante el `UPDATE`, y `updated_at` quedó conservado.
+  - **Alcance:** las 96 sin ubicación, sin geo. Rollback **R2 exacto** por id.
+  - **Pruebas previas:** `check-s7_93` 133/133 y arnés local 43/43 (aplicación como
+    mensaje único, deriva, `lock_timeout`, rollback byte a byte, 6 mutaciones
+    ejecutadas). El arnés encontró y corrigió un defecto del rollback antes del commit.
+  - **Verificación en producción:** 19 PASS, Z = 0.
+
+  **Backfill de datos: no mueve el HEAD funcional.** 12 de las 23 son fixtures seed
+  históricos, incluidos por su legacy válido →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
+  [detalle](docs/HISTORIAL_FRENTES.md)
+
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
 1. ~~**AUDIT-SEC-P0**~~ — **✅ CLOSED (2026-08-07).** `s7_71a` + `s7_71b` aplicadas y reconciliadas; `anon`/`authenticated` sin privilegios sobre `audit_log`; cero policies; `service_role` solo `SELECT`; `_admin_log_doctor_change` cerrado; escritor de frontend eliminado; continuidad demostrada. Detalle en `docs/OWNER_S7_71B_APPLY.md`.
@@ -1411,6 +1464,7 @@ squash-merge, la rama puede borrarse.
 
 **Pendientes registrados como frentes SEPARADOS — NO abrir sin instrucción:**
 - **Tres funciones `_func` huérfanas** (`audit_consultations_func`, `audit_patients_func`, `audit_prescriptions_func`): `SECURITY DEFINER`, owner `postgres`, **no versionadas** y **sin trigger asociado**. Código muerto; no son vector (devuelven `trigger`).
+- **Fixtures seed históricos en producción (medido en la revisión de F3C, 2026-09-14):** 12 clínicas `c0000001-…` activas, cada una con owner y médico del rango seed `a0000001-…` de `s7_17`. Los perfiles están inactivos y el correo es `@lucycare.test`; los médicos son `listed_only`, con 0 operativos y 0 con agenda. **El médico de `…0009` figura `is_published = true`**, aunque `s7_17` lo registró como no publicado. 4 clínicas tienen 1 cita histórica y 1 ficha de paciente. **F3C las incluyó** por su legacy válido. Su limpieza es un **frente aparte, NO abierto**: sin `DELETE` ni cambios por inercia.
 - **Grants DML de cliente sobre `departments` y `municipalities`** (medido en el preflight de F3B, 2026-09-13): `anon` y `authenticated` tienen `INSERT`/`UPDATE`/`DELETE` de **tabla**; la RLS solo tiene policies `SELECT`, así que las escrituras de cliente quedan denegadas y la RLS es la única barrera. **Deuda de hardening registrada, NO corregida en F3B** por decisión del owner: sin `REVOKE` ni cambios de RLS por inercia.
 - **Debt de `search_path`**: ocho funciones escritoras de `audit_log` sin `SET search_path` — las tres `_func` más `audit_clinic_invitations`, `audit_consultation_family_history`, `audit_consultations`, `audit_patients` y `audit_prescriptions`. Heredan el del caller; ya lo documentó `s7_66`.
 - **`.gitignore` y `docs/rollbacks/`**: la regla `*.sql` (línea 32) solo exceptúa `!migrations/*.sql`, así que todo rollback nuevo requiere `git add -f` y puede quedarse fuera de un PR en silencio. Ocurrió en #321 y lo detectó la aserción de rastreo de `check-s7_71b`.
@@ -1792,6 +1846,22 @@ Todas corridas en Supabase. Cada `s6_*`/`s7_*` con `check-*.mjs` cuando aplica.
 - `s7_65`–`s7_69` eje Auth: Before User Created Hook, contraseña obligatoria OTP, consentimiento OTP append-only.
 - `s7_70` cancelación por el paciente (hardening de appointments).
 - `s7_71a`–`s7_71b` AUDIT-SEC-P0: cobertura server-side de `appointments` y cierre de la escritura arbitraria sobre `audit_log`.
+- `s7_93` MULTICOUNTRY-GEO-P0 · F3C (**migración 114**): **backfill histórico,
+  sin DDL persistente.**
+  - **Alcance:** rellena `country_id` / `territory_unit_id` de exactamente las 23
+    clínicas de la lista C39.5 del preflight v2 de producción.
+  - **PRE fuera; transacción:** `BEGIN → lock_timeout 5s → LOCK clinics SHARE ROW
+    EXCLUSIVE → GUARDA (huella C2 63a5e35b… y lista exactas, 0 incoherentes, huellas)
+    → DISABLE TRIGGER trg_clinics_updated_at → UPDATE único de esos ids con su legacy
+    listado y geo NULL, valores de _territory_from_legacy_sv, exactamente 23 → ENABLE →
+    POST → COMMIT`.
+  - **POST:** 96 sin ubicación y sin geo; 23 en SV nivel 3 iguales al resolver; 0
+    pendientes, divergencias o nivel 2; ninguna columna no geo cambiada; seguridad y
+    funciones intactas.
+  - **Rollback R2** (`docs/rollbacks/s7_93_rollback.sql`): mismos 23 ids, verificación
+    fila a fila y sin consumidores; ambos triggers desactivados solo durante el vaciado.
+  - **Checks:** `check-s7_93` 133/133; `check-s7_92` reanclado a la posición 113.
+  - **Verificada en producción con 19 PASS, Z = 0.** **No se modifica** tras aplicarse.
 - `s7_92` MULTICOUNTRY-GEO-P0 · F3B paso 3 (**migración 113**): **sincronización
   central legacy → modelo nuevo en `clinics`**.
   - **Objetos creados:**
