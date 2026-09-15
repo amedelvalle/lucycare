@@ -1957,12 +1957,24 @@ fila es fixture.
 
 ## #375 · MULTICOUNTRY-GEO-P0 · F3D · cierre territorial (2026-09-15)
 
-> 🚧 **F3D = APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3E NOT STARTED).**
+> 🚧 **F3D = CLOSED / APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3E NOT STARTED).**
 > Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §7, §9, §10.h y §11.
 
-**`s7_94` = migración 115, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
-2026-09-15 **antes** del merge de #375. **Estructura derivada sin lectores: no mueve el
-HEAD funcional** (`ecd6366`).
+**`s7_94` = migración 115, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el
+owner el 2026-09-15 **antes** del merge de #375. **Estructura derivada sin lectores: no
+mueve el HEAD funcional** (`ecd6366`).
+
+**Cierre (2026-09-15):**
+- PR #375 **MERGED** por squash con OK del owner; `main` quedó en
+  **`f664dad5bd74f67fd82403e495a7774bb3a90b7b`**, con árbol idéntico al HEAD revisado del
+  PR (`f7ac27c`).
+- Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, **115 migraciones**
+  (última `s7_94_geo_foundation_3d_unit_closure.sql`), SHA-256 de `s7_94` intacto y
+  checks `s7_87`→`s7_94` PASS.
+- **HEAD funcional sin cambio:** `ecd6366`. **F3E = NOT STARTED.**
+- **Pendiente de F3E:** 46 médicos publicados = 9 con clínica con país + 37 sin país.
+- **Rollback vigente antes de F3E:** rollback de `s7_94` → `s7_93` R2 → verificar →
+  rollback de `s7_92`.
 
 ### Qué cambió
 
