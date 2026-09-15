@@ -11,10 +11,12 @@
 > CLOSED / APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
 > central legacy → modelo nuevo y retiro de la guarda F3A). **F3C = CLOSED / APPLIED /
 > VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
-> 23 clínicas con ubicación legacy). La closure table y **F3D en adelante** están
-> **diseñados y NO implementados**. **Ningún lector, directorio ni frontend consume
-> el catálogo ni las columnas nuevas de `clinics`**; solo las escriben la
-> sincronización de `s7_92` y el backfill de `s7_93`.
+> 23 clínicas con ubicación legacy). **F3D = APPLIED / VERIFIED** (PR #375, `s7_94`,
+> migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
+> filas). **F3E en adelante está diseñado y NO iniciado.** **Ningún lector, directorio
+> ni frontend consume el catálogo, el cierre ni las columnas nuevas de `clinics`**; solo
+> las escriben la sincronización de `s7_92`, el backfill de `s7_93` y la carga de
+> `s7_94`.
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -261,13 +263,52 @@ Sin objetos nuevos. Tras el backfill, en producción:
 con 0 divergencias medidas en la tabla completa. Las nuevas escrituras lo mantienen
 por el trigger de `s7_92`.
 
-### 📐 DISEÑADO, NO IMPLEMENTADO — el resto del modelo
+### ✅ IMPLEMENTADO — F3D (`s7_94`, migración 115): cierre territorial
+
+Sustituye al diseño previo `administrative_unit_paths (ancestor_id, unit_id, depth)`,
+que **no se implementó**. Variante **N1** aprobada por el owner.
 
 ```
-administrative_unit_paths                               -- closure table
-  ancestor_id bigint, unit_id bigint, depth smallint
-  PK (ancestor_id, unit_id)
+administrative_units  (+1 índice, ninguna columna ni fila se toca)
+  UNIQUE INDEX au_id_country_level_key (id, country_id, level)   -- destino de las FK con nivel
+
+administrative_unit_closure                             -- cierre transitivo DERIVADO
+  country_id         smallint NOT NULL
+  ancestor_unit_id   bigint   NOT NULL
+  ancestor_level     smallint NOT NULL
+  descendant_unit_id bigint   NOT NULL
+  descendant_level   smallint NOT NULL
+  depth              smallint NOT NULL
+  PK (ancestor_unit_id, descendant_unit_id)                      -- «descendientes de X»
+  FK (ancestor_unit_id, country_id, ancestor_level)     -> administrative_units (id, country_id, level)
+  FK (descendant_unit_id, country_id, descendant_level) -> administrative_units (id, country_id, level)
+  CHECK depth >= 0 AND depth = descendant_level - ancestor_level
+  CHECK (depth = 0) = (ancestor_unit_id = descendant_unit_id)    -- fila propia
+  INDEX (descendant_unit_id, ancestor_level) INCLUDE (ancestor_unit_id)   -- «ancestro de nivel L de Y»
+
+  RLS habilitada · 0 policies · REVOKE ALL a PUBLIC, anon, authenticated, service_role
 ```
+
+- **Filas propias:** filtrar por una hoja, o por una unidad a la que apunten clínicas
+  directamente, es la misma consulta de un join. Con el árbol de SV: **888 filas** =
+  320 (depth 0) + 306 + 262.
+- **Mismo país y niveles reales por construcción:** cada fila lleva un único
+  `country_id` y ambas FK lo incluyen junto al nivel. Un nivel falso o un `depth`
+  incoherente son imposibles, no solo detectables.
+- **Por qué los niveles (N1 frente a N0 de 3 columnas):** medido en el arnés a escala
+  sintética, N0 cae en una trampa de estimación en agregados por territorio
+  (1,6 s frente a 0,37 s recursivo); con `ancestor_level` el planificador acierta
+  (0,31 s), y el ancestro de nivel L por fila baja de 1,6 s a 0,62 s.
+- **Por qué un índice único y no `ADD CONSTRAINT UNIQUE`:** medido, el constraint toma
+  `AccessExclusiveLock` sobre `administrative_units` y bloquearía las lecturas del
+  trigger de `s7_92`; el índice toma `ShareLock` y la FK apunta igual a él
+  (`conindid`). Condición estática: único, no parcial y exactamente sobre
+  `(id, country_id, level)`, las columnas que referencian las FK.
+- **Solo estructura:** sin funciones, triggers, RPC ni grants. Medido: **una función
+  persistida que nombre el catálogo haría abortar los rollbacks de `s7_93` y `s7_92`**.
+- **Límite:** ninguna constraint impide una fila válida pero falsa (otro subárbol con
+  país y niveles correctos) ni un reparent del catálogo sin reconstruir. Lo detecta la
+  verificación de deriva (§7).
 
 `territory_unit_id` podrá apuntar a **cualquier nivel válido**, no
 necesariamente a una hoja: una clínica puede conocer su departamento y no su
@@ -531,21 +572,25 @@ sería un falso limpio: tratarlo como fallo, no como cero.
 
 ## 7 · Hot path: cómo se busca sin recursión
 
-📐 **DISEÑADO, NO IMPLEMENTADO.**
+✅ **Estructura IMPLEMENTADA (`s7_94`); consultas 📐 DISEÑADAS para F3E, sin lectores.**
 
 La estrategia es **un puntero por clínica más un cierre transitivo
-materializado**. `administrative_unit_paths` contendrá, para cada unidad, todos
-sus ancestros incluida ella misma — del orden de 900 filas para El Salvador.
+materializado**. `administrative_unit_closure` contiene, para cada unidad, todos
+sus ancestros incluida ella misma: **888 filas** para El Salvador.
 
 ```sql
 -- médicos por unidad territorial, a CUALQUIER nivel
 SELECT d.*
   FROM doctors d
   JOIN clinics c ON c.id = d.clinic_id
-  JOIN administrative_unit_paths p ON p.unit_id = c.territory_unit_id
+  JOIN administrative_unit_closure k ON k.descendant_unit_id = c.territory_unit_id
  WHERE c.country_id = $country
-   AND p.ancestor_id = $unit;
+   AND k.ancestor_unit_id = $unit;
 ```
+
+**Medido en producción (PG 17.6)** con `docs/smokes/s7_94_territorial_plan_readonly.sql`:
+sin `Recursive Union` ni `CTE Scan`; `clinics_country_id_idx`, `idx_doctors_clinic` e
+Index Only Scan de `administrative_unit_closure_pkey`.
 
 Un join indexado. Sin recursión, sin N+1, sin recorrer ancestros por tarjeta, y
 funciona igual si el filtro es departamento, municipio o distrito — o provincia,
@@ -571,18 +616,27 @@ SELECT id, name FROM administrative_units
  WHERE parent_id = $1 AND is_active ORDER BY name;
 ```
 
-### Mantenimiento del cierre, sin trigger permanente
+### Mantenimiento del cierre, sin trigger ni función persistida
 
-Se reconstruye con una **función explícita dentro del proceso controlado de
-catálogo**, más una función de verificación que compara el cierre almacenado
-contra uno recalculado y exige diferencia simétrica cero. La recursión ocurre
-**al cargar el catálogo**, nunca al consultar.
+✅ **Vigente desde `s7_94`.** No hay función de rebuild persistida (invalidaría los
+rollbacks de `s7_93` y `s7_92`). La recursión ocurre **al cargar el catálogo**, nunca al
+consultar:
 
-Un trigger permanente no es indispensable **mientras no exista camino de
-escritura**: el DML está revocado a los cuatro roles, y los catálogos legacy no
-han tenido un solo writer en toda la historia del repositorio. Pasaría a ser
-indispensable el día que LucyAdmin gane una UI para editar unidades
-territoriales.
+- **Regla D8:** toda migración que modifique `administrative_units` (una alta, un
+  reparent, la carga de otro país) mantiene o reconstruye el cierre **en la misma
+  transacción** y lo verifica con z = 0.
+- **Verificación versionada y reutilizable:**
+  `docs/smokes/s7_94_closure_drift_readonly.sql` compara el cierre almacenado con uno
+  recalculado desde el árbol vivo (faltan + sobran + ciclos = z). Genérica, no depende
+  de SV. Validada con A/B: detecta reparent sin reconstruir, unidad nueva sin cierre,
+  fila falsa que pasa las FK y fila borrada; renombrar o inactivar no es deriva.
+- **Inactivar o renombrar** no toca el cierre: `is_active` se filtra en los selectores.
+  **Borrar** una unidad con cierre falla por FK: se retira con `is_active`.
+- **Cambiar el `level`** de una unidad sin reconstruir falla por las FK con nivel.
+
+Un trigger o RPC de mantenimiento no es indispensable **mientras no exista camino de
+escritura**: el DML está revocado a los cuatro roles. Pasaría a serlo con
+`GEO-CATALOG-ADMIN/P1`, y entonces habría que reevaluar los rollbacks.
 
 ---
 
@@ -622,13 +676,13 @@ de admitir reservas.
 |---|---|---|
 | **F1** | tablas genéricas nuevas, cero cambios a legacy o consumidores | ✅ **CLOSED / APPLIED / VERIFIED** — PR #365, `s7_87` |
 | **F2A** | carga del catálogo de SV 14 → 44 → 262 en `administrative_units` | ✅ **CLOSED / APPLIED / VERIFIED** — `s7_88` |
-| — | closure table `administrative_unit_paths` + rebuild/verify | 📐 diseñada, no implementada |
+| **F3D** | cierre territorial `administrative_unit_closure` (N1, 888 filas) + índice único del catálogo + verificación de deriva versionada | ✅ **APPLIED / VERIFIED** — PR #375, `s7_94` |
 | **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
 | **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
-| **F3D–F3F** | resto de F3: cierre del mapeo, lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, no iniciadas |
+| **F3E–F3F** | resto de F3: lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -1062,14 +1116,75 @@ PASO 1 L56–L150 `e5c5871e…`, PASO 2 L156–L367 `a70b872f…`):
 
 ---
 
+## 10.h · Evidencia de F3D (`s7_94`, cierre territorial)
+
+`s7_94` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-15
+**antes** del merge de #375. **Estructura derivada sin lectores: no mueve el HEAD
+funcional** (`ecd6366`). Cierre formal del PR pendiente del OK del owner.
+
+**Preflight de producción (2026-09-14): Z = 0.**
+
+| Medida | Valor |
+|---|---|
+| Catálogo | 320 unidades SV = 14 / 44 / 262; 0 ciclos, huérfanas, cruces de país o saltos de nivel (dos recorridos independientes) |
+| Cierre esperado | **888** filas con filas propias; depth 0 = 320, 1 = 306, 2 = 262; huella `af230f5086d871b1cce24e34de4b6cec` |
+| Huella del catálogo | `460e807050a0da8bea0891965b1b9fd7` (`id\|country_id\|parent_id\|level\|is_active`) |
+| Nombres | `administrative_unit_closure*`, `auc_*` y `au_id_country_level_key` libres |
+| Seguridad | catálogo sin privilegios de cliente; DEFAULT PRIVILEGES de `public` con ALL para `anon`/`authenticated`/`service_role` sobre tablas nuevas → `REVOKE` bloqueante |
+| Consumidores | solo las dos funciones de `s7_92`; 0 vistas, triggers, policies o publicaciones |
+| Contexto F3E | 46 médicos publicados = 9 con clínica con país + 37 con clínica sin país |
+| B1 | el filtro solo por país usa `clinics.country_id`, sin catálogo ni recursión |
+
+**Artefacto preservado antes de aplicar:** PR #375, commit `839453b`, migración
+SHA-256 `802753898b854f6ab493f50cce5560c3f0eb759a132b6242d218b9449b10d933`. PASO 1, PASO
+2, ESTADO, VERIFICACIÓN, DERIVA, PLAN y rollback recalculados desde el blob remoto e
+idénticos byte a byte a los bloques ejecutados.
+
+**Verificación en producción (PostgreSQL 17.6):**
+- **ESTADO:** `S7_94 APLICADA COMPLETA`; 0 sesiones en transacción abortada; ningún lock de otras sesiones sobre el catálogo.
+- **VERIFICACIÓN POST: Z = 0.**
+  - **Forma:** columnas, dueño `postgres`, 5 constraints, las 2 FK sobre `au_id_country_level_key` (`aas`, validadas, no diferibles), 3 índices con su forma exacta.
+  - **Contenido:** 888 filas, reparto 320/306/262, huella `af230f50…`, filas propias = unidades, 0 filas con país o nivel distintos, deriva 0, ciclos 0; 224 kB.
+  - **Seguridad:** relacl `{postgres=arwdDxtm/postgres}`, RLS activa sin `FORCE`, 0 privilegios de tabla o columna para clientes, 0 policies, 0 triggers, 0 publicaciones; catálogo sigue cerrado.
+  - **Nada más cambió:** huella del catálogo `460e8070…`; huella C2 de `clinics` `7c823ad1…` (la de `s7_93`); triggers de `clinics` en `O`; funciones de `s7_92` intactas; 0 funciones que nombren el cierre.
+  - **Rollbacks:** 0 funciones o vistas que invaliden los de `s7_93`/`s7_92`; los únicos dependientes del índice único son las 2 FK del cierre.
+- **DERIVA:** 320 unidades; 888 almacenadas = 888 esperadas; faltan 0, sobran 0, ciclos 0; `SV=888`; **z = 0**.
+- **PLAN territorial:** sin `Recursive Union` ni `CTE Scan`; `clinics_country_id_idx`, `idx_doctors_clinic` e Index Only Scan de `administrative_unit_closure_pkey`; 6 ms.
+- Las salidas de los PASOS 1 y 2 no se archivaron; la aplicación queda acreditada por ESTADO y VERIFICACIÓN.
+
+**PostgreSQL 17.6 acreditado por producción, no por el arnés.** El arnés local era
+PostgreSQL 18; la revisión de compatibilidad previa dejó una construcción sin evidencia
+en 17 (FK hacia un índice único, permitida por la documentación oficial de 17), que la
+aplicación real confirmó.
+
+**Pruebas previas (no son producción):**
+- **Estático:** `check-s7_94` 205/205 con 51 mutaciones invertidas; dos debilidades del propio check (una regex de `UPDATE` que nunca casaba y una regla de rollback que no exigía el `RAISE`) se detectaron por las mutaciones y se corrigieron.
+- **Arnés local desechable (PG18): 92/92.** Aplicación como mensaje único; no reaplicar; deriva previa del catálogo; `lock_timeout` con escritor concurrente; lectores y trigger de `s7_92` sin espera y sin `AccessExclusiveLock`; 10 mutaciones del PASO 2 abortan sin residuo; rollback y sus 8 negativas; cadena `s7_94 → s7_93 R2 → s7_92`; A/B de los bloques read-only.
+- **`search_path`:** el PASO 1 no lo valida; con un `search_path` sin `public`, el POST del PASO 2 aborta sin residuo (medido con el PASO 2 del blob remoto).
+
+**Lecciones de método:**
+1. **Las columnas `"char"` del catálogo** (`tgenabled`, `contype`, `relkind`…) no se concatenan sin `::text`: la primera aplicación en el arnés abortó entera, sin residuo.
+2. **La sonda también falla.** Siete FAIL de la primera batería eran del instrumento (una huella que incluía la tabla nueva, `min(uuid)` inexistente que nunca llegaba al POST, expectativas mal calculadas), y dos verificaciones intermedias usaron archivos que no existían. Se detectaron porque las aserciones exigían el mensaje o el archivo concreto.
+3. **Medir el lock, no suponerlo:** la elección del índice único salió de `pg_locks`.
+
+⚠️ **`s7_94`, su rollback y sus bloques read-only no se modifican** tras aplicarse.
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
-- **Rollbacks de F3, en orden inverso y solo antes de F3D/F3E** (confirmado por el
-  owner): **`s7_93` R2 → verificar estado → rollback de `s7_92`**. El rollback de
-  `s7_92` no debe ejecutarse aisladamente.
+- **Rollbacks de F3, en orden inverso y solo mientras F3E no exista** (confirmado por el
+  owner): **rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
+  El rollback de `s7_92` no debe ejecutarse aisladamente. Tras F3E, todos se reevalúan.
+  - **`s7_94`** (`docs/rollbacks/s7_94_rollback.sql`): retira el cierre y luego el
+    índice único (`RESTRICT`, DDL ensamblado con `format()`). Se niega si `s7_94` no
+    está completa, si el catálogo o el cierre cambiaron, o ante cualquier consumidor
+    (funciones, vistas, policies, triggers, FK hacia el cierre, otros dependientes del
+    índice, privilegios de cliente, publicaciones). Verifica antes del COMMIT que todo
+    lo demás quedó idéntico.
   - **`s7_93` · R2** (`docs/rollbacks/s7_93_rollback.sql`): exclusivamente los 23 ids
     de C39.5. Aborta si alguna fila cambió después o si hay consumidores. Conserva
     `updated_at` y la geo de las clínicas fuera de la lista.
@@ -1079,6 +1194,23 @@ PASO 1 L56–L150 `e5c5871e…`, PASO 2 L156–L367 `a70b872f…`):
     volvieron a geo NULL. `docs/rollbacks/s7_92_rollback.sql` se niega si
     encuentra funciones o vistas que usen `country_id`, `territory_unit_id` o el
     catálogo.
+- **Decisiones de F3D (owner, 2026-09-14/15):** variante **N1**; filas propias
+  `depth = 0`; índice único `au_id_country_level_key` en lugar de `ADD CONSTRAINT
+  UNIQUE`; solo estructura, sin funciones, triggers, RPC ni grants de cliente; RLS con
+  0 policies y `REVOKE` explícito; el filtro solo por país sigue en `clinics.country_id`
+  y el cierre solo entra con filtro territorial; **D8**: toda migración que escriba
+  `administrative_units` mantiene y verifica el cierre en la misma transacción; F3D no
+  mueve el HEAD funcional.
+- **Tipos (owner, 2026-09-15):** `administrative_unit_closure` **no** se añade a
+  `src/types/database.types.ts`. F3D es DB-only y sin consumidor runtime; queda para
+  F3E / `TYPES-RECONCILIATION-P0`, sin abrir ese frente.
+- **Pendiente para F3E, sin resolver:** 46 médicos publicados = **9 con clínica con país
+  + 37 con clínica sin país** (preflight F3D). No bloquea F3D, pero **debe resolverse
+  antes de activar un directorio filtrado por país**, sin inferir país (C5).
+- **`search_path` en `s7_94` (H1):** cuatro comparaciones absolutas dependen de que
+  `public` esté en el `search_path` (`::regclass::text`). El PASO 1 no lo valida; el
+  POST del PASO 2 aborta sin residuo si falta. Cualquier bloque futuro con el mismo
+  patrón hereda la condición.
 - **Decisiones de implementación de `s7_93` (C1–C6, owner, 2026-09-14):** C1 conservar
   `updated_at` desactivando solo `trg_clinics_updated_at` · C2 huella bloqueante sobre
   `id|department_id|municipality_id|country_id|territory_unit_id`; si cambia, STOP y

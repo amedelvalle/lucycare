@@ -1954,3 +1954,89 @@ detectando cualquier deriva que afecte al backfill. Ambos lados se probaron en e
 **4 · Un id no es semántica.** Las 12 clínicas con id de forma sintética se revisaron
 en modo read-only y se incluyeron: la consistencia territorial no depende de si una
 fila es fixture.
+
+## #375 · MULTICOUNTRY-GEO-P0 · F3D · cierre territorial (2026-09-15)
+
+> 🚧 **F3D = APPLIED / VERIFIED. El FRENTE sigue EN CURSO (F3E NOT STARTED).**
+> Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §7, §9, §10.h y §11.
+
+**`s7_94` = migración 115, APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+2026-09-15 **antes** del merge de #375. **Estructura derivada sin lectores: no mueve el
+HEAD funcional** (`ecd6366`).
+
+### Qué cambió
+
+- **`public.administrative_unit_closure`**, variante N1 aprobada por el owner:
+  - una fila por par ancestro/descendiente, **incluida la fila propia** (`depth = 0`);
+  - `country_id`, `ancestor_level` y `descendant_level` con FK compuestas
+    `(unidad, país, nivel)`;
+  - `CHECK` de depth frente a niveles y de fila propia;
+  - índice inverso `(descendant_unit_id, ancestor_level) INCLUDE (ancestor_unit_id)`.
+- **Índice único `au_id_country_level_key (id, country_id, level)`** en
+  `administrative_units` como destino de las FK. Se eligió frente a `ADD CONSTRAINT
+  UNIQUE` porque ese constraint toma `AccessExclusiveLock` (medido) y bloquearía las
+  lecturas del trigger de `s7_92`.
+- **888 filas** construidas desde el árbol vivo en una transacción, bajo `LOCK SHARE
+  ROW EXCLUSIVE` del catálogo con `lock_timeout 5s`.
+- **Solo estructura:** sin funciones, triggers, RPC ni grants de cliente. RLS activa,
+  0 policies, `REVOKE` explícito a `PUBLIC`/`anon`/`authenticated`/`service_role`.
+- **Bloques read-only versionados** en `docs/smokes/`: estado, verificación POST,
+  deriva del cierre (genérica y reutilizable) y plan territorial.
+
+### Evidencia de cierre
+
+**Producción (PostgreSQL 17.6):**
+- ESTADO `S7_94 APLICADA COMPLETA`;
+- **VERIFICACIÓN POST Z = 0**: forma, 2 FK sobre el índice único, huellas del cierre
+  `af230f50…` y del catálogo `460e8070…`, relacl `{postgres=arwdDxtm/postgres}`, RLS,
+  0 acceso cliente, huella C2 de `clinics` `7c823ad1…` intacta, funciones y triggers de
+  `s7_92` intactos;
+- **DERIVA** 888/888, faltan 0, sobran 0, ciclos 0, z = 0;
+- **PLAN** territorial sin `Recursive Union` ni `CTE Scan`.
+
+**PostgreSQL 17.6 quedó acreditado por la ejecución en producción, no por el arnés**
+(PostgreSQL 18).
+
+**Artefacto:** migración SHA-256 `802753898b85…d933`. Todos los bloques ejecutados se
+recalcularon desde el blob remoto del PR y coincidían byte a byte.
+
+**Pruebas previas:** preflight de producción Z = 0 (888 esperadas); `check-s7_94`
+205/205 con 51 mutaciones invertidas; arnés local 92/92. `check-s7_93` reanclado a la
+posición 114.
+
+### Rollback
+
+- **Orden, confirmado por el owner:** rollback de `s7_94` → `s7_93` R2 → verificar
+  estado → rollback de `s7_92`. Válido solo mientras F3E no exista.
+- `docs/rollbacks/s7_94_rollback.sql` se niega ante consumidores o cambios posteriores
+  del catálogo o del cierre.
+
+### Decisiones registradas
+
+- **D8:** toda migración que modifique `administrative_units` mantiene y verifica el
+  cierre en la misma transacción.
+- **Tipos:** `database.types.ts` sin cambios; queda para F3E / `TYPES-RECONCILIATION-P0`.
+- **Para F3E, sin resolver:** 46 médicos publicados = 9 con clínica con país + 37 sin
+  país; debe resolverse antes de activar un directorio filtrado por país.
+
+### Lecciones de método
+
+**1 · Una función persistida rompe los rollbacks.** Medido en el arnés: cualquier
+función que nombre el catálogo hace abortar los rollbacks de `s7_93` y `s7_92`, cuyas
+guardas buscan consumidores en `prosrc`. Por eso F3D es solo estructura.
+
+**2 · Medir el lock.** La diferencia entre `ADD CONSTRAINT UNIQUE` y `CREATE UNIQUE
+INDEX` salió de `pg_locks`, no de la documentación.
+
+**3 · N0 frente a N1 lo decidió la medición.** A escala sintética, el cierre de 3
+columnas caía en una trampa de estimación en agregados por territorio; con los niveles
+el planificador acierta. En un filtro único, cierre y recursión rinden igual: la
+ventaja del cierre es quitar la recursión del hot path y resolver ancestros por fila.
+
+**4 · El instrumento también falla.** La primera batería del arnés tuvo 7 FAIL del
+propio instrumento y dos verificaciones usaron archivos inexistentes; se detectaron
+porque las aserciones exigían el mensaje o el archivo concreto. Las columnas `"char"`
+del catálogo exigen `::text` para concatenar.
+
+**5 · PASO 1 no valida `search_path`.** Lo protege el POST del PASO 2 en la misma
+sesión, que aborta sin residuo si `public` no está (medido).
