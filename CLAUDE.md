@@ -13,6 +13,7 @@
 > | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
 > | **Migraciones aplicadas** | **115**, la última **`s7_94_geo_foundation_3d_unit_closure.sql`** (estructura derivada sin lectores: **no mueve el HEAD funcional**) |
 > | **Último cambio de esquema** | **PR #375 / `s7_94`** — tabla `administrative_unit_closure` (888 filas) e índice único `au_id_country_level_key` en `administrative_units`. Antes: `s7_92` (#372, trigger `trg_clinics_territory_sync` y retiro de la guarda F3A); `s7_93` no dejó cambios de esquema; `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
+> | **`main` tras el merge de #375** | **`f664dad5bd74f67fd82403e495a7774bb3a90b7b`** (squash de PR #375 / `s7_94`). Referencia de cierre de F3D, no tip eterno: los PR docs-only posteriores lo mueven |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -48,7 +49,7 @@
 > sincronización central) = CLOSED / APPLIED / VERIFIED** (2026-09-13; incidente del SQL
 > Editor diagnosticado el 2026-09-14) · **F3C (`s7_93`, backfill histórico) =
 > CLOSED / APPLIED / VERIFIED** (2026-09-14) · **F3D (`s7_94`, cierre territorial) =
-> APPLIED / VERIFIED** (2026-09-15; PR #375 pendiente de merge con OK del owner).
+> CLOSED / APPLIED / VERIFIED** (2026-09-15; PR #375 MERGED, `main` = `f664dad`).
 > **El frente completo NO está cerrado**: **F3E en adelante** está **diseñado y NO
 > iniciado**.
 >
@@ -77,7 +78,8 @@
 > triggers de `s7_92` intactos · **PLAN** territorial sin `Recursive Union` ni `CTE
 > Scan` (índices de país, clínica y PK del cierre). **La compatibilidad con 17.6 quedó
 > acreditada por la ejecución en producción, no por el arnés** (PostgreSQL 18).
-> **`s7_94` = APPLIED / VERIFIED / NO REAPLICAR**; su PRE aborta si el cierre o el
+> **`s7_94` = CLOSED / APPLIED / VERIFIED / NO REAPLICAR** (PR #375 MERGED como
+> `f664dad`, 2026-09-15); su PRE aborta si el cierre o el
 > índice ya existen. **No mueve el HEAD funcional** (`ecd6366`): ningún runtime consume
 > el cierre.
 >
@@ -308,7 +310,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D aplicada; F3E NOT STARTED.** Las 96 clínicas sin ubicación legacy siguen sin
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E = NOT STARTED.** Las 96 clínicas sin ubicación legacy siguen sin
 > geo y sin decisión de país (C5). **No conectar frontend ni lectores al catálogo, al
 > cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
 >
@@ -1509,8 +1511,8 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#375** 🚧 — **MULTICOUNTRY-GEO-P0 · F3D = APPLIED / VERIFIED. El FRENTE sigue EN
-  CURSO (F3E NOT STARTED).** `s7_94` (**migración 115**, aplicada antes del merge):
+- **#375** 🚧 — **MULTICOUNTRY-GEO-P0 · F3D = CLOSED / APPLIED / VERIFIED (MERGED como
+  `f664dad`). El FRENTE sigue EN CURSO (F3E NOT STARTED).** `s7_94` (**migración 115**, aplicada antes del merge):
   cierre territorial `administrative_unit_closure`, variante N1, **888 filas**.
   - **Estructura:** filas propias, país y niveles con FK compuestas hacia el índice
     único `au_id_country_level_key`; índice inverso por descendiente.

@@ -11,7 +11,7 @@
 > CLOSED / APPLIED / VERIFIED** (PR #372, `s7_92`, migración 113, 2026-09-13: sincronización
 > central legacy → modelo nuevo y retiro de la guarda F3A). **F3C = CLOSED / APPLIED /
 > VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
-> 23 clínicas con ubicación legacy). **F3D = APPLIED / VERIFIED** (PR #375, `s7_94`,
+> 23 clínicas con ubicación legacy). **F3D = CLOSED / APPLIED / VERIFIED** (PR #375 MERGED como `f664dad`, `s7_94`,
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
 > filas). **F3E en adelante está diseñado y NO iniciado.** **Ningún lector, directorio
 > ni frontend consume el catálogo, el cierre ni las columnas nuevas de `clinics`**; solo
@@ -676,7 +676,7 @@ de admitir reservas.
 |---|---|---|
 | **F1** | tablas genéricas nuevas, cero cambios a legacy o consumidores | ✅ **CLOSED / APPLIED / VERIFIED** — PR #365, `s7_87` |
 | **F2A** | carga del catálogo de SV 14 → 44 → 262 en `administrative_units` | ✅ **CLOSED / APPLIED / VERIFIED** — `s7_88` |
-| **F3D** | cierre territorial `administrative_unit_closure` (N1, 888 filas) + índice único del catálogo + verificación de deriva versionada | ✅ **APPLIED / VERIFIED** — PR #375, `s7_94` |
+| **F3D** | cierre territorial `administrative_unit_closure` (N1, 888 filas) + índice único del catálogo + verificación de deriva versionada | ✅ **CLOSED / APPLIED / VERIFIED** — PR #375 (MERGED, `f664dad`), `s7_94` |
 | **F3A** | `clinics.country_id` y `territory_unit_id`: nullable, sin datos, con integridad y **guarda temporal NULL** | ✅ **CLOSED / APPLIED / VERIFIED** — PR #368, `s7_89` |
 | **F3B · 1** | precheck de `CH-16` + **M2**: corregir el nombre legacy | ✅ **APPLIED / VERIFIED / CLOSED** — PR #369, `s7_90` |
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
@@ -1118,9 +1118,15 @@ PASO 1 L56–L150 `e5c5871e…`, PASO 2 L156–L367 `a70b872f…`):
 
 ## 10.h · Evidencia de F3D (`s7_94`, cierre territorial)
 
-`s7_94` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el 2026-09-15
-**antes** del merge de #375. **Estructura derivada sin lectores: no mueve el HEAD
-funcional** (`ecd6366`). Cierre formal del PR pendiente del OK del owner.
+`s7_94` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
+2026-09-15 **antes** del merge de #375. **Estructura derivada sin lectores: no mueve el
+HEAD funcional** (`ecd6366`).
+
+**Cierre (2026-09-15):** PR #375 **MERGED** por squash con OK del owner; `main` quedó en
+**`f664dad5bd74f67fd82403e495a7774bb3a90b7b`**, con árbol idéntico al HEAD revisado del
+PR (`f7ac27c`). Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, **115
+migraciones** (última `s7_94_geo_foundation_3d_unit_closure.sql`), SHA-256 de `s7_94`
+intacto y checks `s7_87`→`s7_94` PASS. **F3E = NOT STARTED.**
 
 **Preflight de producción (2026-09-14): Z = 0.**
 
