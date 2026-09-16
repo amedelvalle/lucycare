@@ -4,16 +4,16 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-16) — post F3E-0 (`s7_95`, PR #377).**
+> 🟢 **BASELINE VIGENTE (2026-09-16) — post F3E-1 (`s7_96`, PR #380).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
-> | **Migraciones aplicadas** | **117**, la última **`s7_96_geo_foundation_3e1_directory_read_rpcs.sql`** (2 RPC de lectura del catálogo territorial, aplicada y verificada en producción el 2026-09-16; **PR #380 abierto, sin merge**). Antes, `s7_95` (backfill de datos sin lectores, PR #377 MERGED; no mueve el HEAD funcional, confirmado por el owner) |
+> | **Migraciones aplicadas** | **117**, la última **`s7_96_geo_foundation_3e1_directory_read_rpcs.sql`** (2 RPC de lectura del catálogo territorial, aplicada y verificada en producción el 2026-09-16; **PR #380 MERGED**). **No mueve el HEAD funcional** (confirmado por el owner). Antes, `s7_95` (backfill de datos sin lectores, PR #377 MERGED; no mueve el HEAD funcional, confirmado por el owner) |
 > | **Último cambio de esquema** | **PR #375 / `s7_94`** — tabla `administrative_unit_closure` (888 filas) e índice único `au_id_country_level_key` en `administrative_units`. Antes: `s7_92` (#372, trigger `trg_clinics_territory_sync` y retiro de la guarda F3A); `s7_93` no dejó cambios de esquema; `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
-> | **`main` tras el merge de #377** | **`bbfb8344f188e0f0cadfb9283864774cfd92a2ca`** (squash de PR #377 / `s7_95`). Referencia de cierre de F3E-0, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `f664dad` (#375 / `s7_94`) |
+> | **`main` tras el merge de #380** | **`b18bfbb07a79893be041088ad52ab544c82078c4`** (squash de PR #380 / `s7_96`). Referencia de cierre de F3E-1, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `bbfb834` (#377 / `s7_95`) |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -51,8 +51,9 @@
 > CLOSED / APPLIED / VERIFIED** (2026-09-14) · **F3D (`s7_94`, cierre territorial) =
 > CLOSED / APPLIED / VERIFIED** (2026-09-15; PR #375 MERGED, `main` = `f664dad`) ·
 > **F3E-0 / M0.5 (`s7_95`, país atestado sin territorio) = CLOSED / APPLIED / VERIFIED**
-> (2026-09-16; PR #377 MERGED, `main` = `bbfb834`). **El frente completo NO está cerrado**:
-> **F3E-1 en adelante** está **diseñado y NO iniciado**.
+> (2026-09-16; PR #377 MERGED, `main` = `bbfb834`) · **F3E-1 (`s7_96`, RPC de lectura del catálogo) =
+> CLOSED / APPLIED / VERIFIED** (2026-09-16; PR #380 MERGED, `main` = `b18bfbb`). **El frente completo NO
+> está cerrado**: **F3E-2 en adelante** está **diseñado y NO iniciado**.
 >
 > **Qué hizo `s7_95`:** (**migración 116**, F3E-0 / M0.5 aprobado por el owner) asignó
 > **solo `country_id = SV`** a **exactamente 36 clínicas**: las de los 36 médicos publicados
@@ -105,7 +106,7 @@
 >
 > **F3E-0 sigue CLOSED / APPLIED / VERIFIED.**
 >
-> ✅ **F3E-1 (`s7_96`, migración 117) = APPLIED / VERIFIED (2026-09-16). PR #380 abierto, sin merge.**
+> ✅ **F3E-1 (`s7_96`, migración 117) = CLOSED / APPLIED / VERIFIED (2026-09-16). PR #380 MERGED (`main` = `b18bfbb`).**
 > Solo dos RPC públicas de lectura: `directory_countries()` (país habilitado + niveles; sin niveles,
 > una fila con `level`/`level_label` NULL) y `directory_territory_units(p_country_iso, p_parent_id)`
 > (unidades activas, raíz o hijos; ISO exacto; inválido, deshabilitado o padre ajeno → vacío).
@@ -128,8 +129,8 @@
 >   `119|59|24|36|0`; directorio `46|46|0#43|43|0`.
 > - **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
 >
-> **Sin consumidor de frontend todavía: no cambia comportamiento observable** (clasificación del HEAD
-> funcional pendiente de confirmación del owner). **F3E-2 y F3E-3 = NOT STARTED: no iniciarlas sin
+> **Sin consumidor de frontend todavía: no cambia comportamiento observable. No mueve el HEAD funcional**
+> (`ecd636694c7f7093a000bd9f823040aa7795ff04`, confirmado por el owner). **F3E-2 y F3E-3 = NOT STARTED: no iniciarlas sin
 > instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
 >
 > **Qué hizo `s7_94`:** (**migración 115**) creó `public.administrative_unit_closure`,
@@ -389,7 +390,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = APPLIED / VERIFIED (PR #380 sin merge); F3E-2 y F3E-3 = NOT STARTED.**
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = CLOSED / APPLIED / VERIFIED (PR #380 MERGED); F3E-2 y F3E-3 = NOT STARTED.**
 > Las 59 clínicas en S0 siguen sin ubicación ni país; 24 están en S1; 36 clínicas tienen país SV
 > atestado sin territorio (S2). **No conectar frontend ni lectores al catálogo, al
 > cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
@@ -1046,7 +1047,7 @@
 >
 > ⚠️ **Las migraciones van por separado: 117 aplicadas** (hasta
 > `s7_96_geo_foundation_3e1_directory_read_rpcs.sql`, **2 RPC de lectura sin consumidor de
-> frontend, PR #380 sin merge**; antes `s7_95`, **backfill de datos sin lectores,
+> frontend, PR #380 MERGED**; antes `s7_95`, **backfill de datos sin lectores,
 > PR #377 MERGED**; antes `s7_94`, estructura derivada sin lectores; ninguna mueve el HEAD
 > funcional, confirmado por el owner). El último cambio de **esquema** es `s7_94` (#375: cierre
 > territorial + índice único del catálogo); antes, `s7_92` (#372: trigger en `clinics` +
@@ -1391,7 +1392,7 @@ Luego leé los documentos oficiales según el objetivo del día:
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
   implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A, F3B completa
-  (pasos 1, 2 y 3), F3C, F3D y F3E-0 (`s7_95`) aplicadas; el frente no está cerrado (F3E-1 en adelante).**
+  (pasos 1, 2 y 3), F3C, F3D, F3E-0 (`s7_95`) y F3E-1 (`s7_96`) aplicadas; el frente no está cerrado (F3E-2 en adelante).**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1642,13 +1643,14 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#380** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-1 = APPLIED / VERIFIED (PR OPEN, sin merge). F3E-2/3 NOT
-  STARTED.** `s7_96` (**migración 117**): `directory_countries()` y
+- **#380** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-1 = CLOSED / APPLIED / VERIFIED (MERGED como `b18bfbb`).
+  El FRENTE sigue EN CURSO (F3E-2/3 NOT STARTED).** `s7_96` (**migración 117**): `directory_countries()` y
   `directory_territory_units(p_country_iso, p_parent_id)`, `SECURITY DEFINER`, EXECUTE solo `anon` y
   `authenticated`; tablas GEO sin grants de cliente; sin cambios de RLS, policies, roles ni datos.
   - **Pruebas previas:** preflight F3E-1A de producción; `check-s7_96` 126/126; arnés local (PG18) 86/86.
   - **Producción (PG 17.6):** ESTADO aplicada completa, POST Z = 0, ACL exacta, `service_role` sin
     EXECUTE, catálogo cerrado, `clinics` intacto, C2 `7cef00d1…`, `119|59|24|36|0`, `46|46|0#43|43|0`.
+  **Sin consumidor de frontend: no mueve el HEAD funcional** (confirmado por el owner).
   Rollback en orden obligatorio `frontend F3E-2 → s7_96 → s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [runbook](docs/OWNER_S7_96_APPLY.md)
 

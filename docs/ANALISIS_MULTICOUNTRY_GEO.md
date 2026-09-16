@@ -15,8 +15,8 @@
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
 > filas). **F3E-0 / M0.5 = CLOSED / APPLIED / VERIFIED** (PR #377 MERGED como `bbfb834`,
 > `s7_95`, migración 116, 2026-09-16: país SV atestado por el owner en 36 clínicas, sin
-> territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1 = APPLIED / VERIFIED**
-> (`s7_96`, migración 117, 2026-09-16, PR #380 sin merge: dos RPC públicas de lectura del catálogo,
+> territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1 = CLOSED / APPLIED / VERIFIED**
+> (`s7_96`, migración 117, 2026-09-16, PR #380 MERGED como `b18bfbb`: dos RPC públicas de lectura del catálogo,
 > §10.k). **F3E-2 y F3E-3 están diseñadas y NO iniciadas.** **Ningún directorio ni frontend consume
 > el catálogo, el cierre ni las columnas nuevas de `clinics`** (el catálogo solo lo leen la
 > sincronización de `s7_92` y las 2 RPC de `s7_96`, sin consumidor de frontend); solo las escriben la
@@ -710,7 +710,7 @@ de admitir reservas.
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
 | **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
-| **F3E-1** | superficie backend de lectura: `directory_countries()` y `directory_territory_units()`, `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | ✅ **APPLIED / VERIFIED** — PR #380 (OPEN, sin merge), `s7_96` (§10.k) |
+| **F3E-1** | superficie backend de lectura: `directory_countries()` y `directory_territory_units()`, `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | ✅ **CLOSED / APPLIED / VERIFIED** — PR #380 (MERGED, `b18bfbb`), `s7_96` (§10.k) |
 | **F3E-2–F3F** | consumo en runtime (filtro `clinics.country_id`), UX y endurecimiento. Gate de datos de F3E-2 (caso D): **CLEAR** (§10.j) | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
@@ -1319,8 +1319,8 @@ STARTED.**
 ## 10.k · Evidencia de F3E-1 (`s7_96`, RPC de lectura del catálogo)
 
 `s7_96` = **migración 117, APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el 2026-09-16
-por bloques separados y byte-exactos (PASO 1 PRE, PASO 2 transacción, ESTADO, POST), con PR #380
-abierto y sin merge. Runbook: `docs/OWNER_S7_96_APPLY.md`.
+por bloques separados y byte-exactos (PASO 1 PRE, PASO 2 transacción, ESTADO, POST), **antes** del
+merge de PR #380. Runbook: `docs/OWNER_S7_96_APPLY.md`.
 
 **Contrato:** `directory_countries()` devuelve una fila por (país con `directory_enabled`, nivel), con
 `country_id`, `iso_alpha2`, `country_name`, `level`, `level_label`; un país habilitado sin niveles
@@ -1355,8 +1355,20 @@ DEFAULT PRIVILEGES de funciones con EXECUTE para `service_role` (de ahí el REVO
 
 **Rollback, orden obligatorio y bloqueante:** revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`. Los rollbacks históricos no se modifican.
 
-**Sin consumidor de frontend: no cambia comportamiento observable** (clasificación del HEAD funcional
-pendiente de confirmación del owner). **F3E-2 y F3E-3 = NOT STARTED.**
+**Sin consumidor de frontend: no cambia comportamiento observable. No mueve el HEAD funcional**
+(`ecd636694c7f7093a000bd9f823040aa7795ff04`, confirmado por el owner).
+
+**Cierre (2026-09-16):**
+
+- PR #380 **MERGED** por squash con OK del owner; `main` quedó en **`b18bfbb07a79893be041088ad52ab544c82078c4`**, con árbol idéntico
+  al HEAD aprobado del PR (`70bc65f`).
+- Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, **117 migraciones** (última
+  `s7_96_geo_foundation_3e1_directory_read_rpcs.sql`), SHA-256 de `s7_96` intacto
+  (`01e0d7705d7b961769ad1abcdf317c5f976508f000bb70a1c0a8fa141f77be6c`) y checks `s7_87`→`s7_96` PASS.
+- **HEAD funcional sin cambio, confirmado por el owner:** `ecd636694c7f7093a000bd9f823040aa7795ff04`.
+  Las RPC no tienen consumidor de frontend: no cambian comportamiento observable.
+- **F3E-1 = CLOSED / APPLIED / VERIFIED. F3E-2 y F3E-3 = NOT STARTED.** `/{iso2}` = OPEN / NOT APPROVED.
+- **Rollback vigente:** revertir frontend F3E-2 → `s7_96` → `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`.
 
 ---
 
