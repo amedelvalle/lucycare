@@ -2,7 +2,7 @@
 
 **Frente:** `MULTICOUNTRY-GEO-P0` · **Fase:** F3E-0 · **Migración:** 116
 **Archivo:** `migrations/s7_95_geo_foundation_3e0_attested_country_backfill.sql`
-**Estado:** ✅ **APPLIED / VERIFIED en producción (PostgreSQL 17.6, 2026-09-16) · NO REAPLICAR.** PR #377 sin merge (DO NOT MERGE WITHOUT OWNER OK). Evidencia en §10.
+**Estado:** ✅ **CLOSED / APPLIED / VERIFIED en producción (PostgreSQL 17.6, 2026-09-16) · NO REAPLICAR.** PR #377 MERGED (`main` = `bbfb8344f188e0f0cadfb9283864774cfd92a2ca`). Evidencia en §10.
 
 ---
 

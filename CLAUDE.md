@@ -4,16 +4,16 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-15) — post F3D (`s7_94`, PR #375).**
+> 🟢 **BASELINE VIGENTE (2026-09-16) — post F3E-0 (`s7_95`, PR #377).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
-> | **Migraciones aplicadas** | **116**, la última **`s7_95_geo_foundation_3e0_attested_country_backfill.sql`** (backfill de datos sin lectores, aplicado y verificado en producción el 2026-09-16; **PR #377 abierto, sin merge**). Mismo criterio que `s7_93`: **no mueve el HEAD funcional** (pendiente de confirmación del owner) |
+> | **Migraciones aplicadas** | **116**, la última **`s7_95_geo_foundation_3e0_attested_country_backfill.sql`** (backfill de datos sin lectores, aplicado y verificado en producción el 2026-09-16; **PR #377 MERGED**). **No mueve el HEAD funcional** (confirmado por el owner, 2026-09-16) |
 > | **Último cambio de esquema** | **PR #375 / `s7_94`** — tabla `administrative_unit_closure` (888 filas) e índice único `au_id_country_level_key` en `administrative_units`. Antes: `s7_92` (#372, trigger `trg_clinics_territory_sync` y retiro de la guarda F3A); `s7_93` no dejó cambios de esquema; `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
-> | **`main` tras el merge de #375** | **`f664dad5bd74f67fd82403e495a7774bb3a90b7b`** (squash de PR #375 / `s7_94`). Referencia de cierre de F3D, no tip eterno: los PR docs-only posteriores lo mueven |
+> | **`main` tras el merge de #377** | **`bbfb8344f188e0f0cadfb9283864774cfd92a2ca`** (squash de PR #377 / `s7_95`). Referencia de cierre de F3E-0, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `f664dad` (#375 / `s7_94`) |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -50,8 +50,8 @@
 > Editor diagnosticado el 2026-09-14) · **F3C (`s7_93`, backfill histórico) =
 > CLOSED / APPLIED / VERIFIED** (2026-09-14) · **F3D (`s7_94`, cierre territorial) =
 > CLOSED / APPLIED / VERIFIED** (2026-09-15; PR #375 MERGED, `main` = `f664dad`) ·
-> **F3E-0 / M0.5 (`s7_95`, país atestado sin territorio) = APPLIED / VERIFIED**
-> (2026-09-16; **PR #377 OPEN, sin merge**). **El frente completo NO está cerrado**:
+> **F3E-0 / M0.5 (`s7_95`, país atestado sin territorio) = CLOSED / APPLIED / VERIFIED**
+> (2026-09-16; PR #377 MERGED, `main` = `bbfb834`). **El frente completo NO está cerrado**:
 > **F3E-1 en adelante** está **diseñado y NO iniciado**.
 >
 > **Qué hizo `s7_95`:** (**migración 116**, F3E-0 / M0.5 aprobado por el owner) asignó
@@ -344,7 +344,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = APPLIED / VERIFIED; F3E-1 en adelante = NOT STARTED.**
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
 > Las 60 clínicas en S0 siguen sin ubicación ni país; 36 clínicas tienen país SV atestado sin
 > territorio (S2). **No conectar frontend ni lectores al catálogo, al
 > cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
@@ -996,8 +996,8 @@
 >
 > ⚠️ **Las migraciones van por separado: 116 aplicadas** (hasta
 > `s7_95_geo_foundation_3e0_attested_country_backfill.sql`, **backfill de datos sin lectores,
-> PR #377 sin merge**; antes `s7_94`, estructura derivada sin lectores; ninguna mueve el HEAD
-> funcional). El último cambio de **esquema** es `s7_94` (#375: cierre
+> PR #377 MERGED**; antes `s7_94`, estructura derivada sin lectores; ninguna mueve el HEAD
+> funcional, confirmado por el owner). El último cambio de **esquema** es `s7_94` (#375: cierre
 > territorial + índice único del catálogo); antes, `s7_92` (#372: trigger en `clinics` +
 > retiro de la guarda F3A), `s7_89` (#368) y `s7_87` (#365). `s7_93` fue un backfill de
 > datos. `s7_88` es un **seed de datos** y `s7_90` una
@@ -1572,8 +1572,8 @@ squash-merge, la rama puede borrarse.
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
-- **#377** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-0 / M0.5 = APPLIED / VERIFIED (PR OPEN, sin
-  merge). El FRENTE sigue EN CURSO (F3E-1 NOT STARTED).** `s7_95` (**migración 116**):
+- **#377** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-0 / M0.5 = CLOSED / APPLIED / VERIFIED (MERGED
+  como `bbfb834`). El FRENTE sigue EN CURSO (F3E-1/2/3 NOT STARTED).** `s7_95` (**migración 116**):
   `country_id = SV` atestado por el owner en **36 clínicas** del lote `Importar_100`, sin
   territorio ni legacy.
   - **Sin runtime nuevo:** triggers desactivados solo dentro de la transacción; función y
@@ -1584,6 +1584,7 @@ squash-merge, la rama puede borrarse.
   - **Incidente:** el PASO 2 quedó comiteado antes del PRE posterior, que abortó por
     reaplicación; la verificación confirmó la aplicación completa.
 
+  **Backfill de datos sin lectores: no mueve el HEAD funcional** (confirmado por el owner).
   **Gate restante antes de F3E-2: caso D.** Rollback en orden obligatorio
   `s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
