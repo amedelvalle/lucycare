@@ -13,9 +13,9 @@
 > VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
 > 23 clínicas con ubicación legacy). **F3D = CLOSED / APPLIED / VERIFIED** (PR #375 MERGED como `f664dad`, `s7_94`,
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
-> filas). **F3E-0 / M0.5 = APPLIED / VERIFIED** (`s7_95`, migración 116, 2026-09-16, **PR #377
-> OPEN, sin merge**: país SV atestado por el owner en 36 clínicas, sin territorio). **F3E-1 en
-> adelante está diseñado y NO iniciado.** **Ningún lector, directorio ni frontend consume el
+> filas). **F3E-0 / M0.5 = CLOSED / APPLIED / VERIFIED** (PR #377 MERGED como `bbfb834`,
+> `s7_95`, migración 116, 2026-09-16: país SV atestado por el owner en 36 clínicas, sin
+> territorio). **F3E-1, F3E-2 y F3E-3 están diseñadas y NO iniciadas.** **Ningún lector, directorio ni frontend consume el
 > catálogo, el cierre ni las columnas nuevas de `clinics`**; solo las escriben la
 > sincronización de `s7_92`, el backfill de `s7_93`, la carga de `s7_94` y el backfill
 > atestado de `s7_95`.
@@ -706,7 +706,7 @@ de admitir reservas.
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
-| **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **APPLIED / VERIFIED** — PR #377 (OPEN, sin merge), `s7_95` |
+| **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
 | **F3E-1–F3F** | resto de F3: superficie pública, lectura por el modelo nuevo y endurecimiento. **Gate de F3E-2: caso D** | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
@@ -1202,9 +1202,16 @@ aplicación real confirmó.
 
 ## 10.i · Evidencia de F3E-0 / M0.5 (`s7_95`, país atestado)
 
-`s7_95` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el 2026-09-16.
-**PR #377 OPEN, sin merge.** Backfill de datos sin lectores: por el mismo criterio que
-`s7_93`, **no mueve el HEAD funcional** (`ecd6366`), pendiente de confirmación del owner.
+`s7_95` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el
+2026-09-16 **antes** del merge de #377. Backfill de datos sin lectores: **no mueve el HEAD
+funcional** (`ecd6366`), confirmado por el owner.
+
+**Cierre (2026-09-16):** PR #377 **MERGED** por squash con OK del owner; `main` quedó en
+**`bbfb8344f188e0f0cadfb9283864774cfd92a2ca`**, con árbol idéntico al HEAD revisado del PR (`99c2922`). Tras el merge:
+`main == origin/main`, árbol limpio, 0 PRs abiertos, **116 migraciones** (última
+`s7_95_geo_foundation_3e0_attested_country_backfill.sql`), SHA-256 de `s7_95` intacto
+(`2452a7fc…bd41`) y checks `s7_87`→`s7_95` PASS. **F3E-1, F3E-2 y F3E-3 = NOT STARTED**;
+el único gate pendiente antes de F3E-2 es el caso D.
 
 **Decisiones del owner:**
 - **M0.5** (M1 y M2 descartadas): registrar el país atestado sin comportamiento runtime

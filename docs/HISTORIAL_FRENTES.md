@@ -2055,12 +2055,22 @@ sesión, que aborta sin residuo si `public` no está (medido).
 
 ## #377 · MULTICOUNTRY-GEO-P0 · F3E-0 / M0.5 · país atestado sin territorio (2026-09-16)
 
-> 🚧 **F3E-0 = APPLIED / VERIFIED. PR #377 OPEN, sin merge. El FRENTE sigue EN CURSO (F3E-1
+> 🚧 **F3E-0 = CLOSED / APPLIED / VERIFIED. PR #377 MERGED. El FRENTE sigue EN CURSO (F3E-1/2/3
 > NOT STARTED).** Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.i y §11.
 
-**`s7_95` = migración 116, APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el
-2026-09-16. Backfill de datos sin lectores: por el mismo criterio que `s7_93`, **no mueve el
-HEAD funcional** (`ecd6366`), pendiente de confirmación del owner.
+**`s7_95` = migración 116, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción
+el 2026-09-16 **antes** del merge de #377. Backfill de datos sin lectores: **no mueve el HEAD
+funcional** (`ecd6366`), confirmado por el owner.
+
+**Cierre (2026-09-16):**
+- PR #377 **MERGED** por squash con OK del owner; `main` quedó en
+  **`bbfb8344f188e0f0cadfb9283864774cfd92a2ca`**, con árbol idéntico al HEAD revisado del PR (`99c2922`).
+- Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, **116 migraciones**
+  (última `s7_95_geo_foundation_3e0_attested_country_backfill.sql`), SHA-256 de `s7_95`
+  intacto (`2452a7fc…bd41`) y checks `s7_87`→`s7_95` PASS.
+- **HEAD funcional sin cambio:** `ecd6366`. **F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
+- **Gate pendiente antes de F3E-2:** el caso D.
+- **Rollback obligatorio:** `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`.
 
 ### Qué cambió
 
