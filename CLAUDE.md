@@ -11,7 +11,7 @@
 > | | |
 > |---|---|
 > | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
-> | **Migraciones aplicadas** | **116**, la última **`s7_95_geo_foundation_3e0_attested_country_backfill.sql`** (backfill de datos sin lectores, aplicado y verificado en producción el 2026-09-16; **PR #377 MERGED**). **No mueve el HEAD funcional** (confirmado por el owner, 2026-09-16) |
+> | **Migraciones aplicadas** | **117**, la última **`s7_96_geo_foundation_3e1_directory_read_rpcs.sql`** (2 RPC de lectura del catálogo territorial, aplicada y verificada en producción el 2026-09-16; **PR #380 abierto, sin merge**). Antes, `s7_95` (backfill de datos sin lectores, PR #377 MERGED; no mueve el HEAD funcional, confirmado por el owner) |
 > | **Último cambio de esquema** | **PR #375 / `s7_94`** — tabla `administrative_unit_closure` (888 filas) e índice único `au_id_country_level_key` en `administrative_units`. Antes: `s7_92` (#372, trigger `trg_clinics_territory_sync` y retiro de la guarda F3A); `s7_93` no dejó cambios de esquema; `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
 > | **`main` tras el merge de #377** | **`bbfb8344f188e0f0cadfb9283864774cfd92a2ca`** (squash de PR #377 / `s7_95`). Referencia de cierre de F3E-0, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `f664dad` (#375 / `s7_94`) |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
@@ -103,8 +103,34 @@
 > - **Nueva huella C2 de referencia de `clinics`:** **`7cef00d1d24a004edbc4678fe6d41948`**
 >   (sustituye a `ce972bd098a01c277a101c81875ab3e1`).
 >
-> **F3E-0 sigue CLOSED / APPLIED / VERIFIED. F3E-1, F3E-2 y F3E-3 = NOT STARTED: no iniciarlas
-> sin instrucción del owner.**
+> **F3E-0 sigue CLOSED / APPLIED / VERIFIED.**
+>
+> ✅ **F3E-1 (`s7_96`, migración 117) = APPLIED / VERIFIED (2026-09-16). PR #380 abierto, sin merge.**
+> Solo dos RPC públicas de lectura: `directory_countries()` (país habilitado + niveles; sin niveles,
+> una fila con `level`/`level_label` NULL) y `directory_territory_units(p_country_iso, p_parent_id)`
+> (unidades activas, raíz o hijos; ISO exacto; inválido, deshabilitado o padre ajeno → vacío).
+> `SECURITY DEFINER`, `STABLE`, `search_path` fijo; EXECUTE solo `anon` y `authenticated`. Tablas GEO
+> sin grants de cliente. Aplicada por bloques separados (PASO 1, PASO 2, ESTADO, POST).
+> - **ESTADO:** `S7_96 APLICADA COMPLETA`; 2 funciones `directory_*`, las 2 exactas (firma, retorno,
+>   `STABLE`, `SECURITY DEFINER`, `search_path`, dueño `postgres`, cuerpo por md5).
+> - **VERIFICACIÓN POST Z = 0.** ACL exacta `anon=X/postgres,authenticated=X/postgres,postgres=X/postgres`
+>   en ambas; EXECUTE efectivo `anon` y `authenticated` sí, **`service_role` no** (42501).
+> - **Seguridad intacta:** catálogo GEO cerrado (4 tablas `{postgres=arwdDxtm/postgres}`, RLS, 0
+>   policies; lectura directa 42501 para `anon` y `authenticated`); `clinics` relacl, RLS y
+>   policies (`20ad37b9`) iguales. El PASO 2 comparó además la instantánea completa (policies,
+>   ACL/RLS, roles, membresías, esquemas, default privileges, triggers): solo +2 funciones.
+> - **Contrato:** `directory_countries()` = SV niveles 1 Departamento · 2 Municipio · 3 Distrito;
+>   países descubribles = todos los habilitados (`SV`); raíz de SV 14 unidades; hijos del padre
+>   con más hijos 20; los 7 contratos inválidos devuelven 0 filas.
+> - **Consumidores:** los rollbacks de `s7_92`/`s7_93` detectan exactamente las 2 RPC; el de
+>   `s7_94`, ninguna; el de `s7_95` cuenta 2; 0 objetos dependen de las RPC.
+> - **Datos sin cambios:** huella C2 de `clinics` `7cef00d1d24a004edbc4678fe6d41948`; clínicas
+>   `119|59|24|36|0`; directorio `46|46|0#43|43|0`.
+> - **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
+>
+> **Sin consumidor de frontend todavía: no cambia comportamiento observable** (clasificación del HEAD
+> funcional pendiente de confirmación del owner). **F3E-2 y F3E-3 = NOT STARTED: no iniciarlas sin
+> instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
 >
 > **Qué hizo `s7_94`:** (**migración 115**) creó `public.administrative_unit_closure`,
 > el cierre transitivo **derivado** del árbol, variante **N1** aprobada por el owner:
@@ -363,7 +389,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = APPLIED / VERIFIED (PR #380 sin merge); F3E-2 y F3E-3 = NOT STARTED.**
 > Las 59 clínicas en S0 siguen sin ubicación ni país; 24 están en S1; 36 clínicas tienen país SV
 > atestado sin territorio (S2). **No conectar frontend ni lectores al catálogo, al
 > cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
@@ -377,7 +403,12 @@
 > registrado para F3E / `TYPES-RECONCILIATION-P0`, sin abrir ese frente.
 >
 > ⛔ **Rollbacks, ORDEN OBLIGATORIO Y BLOQUEANTE (confirmado por el owner):**
-> **rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
+> **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
+> 0. **Frontend F3E-2** (cuando exista): revertirlo primero; un consumidor de frontend no es detectable desde la base.
+> 0b. `docs/rollbacks/s7_96_rollback.sql` retira las 2 RPC; se niega si cambiaron su forma, cuerpo o ACL,
+>    o si algo depende de ellas. **Mientras `s7_96` esté aplicada, los rollbacks de `s7_92`, `s7_93` y
+>    `s7_95` detectan las RPC como consumidores y se niegan** (el de `s7_94`, no). Después, el ESTADO de
+>    `s7_96` debe decir `S7_96 NO APLICADA`.
 > 1. `docs/rollbacks/s7_95_rollback.sql` devuelve a S0 las 36 clínicas atestadas; se niega
 >    si alguna cambió, ante consumidores o si la auditoría neta no es 36. Después, el ESTADO
 >    de `s7_95` debe decir `S7_95 REVERTIDA`.
@@ -1013,8 +1044,9 @@
 > las escrituras de `clinics`. · **PRs funcionales mergeados hasta #372** ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos**.
 >
-> ⚠️ **Las migraciones van por separado: 116 aplicadas** (hasta
-> `s7_95_geo_foundation_3e0_attested_country_backfill.sql`, **backfill de datos sin lectores,
+> ⚠️ **Las migraciones van por separado: 117 aplicadas** (hasta
+> `s7_96_geo_foundation_3e1_directory_read_rpcs.sql`, **2 RPC de lectura sin consumidor de
+> frontend, PR #380 sin merge**; antes `s7_95`, **backfill de datos sin lectores,
 > PR #377 MERGED**; antes `s7_94`, estructura derivada sin lectores; ninguna mueve el HEAD
 > funcional, confirmado por el owner). El último cambio de **esquema** es `s7_94` (#375: cierre
 > territorial + índice único del catálogo); antes, `s7_92` (#372: trigger en `clinics` +
@@ -1609,6 +1641,16 @@ squash-merge, la rama puede borrarse.
   `s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#380** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-1 = APPLIED / VERIFIED (PR OPEN, sin merge). F3E-2/3 NOT
+  STARTED.** `s7_96` (**migración 117**): `directory_countries()` y
+  `directory_territory_units(p_country_iso, p_parent_id)`, `SECURITY DEFINER`, EXECUTE solo `anon` y
+  `authenticated`; tablas GEO sin grants de cliente; sin cambios de RLS, policies, roles ni datos.
+  - **Pruebas previas:** preflight F3E-1A de producción; `check-s7_96` 126/126; arnés local (PG18) 86/86.
+  - **Producción (PG 17.6):** ESTADO aplicada completa, POST Z = 0, ACL exacta, `service_role` sin
+    EXECUTE, catálogo cerrado, `clinics` intacto, C2 `7cef00d1…`, `119|59|24|36|0`, `46|46|0#43|43|0`.
+  Rollback en orden obligatorio `frontend F3E-2 → s7_96 → s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [runbook](docs/OWNER_S7_96_APPLY.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
