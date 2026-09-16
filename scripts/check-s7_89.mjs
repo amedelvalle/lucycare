@@ -307,10 +307,17 @@ check('control: la función del trigger de s7_92 SÍ se detecta como usuaria de 
 const funcionesDelModeloNuevo = (mapa) => [...mapa]
   .filter(([, v]) => /\b(administrative_units|administrative_unit_paths|country_levels|countries)\b/.test(v.cuerpo))
   .map(([n, v]) => `${n} (${v.archivo})`);
-check('ninguna función SQL vigente consulta el modelo territorial nuevo (salvo el resolver de s7_92)',
-  fueraDeAllowlist(funcionesDelModeloNuevo(vigentes)), '');
+// ⚠️ Reanclado en F3E-1: s7_96 añade las dos RPC públicas de lectura del catálogo
+// (solo leen countries, country_levels y administrative_units; no usan columnas de
+// clinics, por eso NO entran en la allowlist anterior). Allowlist cerrada: nombre Y archivo.
+const LECTORES_96 = ['directory_countries (s7_96_geo_foundation_3e1_directory_read_rpcs.sql)',
+                     'directory_territory_units (s7_96_geo_foundation_3e1_directory_read_rpcs.sql)'];
+check('ninguna función SQL vigente consulta el modelo territorial nuevo (salvo el resolver de s7_92 y las RPC de s7_96)',
+  funcionesDelModeloNuevo(vigentes).filter((x) => !SYNC_92.includes(x) && !LECTORES_96.includes(x)).join(', '), '');
 check('control: el resolver de s7_92 SÍ se detecta como lector del modelo nuevo',
   funcionesDelModeloNuevo(vigentes).includes(SYNC_92[1]), true);
+check('control: las dos RPC de s7_96 SÍ se detectan como lectoras del modelo nuevo',
+  LECTORES_96.every((x) => funcionesDelModeloNuevo(vigentes).includes(x)), true);
 check('se inspeccionaron las funciones vigentes (control: hay más de 100)', vigentes.size > 100, true);
 
 // Control positivo: el mismo método SÍ encuentra los 3 escritores legacy reales.
