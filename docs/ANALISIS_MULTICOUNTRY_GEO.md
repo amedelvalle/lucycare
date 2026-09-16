@@ -15,7 +15,8 @@
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
 > filas). **F3E-0 / M0.5 = CLOSED / APPLIED / VERIFIED** (PR #377 MERGED como `bbfb834`,
 > `s7_95`, migración 116, 2026-09-16: país SV atestado por el owner en 36 clínicas, sin
-> territorio). **F3E-1, F3E-2 y F3E-3 están diseñadas y NO iniciadas.** **Ningún lector, directorio ni frontend consume el
+> territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1, F3E-2 y
+> F3E-3 están diseñadas y NO iniciadas.** **Ningún lector, directorio ni frontend consume el
 > catálogo, el cierre ni las columnas nuevas de `clinics`**; solo las escriben la
 > sincronización de `s7_92`, el backfill de `s7_93`, la carga de `s7_94` y el backfill
 > atestado de `s7_95`.
@@ -707,7 +708,7 @@ de admitir reservas.
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
 | **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
-| **F3E-1–F3F** | resto de F3: superficie pública, lectura por el modelo nuevo y endurecimiento. **Gate de F3E-2: caso D** | 📐 diseñadas, **NOT STARTED** |
+| **F3E-1–F3F** | resto de F3: superficie pública, lectura por el modelo nuevo y endurecimiento. Gate de datos de F3E-2 (caso D): **CLEAR** (§10.j) | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -1211,7 +1212,7 @@ funcional** (`ecd6366`), confirmado por el owner.
 `main == origin/main`, árbol limpio, 0 PRs abiertos, **116 migraciones** (última
 `s7_95_geo_foundation_3e0_attested_country_backfill.sql`), SHA-256 de `s7_95` intacto
 (`2452a7fc…bd41`) y checks `s7_87`→`s7_95` PASS. **F3E-1, F3E-2 y F3E-3 = NOT STARTED**;
-el único gate pendiente antes de F3E-2 es el caso D.
+el único gate pendiente antes de F3E-2 era el caso D, **cerrado** después (§10.j).
 
 **Decisiones del owner:**
 - **M0.5** (M1 y M2 descartadas): registrar el país atestado sin comportamiento runtime
@@ -1284,6 +1285,34 @@ operación inválida fuera de orden y cadena de reversión en orden.
 
 ---
 
+## 10.j · Cierre del caso D · GEO DATA GATE = CLEAR (2026-09-16)
+
+**CASE D = CLOSED · GEO DATA GATE = CLEAR.** El owner cargó en LucyAdmin la ubicación real del
+caso D (departamento San Salvador, municipio San Salvador). Una verificación integral read-only
+en producción dio **Z = 0**, sin bloqueantes ni hallazgos observacionales:
+
+- **Caso D:** médico `96dffdc8-0764-4adb-a4eb-3a7a198cf51d`, clínica
+  `1605df83-fc84-4dfc-96ca-2e575d0127fc`, legacy `SS` / `SS-12`, unidad **San Salvador y Capital
+  de la República < San Salvador Centro < San Salvador**; estado **S1**, igual al resolver vivo
+  y presente en el cierre.
+- **Cómo:** una edición del owner en LucyAdmin (`admin_update_doctor_clinic`, una fila de
+  auditoría `update · admin`) con la sincronización de `s7_92`; sin escrituras directas de
+  `country_id` / `territory_unit_id` (0 sentencias en `pg_stat_statements`).
+- **Directorio:** publicados **46|46|0**; visibles Home **43|43|0**. **Ya no hay médicos
+  publicados ni visibles sin país.**
+- **GEO:** 119 clínicas; S0 · S1 · S2 = **59 · 24 · 36**; 0 anomalías; las 36 atestadas de
+  `s7_95` siguen exactamente en S2; runtime de `s7_92` intacto.
+- **Blast radius:** solo la clínica D. La huella C2 con D tratada como S0 sigue siendo
+  `ce972bd0…`; ninguna otra clínica ni médico cambió o se creó.
+- **Nueva huella C2 de referencia de `clinics`:** **`7cef00d1d24a004edbc4678fe6d41948`**
+  (sustituye a `ce972bd098a01c277a101c81875ab3e1`).
+
+Sin SQL de escritura, sin migración y sin cambios de código: el caso D se resolvió por el flujo
+normal de LucyAdmin. **F3E-0 sigue CLOSED / APPLIED / VERIFIED; F3E-1, F3E-2 y F3E-3 = NOT
+STARTED.**
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
@@ -1326,10 +1355,10 @@ operación inválida fuera de orden y cadena de reversión en orden.
 - **Tipos (owner, 2026-09-15):** `administrative_unit_closure` **no** se añade a
   `src/types/database.types.ts`. F3D es DB-only y sin consumidor runtime; queda para
   F3E / `TYPES-RECONCILIATION-P0`, sin abrir ese frente.
-- **Gate restante antes de F3E-2 (2026-09-16):** 46 médicos publicados = **45 con clínica
-  con país + 1 sin país**. Los 37 del preflight F3D se redujeron a 1 con `s7_95` (36 atestados);
-  queda el **caso D** (`96dffdc8-…`), que se resolverá cargando su ubicación real en LucyAdmin,
-  sin inferir país (C5).
+- **Gate de datos antes de F3E-2 = CLEAR (2026-09-16):** los 37 publicados sin país del
+  preflight F3D se redujeron a 1 con `s7_95` (36 atestados), y el **caso D** (`96dffdc8-…`) se
+  cerró cargando su ubicación real en LucyAdmin, sin inferir país (C5). Publicados **46|46|0**,
+  visibles **43|43|0** (§10.j).
 - **`search_path` en `s7_94` (H1):** cuatro comparaciones absolutas dependen de que
   `public` esté en el `search_path` (`::regclass::text`). El PASO 1 no lo valida; el
   POST del PASO 2 aborta sin residuo si falta. Cualquier bloque futuro con el mismo
