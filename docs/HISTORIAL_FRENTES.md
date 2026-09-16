@@ -2162,3 +2162,49 @@ verificación integral read-only en producción con **Z = 0**:
   (sustituye a `ce972bd098a01c277a101c81875ab3e1`).
 
 **F3E-0 sigue CLOSED / APPLIED / VERIFIED. F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
+
+## #380 · MULTICOUNTRY-GEO-P0 · F3E-1 · RPC de lectura del catálogo territorial (2026-09-16)
+
+> 🚧 **F3E-1 = APPLIED / VERIFIED. PR #380 OPEN, sin merge. F3E-2 y F3E-3 NOT STARTED.** Referencia
+> canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.k. Runbook: `docs/OWNER_S7_96_APPLY.md`.
+
+**`s7_96` = migración 117, APPLIED / VERIFIED / NO REAPLICAR.** Crea solo
+`public.directory_countries()` y `public.directory_territory_units(p_country_iso, p_parent_id)`:
+`SECURITY DEFINER`, `STABLE`, `search_path` fijo, referencias calificadas, sin SQL dinámico ni
+`auth.uid()`; `REVOKE ALL` a `PUBLIC`, `anon`, `authenticated` y `service_role`, y `GRANT EXECUTE` solo a
+`anon` y `authenticated`. Sin cambios de RLS, policies, grants de tabla, roles, membresías ni datos.
+
+### Proceso
+
+- **F3E-1 diagnóstico:** mapa del runtime de Home y contrato mínimo; Opción B (2 RPC) aprobada.
+- **Preflight F3E-1A (read-only):** filtro público por `clinics.country_id` sin grants nuevos (46|43, 0
+  pérdidas); catálogo cerrado; planes sanos; DEFAULT PRIVILEGES con EXECUTE para `service_role`.
+- **ADJUST del owner:** sin `has_children`; un país habilitado sin niveles debe ser descubrible (LEFT JOIN,
+  nivel NULL).
+- **Validación previa:** `check-s7_96` 126/126 con mutaciones invertidas; arnés local (PG18) 86/86;
+  `check-s7_89` reanclado para admitir exactamente las 2 RPC.
+- **Aplicación:** por bloques separados y byte-exactos (PASO 1, PASO 2, ESTADO, POST), por la lección de
+  `s7_95`; hashes reconfirmados contra el blob remoto antes de entregarlos.
+
+### Evidencia de producción
+
+- **ESTADO:** `S7_96 APLICADA COMPLETA`; 2 funciones `directory_*`, las 2 exactas (firma, retorno,
+  `STABLE`, `SECURITY DEFINER`, `search_path`, dueño `postgres`, cuerpo por md5).
+- **VERIFICACIÓN POST Z = 0.** ACL exacta `anon=X/postgres,authenticated=X/postgres,postgres=X/postgres`
+  en ambas; EXECUTE efectivo `anon` y `authenticated` sí, **`service_role` no** (42501).
+- **Seguridad intacta:** catálogo GEO cerrado (4 tablas `{postgres=arwdDxtm/postgres}`, RLS, 0
+  policies; lectura directa 42501 para `anon` y `authenticated`); `clinics` relacl, RLS y
+  policies (`20ad37b9`) iguales. El PASO 2 comparó además la instantánea completa (policies,
+  ACL/RLS, roles, membresías, esquemas, default privileges, triggers): solo +2 funciones.
+- **Contrato:** `directory_countries()` = SV niveles 1 Departamento · 2 Municipio · 3 Distrito;
+  países descubribles = todos los habilitados (`SV`); raíz de SV 14 unidades; hijos del padre
+  con más hijos 20; los 7 contratos inválidos devuelven 0 filas.
+- **Consumidores:** los rollbacks de `s7_92`/`s7_93` detectan exactamente las 2 RPC; el de
+  `s7_94`, ninguna; el de `s7_95` cuenta 2; 0 objetos dependen de las RPC.
+- **Datos sin cambios:** huella C2 de `clinics` `7cef00d1d24a004edbc4678fe6d41948`; clínicas
+  `119|59|24|36|0`; directorio `46|46|0#43|43|0`.
+- **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
+
+### Rollback
+
+revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`. Los rollbacks históricos no se modifican.

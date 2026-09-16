@@ -15,9 +15,11 @@
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
 > filas). **F3E-0 / M0.5 = CLOSED / APPLIED / VERIFIED** (PR #377 MERGED como `bbfb834`,
 > `s7_95`, migración 116, 2026-09-16: país SV atestado por el owner en 36 clínicas, sin
-> territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1, F3E-2 y
-> F3E-3 están diseñadas y NO iniciadas.** **Ningún lector, directorio ni frontend consume el
-> catálogo, el cierre ni las columnas nuevas de `clinics`**; solo las escriben la
+> territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1 = APPLIED / VERIFIED**
+> (`s7_96`, migración 117, 2026-09-16, PR #380 sin merge: dos RPC públicas de lectura del catálogo,
+> §10.k). **F3E-2 y F3E-3 están diseñadas y NO iniciadas.** **Ningún directorio ni frontend consume
+> el catálogo, el cierre ni las columnas nuevas de `clinics`** (el catálogo solo lo leen la
+> sincronización de `s7_92` y las 2 RPC de `s7_96`, sin consumidor de frontend); solo las escriben la
 > sincronización de `s7_92`, el backfill de `s7_93`, la carga de `s7_94` y el backfill
 > atestado de `s7_95`.
 
@@ -708,7 +710,8 @@ de admitir reservas.
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
 | **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
-| **F3E-1–F3F** | resto de F3: superficie pública, lectura por el modelo nuevo y endurecimiento. Gate de datos de F3E-2 (caso D): **CLEAR** (§10.j) | 📐 diseñadas, **NOT STARTED** |
+| **F3E-1** | superficie backend de lectura: `directory_countries()` y `directory_territory_units()`, `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | ✅ **APPLIED / VERIFIED** — PR #380 (OPEN, sin merge), `s7_96` (§10.k) |
+| **F3E-2–F3F** | consumo en runtime (filtro `clinics.country_id`), UX y endurecimiento. Gate de datos de F3E-2 (caso D): **CLEAR** (§10.j) | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -1313,14 +1316,59 @@ STARTED.**
 
 ---
 
+## 10.k · Evidencia de F3E-1 (`s7_96`, RPC de lectura del catálogo)
+
+`s7_96` = **migración 117, APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el 2026-09-16
+por bloques separados y byte-exactos (PASO 1 PRE, PASO 2 transacción, ESTADO, POST), con PR #380
+abierto y sin merge. Runbook: `docs/OWNER_S7_96_APPLY.md`.
+
+**Contrato:** `directory_countries()` devuelve una fila por (país con `directory_enabled`, nivel), con
+`country_id`, `iso_alpha2`, `country_name`, `level`, `level_label`; un país habilitado sin niveles
+aparece una vez con nivel NULL. `directory_territory_units(p_country_iso, p_parent_id)` devuelve `id`,
+`name`, `level`, `parent_id` de las unidades activas (raíz o hijos de un padre activo del país); ISO
+exacto; ISO inválido, país deshabilitado o padre ajeno → conjunto vacío. Sin `has_children`, legacy,
+códigos oficiales, `booking_enabled` ni cierre.
+
+**Preflight F3E-1A (read-only, producción):** filtro público por `clinics.country_id` sin grants nuevos
+(46|43 igual con y sin filtro, 0 pérdidas, bajo `anon` y `authenticated`); catálogo GEO sin grants de
+cliente; planes con `au_country_level_active_idx`, `au_parent_active_idx` y `country_levels_pkey`;
+DEFAULT PRIVILEGES de funciones con EXECUTE para `service_role` (de ahí el REVOKE explícito).
+
+**Evidencia de producción (PostgreSQL 17.6, 2026-09-16):**
+
+- **ESTADO:** `S7_96 APLICADA COMPLETA`; 2 funciones `directory_*`, las 2 exactas (firma, retorno,
+  `STABLE`, `SECURITY DEFINER`, `search_path`, dueño `postgres`, cuerpo por md5).
+- **VERIFICACIÓN POST Z = 0.** ACL exacta `anon=X/postgres,authenticated=X/postgres,postgres=X/postgres`
+  en ambas; EXECUTE efectivo `anon` y `authenticated` sí, **`service_role` no** (42501).
+- **Seguridad intacta:** catálogo GEO cerrado (4 tablas `{postgres=arwdDxtm/postgres}`, RLS, 0
+  policies; lectura directa 42501 para `anon` y `authenticated`); `clinics` relacl, RLS y
+  policies (`20ad37b9`) iguales. El PASO 2 comparó además la instantánea completa (policies,
+  ACL/RLS, roles, membresías, esquemas, default privileges, triggers): solo +2 funciones.
+- **Contrato:** `directory_countries()` = SV niveles 1 Departamento · 2 Municipio · 3 Distrito;
+  países descubribles = todos los habilitados (`SV`); raíz de SV 14 unidades; hijos del padre
+  con más hijos 20; los 7 contratos inválidos devuelven 0 filas.
+- **Consumidores:** los rollbacks de `s7_92`/`s7_93` detectan exactamente las 2 RPC; el de
+  `s7_94`, ninguna; el de `s7_95` cuenta 2; 0 objetos dependen de las RPC.
+- **Datos sin cambios:** huella C2 de `clinics` `7cef00d1d24a004edbc4678fe6d41948`; clínicas
+  `119|59|24|36|0`; directorio `46|46|0#43|43|0`.
+- **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
+
+**Rollback, orden obligatorio y bloqueante:** revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`. Los rollbacks históricos no se modifican.
+
+**Sin consumidor de frontend: no cambia comportamiento observable** (clasificación del HEAD funcional
+pendiente de confirmación del owner). **F3E-2 y F3E-3 = NOT STARTED.**
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
 - ⛔ **Rollbacks de F3, ORDEN OBLIGATORIO Y BLOQUEANTE** (confirmado por el owner):
-  **rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de
-  `s7_92`**. Tras F3E-1, todos se reevalúan.
+  **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**. Desde F3E-1 (§10.k), el
+  rollback de `s7_96` es el primer paso de base de datos: con las RPC presentes, los de `s7_92`,
+  `s7_93` y `s7_95` las detectan como consumidores y se niegan.
   - **`s7_95`** (`docs/rollbacks/s7_95_rollback.sql`): devuelve a S0 las 36 clínicas
     atestadas con la sincronización de `s7_92` activa; conserva `updated_at`; no borra
     auditoría (añade 36 filas de reversión). Se niega si alguna de las 36 cambió, ante
