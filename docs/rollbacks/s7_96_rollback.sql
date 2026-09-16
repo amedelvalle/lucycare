@@ -44,7 +44,7 @@ SET LOCAL lock_timeout = '5s';
 DO $PREVIA$
 DECLARE
   v_acl           CONSTANT text := 'anon=X/postgres,authenticated=X/postgres,postgres=X/postgres';
-  v_md5_countries CONSTANT text[] := ARRAY['1804439ffc598fa98321da2bf28eec08', 'cf27c8ed4ba4d97f13f99894b7057596'];
+  v_md5_countries CONSTANT text[] := ARRAY['d3fa8ee9a257868fc75480860ed7c4a6', '54aeee13db6d9cc1ddf02f121839d674'];
   v_md5_units     CONSTANT text[] := ARRAY['3083c7c5ad5a790c044e89bd7d554afc', '243b51249cb406b28b90fe5087387229'];
   v_txt text;
   v_n   bigint;

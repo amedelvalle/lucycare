@@ -25,7 +25,7 @@ m AS (
     (SELECT count(*) FROM f
       WHERE f.nspname = 'public' AND f.acl = 'anon=X/postgres,authenticated=X/postgres,postgres=X/postgres'
         AND ((f.forma = 'directory_countries() TABLE(country_id smallint, iso_alpha2 text, country_name text, level smallint, level_label text) vol=s def=true lang=sql cfg={"search_path=public, pg_temp"} owner=postgres args='
-              AND f.md5_cuerpo IN ('1804439ffc598fa98321da2bf28eec08', 'cf27c8ed4ba4d97f13f99894b7057596'))
+              AND f.md5_cuerpo IN ('d3fa8ee9a257868fc75480860ed7c4a6', '54aeee13db6d9cc1ddf02f121839d674'))
           OR (f.forma = 'directory_territory_units(p_country_iso text, p_parent_id bigint) TABLE(id bigint, name text, level smallint, parent_id bigint) vol=s def=true lang=plpgsql cfg={"search_path=public, pg_temp"} owner=postgres args=p_country_iso text, p_parent_id bigint DEFAULT NULL::bigint'
               AND f.md5_cuerpo IN ('3083c7c5ad5a790c044e89bd7d554afc', '243b51249cb406b28b90fe5087387229')))) AS n_exactas,
     (SELECT bool_or(has_table_privilege(r.rol, t.tbl, x.priv))

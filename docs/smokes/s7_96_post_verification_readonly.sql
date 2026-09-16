@@ -21,6 +21,7 @@ DECLARE
   v_rol  text;
   v_txt  text;
   v_esp  text;
+  v_n_txt text;
   v_n    bigint;
   k      text;
   v_ord  int := 0;
@@ -52,7 +53,7 @@ BEGIN
     v_ord := v_ord + 1;
     SELECT md5(prosrc) INTO v_txt FROM pg_proc WHERE oid = to_regprocedure(k);
     v_out := v_out || jsonb_build_object('s', 'A objetos', 'o', v_ord, 'k', k || ': cuerpo igual al artefacto (md5 LF o CRLF)',
-      'v', (CASE WHEN k LIKE '%countries%' THEN v_txt IN ('1804439ffc598fa98321da2bf28eec08', 'cf27c8ed4ba4d97f13f99894b7057596') ELSE v_txt IN ('3083c7c5ad5a790c044e89bd7d554afc', '243b51249cb406b28b90fe5087387229') END)::text, 'e', 'true');
+      'v', (CASE WHEN k LIKE '%countries%' THEN v_txt IN ('d3fa8ee9a257868fc75480860ed7c4a6', '54aeee13db6d9cc1ddf02f121839d674') ELSE v_txt IN ('3083c7c5ad5a790c044e89bd7d554afc', '243b51249cb406b28b90fe5087387229') END)::text, 'e', 'true');
   END LOOP;
 
   -- B · seguridad: catalogo cerrado y consumidores
@@ -92,17 +93,28 @@ BEGIN
     PERFORM set_config('request.jwt.claim.role', v_rol, true);
 
     v_ord := v_ord + 1;
-    SELECT string_agg(c.id || '|' || c.iso_alpha2 || '|' || c.name || '|' || l.level || '|' || l.label_singular, ';' ORDER BY c.iso_alpha2, l.level)
-      INTO v_esp FROM public.countries c JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;
+    SELECT string_agg(c.id || '|' || c.iso_alpha2 || '|' || c.name || '|' || coalesce(l.level::text, 'NULL') || '|' || coalesce(l.label_singular, 'NULL'), ';' ORDER BY c.iso_alpha2, l.level)
+      INTO v_esp FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;
     BEGIN
       EXECUTE format('SET LOCAL ROLE %I', v_rol);
-      SELECT string_agg(f.country_id || '|' || f.iso_alpha2 || '|' || f.country_name || '|' || f.level || '|' || f.level_label, ';' ORDER BY f.n)
+      SELECT string_agg(f.country_id || '|' || f.iso_alpha2 || '|' || f.country_name || '|' || coalesce(f.level::text, 'NULL') || '|' || coalesce(f.level_label, 'NULL'), ';' ORDER BY f.n)
         INTO v_txt FROM public.directory_countries() WITH ORDINALITY AS f(country_id, iso_alpha2, country_name, level, level_label, n);
       RESET ROLE;
     EXCEPTION WHEN OTHERS THEN v_txt := 'ERROR ' || SQLSTATE;
     END;
     RESET ROLE;
     v_out := v_out || jsonb_build_object('s', 'C comportamiento', 'o', v_ord, 'k', v_rol || ' · directory_countries() = catalogo habilitado (filas y orden)', 'v', (v_txt IS NOT DISTINCT FROM v_esp)::text, 'e', 'true');
+    v_ord := v_ord + 1;
+    v_ord := v_ord + 1;
+    SELECT coalesce(string_agg(iso_alpha2, ',' ORDER BY iso_alpha2), '') INTO v_esp FROM public.countries WHERE directory_enabled;
+    BEGIN
+      EXECUTE format('SET LOCAL ROLE %I', v_rol);
+      SELECT coalesce(string_agg(DISTINCT f.iso_alpha2, ',' ORDER BY f.iso_alpha2), '') INTO v_n_txt FROM public.directory_countries() f;
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN v_n_txt := 'ERROR ' || SQLSTATE;
+    END;
+    RESET ROLE;
+    v_out := v_out || jsonb_build_object('s', 'C comportamiento', 'o', v_ord, 'k', v_rol || ' · paises descubribles = todos los habilitados (tambien sin niveles)', 'v', v_n_txt, 'e', v_esp);
     v_ord := v_ord + 1;
     v_out := v_out || jsonb_build_object('s', 'C comportamiento', 'o', v_ord, 'k', v_rol || ' · directory_countries(): iso|nivel|etiqueta (info)',
       'v', coalesce((SELECT string_agg(split_part(x, '|', 2) || '|' || split_part(x, '|', 4) || '|' || split_part(x, '|', 5), ' ; ') FROM unnest(string_to_array(v_txt, ';')) x), 'NULL'), 'e', '(info)');

@@ -8,6 +8,8 @@
 --       una fila por (pais habilitado para directorio, nivel territorial):
 --       country_id, iso_alpha2, country_name, level, level_label;
 --       ordenada por iso_alpha2 y level. Generica: no asume tres niveles.
+--       Todo pais habilitado es descubrible: sin filas en country_levels aparece
+--       UNA vez con level y level_label NULL (no se inventan niveles).
 --   · public.directory_territory_units(p_country_iso text, p_parent_id bigint DEFAULT NULL)
 --       id, name, level, parent_id de las unidades ACTIVAS:
 --         p_parent_id NULL  -> unidades raiz del pais;
@@ -471,7 +473,7 @@ SET search_path = public, pg_temp
 AS $fn$
   SELECT c.id, c.iso_alpha2, c.name, l.level, l.label_singular
     FROM public.countries c
-    JOIN public.country_levels l ON l.country_id = c.id
+    LEFT JOIN public.country_levels l ON l.country_id = c.id
    WHERE c.directory_enabled
    ORDER BY c.iso_alpha2, l.level;
 $fn$;
@@ -536,7 +538,7 @@ GRANT EXECUTE ON FUNCTION public.directory_countries() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.directory_territory_units(text, bigint) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.directory_countries() IS
-  's7_96 (F3E-1): paises habilitados para directorio y sus niveles territoriales, una fila por nivel. '
+  's7_96 (F3E-1): paises habilitados para directorio y sus niveles territoriales, una fila por nivel; un pais sin niveles aparece una vez con level y level_label NULL. '
   'country_id es interno y solo sirve para filtrar clinics.country_id en runtime; la identidad externa es iso_alpha2.';
 COMMENT ON FUNCTION public.directory_territory_units(text, bigint) IS
   's7_96 (F3E-1): unidades territoriales activas de un pais habilitado; raiz con p_parent_id NULL, hijos con p_parent_id. '
@@ -550,7 +552,7 @@ DECLARE
   v_publicados CONSTANT text := '46|46|0';
   v_visibles   CONSTANT text := '43|43|0';
   v_acl        CONSTANT text := 'anon=X/postgres,authenticated=X/postgres,postgres=X/postgres';
-  v_md5_countries CONSTANT text[] := ARRAY['1804439ffc598fa98321da2bf28eec08', 'cf27c8ed4ba4d97f13f99894b7057596'];
+  v_md5_countries CONSTANT text[] := ARRAY['d3fa8ee9a257868fc75480860ed7c4a6', '54aeee13db6d9cc1ddf02f121839d674'];
   v_md5_units     CONSTANT text[] := ARRAY['3083c7c5ad5a790c044e89bd7d554afc', '243b51249cb406b28b90fe5087387229'];
   v_sv    smallint;
   v_par   bigint;
@@ -691,13 +693,19 @@ BEGIN
     PERFORM set_config('request.jwt.claim.role', v_rol, true);
 
     -- paises: mismas filas y mismo orden que el catalogo.
-    SELECT string_agg(c.id || '|' || c.iso_alpha2 || '|' || c.name || '|' || l.level || '|' || l.label_singular, ';' ORDER BY c.iso_alpha2, l.level)
-      INTO v_esp FROM public.countries c JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;
+    SELECT string_agg(c.id || '|' || c.iso_alpha2 || '|' || c.name || '|' || coalesce(l.level::text, 'NULL') || '|' || coalesce(l.label_singular, 'NULL'), ';' ORDER BY c.iso_alpha2, l.level)
+      INTO v_esp FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;
     EXECUTE format('SET LOCAL ROLE %I', v_rol);
-    SELECT string_agg(f.country_id || '|' || f.iso_alpha2 || '|' || f.country_name || '|' || f.level || '|' || f.level_label, ';' ORDER BY f.n)
+    SELECT string_agg(f.country_id || '|' || f.iso_alpha2 || '|' || f.country_name || '|' || coalesce(f.level::text, 'NULL') || '|' || coalesce(f.level_label, 'NULL'), ';' ORDER BY f.n)
       INTO v_txt FROM public.directory_countries() WITH ORDINALITY AS f(country_id, iso_alpha2, country_name, level, level_label, n);
     RESET ROLE;
     IF v_txt IS DISTINCT FROM v_esp THEN v_fallos := v_fallos || ' | ' || v_rol || ' directory_countries: ' || coalesce(v_txt, 'NULL'); END IF;
+    -- todo pais habilitado es descubrible (tambien sin niveles) y ninguno deshabilitado aparece.
+    SELECT coalesce(string_agg(iso_alpha2, ',' ORDER BY iso_alpha2), '') INTO v_esp FROM public.countries WHERE directory_enabled;
+    EXECUTE format('SET LOCAL ROLE %I', v_rol);
+    SELECT coalesce(string_agg(DISTINCT f.iso_alpha2, ',' ORDER BY f.iso_alpha2), '') INTO v_txt FROM public.directory_countries() f;
+    RESET ROLE;
+    IF v_txt IS DISTINCT FROM v_esp THEN v_fallos := v_fallos || ' | ' || v_rol || ' paises descubribles: ' || v_txt || ' (esperado ' || v_esp || ')'; END IF;
 
     -- raiz de SV.
     SELECT string_agg(u.id || '|' || u.name || '|' || u.level || '|NULL', ';' ORDER BY u.name, u.id)

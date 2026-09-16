@@ -147,7 +147,7 @@ R.cuerposSoloCatalogo = (T) => [cuerpoC(T), cuerpoU(T)].every((b) => {
   return refs.length > 0 && refs.every((r) => ['public.countries', 'public.country_levels', 'public.administrative_units'].includes(r));
 });
 R.cuerposSinColumnasInternas = (T) => [cuerpoC(T), cuerpoU(T)].every((b) => !/legacy_id|official_|booking_enabled|closure|has_children|clinic|doctor|profile|patient|member|audit/i.test(b));
-R.countriesContrato = (T) => { const b = cuerpoC(T).replace(/\s+/g, ' ').trim(); return b === 'SELECT c.id, c.iso_alpha2, c.name, l.level, l.label_singular FROM public.countries c JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled ORDER BY c.iso_alpha2, l.level;'; };
+R.countriesContrato = (T) => { const b = cuerpoC(T).replace(/\s+/g, ' ').trim(); return b === 'SELECT c.id, c.iso_alpha2, c.name, l.level, l.label_singular FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled ORDER BY c.iso_alpha2, l.level;'; };
 R.unitsIsoExactoYHabilitado = (T) => { const b = cuerpoU(T); return b.includes('WHERE c.iso_alpha2 = p_country_iso\n     AND c.directory_enabled;') && !/upper|lower|btrim|ilike/i.test(b); };
 R.unitsVacioSinExcepcion = (T) => { const b = cuerpoU(T); return b.includes('  IF v_country IS NULL THEN\n    RETURN;\n  END IF;') && !/RAISE/i.test(b); };
 R.unitsRaiz = (T) => cuerpoU(T).includes('       WHERE u.country_id = v_country\n         AND u.level = 1\n         AND u.parent_id IS NULL\n         AND u.is_active\n       ORDER BY u.name, u.id;');
@@ -178,6 +178,13 @@ R.postConsumidores = (T) => { const b = bloque(T.mig, 'POST'); return b.includes
 R.postComportamiento = (T) => { const b = bloque(T.mig, 'POST'); return b.includes("FOREACH v_rol IN ARRAY ARRAY['anon', 'authenticated']") && ocur(b, "EXECUTE 'SET LOCAL ROLE service_role';") === 2
   && ["directory_territory_units('XX')", 'directory_territory_units(NULL)', "directory_territory_units('')", "directory_territory_units('sv')", "directory_territory_units('XX', v_par)", "directory_territory_units('SV', -1)", "directory_territory_units('SV', v_hoja)"].every((x) => b.includes(x))
   && b.includes('EXCEPTION WHEN insufficient_privilege THEN') && b.includes("RAISE EXCEPTION 's7_96 POST fallo:%', v_fallos;"); };
+R.postPaisesDescubribles = (T) => { const b = bloque(T.mig, 'POST'); return b.includes("INTO v_esp FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;")
+  && b.includes("coalesce(f.level::text, 'NULL') || '|' || coalesce(f.level_label, 'NULL')")
+  && b.includes("SELECT coalesce(string_agg(iso_alpha2, ',' ORDER BY iso_alpha2), '') INTO v_esp FROM public.countries WHERE directory_enabled;")
+  && b.includes("SELECT coalesce(string_agg(DISTINCT f.iso_alpha2, ',' ORDER BY f.iso_alpha2), '') INTO v_txt FROM public.directory_countries() f;")
+  && b.includes("IF v_txt IS DISTINCT FROM v_esp THEN v_fallos := v_fallos || ' | ' || v_rol || ' paises descubribles: '"); };
+R.smokePaisesDescubribles = (T) => T.po.includes("INTO v_esp FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;")
+  && T.po.includes("paises descubribles = todos los habilitados (tambien sin niveles)") && T.po.includes("coalesce(f.level::text, 'NULL') || '|' || coalesce(f.level_label, 'NULL')");
 R.postConstantes = (T) => { const b = bloque(T.mig, 'POST'); return b.includes(`v_c2         CONSTANT text := '${C.v_c2}';`) && b.includes(`v_publicados CONSTANT text := '${C.v_publicados}';`) && b.includes(`v_visibles   CONSTANT text := '${C.v_visibles}';`); };
 
 // 6 · rollback
@@ -222,7 +229,7 @@ console.log('\n1 · reglas sobre los artefactos');
 for (const n of nombres) check(n, base[n], true);
 
 console.log('\n2 · valores');
-check('md5 LF/CRLF de directory_countries', md5s(T0).slice(0, 2).join('|'), '1804439ffc598fa98321da2bf28eec08|cf27c8ed4ba4d97f13f99894b7057596');
+check('md5 LF/CRLF de directory_countries', md5s(T0).slice(0, 2).join('|'), 'd3fa8ee9a257868fc75480860ed7c4a6|54aeee13db6d9cc1ddf02f121839d674');
 check('md5 LF/CRLF de directory_territory_units', md5s(T0).slice(2).join('|'), '3083c7c5ad5a790c044e89bd7d554afc|243b51249cb406b28b90fe5087387229');
 for (const [k, v] of Object.entries({ v_c2: C.v_c2, v_estados: C.v_estados, v_lista: C.v_lista })) check(`constante ${k} = preflight`, constantesDe(bloque(T0.mig, 'GUARDA'))[k], v);
 check('smoke POST: C2 y directorio de referencia', T0.po.includes(`'e', '${C.v_c2}'`) && T0.po.includes("'e', '46|46|0#43|43|0'") && T0.po.includes("'e', '119|59|24|36|0'"), true);
@@ -254,8 +261,12 @@ const M = [
   ['columna extra en el retorno', 'mig', 'level smallint, parent_id bigint)', 'level smallint, parent_id bigint, has_children boolean)', 'firmas'],
   ['SQL dinámico en el cuerpo', 'mig', '  IF v_country IS NULL THEN', "  EXECUTE 'SELECT 1';\n  IF v_country IS NULL THEN", 'cuerposSinDinamicoNiAuth'],
   ['auth.uid() en el cuerpo', 'mig', '     AND c.directory_enabled;', '     AND c.directory_enabled AND auth.uid() IS NULL;', 'cuerposSinDinamicoNiAuth'],
-  ['tabla sin calificar', 'mig', '    JOIN public.country_levels l', '    JOIN country_levels l', 'cuerposSoloCatalogo'],
-  ['lee clinics', 'mig', '    JOIN public.country_levels l ON l.country_id = c.id', '    JOIN public.country_levels l ON l.country_id = c.id\n    JOIN public.clinics k ON k.country_id = c.id', 'cuerposSoloCatalogo'],
+  ['tabla sin calificar', 'mig', '    LEFT JOIN public.country_levels l', '    LEFT JOIN country_levels l', 'cuerposSoloCatalogo'],
+  ['países sin niveles omitidos (JOIN interno)', 'mig', '    LEFT JOIN public.country_levels l ON l.country_id = c.id\n   WHERE c.directory_enabled', '    JOIN public.country_levels l ON l.country_id = c.id\n   WHERE c.directory_enabled', 'countriesContrato'],
+  ['POST sin países descubribles', 'mig', "    IF v_txt IS DISTINCT FROM v_esp THEN v_fallos := v_fallos || ' | ' || v_rol || ' paises descubribles: '", "    IF false THEN v_fallos := v_fallos || ' | ' || v_rol || ' paises descubribles: '", 'postPaisesDescubribles'],
+  ['POST esperado con JOIN interno', 'mig', 'INTO v_esp FROM public.countries c LEFT JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;', 'INTO v_esp FROM public.countries c JOIN public.country_levels l ON l.country_id = c.id WHERE c.directory_enabled;', 'postPaisesDescubribles'],
+  ['smoke POST sin fila de países descubribles', 'po', 'paises descubribles = todos los habilitados (tambien sin niveles)', 'paises', 'smokePaisesDescubribles'],
+  ['lee clinics', 'mig', '    LEFT JOIN public.country_levels l ON l.country_id = c.id\n   WHERE', '    LEFT JOIN public.country_levels l ON l.country_id = c.id\n    JOIN public.clinics k ON k.country_id = c.id\n   WHERE', 'cuerposSoloCatalogo'],
   ['devuelve legacy_id', 'mig', 'SELECT u.id, u.name, u.level, u.parent_id\n        FROM', 'SELECT u.id, u.name, u.level, u.legacy_id\n        FROM', 'cuerposSinColumnasInternas'],
   ['countries sin directory_enabled', 'mig', '   WHERE c.directory_enabled\n   ORDER BY c.iso_alpha2, l.level;', '   ORDER BY c.iso_alpha2, l.level;', 'countriesContrato'],
   ['countries devuelve booking_enabled', 'mig', 'l.level, l.label_singular\n', 'l.level, l.label_singular, c.booking_enabled\n', 'cuerposSinColumnasInternas'],

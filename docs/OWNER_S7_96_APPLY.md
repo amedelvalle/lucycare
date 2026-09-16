@@ -12,7 +12,7 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 
 | RPC | Devuelve | Comportamiento |
 |---|---|---|
-| `public.directory_countries()` | `country_id smallint, iso_alpha2 text, country_name text, level smallint, level_label text` | Una fila por (país con `directory_enabled`, nivel). Orden `iso_alpha2, level`. Genérica: no asume tres niveles. Un país habilitado sin niveles no aparece |
+| `public.directory_countries()` | `country_id smallint, iso_alpha2 text, country_name text, level smallint, level_label text` | Una fila por (país con `directory_enabled`, nivel). Orden `iso_alpha2, level`. Genérica: no asume tres niveles. **Todo país habilitado es descubrible:** sin filas en `country_levels` aparece una vez con `level` y `level_label` NULL (no se inventan niveles) |
 | `public.directory_territory_units(p_country_iso text, p_parent_id bigint DEFAULT NULL)` | `id bigint, name text, level smallint, parent_id bigint` | `p_parent_id` NULL → unidades raíz activas del país. Con padre → hijos activos, solo si el padre es activo y del país. Orden `name, id` |
 
 **Contrato de entradas inválidas — conjunto vacío, nunca excepción:**
@@ -52,7 +52,7 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 | Unidades SV activas por nivel \| inactivas | `14\|44\|262\|0` |
 | `clinics` relacl \| RLS \| force · policies | `{postgres=arwdDxtm/postgres,anon=…,authenticated=…,service_role=…}\|true\|false` · md5 `20ad37b9…` |
 | Catálogo GEO | las 4 tablas `{postgres=arwdDxtm/postgres}`, RLS sí, force no, dueño `postgres`, 0 policies |
-| Cuerpos (md5 LF · CRLF) | `directory_countries` `1804439f…` · `cf27c8ed…`; `directory_territory_units` `3083c7c5…` · `243b5124…` |
+| Cuerpos (md5 LF · CRLF) | `directory_countries` `d3fa8ee9…` · `54aeee13…`; `directory_territory_units` `3083c7c5…` · `243b5124…` |
 
 **Si cualquier dato cambió desde el preflight, el PRE y la GUARDA abortan sin cambios.** Hay que repetir el preflight y regenerar las constantes con nueva autorización; no se editan a mano.
 
@@ -71,8 +71,8 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 
 | Paso | Bloque | Líneas del archivo | Resultado esperado |
 |---|---|---|---|
-| **PASO 1 · PRE** (solo lectura) | `DO $PRE$` … `$PRE$;` | 63–241 | `NOTICE s7_96 PRE OK — …` y `Success` |
-| **PASO 2 · transacción** | `BEGIN ISOLATION LEVEL REPEATABLE READ;` … `COMMIT;` | 245–775 | `Success`. Los NOTICE `s7_96 GUARDA OK` y `s7_96 POST OK` pueden no mostrarse |
+| **PASO 1 · PRE** (solo lectura) | `DO $PRE$` … `$PRE$;` | 65–243 | `NOTICE s7_96 PRE OK — …` y `Success` |
+| **PASO 2 · transacción** | `BEGIN ISOLATION LEVEL REPEATABLE READ;` … `COMMIT;` | 247–783 | `Success`. Los NOTICE `s7_96 GUARDA OK` y `s7_96 POST OK` pueden no mostrarse |
 | **ESTADO** | `docs/smokes/s7_96_state_readonly.sql` | entero | `S7_96 APLICADA COMPLETA` |
 | **VERIFICACIÓN POST** | `docs/smokes/s7_96_post_verification_readonly.sql` | entero, de `BEGIN READ ONLY;` a `ROLLBACK;` | fila `Z resultado` = **0** (exportar CSV) |
 
@@ -83,7 +83,7 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 - instantánea tomada tras la GUARDA idéntica: policies, relaciones y su ACL/RLS, ACL de columnas, funciones (salvo las 2 nuevas; total +2), triggers, default privileges, roles, membresías, esquemas, filas del catálogo GEO y C2 de `clinics`;
 - directorio `46|46|0#43|43|0`;
 - consumidores: los rollbacks de `s7_92`/`s7_93` ven exactamente las 2 RPC; el de `s7_94` ninguna;
-- comportamiento bajo `anon` y `authenticated`: países = catálogo habilitado; raíz de SV; hijos del padre con más hijos; los 7 contratos inválidos devuelven 0 filas; lectura directa de las 4 tablas GEO denegada. Bajo `service_role`: EXECUTE denegado.
+- comportamiento bajo `anon` y `authenticated`: países = catálogo habilitado con LEFT JOIN a los niveles (filas, NULL y orden); el conjunto de países devueltos = todos los habilitados; raíz de SV; hijos del padre con más hijos; los 7 contratos inválidos devuelven 0 filas; lectura directa de las 4 tablas GEO denegada. Bajo `service_role`: EXECUTE denegado.
 
 **Comprobación opcional por la API pública**, solo con autorización del owner: llamar `POST /rest/v1/rpc/directory_countries` y `…/directory_territory_units` con la clave anon. Supabase recarga la caché de esquema de PostgREST tras el DDL.
 
@@ -134,13 +134,14 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 ## 9 · Validación previa (local, sin producción)
 
 - **`node scripts/check-s7_96.mjs`:** contrato, orden y alcance del PASO 2, PRE = GUARDA, constantes, md5, POST, rollback, bloques read-only, reglas del SQL Editor, artefactos históricos intactos. Incluye **mutaciones con expectativa invertida**.
-- **Arnés local (PostgreSQL 18), 79/79.** Usa los archivos reales con las constantes de datos del arnés y aplica como mensaje único.
+- **Arnés local (PostgreSQL 18), 86/86.** Usa los archivos reales con las constantes de datos del arnés y aplica como mensaje único.
   - **Aplicación:** PRE, PASO 2, ESTADO y VERIFICACIÓN POST Z = 0; no reaplicable.
   - **Contrato por rol:** `anon`/`authenticated`/`service_role`/rol sin grants; lectura directa denegada.
-  - **Fixture HN/GT:** país deshabilitado, unidades inactivas, padre inactivo, padre ajeno en ambos sentidos, país habilitado sin niveles.
+  - **Fixture HN/GT:** país deshabilitado (no aparece), unidades inactivas, padre inactivo, padre ajeno en ambos sentidos. País habilitado **sin niveles** (GT): aparece una vez con `level`/`level_label` NULL; SV conserva exactamente sus 3 niveles; VERIFICACIÓN POST Z = 0.
+  - **Aplicación con GT habilitado sin niveles:** el POST de la migración pasa; la variante con JOIN interno la rechaza el POST («paises descubribles»).
   - **ESTADO:** MIXTO y ANOMALIA; la VERIFICACIÓN POST detecta un grant de tabla.
   - **Cadena de rollback:** el rollback real de `s7_95` se niega con `s7_96` aplicada y completa tras revertir `s7_96`. El rollback de `s7_96` se niega sin aplicar, con vista o función dependiente, con cuerpo cambiado y con ACL cambiada.
-  - **12 mutaciones ejecutadas del PASO 2**, todas detectadas por el POST sin dejar funciones ni cambios: REVOKE sin `service_role`, GRANT a PUBLIC, INVOKER, columna extra, sin `directory_enabled`, sin validar país del padre, grant de tabla GEO, policy nueva, VOLATILE, `search_path` sin `pg_temp`, `has_children`, ISO normalizado.
+  - **13 mutaciones ejecutadas del PASO 2**, todas detectadas por el POST sin dejar funciones ni cambios: REVOKE sin `service_role`, GRANT a PUBLIC, INVOKER, columna extra, sin `directory_enabled`, sin validar país del padre, grant de tabla GEO, policy nueva, VOLATILE, `search_path` sin `pg_temp`, `has_children`, países sin niveles omitidos (JOIN interno), ISO normalizado.
   - **Deriva de datos:** PRE y GUARDA abortan; el PRE exige `postgres`.
 
 ---
