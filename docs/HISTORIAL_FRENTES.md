@@ -2052,3 +2052,79 @@ del catálogo exigen `::text` para concatenar.
 
 **5 · PASO 1 no valida `search_path`.** Lo protege el POST del PASO 2 en la misma
 sesión, que aborta sin residuo si `public` no está (medido).
+
+## #377 · MULTICOUNTRY-GEO-P0 · F3E-0 / M0.5 · país atestado sin territorio (2026-09-16)
+
+> 🚧 **F3E-0 = APPLIED / VERIFIED. PR #377 OPEN, sin merge. El FRENTE sigue EN CURSO (F3E-1
+> NOT STARTED).** Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §5, §9, §10.i y §11.
+
+**`s7_95` = migración 116, APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el
+2026-09-16. Backfill de datos sin lectores: por el mismo criterio que `s7_93`, **no mueve el
+HEAD funcional** (`ecd6366`), pendiente de confirmación del owner.
+
+### Qué cambió
+
+- **`country_id = SV` en exactamente 36 clínicas**: las de los 36 médicos publicados del lote
+  técnico `Importar_100` (2026-05-21). Legacy y `territory_unit_id` quedan NULL (estado S2).
+- **Procedencia:** pertenencia al lote **medida** (preflights E y H); país por **atestación
+  explícita del owner**; territorio **desconocido**.
+- **Sin runtime nuevo:** triggers de `clinics` desactivados solo dentro de la transacción,
+  con locks `SHARE ROW EXCLUSIVE` en `clinics` y `doctors`; función y triggers de `s7_92`
+  idénticos al COMMIT; sin tablas, funciones, RPC, grants ni policies; `updated_at` preservado.
+- **Auditoría:** 36 filas de `audit_log` (autor = perfil admin confirmado por el owner,
+  `edited_via = owner_attestation_f3e0`, sin datos personales).
+- **Artefactos:** migración, rollback exacto, ESTADO, VERIFICACIÓN POST, invariante territorial
+  v2 (S0/S1/S2), `check-s7_95` y runbook `docs/OWNER_S7_95_APPLY.md`.
+
+### Evidencia
+
+**Artefacto:** PR #377, commit `4d6648a`; migración SHA-256
+`2452a7fc56f61767dbf8b4dec709323caff5c3d5ccd9d1b3a09da37b5009bd41`; PASO 1 `43de4251…`;
+PASO 2 `72c8dec5…`; bloques idénticos byte a byte al blob remoto.
+
+**Producción (PostgreSQL 17.6):**
+- ESTADO `S7_95 APLICADA COMPLETA`; 36 S2 SV; auditoría 36 aplicación / 0 reversión.
+- **VERIFICACIÓN POST Z = 0**; **INVARIANTE v2 Z = 0** (S0 · S1 · S2 = 60 · 23 · 36; 0 S2 fuera
+  de la lista).
+- Runtime de `s7_92` presente e intacto; triggers `[O]`.
+- Publicados **46|45|1**; visibles **43|42|1**; único sin país: caso D
+  `96dffdc8-0764-4adb-a4eb-3a7a198cf51d`.
+- Nueva huella C2 de `clinics`: `ce972bd098a01c277a101c81875ab3e1`.
+
+**PostgreSQL 17.6 acreditado por producción, no por el arnés** (PostgreSQL 18).
+
+**Pruebas previas:** `check-s7_95` 147/147 con 34 mutaciones; arnés local 62/62.
+
+### Incidente operativo
+
+El PASO 2 quedó comiteado (14:41:42 UTC) **antes** de un PASO 1 posterior, que abortó por
+reaplicación implícita («conjunto vivo 0|36», sin escrituras). Un diagnóstico read-only
+identificó `country_id IS NULL` como el predicado que vaciaba el conjunto, y ESTADO, POST e
+INVARIANTE confirmaron la aplicación completa.
+
+### Rollback
+
+- ⛔ **Orden obligatorio y bloqueante:** rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2
+  → verificar estado → rollback de `s7_92`.
+- **Hallazgo:** el rollback histórico de `s7_92` no detecta `s7_95` y, fuera de orden, vacía
+  S2, la geo previa y el trigger. No se modifica; saltarse `s7_95` es operación inválida,
+  detectada por el ESTADO y el invariante v2.
+
+### Decisiones registradas
+
+- **M0.5** aprobada; M1 y M2 descartadas.
+- **Riesgo residual aceptado:** S2 → S0 por el dueño o `service_role`, informado por el
+  invariante v2 sin tratarse como anomalía.
+- **Verificadores históricos:** los POST de `s7_92`/`s7_93` y la fila 41 del POST de `s7_94`
+  no describen S2; no se modifican.
+- **Gate restante antes de F3E-2:** el caso D, por LucyAdmin con ubicación real.
+
+### Lecciones de método
+
+**1 · Un error del PRE no es un fallo del artefacto hasta descomponerlo.** El `0|36` parecía un
+conjunto mal definido; el diagnóstico por predicados mostró que era la guarda contra la
+reaplicación.
+
+**2 · Los verificadores no pueden depender del runtime que verifican.** ESTADO e invariante
+derivan S1 del catálogo para poder declarar una reversión fuera de orden en lugar de fallar
+con «function does not exist».

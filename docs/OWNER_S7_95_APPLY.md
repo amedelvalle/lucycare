@@ -2,7 +2,7 @@
 
 **Frente:** `MULTICOUNTRY-GEO-P0` · **Fase:** F3E-0 · **Migración:** 116
 **Archivo:** `migrations/s7_95_geo_foundation_3e0_attested_country_backfill.sql`
-**Estado:** ⛔ **NOT APPLIED · DO NOT MERGE WITHOUT OWNER OK.** Preparada y preservada en PR; no aplicar sin autorización expresa del owner.
+**Estado:** ✅ **APPLIED / VERIFIED en producción (PostgreSQL 17.6, 2026-09-16) · NO REAPLICAR.** PR #377 sin merge (DO NOT MERGE WITHOUT OWNER OK). Evidencia en §10.
 
 ---
 
@@ -161,3 +161,29 @@ Vale antes de cualquier fase posterior (F3E-1 en adelante reevalúa toda la cade
 | `pg_policies`, `pg_trigger.tgenabled`, `pg_class.relforcerowsecurity`, `pg_roles.rolbypassrls` | ≤ 9.5 | — |
 
 No se usa nada introducido en PostgreSQL 18: sin `uuidv7`, columnas generadas virtuales, `OLD`/`NEW` en `RETURNING` ni cambios de `COPY`/`EXPLAIN`.
+
+## 10 · Aplicación en producción (2026-09-16) — APPLIED / VERIFIED
+
+**Resultado:** `s7_95` quedó aplicada completa y verificada. **PostgreSQL 17.6 acreditado por
+producción.**
+
+| Bloque | Resultado |
+|---|---|
+| ESTADO | `S7_95 APLICADA COMPLETA` · lista 36 en S2 SV · 0 S1 · 0 S0 · auditoría 36 / 0 (neto 36) · runtime de `s7_92` presente · triggers `[O]` · 0 S2 fuera de la lista |
+| VERIFICACIÓN POST | **Z = 0** · huellas `e12195c6…` y C2 `7c823ad1…` reconstruidas · 36 auditorías válidas · runtime, seguridad y escritores intactos · publicados `46\|45\|1` · visibles `43\|42\|1` · único sin país: caso D `96dffdc8-0764-4adb-a4eb-3a7a198cf51d` |
+| INVARIANTE v2 | **Z = 0** · operación válida · lista atestada 36 (`783399dc…`) · 0 anomalías · S0 · S1 · S2 = 60 · 23 · 36 |
+
+**Nueva huella C2 de `clinics`:** `ce972bd098a01c277a101c81875ab3e1`.
+
+### Incidente operativo
+
+- **Qué pasó:** el PASO 2 quedó comiteado a las **14:41:42 UTC**. Un PASO 1 ejecutado después
+  abortó con `s7_95 PRE: el conjunto vivo no coincide con la lista (sobran|faltan = 0|36)`,
+  sin escribir nada.
+- **Diagnóstico read-only:** el predicado que vaciaba el conjunto era `country_id IS NULL`
+  (las 36 ya estaban en S2 SV con su auditoría). Era la guarda contra la reaplicación.
+- **Confirmación:** ESTADO, VERIFICACIÓN POST e INVARIANTE confirmaron la aplicación completa.
+- **Regla que sale de aquí:** ante cualquier error del PRE o del PASO 2, correr primero el
+  ESTADO (§5) antes de concluir que la migración no está aplicada.
+
+**Gate restante antes de F3E-2:** el caso D, por LucyAdmin con su ubicación real.
