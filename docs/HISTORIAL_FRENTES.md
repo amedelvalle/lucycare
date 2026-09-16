@@ -2069,7 +2069,7 @@ funcional** (`ecd6366`), confirmado por el owner.
   (última `s7_95_geo_foundation_3e0_attested_country_backfill.sql`), SHA-256 de `s7_95`
   intacto (`2452a7fc…bd41`) y checks `s7_87`→`s7_95` PASS.
 - **HEAD funcional sin cambio:** `ecd6366`. **F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
-- **Gate pendiente antes de F3E-2:** el caso D.
+- **Gate pendiente antes de F3E-2:** el caso D, **cerrado** después (ver «Cierre del caso D»).
 - **Rollback obligatorio:** `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`.
 
 ### Qué cambió
@@ -2127,7 +2127,8 @@ INVARIANTE confirmaron la aplicación completa.
   invariante v2 sin tratarse como anomalía.
 - **Verificadores históricos:** los POST de `s7_92`/`s7_93` y la fila 41 del POST de `s7_94`
   no describen S2; no se modifican.
-- **Gate restante antes de F3E-2:** el caso D, por LucyAdmin con ubicación real.
+- **Gate de datos antes de F3E-2:** el caso D, por LucyAdmin con ubicación real. **CLEAR**
+  (ver «Cierre del caso D»).
 
 ### Lecciones de método
 
@@ -2138,3 +2139,26 @@ reaplicación.
 **2 · Los verificadores no pueden depender del runtime que verifican.** ESTADO e invariante
 derivan S1 del catálogo para poder declarar una reversión fuera de orden en lugar de fallar
 con «function does not exist».
+
+### Cierre del caso D · GEO DATA GATE = CLEAR (2026-09-16)
+
+**CASE D = CLOSED · GEO DATA GATE = CLEAR.** Ubicación real cargada por el owner en LucyAdmin;
+verificación integral read-only en producción con **Z = 0**:
+
+- **Caso D:** médico `96dffdc8-0764-4adb-a4eb-3a7a198cf51d`, clínica
+  `1605df83-fc84-4dfc-96ca-2e575d0127fc`, legacy `SS` / `SS-12`, unidad **San Salvador y Capital
+  de la República < San Salvador Centro < San Salvador**; estado **S1**, igual al resolver vivo
+  y presente en el cierre.
+- **Cómo:** una edición del owner en LucyAdmin (`admin_update_doctor_clinic`, una fila de
+  auditoría `update · admin`) con la sincronización de `s7_92`; sin escrituras directas de
+  `country_id` / `territory_unit_id` (0 sentencias en `pg_stat_statements`).
+- **Directorio:** publicados **46|46|0**; visibles Home **43|43|0**. **Ya no hay médicos
+  publicados ni visibles sin país.**
+- **GEO:** 119 clínicas; S0 · S1 · S2 = **59 · 24 · 36**; 0 anomalías; las 36 atestadas de
+  `s7_95` siguen exactamente en S2; runtime de `s7_92` intacto.
+- **Blast radius:** solo la clínica D. La huella C2 con D tratada como S0 sigue siendo
+  `ce972bd0…`; ninguna otra clínica ni médico cambió o se creó.
+- **Nueva huella C2 de referencia de `clinics`:** **`7cef00d1d24a004edbc4678fe6d41948`**
+  (sustituye a `ce972bd098a01c277a101c81875ab3e1`).
+
+**F3E-0 sigue CLOSED / APPLIED / VERIFIED. F3E-1, F3E-2 y F3E-3 = NOT STARTED.**

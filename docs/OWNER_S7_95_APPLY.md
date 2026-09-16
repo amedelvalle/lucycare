@@ -186,4 +186,7 @@ producción.**
 - **Regla que sale de aquí:** ante cualquier error del PRE o del PASO 2, correr primero el
   ESTADO (§5) antes de concluir que la migración no está aplicada.
 
-**Gate restante antes de F3E-2:** el caso D, por LucyAdmin con su ubicación real.
+**Gate de datos antes de F3E-2:** el caso D, por LucyAdmin con su ubicación real. **CASE D = CLOSED ·
+GEO DATA GATE = CLEAR** (2026-09-16): publicados `46|46|0`, visibles `43|43|0`, S0 · S1 · S2 =
+`59 · 24 · 36`, 0 anomalías, blast radius solo la clínica D. Nueva huella C2 de referencia de
+`clinics`: `7cef00d1d24a004edbc4678fe6d41948`. Detalle en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.j.

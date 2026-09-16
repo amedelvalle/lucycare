@@ -74,8 +74,9 @@
 >   fuera de la lista).
 > - Runtime de `s7_92` presente e intacto; triggers `[O]`.
 > - Publicados **46 = 45 con país + 1 sin país**; visibles **43 = 42 + 1**. El único sin país
->   es el **caso D** (`96dffdc8-0764-4adb-a4eb-3a7a198cf51d`).
-> - Nueva huella C2 de `clinics`: **`ce972bd098a01c277a101c81875ab3e1`**.
+>   era el **caso D** (`96dffdc8-0764-4adb-a4eb-3a7a198cf51d`), **cerrado después** (ver abajo).
+> - Huella C2 de `clinics` tras `s7_95`: `ce972bd098a01c277a101c81875ab3e1` (**superada** por la
+>   del cierre del caso D).
 > - **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
 >
 > ⚠️ **Incidente operativo de `s7_95`:** el PASO 2 quedó comiteado (2026-09-16 14:41:42 UTC)
@@ -84,8 +85,26 @@
 > vaciaba el conjunto, y ESTADO, POST e INVARIANTE confirmaron la aplicación completa.
 > Detalle en `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.i.
 >
-> ⛔ **Gate restante antes de F3E-2:** el caso D, que se resolverá cargando su ubicación real
-> en LucyAdmin. **No iniciar F3E-1/F3E-2/F3E-3 sin instrucción del owner.**
+> ✅ **CASE D = CLOSED · GEO DATA GATE = CLEAR (2026-09-16).** Verificación read-only integral
+> en producción, Z = 0:
+> - **Caso D:** médico `96dffdc8-0764-4adb-a4eb-3a7a198cf51d`, clínica
+>   `1605df83-fc84-4dfc-96ca-2e575d0127fc`, legacy `SS` / `SS-12`, unidad **San Salvador y Capital
+>   de la República < San Salvador Centro < San Salvador**; estado **S1**, igual al resolver vivo
+>   y presente en el cierre.
+> - **Cómo:** una edición del owner en LucyAdmin (`admin_update_doctor_clinic`, una fila de
+>   auditoría `update · admin`) con la sincronización de `s7_92`; sin escrituras directas de
+>   `country_id` / `territory_unit_id` (0 sentencias en `pg_stat_statements`).
+> - **Directorio:** publicados **46|46|0**; visibles Home **43|43|0**. **Ya no hay médicos
+>   publicados ni visibles sin país.**
+> - **GEO:** 119 clínicas; S0 · S1 · S2 = **59 · 24 · 36**; 0 anomalías; las 36 atestadas de
+>   `s7_95` siguen exactamente en S2; runtime de `s7_92` intacto.
+> - **Blast radius:** solo la clínica D. La huella C2 con D tratada como S0 sigue siendo
+>   `ce972bd0…`; ninguna otra clínica ni médico cambió o se creó.
+> - **Nueva huella C2 de referencia de `clinics`:** **`7cef00d1d24a004edbc4678fe6d41948`**
+>   (sustituye a `ce972bd098a01c277a101c81875ab3e1`).
+>
+> **F3E-0 sigue CLOSED / APPLIED / VERIFIED. F3E-1, F3E-2 y F3E-3 = NOT STARTED: no iniciarlas
+> sin instrucción del owner.**
 >
 > **Qué hizo `s7_94`:** (**migración 115**) creó `public.administrative_unit_closure`,
 > el cierre transitivo **derivado** del árbol, variante **N1** aprobada por el owner:
@@ -345,13 +364,13 @@
 > válido es el aplicado y mergeado mediante **#365**.
 >
 > **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1, F3E-2 y F3E-3 = NOT STARTED.**
-> Las 60 clínicas en S0 siguen sin ubicación ni país; 36 clínicas tienen país SV atestado sin
-> territorio (S2). **No conectar frontend ni lectores al catálogo, al
+> Las 59 clínicas en S0 siguen sin ubicación ni país; 24 están en S1; 36 clínicas tienen país SV
+> atestado sin territorio (S2). **No conectar frontend ni lectores al catálogo, al
 > cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
 >
-> ℹ️ **Estado del directorio para F3E (2026-09-16, tras `s7_95`):** 46 médicos publicados
-> = **45 con clínica con país + 1 sin país** (el caso D). **Debe resolverse antes de activar
-> un directorio filtrado por país** (F3E-2), sin inferir país.
+> ℹ️ **Estado del directorio para F3E (2026-09-16, tras cerrar el caso D):** 46 médicos
+> publicados = **46 con clínica con país + 0 sin país**; visibles Home **43|43|0**. El gate de
+> datos de F3E-2 está **CLEAR**; F3E-2 sigue sin iniciar.
 >
 > ℹ️ **Tipos (decisión del owner, 2026-09-15):** `administrative_unit_closure` **NO** se
 > añade a `src/types/database.types.ts`. F3D es DB-only y sin consumidor runtime; queda
@@ -1585,7 +1604,8 @@ squash-merge, la rama puede borrarse.
     reaplicación; la verificación confirmó la aplicación completa.
 
   **Backfill de datos sin lectores: no mueve el HEAD funcional** (confirmado por el owner).
-  **Gate restante antes de F3E-2: caso D.** Rollback en orden obligatorio
+  **Caso D = CLOSED y GEO DATA GATE = CLEAR** (2026-09-16, publicados 46|46|0, visibles
+  43|43|0). Rollback en orden obligatorio
   `s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
