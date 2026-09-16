@@ -2,7 +2,7 @@
 
 **Frente:** `MULTICOUNTRY-GEO-P0` · **Fase:** F3E-1 (superficie backend de lectura) · **Migración:** 117
 **Archivo:** `migrations/s7_96_geo_foundation_3e1_directory_read_rpcs.sql`
-**Estado:** ✅ **APPLIED / VERIFIED en producción (PostgreSQL 17.6, 2026-09-16) · NO REAPLICAR.** Preparada como NOT APPLIED y aplicada después con autorización del owner. PR #380 abierto, sin merge. Evidencia en §12.
+**Estado:** ✅ **APPLIED / VERIFIED en producción (PostgreSQL 17.6, 2026-09-16) · NO REAPLICAR.** Preparada como NOT APPLIED y aplicada después con autorización del owner. **CLOSED:** PR #380 MERGED (`main` = `b18bfbb07a79893be041088ad52ab544c82078c4`); HEAD funcional sin cambio (`ecd636694c7f7093a000bd9f823040aa7795ff04`, confirmado por el owner). Evidencia en §12.
 
 ---
 
@@ -160,7 +160,7 @@ Crea **solo dos funciones de lectura** del catálogo territorial público habili
 
 ## 11 · Límites de fase
 
-- **F3E-1 (esto):** solo las 2 RPC. Sin frontend. No mueve el HEAD funcional mientras nadie las consuma; sí mueve el inicio de la cadena de rollback.
+- **F3E-1 (esto) = CLOSED / APPLIED / VERIFIED:** solo las 2 RPC. Sin frontend. No mueve el HEAD funcional (confirmado por el owner); sí mueve el inicio de la cadena de rollback.
 - **F3E-2 (no iniciada):** consumo en runtime y filtro `clinics.country_id`.
 - **F3E-3 (no iniciada):** UX y selector móvil.
 - **`/{iso2}`:** OPEN / NOT APPROVED. No forma parte implícita de F3E-3.

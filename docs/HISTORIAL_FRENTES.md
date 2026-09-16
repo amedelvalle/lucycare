@@ -2165,10 +2165,25 @@ verificación integral read-only en producción con **Z = 0**:
 
 ## #380 · MULTICOUNTRY-GEO-P0 · F3E-1 · RPC de lectura del catálogo territorial (2026-09-16)
 
-> 🚧 **F3E-1 = APPLIED / VERIFIED. PR #380 OPEN, sin merge. F3E-2 y F3E-3 NOT STARTED.** Referencia
+> 🚧 **F3E-1 = CLOSED / APPLIED / VERIFIED. PR #380 MERGED. El FRENTE sigue EN CURSO (F3E-2 y F3E-3 NOT
+> STARTED).** Referencia
 > canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.k. Runbook: `docs/OWNER_S7_96_APPLY.md`.
 
-**`s7_96` = migración 117, APPLIED / VERIFIED / NO REAPLICAR.** Crea solo
+**`s7_96` = migración 117, CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el
+2026-09-16 **antes** del merge de #380.
+
+**Cierre (2026-09-16):**
+- PR #380 **MERGED** por squash con OK del owner; `main` quedó en **`b18bfbb07a79893be041088ad52ab544c82078c4`**, con árbol idéntico
+  al HEAD aprobado del PR (`70bc65f`).
+- Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, **117 migraciones** (última
+  `s7_96_geo_foundation_3e1_directory_read_rpcs.sql`), SHA-256 de `s7_96` intacto
+  (`01e0d7705d7b961769ad1abcdf317c5f976508f000bb70a1c0a8fa141f77be6c`) y checks `s7_87`→`s7_96` PASS.
+- **HEAD funcional sin cambio, confirmado por el owner:** `ecd636694c7f7093a000bd9f823040aa7795ff04`.
+  Las RPC no tienen consumidor de frontend: no cambian comportamiento observable.
+- **F3E-1 = CLOSED / APPLIED / VERIFIED. F3E-2 y F3E-3 = NOT STARTED.** `/{iso2}` = OPEN / NOT APPROVED.
+- **Rollback vigente:** revertir frontend F3E-2 → `s7_96` → `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`.
+
+**Qué es:** Crea solo
 `public.directory_countries()` y `public.directory_territory_units(p_country_iso, p_parent_id)`:
 `SECURITY DEFINER`, `STABLE`, `search_path` fijo, referencias calificadas, sin SQL dinámico ni
 `auth.uid()`; `REVOKE ALL` a `PUBLIC`, `anon`, `authenticated` y `service_role`, y `GRANT EXECUTE` solo a
