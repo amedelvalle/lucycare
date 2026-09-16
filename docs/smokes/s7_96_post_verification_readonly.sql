@@ -105,7 +105,6 @@ BEGIN
     RESET ROLE;
     v_out := v_out || jsonb_build_object('s', 'C comportamiento', 'o', v_ord, 'k', v_rol || ' · directory_countries() = catalogo habilitado (filas y orden)', 'v', (v_txt IS NOT DISTINCT FROM v_esp)::text, 'e', 'true');
     v_ord := v_ord + 1;
-    v_ord := v_ord + 1;
     SELECT coalesce(string_agg(iso_alpha2, ',' ORDER BY iso_alpha2), '') INTO v_esp FROM public.countries WHERE directory_enabled;
     BEGIN
       EXECUTE format('SET LOCAL ROLE %I', v_rol);
