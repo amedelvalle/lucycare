@@ -81,6 +81,24 @@ export interface DirectoryFilters {
   specialtyId: string | null
   departmentId: string | null
   municipalityId: string | null
+  // País de contexto (F3E-2). `clinics.country_id` interno, obtenido en runtime
+  // de `directory_countries()`. null = sin contexto válido: el directorio NO se
+  // consulta (fail closed), nunca se consulta sin país.
+  countryId: number | null
+}
+
+// País habilitado para el directorio (`directory_countries()`, s7_96), ya
+// agrupado: una entrada por país, no una por fila de la RPC.
+export interface DirectoryCountry {
+  countryId: number        // countries.id — SOLO para filtrar clinics.country_id
+  iso: string              // iso_alpha2 — identidad externa del país
+  name: string
+  levels: DirectoryCountryLevel[]  // [] si el país no tiene niveles
+}
+
+export interface DirectoryCountryLevel {
+  level: number
+  label: string
 }
 
 // Opciones para los filtros (dropdowns)
