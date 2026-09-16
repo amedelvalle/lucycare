@@ -13,10 +13,12 @@
 > VERIFIED** (PR #374, `s7_93`, migración 114, 2026-09-14: backfill histórico de las
 > 23 clínicas con ubicación legacy). **F3D = CLOSED / APPLIED / VERIFIED** (PR #375 MERGED como `f664dad`, `s7_94`,
 > migración 115, 2026-09-15: cierre territorial `administrative_unit_closure`, 888
-> filas). **F3E en adelante está diseñado y NO iniciado.** **Ningún lector, directorio
-> ni frontend consume el catálogo, el cierre ni las columnas nuevas de `clinics`**; solo
-> las escriben la sincronización de `s7_92`, el backfill de `s7_93` y la carga de
-> `s7_94`.
+> filas). **F3E-0 / M0.5 = APPLIED / VERIFIED** (`s7_95`, migración 116, 2026-09-16, **PR #377
+> OPEN, sin merge**: país SV atestado por el owner en 36 clínicas, sin territorio). **F3E-1 en
+> adelante está diseñado y NO iniciado.** **Ningún lector, directorio ni frontend consume el
+> catálogo, el cierre ni las columnas nuevas de `clinics`**; solo las escriben la
+> sincronización de `s7_92`, el backfill de `s7_93`, la carga de `s7_94` y el backfill
+> atestado de `s7_95`.
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -322,6 +324,28 @@ en qué directorio nacional aparece un médico.
 
 Los `department_id` / `municipality_id` legacy **no se retiran durante la
 fundación**.
+
+### ✅ IMPLEMENTADO — F3E-0 / M0.5 (`s7_95`, migración 116): país sin territorio
+
+**Invariante territorial v2 de `clinics`** (vigente desde `s7_95`). Toda clínica está en
+exactamente uno de estos estados:
+
+| Estado | Legacy | `country_id` | `territory_unit_id` | Origen |
+|---|---|---|---|---|
+| **S0** | NULL | NULL | NULL | por defecto |
+| **S1** | coherente | resolver(legacy) | resolver(legacy) | sincronización de `s7_92` |
+| **S2** | NULL | SV | NULL | **solo** las 36 clínicas atestadas de `s7_95`, con auditoría neta = 1 |
+
+- **Transiciones medidas (arnés):** S2 se conserva ante actualizaciones que no tocan la
+  ubicación; S2 → S1 al cargar legacy coherente; S1 → S0 al retirar el legacy.
+- **Clientes:** `anon`, `authenticated` y `service_role` no pueden crear S2 ni cambiar de país
+  (`P0183`, trigger de `s7_92` sin cambios).
+- **Riesgo residual aceptado por el owner:** el dueño por RLS o `service_role` pueden vaciar el
+  país de una S2 (S2 → S0), como ya pueden vaciar la ubicación de una S1. El invariante v2 lo
+  informa sin tratarlo como anomalía.
+- **Verificación vigente:** `docs/smokes/s7_95_territorial_invariant_readonly.sql`. Los POST
+  históricos de `s7_92`/`s7_93` y la fila 41 de `docs/smokes/s7_94_post_verification_readonly.sql`
+  se diseñaron antes de S2 y **no** describen este invariante; no se modifican.
 
 ---
 
@@ -682,7 +706,8 @@ de admitir reservas.
 | **F3B · 2** | `s7_91`: emparejar departamento y municipio en `admin_approve_and_create_doctor` | ✅ **APPLIED / VERIFIED / CLOSED** — PR #370, `s7_91` |
 | **F3B · 3** | `s7_92`: resolver + trigger de sincronización + retiro de la guarda F3A **en la misma transacción** | ✅ **APPLIED / VERIFIED** — PR #372, `s7_92` |
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
-| **F3E–F3F** | resto de F3: lectura por el modelo nuevo y endurecimiento | 📐 diseñadas, **NOT STARTED** |
+| **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **APPLIED / VERIFIED** — PR #377 (OPEN, sin merge), `s7_95` |
+| **F3E-1–F3F** | resto de F3: superficie pública, lectura por el modelo nuevo y endurecimiento. **Gate de F3E-2: caso D** | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -1175,6 +1200,81 @@ aplicación real confirmó.
 
 ⚠️ **`s7_94`, su rollback y sus bloques read-only no se modifican** tras aplicarse.
 
+## 10.i · Evidencia de F3E-0 / M0.5 (`s7_95`, país atestado)
+
+`s7_95` = **APPLIED / VERIFIED / NO REAPLICAR**, aplicada en producción el 2026-09-16.
+**PR #377 OPEN, sin merge.** Backfill de datos sin lectores: por el mismo criterio que
+`s7_93`, **no mueve el HEAD funcional** (`ecd6366`), pendiente de confirmación del owner.
+
+**Decisiones del owner:**
+- **M0.5** (M1 y M2 descartadas): registrar el país atestado sin comportamiento runtime
+  permanente.
+- **Atestación:** la base importada corresponde únicamente a médicos de El Salvador; autoriza
+  **solo** `country_id = SV`, sin departamento, municipio, distrito, residencia ni dirección.
+- **Autor de auditoría:** el perfil admin confirmado por el owner (`739cac58-…`); el teléfono
+  solo sirvió para confirmar la identidad.
+- `updated_at` preservado. El caso D queda fuera y se resolverá en LucyAdmin.
+
+**Preflight H de producción (2026-09-15), checks bloqueantes sin fallos:**
+
+| Medida | Valor |
+|---|---|
+| Conjunto | 36 médicos publicados sin país del lote; 36 clínicas únicas; 0 compartidas; 36 en S0 |
+| Frente al preflight B | 0 pares faltantes, 0 sobrantes, 0 atributos distintos |
+| Huellas | pares `68ff3c15…303c` · clínicas `783399dc…89e8` · estado `e12195c6…1a18` · C2 `7c823ad1…` |
+| Runtime | triggers, RLS, policies, ACL y `_clinics_territory_sync` intactos; solo los 3 escritores esperados de `clinics` |
+
+**Artefacto preservado antes de aplicar:** PR #377, commit `4d6648a`. Migración SHA-256
+`2452a7fc56f61767dbf8b4dec709323caff5c3d5ccd9d1b3a09da37b5009bd41`; PASO 1 (líneas 72–302)
+`43de4251…d7ec`; PASO 2 (líneas 306–758) `72c8dec5…850c`. Todos los bloques, recalculados
+desde el blob remoto, coincidían byte a byte con los entregados.
+
+**Verificación en producción (PostgreSQL 17.6, 2026-09-16):**
+- **ESTADO:** `S7_95 APLICADA COMPLETA`; lista 36 en S2 SV · 0 S1 · 0 S0; auditoría 36
+  aplicación / 0 reversión (neto 36); runtime de `s7_92` presente; triggers
+  `trg_clinics_territory_sync[O]` y `trg_clinics_updated_at[O]`; 0 S2 fuera de la lista.
+- **VERIFICACIÓN POST: Z = 0.**
+  - **Datos:** 36 en S2 SV; 0 médicos cambiaron de clínica. Tratando como NULL el país de la
+    lista, la huella del estado (`e12195c6…`) y la C2 (`7c823ad1…`) coinciden con H: nada
+    más cambió (`updated_at` incluido).
+  - **Invariante:** 0 S2 fuera de la lista, 0 legacy con geo distinta de la derivada, 0
+    territorio sin departamento.
+  - **Auditoría:** neto 36; 36 filas válidas (autor, valores y claves exactas); autor admin
+    activo.
+  - **Runtime y seguridad:** triggers, definición y función de `s7_92` idénticos; relacl,
+    RLS, policies (`20ad37b9…`) y escritores sin cambios; 0 consumidores nuevos.
+  - **Directorio:** publicados **46|45|1**; visibles **43|42|1**; el único sin país es el
+    caso D `96dffdc8-0764-4adb-a4eb-3a7a198cf51d`.
+- **INVARIANTE v2: Z = 0.** Operación válida (runtime de `s7_92` presente); lista atestada 36
+  con huella `783399dc…`; 0 anomalías; S0 · S1 · S2 = 60 · 23 · 36; las 36 siguen en S2.
+- **Nueva huella C2 de `clinics`:** `ce972bd098a01c277a101c81875ab3e1`.
+
+**PostgreSQL 17.6 acreditado por producción, no por el arnés** (PostgreSQL 18).
+
+### ⚠️ Incidente operativo: PASO 2 comiteado antes del PRE posterior
+
+- **Hecho:** el PASO 2 de `s7_95` quedó comiteado el 2026-09-16 a las 14:41:42 UTC. Un PASO 1
+  ejecutado **después** abortó con `P0001: s7_95 PRE: el conjunto vivo no coincide con la lista
+  (sobran|faltan = 0|36)`, sin escribir nada.
+- **Diagnóstico read-only:** los 36 médicos existen, conservan su clínica, están publicados y
+  dentro de la ventana; el predicado que vacía el conjunto es `country_id IS NULL` (36 → 0),
+  porque las 36 ya estaban en S2 SV con su auditoría. Es la guarda contra la reaplicación
+  funcionando.
+- **Confirmación:** ESTADO, VERIFICACIÓN POST e INVARIANTE confirmaron la aplicación completa.
+  Las filas de auditoría se escriben antes del POST, así que su persistencia implica que el
+  POST pasó y la transacción comiteó entera.
+- **Observación sobre el artefacto (sin cambios):** al reaplicar, el PRE informa «conjunto
+  vivo» antes que «ya está aplicada», porque esa comprobación va después. Aborta igual, sin
+  tocar nada.
+
+**Pruebas previas (no son producción):** `check-s7_95` 147/147 con 34 mutaciones
+invertidas; arnés local (PG18) 62/62: derivación S1 del catálogo = resolver en 276 pares,
+aplicación como mensaje único, 27 casos de seguridad, rollback exacto y 4 negativas, 11
+mutaciones de runtime y 8 de datos, `search_path` sin `public`, locks y concurrencia,
+operación inválida fuera de orden y cadena de reversión en orden.
+
+⚠️ **`s7_95`, su rollback, sus bloques read-only y su check no se modifican** tras aplicarse.
+
 ---
 
 ## 11 · Deudas y decisiones registradas, ninguna abierta
@@ -1182,9 +1282,18 @@ aplicación real confirmó.
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
-- **Rollbacks de F3, en orden inverso y solo mientras F3E no exista** (confirmado por el
-  owner): **rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
-  El rollback de `s7_92` no debe ejecutarse aisladamente. Tras F3E, todos se reevalúan.
+- ⛔ **Rollbacks de F3, ORDEN OBLIGATORIO Y BLOQUEANTE** (confirmado por el owner):
+  **rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de
+  `s7_92`**. Tras F3E-1, todos se reevalúan.
+  - **`s7_95`** (`docs/rollbacks/s7_95_rollback.sql`): devuelve a S0 las 36 clínicas
+    atestadas con la sincronización de `s7_92` activa; conserva `updated_at`; no borra
+    auditoría (añade 36 filas de reversión). Se niega si alguna de las 36 cambió, ante
+    consumidores o si la auditoría neta no es 36. Después, el ESTADO debe decir
+    `S7_95 REVERTIDA`.
+  - ⛔ **Hallazgo bloqueante (medido):** el rollback histórico de `s7_92` **no detecta** que
+    `s7_95` siga aplicada y, fuera de orden, vacía S2, la geo previa y el trigger. No se
+    modifica retrospectivamente. Saltarse `s7_95` es **operación inválida**: el ESTADO y el
+    invariante v2 la declaran `OPERACION INVALIDA` sin llamar a funciones de `s7_92`.
   - **`s7_94`** (`docs/rollbacks/s7_94_rollback.sql`): retira el cierre y luego el
     índice único (`RESTRICT`, DDL ensamblado con `format()`). Se niega si `s7_94` no
     está completa, si el catálogo o el cierre cambiaron, o ante cualquier consumidor
@@ -1210,9 +1319,10 @@ aplicación real confirmó.
 - **Tipos (owner, 2026-09-15):** `administrative_unit_closure` **no** se añade a
   `src/types/database.types.ts`. F3D es DB-only y sin consumidor runtime; queda para
   F3E / `TYPES-RECONCILIATION-P0`, sin abrir ese frente.
-- **Pendiente para F3E, sin resolver:** 46 médicos publicados = **9 con clínica con país
-  + 37 con clínica sin país** (preflight F3D). No bloquea F3D, pero **debe resolverse
-  antes de activar un directorio filtrado por país**, sin inferir país (C5).
+- **Gate restante antes de F3E-2 (2026-09-16):** 46 médicos publicados = **45 con clínica
+  con país + 1 sin país**. Los 37 del preflight F3D se redujeron a 1 con `s7_95` (36 atestados);
+  queda el **caso D** (`96dffdc8-…`), que se resolverá cargando su ubicación real en LucyAdmin,
+  sin inferir país (C5).
 - **`search_path` en `s7_94` (H1):** cuatro comparaciones absolutas dependen de que
   `public` esté en el `search_path` (`::regclass::text`). El PASO 1 no lo valida; el
   POST del PASO 2 aborta sin residuo si falta. Cualquier bloque futuro con el mismo
