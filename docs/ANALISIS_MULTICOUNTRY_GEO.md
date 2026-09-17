@@ -1417,9 +1417,11 @@ directo a tablas GEO, sin closure.**
   con control); móvil 375 y desktop sin cambios.
 - **Producción** (deployment `6507254933`): 43 visibles con el mismo SHA, `directory_countries` 1 vez,
   `doctors` con `clinics.country_id=eq.1`, 0 territorios, filtros correctos, consola limpia.
-- **Authenticated:** el QA interactivo en el Preview se abandonó por decisión del owner; queda cubierto por
-  `s7_96` (EXECUTE `authenticated`, tablas GEO cerradas, §10.k) y por la ausencia de branching por rol en el
-  código nuevo.
+- **Authenticated — no hubo E2E authenticated exitoso del frontend.** `s7_96` verificó EXECUTE y seguridad
+  para `authenticated` (tablas GEO cerradas, §10.k), y #382 no introduce branching por rol ni cambios de Auth,
+  RLS, grants o policies. El QA interactivo authenticated del frontend **no se completó de forma concluyente**
+  por contaminación del entorno de navegador; el owner decidió no mantenerlo como gate de F3E-2 con base en
+  esa evidencia combinada.
 
 **Hallazgo FUERA DE ALCANCE y NO CONCLUYENTE:** durante ese QA, con sesión iniciada y la pestaña en segundo
 plano, las llamadas a Supabase dejaron de emitirse, también las de código no tocado por #382. El escenario

@@ -161,9 +161,11 @@
 > - **Validación:** `check-f3e2-directory-country` 29/29 (A/B: el servicio de `main` y la mutación sin
 >   `.bind` fallan) · `check-directory-booking-ready` 20/20 · `tsc -b` 435 = 435 de `main` · `build`
 >   PASS · Preview anónimo · **producción (deployment `6507254933`) PASS**.
-> - **Authenticated:** el QA interactivo en el Preview se abandonó por decisión del owner. Queda
->   cubierto por `s7_96` (EXECUTE `authenticated`, tablas GEO cerradas) y por la **ausencia de
->   branching por rol** en el código nuevo.
+> - **Authenticated — no hubo E2E authenticated exitoso del frontend.** `s7_96` verificó EXECUTE y
+>   seguridad para `authenticated` (tablas GEO cerradas), y #382 **no introduce branching por rol ni
+>   cambios de Auth, RLS, grants o policies**. El QA interactivo authenticated del frontend **no se
+>   completó de forma concluyente** por contaminación del entorno de navegador. El owner decidió no
+>   mantenerlo como gate de F3E-2 con base en esa evidencia combinada.
 > - ℹ️ **Hallazgo FUERA DE ALCANCE y NO CONCLUYENTE:** en ese QA, con sesión iniciada y la pestaña en
 >   segundo plano, las llamadas a Supabase se detuvieron. El escenario quedó contaminado (varias
 >   instancias, automatización, recarga). **No se investiga ni se abre frente sin instrucción.**
@@ -698,8 +700,8 @@
 > E2E. **(b)** `no_slug`, `already_claimed` y el caso `directory_editor` **no
 > tienen cobertura conductual** — decisión del owner de no mutar producción solo
 > por QA. **(c)** El Preview de Vercel **no podía ejecutar E2E autenticados**
-> (`captcha_failed`). ⚠️ **Corregido el 2026-09-17:** medido en el Preview de #382, el
-> Preview **sí tiene el CAPTCHA activo y la Site Key**; el login fallaba solo porque el
+> (`captcha_failed`). ⚠️ **Corregido el 2026-09-17:** medido en el Preview de #382, ese
+> build de Preview recibió CAPTCHA activo y Site Key; el login fallaba solo porque el
 > hostname no estaba autorizado en Turnstile. Ver la regla vigente del Preview en el
 > bloque de Turnstile.
 >
@@ -1282,13 +1284,13 @@
 > *Cancelada*; el horario se libera; el médico ve la tarjeta "Cancelaciones
 > recientes". **`NotificationBell` NO se modificó.**
 >
-> **🔐 Turnstile: ACTIVO en producción y también en Preview.** Medido el 2026-09-17 en
-> el Preview de #382: el build de Preview tiene **`VITE_CAPTCHA_ENABLED` activo** y la
-> **Site Key disponible** (la misma del widget de producción). ⚠️ **Cada deployment de
-> Preview tiene un hostname propio**: si necesita Auth, ese hostname debe **autorizarse
-> temporalmente en el widget Turnstile existente** (sin autorizarlo, Turnstile da
-> `110200` y el login falla) y **retirarse al terminar el QA**. **No crear widgets
-> nuevos** ni cambiar Site Key o Secret Key. La **Site Key es PÚBLICA** y la **Secret Key es SENSIBLE**:
+> **🔐 Turnstile: ACTIVO en producción.** **Estado vigente del entorno Vercel Preview**
+> (medido el 2026-09-17 en el Preview de #382): actualmente recibe **`VITE_CAPTCHA_ENABLED`
+> activo** y la **Site Key**. Es configuración del entorno y puede cambiar: verificarla antes
+> de dar por hecho que un Preview futuro la tiene. ⚠️ **Cualquier hostname nuevo de
+> Preview que necesite Auth** debe **autorizarse temporalmente en el widget Turnstile
+> existente** (sin autorizarlo, Turnstile da `110200` y el login falla) y **retirarse al
+> terminar el QA**. **No crear widgets nuevos** ni cambiar o documentar claves. La **Site Key es PÚBLICA** y la **Secret Key es SENSIBLE**:
 > **ninguna se documenta, imprime ni guarda en el repo**. Consecuencia vigente: el
 > **cambio de teléfono sigue SUSPENDIDO** (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`,
 > porque `updateUser({phone})` no admite `captchaToken`).
@@ -1710,8 +1712,10 @@ squash-merge, la rama puede borrarse.
   - **Resultado:** 46 publicados / 43 visibles, mismo conjunto y orden; +1 request GEO pequeño y cacheado;
     0 N+1; 0 `directory_territory_units` en la carga inicial; 0 acceso directo a tablas GEO; sin cambios visuales.
   - **Validación:** `check-f3e2-directory-country` 29/29 · `check-directory-booking-ready` 20/20 ·
-    `tsc -b` sin diagnósticos nuevos · Preview anónimo y producción PASS. Authenticated cubierto por `s7_96` y
-    sin branching por rol; hallazgo de pestaña oculta fuera de alcance y no concluyente.
+    `tsc -b` sin diagnósticos nuevos · Preview anónimo y producción PASS. El QA interactivo authenticated del
+    frontend no se completó de forma concluyente (entorno de navegador contaminado); no es gate por decisión del
+    owner, con base en `s7_96` (EXECUTE y seguridad `authenticated`) y en que #382 no introduce branching por rol
+    ni cambios de Auth/RLS/grants/policies. Hallazgo de pestaña oculta fuera de alcance y no concluyente.
   Rollback: revertir el frontend (sin DB), primer paso de la cadena →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [detalle](docs/HISTORIAL_FRENTES.md)
 
@@ -1767,7 +1771,7 @@ squash-merge, la rama puede borrarse.
 
 - **`WELCOME-EMAIL-SIN-CORREO-P1` — deuda registrada en #357, NO abierta.** Si un lead llega **sin correo** y se aprueba **sin rellenar el override**, `doctor_affiliation_requests.email` queda NULL para siempre y **no existe ninguna vía en LucyAdmin para corregirlo**: el formulario de override solo existe en el momento de crear el médico, y la solicitud es un registro histórico. Ese médico **nunca** podrá recibir la bienvenida sin un `UPDATE` manual en SQL. No es un defecto de `s7_83` —el gate `no_email` hace exactamente lo que debe— sino una esquina áspera del flujo de aprobación. Ocurrió de verdad con la fixture del E2E. **No abrir sin instrucción.**
 - **Cobertura conductual pendiente de #357, NO abierta.** Los gates `no_slug` y `already_claimed`, y el caso de autorización `directory_editor`, **no se ejercitaron**: exigían mutar producción solo por QA y el owner decidió no hacerlo. El check estático los verifica en el `WHERE` del reclamo, pero **no hay prueba conductual**. No se dan por probados.
-- **Auth en el Preview de Vercel (corregido el 2026-09-17).** El Preview **sí tiene `VITE_CAPTCHA_ENABLED` activo y la Site Key disponible**; lo que impide el login es que **cada deployment de Preview tiene un hostname propio** que Turnstile no reconoce (`110200`). Para un QA autenticado, el owner autoriza **temporalmente ese hostname en el widget Turnstile existente** y lo retira al terminar. **No crear widgets nuevos, no cambiar Site Key ni Secret Key, no tocar Supabase ni las variables de Vercel, y no documentar claves.** Lo midió el QA de #382.
+- **Auth en el Preview de Vercel (corregido el 2026-09-17).** Estado vigente: el entorno Vercel Preview **actualmente recibe `VITE_CAPTCHA_ENABLED` activo y la Site Key** (medido en el Preview de #382; es configuración del entorno, no una garantía para todo Preview futuro). Lo que impedía el login era el **hostname del deployment**, que Turnstile no reconocía (`110200`). Para un QA autenticado, el owner autoriza **temporalmente cualquier hostname nuevo de Preview en el widget Turnstile existente** y lo retira al terminar. **No crear widgets nuevos, no cambiar ni documentar claves.**
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).

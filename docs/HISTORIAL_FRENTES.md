@@ -2265,10 +2265,13 @@ nunca directorio sin país). Archivos: `src/types/directory.types.ts`, `src/serv
   tablas GEO; filtros iguales a producción; sin parpadeo de «0 resultados»; móvil 375 y desktop sin cambios.
 - **Producción** (deployment `6507254933`): 43 visibles con el mismo orden, `directory_countries` 1 vez,
   `doctors` con `clinics.country_id=eq.1`, 0 territorios, filtros correctos, consola limpia.
-- **Authenticated:** QA interactivo en el Preview abandonado por decisión del owner; cubierto por `s7_96`
-  (EXECUTE `authenticated`, tablas GEO cerradas) y por la ausencia de branching por rol en el código nuevo.
-- **Preview y Turnstile (medido):** el Preview tiene CAPTCHA activo y Site Key; el login fallaba por el hostname
-  del deployment no autorizado en el widget (`110200`). El owner lo autorizó temporalmente en el widget existente.
+- **Authenticated — no hubo E2E authenticated exitoso del frontend.** `s7_96` verificó EXECUTE y seguridad para
+  `authenticated` (tablas GEO cerradas), y #382 no introduce branching por rol ni cambios de Auth, RLS, grants o
+  policies. El QA interactivo authenticated del frontend no se completó de forma concluyente por contaminación del
+  entorno de navegador; el owner decidió no mantenerlo como gate de F3E-2 con base en esa evidencia combinada.
+- **Preview y Turnstile (medido en el Preview de #382):** ese entorno Vercel Preview recibía CAPTCHA activo y Site
+  Key; el login fallaba porque el hostname del deployment no estaba autorizado en el widget (`110200`). El owner lo
+  autorizó temporalmente en el widget existente, sin crear widgets ni tocar claves.
 
 **Hallazgo fuera de alcance y no concluyente:** con sesión iniciada y la pestaña en segundo plano, las llamadas a
 Supabase dejaron de emitirse durante el QA. El escenario quedó contaminado (varias instancias, automatización,
