@@ -17,11 +17,14 @@
 > `s7_95`, migración 116, 2026-09-16: país SV atestado por el owner en 36 clínicas, sin
 > territorio). **Caso D = CLOSED · GEO DATA GATE = CLEAR** (2026-09-16, §10.j). **F3E-1 = CLOSED / APPLIED / VERIFIED**
 > (`s7_96`, migración 117, 2026-09-16, PR #380 MERGED como `b18bfbb`: dos RPC públicas de lectura del catálogo,
-> §10.k). **F3E-2 y F3E-3 están diseñadas y NO iniciadas.** **Ningún directorio ni frontend consume
-> el catálogo, el cierre ni las columnas nuevas de `clinics`** (el catálogo solo lo leen la
-> sincronización de `s7_92` y las 2 RPC de `s7_96`, sin consumidor de frontend); solo las escriben la
-> sincronización de `s7_92`, el backfill de `s7_93`, la carga de `s7_94` y el backfill
-> atestado de `s7_95`.
+> §10.k). **F3E-2 = CLOSED** (PR #382 MERGED como `9d4a3f2`, 2026-09-17, frontend-only, **nuevo HEAD
+> funcional**: el Home consume `directory_countries()` y filtra el directorio por `clinics.country_id`,
+> §10.l). **F3E-3 está diseñada y NO iniciada; `/{iso2}` = OPEN / NOT APPROVED.** **El único lector
+> de runtime es el de F3E-2** (`directory_countries()` + `clinics.country_id` en el Home); nada
+> consume todavía `directory_territory_units()`, el cierre ni `territory_unit_id`. El catálogo lo
+> leen además la sincronización de `s7_92` y las 2 RPC de `s7_96`. Escriben las columnas nuevas de
+> `clinics` la sincronización de `s7_92`, el backfill de `s7_93` y el backfill atestado de
+> `s7_95`; el cierre lo cargó `s7_94`.
 
 > ⚠️ **Cómo leer este documento.** Cada bloque lleva su estado real:
 >
@@ -711,7 +714,8 @@ de admitir reservas.
 | **F3C** | backfill histórico de `country_id` / `territory_unit_id` (23 clínicas con legacy; sin teléfonos ni heurísticos) | ✅ **APPLIED / VERIFIED** — PR #374, `s7_93` |
 | **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
 | **F3E-1** | superficie backend de lectura: `directory_countries()` y `directory_territory_units()`, `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | ✅ **CLOSED / APPLIED / VERIFIED** — PR #380 (MERGED, `b18bfbb`), `s7_96` (§10.k) |
-| **F3E-2–F3F** | consumo en runtime (filtro `clinics.country_id`), UX y endurecimiento. Gate de datos de F3E-2 (caso D): **CLEAR** (§10.j) | 📐 diseñadas, **NOT STARTED** |
+| **F3E-2** | consumo en runtime: país de contexto derivado de `directory_countries()` y filtro server-side por `clinics.country_id` en el Home, sin UI visible | ✅ **CLOSED** — PR #382 (MERGED, `9d4a3f2`), frontend-only, sin migración (§10.l) |
+| **F3E-3–F3F** | UX y selector móvil, `/{iso2}` (OPEN / NOT APPROVED), endurecimiento | 📐 diseñadas, **NOT STARTED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -983,7 +987,7 @@ columnas nuevas; sin `s7_91` falla solo la aserción de control nueva. **187/187
 `s7_92` = **CLOSED / APPLIED / VERIFIED / NO REAPLICAR**, aplicada por el owner el
 2026-09-13 **antes** del merge de #372. Cambia comportamiento de backend **solo en
 las escrituras sobre `clinics`**, sin UI ni `src/`. **Por decisión del owner, el
-merge `ecd6366` es el HEAD funcional vigente** (antes `6a0173f`).
+merge `ecd6366` fue el HEAD funcional** (antes `6a0173f`) hasta #382 (`9d4a3f2`, §10.l).
 
 **Preflight read-only A–H: PASS, Z = 0.**
 - 118 clínicas (95 sin ubicación + 23 con ubicación), 0 incoherentes, 0 con geo;
@@ -1372,13 +1376,72 @@ DEFAULT PRIVILEGES de funciones con EXECUTE para `service_role` (de ahí el REVO
 
 ---
 
+## 10.l · Cierre de F3E-2 (PR #382, país de contexto en el Home)
+
+F3E-2 = **CLOSED** (2026-09-17). PR #382 **MERGED** por squash con OK del owner; `main` =
+**`9d4a3f2c41ec3e4746ac352108d652869ce086bf`**, árbol idéntico al HEAD revisado del PR (`c664308`).
+**Nuevo HEAD funcional por decisión del owner.** Frontend-only: **0 SQL, 0 migraciones (siguen 117,
+última `s7_96`), 0 cambios de RLS, grants, policies, roles, Auth ni `database.types.ts`.**
+
+**Qué cambia en runtime:**
+
+- `fetchDirectoryCountries()` llama a `directory_countries()` con `supabase.rpc.bind(supabase)` y agrupa
+  las filas por `iso_alpha2` (una entrada por país, niveles ordenados; país sin niveles → `levels: []`).
+  `useDirectoryCountries()`: clave `['directory-countries']`, `staleTime` 60 min.
+- **Contexto (D1 del owner):** solo si hay **exactamente un** país habilitado se usa automáticamente.
+  Con 0 o con más de 1 → **fail closed**: el directorio no se consulta y el Home muestra su error
+  normal. No se elige el primero, no se consultan todos, no hay precedencia URL/preferencia/GeoIP.
+  **Regla operativa: no habilitar un segundo país para el directorio antes de F3E-3.**
+- **Fallo de la RPC (D2 del owner):** en la carga inicial, fail closed tras el retry; si falla un
+  refetch posterior se siguen usando los países que React Query conserva. **Nunca directorio sin país.**
+- `fetchDoctors` añade `.eq('clinics.country_id', countryId)` **solo como predicado** (medido: sin
+  seleccionar la columna, PostgREST aplica el filtro sobre `clinics!inner` y el payload es byte-idéntico)
+  y lanza sin emitir nada si no hay país. `useDoctors` se habilita solo con país; el Home decide el
+  skeleton con `isPending`, porque una query deshabilitada tiene `isLoading = false` y habría
+  mostrado «0 resultados».
+- Los filtros legacy de SV (`department_id`, `municipality_id`, `specialty_id`) se combinan con el país
+  sin cambios; las 36 clínicas S2 siguen apareciendo en SV.
+
+**Rendimiento (medido):** **+1 request GEO pequeño y cacheado** (309 B, mediana ~90 ms), una sola vez por
+sesión; `doctors` sale después de él (+~90 ms en carga fría, aceptado por el owner) y los otros 4
+requests siguen en paralelo. **0 N+1, 0 `directory_territory_units` en la carga inicial, 0 acceso
+directo a tablas GEO, sin closure.**
+
+**Evidencia:**
+
+- `check-f3e2-directory-country` 29/29 (A/B: el servicio de `main`, la mutación sin `.bind` y la mutación sin
+  filtro fallan) · `check-directory-booking-ready` 20/20 · `tsc -b` 435 = 435 de `main` · `build` PASS.
+- **Preview anónimo:** 46 publicados / 43 visibles, mismo conjunto y orden (md5 de ids visibles
+  `31c5e0e4…`, SHA de nombres `07b5b6c9…`), 0 perdidos; filtros de búsqueda, especialidad, departamento,
+  municipio, agenda en línea y orden iguales a producción; sin parpadeo de «0 resultados» (4 cargas frías,
+  con control); móvil 375 y desktop sin cambios.
+- **Producción** (deployment `6507254933`): 43 visibles con el mismo SHA, `directory_countries` 1 vez,
+  `doctors` con `clinics.country_id=eq.1`, 0 territorios, filtros correctos, consola limpia.
+- **Authenticated:** el QA interactivo en el Preview se abandonó por decisión del owner; queda cubierto por
+  `s7_96` (EXECUTE `authenticated`, tablas GEO cerradas, §10.k) y por la ausencia de branching por rol en el
+  código nuevo.
+
+**Hallazgo FUERA DE ALCANCE y NO CONCLUYENTE:** durante ese QA, con sesión iniciada y la pestaña en segundo
+plano, las llamadas a Supabase dejaron de emitirse, también las de código no tocado por #382. El escenario
+quedó contaminado (varias instancias de la app con la misma sesión, automatización, recarga). No se
+investiga ni se abre frente sin instrucción del owner.
+
+**Rollback:** revertir el frontend de #382 (sin DB). Sigue siendo el primer paso de la cadena:
+revertir frontend F3E-2 → `s7_96` → `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`. Con #382
+desplegado, un rollback de `s7_95`, `s7_93` o `s7_92` ocultaría médicos del Home.
+
+**F3E-3 = NOT STARTED. `/{iso2}` = OPEN / NOT APPROVED.**
+
+---
+
 ## 11 · Deudas y decisiones registradas, ninguna abierta
 
 - 🔓 **`clinics_geo_f3a_temp_null_chk` RETIRADA por `s7_92` (§10.f)** dentro de la
   misma transacción que instaló y verificó la sincronización, como exigía F3A. La
   protección frente a la escritura directa del cliente la da ahora el trigger (`P0183`).
 - ⛔ **Rollbacks de F3, ORDEN OBLIGATORIO Y BLOQUEANTE** (confirmado por el owner):
-  **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**. Desde F3E-1 (§10.k), el
+  **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**. El frontend F3E-2 existe desde
+  #382 (`9d4a3f2`, §10.l) y se revierte primero, sin tocar la base. Desde F3E-1 (§10.k), el
   rollback de `s7_96` es el primer paso de base de datos: con las RPC presentes, los de `s7_92`,
   `s7_93` y `s7_95` las detectan como consumidores y se niegan.
   - **`s7_95`** (`docs/rollbacks/s7_95_rollback.sql`): devuelve a S0 las 36 clínicas

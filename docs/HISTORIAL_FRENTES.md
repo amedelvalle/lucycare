@@ -2223,3 +2223,58 @@ verificación integral read-only en producción con **Z = 0**:
 ### Rollback
 
 revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`. Los rollbacks históricos no se modifican.
+
+## #382 · MULTICOUNTRY-GEO-P0 · F3E-2 · país de contexto en el directorio del Home (2026-09-17)
+
+> 🚧 **F3E-2 = CLOSED. PR #382 MERGED. Nuevo HEAD funcional. El FRENTE sigue EN CURSO (F3E-3 NOT
+> STARTED; `/{iso2}` OPEN / NOT APPROVED).** Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.l.
+
+**Cierre (2026-09-17):**
+- PR #382 **MERGED** por squash con OK del owner; `main` quedó en **`9d4a3f2c41ec3e4746ac352108d652869ce086bf`**,
+  con árbol idéntico al HEAD revisado del PR (`c664308`).
+- Tras el merge: `main == origin/main`, árbol limpio, 0 PRs abiertos, rama `claude/f3e2-country` borrada,
+  **117 migraciones** (última `s7_96_geo_foundation_3e1_directory_read_rpcs.sql`).
+- **Nuevo HEAD funcional, por decisión del owner:** `9d4a3f2c41ec3e4746ac352108d652869ce086bf` (antes `ecd6366`, #372).
+- **Frontend-only:** 0 SQL, 0 migraciones, 0 cambios de RLS, grants, policies, roles, Auth ni
+  `database.types.ts`.
+
+**Qué es:** el Home consume `directory_countries()` (`s7_96`), agrupa por país y, **si hay exactamente un
+país habilitado**, lo usa como contexto sin selector visible ni hardcodear `SV` o `country_id`. `doctors`
+filtra server-side con `.eq('clinics.country_id', …)` como predicado, sin añadir la columna al payload.
+Con 0 o más de 1 país, o si falla la carga inicial de la RPC, **fail closed** (error normal del Home;
+nunca directorio sin país). Archivos: `src/types/directory.types.ts`, `src/services/directory.service.ts`,
+`src/hooks/useDirectory.ts`, `src/pages/home/page.tsx` y `scripts/check-f3e2-directory-country.mjs`.
+
+### Proceso
+
+- **Diagnóstico read-only:** traza del runtime del Home, contrato real de las 2 RPC (anon), propuesta de
+  contrato mínimo y medición de invariancia (46|43, mismo orden, 0 publicados sin país).
+- **Decisiones del owner:** D1 (contexto solo con exactamente 1 país; no habilitar un segundo antes de
+  F3E-3), D2 (fail closed; un refetch fallido conserva el dato previo), aceptar +~90 ms en frío antes que
+  consultar `doctors` sin país.
+- **Ajuste medido:** el filtro por `clinics.country_id` funciona sin seleccionar la columna (46|43, mismo
+  orden, payload idéntico, control negativo 0), así que no se añadió al payload.
+
+### Evidencia
+
+- `check-f3e2-directory-country` **29/29** (A/B: el servicio de `main`, la mutación sin `.bind` y la mutación sin
+  filtro fallan) · `check-directory-booking-ready` **20/20** · `tsc -b` 435 = 435 de `main`, 0 nuevos ·
+  `build` PASS. (`npx tsc --noEmit` revisa 0 archivos y no es validación.)
+- **Preview anónimo:** 46 publicados / 43 visibles, mismo conjunto y orden; +1 request GEO pequeño y cacheado
+  (309 B, 1 vez por sesión); 0 N+1; 0 `directory_territory_units` en la carga inicial; 0 acceso directo a
+  tablas GEO; filtros iguales a producción; sin parpadeo de «0 resultados»; móvil 375 y desktop sin cambios.
+- **Producción** (deployment `6507254933`): 43 visibles con el mismo orden, `directory_countries` 1 vez,
+  `doctors` con `clinics.country_id=eq.1`, 0 territorios, filtros correctos, consola limpia.
+- **Authenticated:** QA interactivo en el Preview abandonado por decisión del owner; cubierto por `s7_96`
+  (EXECUTE `authenticated`, tablas GEO cerradas) y por la ausencia de branching por rol en el código nuevo.
+- **Preview y Turnstile (medido):** el Preview tiene CAPTCHA activo y Site Key; el login fallaba por el hostname
+  del deployment no autorizado en el widget (`110200`). El owner lo autorizó temporalmente en el widget existente.
+
+**Hallazgo fuera de alcance y no concluyente:** con sesión iniciada y la pestaña en segundo plano, las llamadas a
+Supabase dejaron de emitirse durante el QA. El escenario quedó contaminado (varias instancias, automatización,
+recarga). No se investiga ni se abre frente sin instrucción.
+
+### Rollback
+
+Revertir el frontend de #382 (sin DB), primer paso de la cadena: revertir frontend F3E-2 → rollback de `s7_96` →
+rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`.

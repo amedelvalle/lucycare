@@ -4,16 +4,16 @@
 > detallada y vigente está en `docs/` (ver abajo). Si algo de este
 > archivo contradice a `docs/`, mandan los `docs/`.
 
-> 🟢 **BASELINE VIGENTE (2026-09-16) — post F3E-1 (`s7_96`, PR #380).**
+> 🟢 **BASELINE VIGENTE (2026-09-17) — post F3E-2 (PR #382, frontend-only).**
 >
 > ⚠️ **BASELINES SEPARADOS. No confundirlos:**
 >
 > | | |
 > |---|---|
-> | **Último HEAD funcional** | **`ecd636694c7f7093a000bd9f823040aa7795ff04`** — **PR #372 / `s7_92`**: cambia comportamiento observable de **backend** en las escrituras de `clinics` (deriva las columnas territoriales nuevas y rechaza contradicciones). Promovido por decisión del owner (2026-09-14). Anterior: `6a0173f` (#370 / `s7_91`) |
+> | **Último HEAD funcional** | **`9d4a3f2c41ec3e4746ac352108d652869ce086bf`** — **PR #382 / F3E-2**: el Home consume `directory_countries()` y filtra el directorio server-side por `clinics.country_id`. Cambio de **frontend**, sin SQL. Promovido por decisión del owner (2026-09-17). Anterior: `ecd6366` (#372 / `s7_92`) |
 > | **Migraciones aplicadas** | **117**, la última **`s7_96_geo_foundation_3e1_directory_read_rpcs.sql`** (2 RPC de lectura del catálogo territorial, aplicada y verificada en producción el 2026-09-16; **PR #380 MERGED**). **No mueve el HEAD funcional** (confirmado por el owner). Antes, `s7_95` (backfill de datos sin lectores, PR #377 MERGED; no mueve el HEAD funcional, confirmado por el owner) |
 > | **Último cambio de esquema** | **PR #375 / `s7_94`** — tabla `administrative_unit_closure` (888 filas) e índice único `au_id_country_level_key` en `administrative_units`. Antes: `s7_92` (#372, trigger `trg_clinics_territory_sync` y retiro de la guarda F3A); `s7_93` no dejó cambios de esquema; `s7_89` (#368, dos columnas nuevas); `s7_90` corrigió un dato y `s7_91` redefinió una función, sin DDL de tablas; `s7_87` (#365); `s7_88` fue un seed sin DDL |
-> | **`main` tras el merge de #380** | **`b18bfbb07a79893be041088ad52ab544c82078c4`** (squash de PR #380 / `s7_96`). Referencia de cierre de F3E-1, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `bbfb834` (#377 / `s7_95`) |
+> | **`main` tras el merge de #382** | **`9d4a3f2c41ec3e4746ac352108d652869ce086bf`** (squash de PR #382 / F3E-2). Referencia de cierre de F3E-2, no tip eterno: los PR docs-only posteriores lo mueven. Antes: `dad4231` (#381, docs) y `b18bfbb` (#380 / `s7_96`) |
 > | **Tip actual del repositorio** | se consulta con `git rev-parse HEAD`. **Nunca citarlo de memoria** |
 >
 > ⚠️ **Ni #365, ni `s7_88`, ni #368 son cambios funcionales.** `s7_87` y
@@ -33,12 +33,15 @@
 > sin DDL de tablas. En cambio, `s7_90` sigue clasificada como corrección visible de
 > datos y no movió el baseline. Ver «Qué hizo `s7_91`».
 >
-> ⚠️ **#372 / `s7_92` SÍ es un cambio funcional y es el HEAD funcional vigente
-> (`ecd6366`).** Cambia comportamiento observable de **backend** en las
+> ⚠️ **#372 / `s7_92` SÍ fue un cambio funcional y fue el HEAD funcional
+> (`ecd6366`) hasta #382.** Cambia comportamiento observable de **backend** en las
 > **escrituras** sobre `clinics`: deriva `country_id` / `territory_unit_id` del
-> legacy y rechaza contradicciones. Sin UI ni cambios en `src/`; ningún lector
-> consume todavía las columnas nuevas. **No usar `c6d47d1` ni `36b97d2`** (commits
+> legacy y rechaza contradicciones. Sin UI ni cambios en `src/`. **No usar `c6d47d1` ni `36b97d2`** (commits
 > de la rama) como HEAD funcional.
+>
+> ⚠️ **#382 / F3E-2 SÍ es un cambio funcional y es el HEAD funcional vigente
+> (`9d4a3f2`).** Es el primer lector de runtime de la superficie GEO: el Home filtra por
+> `clinics.country_id`. Frontend-only, **sin SQL, migraciones, RLS, grants ni Auth**.
 >
 > 🚧 **`MULTICOUNTRY-GEO-P0` = EN CURSO.** **Fundación 1 = CLOSED / APPLIED /
 > VERIFIED** (2026-09-12) · **Fundación 2A = CLOSED / APPLIED / VERIFIED**
@@ -52,8 +55,9 @@
 > CLOSED / APPLIED / VERIFIED** (2026-09-15; PR #375 MERGED, `main` = `f664dad`) ·
 > **F3E-0 / M0.5 (`s7_95`, país atestado sin territorio) = CLOSED / APPLIED / VERIFIED**
 > (2026-09-16; PR #377 MERGED, `main` = `bbfb834`) · **F3E-1 (`s7_96`, RPC de lectura del catálogo) =
-> CLOSED / APPLIED / VERIFIED** (2026-09-16; PR #380 MERGED, `main` = `b18bfbb`). **El frente completo NO
-> está cerrado**: **F3E-2 en adelante** está **diseñado y NO iniciado**.
+> CLOSED / APPLIED / VERIFIED** (2026-09-16; PR #380 MERGED, `main` = `b18bfbb`) · **F3E-2 (país de
+> contexto en el Home, frontend) = CLOSED** (2026-09-17; PR #382 MERGED, `main` = `9d4a3f2`). **El frente
+> completo NO está cerrado**: **F3E-3 en adelante** está **diseñado y NO iniciado**.
 >
 > **Qué hizo `s7_95`:** (**migración 116**, F3E-0 / M0.5 aprobado por el owner) asignó
 > **solo `country_id = SV`** a **exactamente 36 clínicas**: las de los 36 médicos publicados
@@ -129,9 +133,42 @@
 >   `119|59|24|36|0`; directorio `46|46|0#43|43|0`.
 > - **PostgreSQL 17.6 acreditado por producción** (el arnés era PG18).
 >
-> **Sin consumidor de frontend todavía: no cambia comportamiento observable. No mueve el HEAD funcional**
-> (`ecd636694c7f7093a000bd9f823040aa7795ff04`, confirmado por el owner). **F3E-2 y F3E-3 = NOT STARTED: no iniciarlas sin
-> instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
+> **Al aplicarse no tenía consumidor de frontend: no movió el HEAD funcional**
+> (`ecd6366`, confirmado por el owner). Su primer consumidor es F3E-2 (#382).
+>
+> ✅ **F3E-2 = CLOSED (2026-09-17). PR #382 MERGED (`main` = `9d4a3f2`), nuevo HEAD funcional.**
+> Frontend-only: **0 SQL, 0 migraciones, 0 cambios de RLS, grants, policies, roles, Auth ni
+> `database.types.ts`**. Archivos: `src/types/directory.types.ts`, `src/services/directory.service.ts`,
+> `src/hooks/useDirectory.ts`, `src/pages/home/page.tsx` y `scripts/check-f3e2-directory-country.mjs`.
+> - **Qué hace:** el Home llama a `directory_countries()` (`useDirectoryCountries`, clave
+>   `['directory-countries']`, `staleTime` 60 min), agrupa las filas por `iso_alpha2` y deriva el país
+>   de contexto. `fetchDoctors` añade `.eq('clinics.country_id', countryId)` **solo como predicado**:
+>   la columna no entra en el `select` y el payload por médico no cambia. Sin selector visible, sin
+>   hardcodear `SV` ni `country_id`.
+> - **D1 (owner):** país de contexto **solo si hay exactamente 1 país habilitado**. Con 0 o más de 1,
+>   **fail closed**: no se consulta el directorio y se muestra el error normal del Home. **No habilitar
+>   un segundo país para el directorio antes de F3E-3.**
+> - **D2 (owner):** si falla la carga inicial de `directory_countries()`, fail closed tras el retry;
+>   si falla un refetch posterior se siguen usando los países conservados. **Nunca directorio sin país.**
+> - **Carga:** `useDoctors` solo se habilita con país, y el Home decide el skeleton con `isPending`
+>   (una query deshabilitada tiene `isLoading = false` y habría mostrado «0 resultados»).
+> - **Rendimiento:** **+1 request GEO pequeño y cacheado** (309 B, ~90 ms); `doctors` sale después de
+>   él (+~90 ms en carga fría, aceptado por el owner). **0 N+1, 0 `directory_territory_units` en la
+>   carga inicial, 0 acceso directo a tablas GEO**, sin closure.
+> - **Resultado preservado:** **46 publicados / 43 visibles, mismo conjunto y mismo orden** (md5 de
+>   ids visibles `31c5e0e4…`, SHA de nombres en pantalla `07b5b6c9…`), filtros legacy iguales a
+>   producción y sin cambios visuales (móvil 375 y desktop).
+> - **Validación:** `check-f3e2-directory-country` 29/29 (A/B: el servicio de `main` y la mutación sin
+>   `.bind` fallan) · `check-directory-booking-ready` 20/20 · `tsc -b` 435 = 435 de `main` · `build`
+>   PASS · Preview anónimo · **producción (deployment `6507254933`) PASS**.
+> - **Authenticated:** el QA interactivo en el Preview se abandonó por decisión del owner. Queda
+>   cubierto por `s7_96` (EXECUTE `authenticated`, tablas GEO cerradas) y por la **ausencia de
+>   branching por rol** en el código nuevo.
+> - ℹ️ **Hallazgo FUERA DE ALCANCE y NO CONCLUYENTE:** en ese QA, con sesión iniciada y la pestaña en
+>   segundo plano, las llamadas a Supabase se detuvieron. El escenario quedó contaminado (varias
+>   instancias, automatización, recarga). **No se investiga ni se abre frente sin instrucción.**
+>
+> **F3E-3 = NOT STARTED: no iniciarla sin instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
 >
 > **Qué hizo `s7_94`:** (**migración 115**) creó `public.administrative_unit_closure`,
 > el cierre transitivo **derivado** del árbol, variante **N1** aprobada por el owner:
@@ -390,14 +427,14 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = CLOSED / APPLIED / VERIFIED (PR #380 MERGED); F3E-2 y F3E-3 = NOT STARTED.**
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = CLOSED / APPLIED / VERIFIED (PR #380 MERGED); F3E-2 = CLOSED (PR #382 MERGED); F3E-3 = NOT STARTED.**
 > Las 59 clínicas en S0 siguen sin ubicación ni país; 24 están en S1; 36 clínicas tienen país SV
-> atestado sin territorio (S2). **No conectar frontend ni lectores al catálogo, al
-> cierre ni a las columnas nuevas de `clinics` sin instrucción del owner.**
+> atestado sin territorio (S2). **El único lector de runtime autorizado es el de F3E-2**
+> (`directory_countries()` + filtro `clinics.country_id` en el Home). **No conectar otros lectores al
+> catálogo, al cierre, a `directory_territory_units()` ni a `territory_unit_id` sin instrucción del owner.**
 >
-> ℹ️ **Estado del directorio para F3E (2026-09-16, tras cerrar el caso D):** 46 médicos
-> publicados = **46 con clínica con país + 0 sin país**; visibles Home **43|43|0**. El gate de
-> datos de F3E-2 está **CLEAR**; F3E-2 sigue sin iniciar.
+> ℹ️ **Estado del directorio (2026-09-17, tras F3E-2):** 46 médicos publicados = **46 con clínica
+> con país + 0 sin país**; visibles Home **43|43|0**, ahora filtrados por país en el servidor.
 >
 > ℹ️ **Tipos (decisión del owner, 2026-09-15):** `administrative_unit_closure` **NO** se
 > añade a `src/types/database.types.ts`. F3D es DB-only y sin consumidor runtime; queda
@@ -405,7 +442,9 @@
 >
 > ⛔ **Rollbacks, ORDEN OBLIGATORIO Y BLOQUEANTE (confirmado por el owner):**
 > **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
-> 0. **Frontend F3E-2** (cuando exista): revertirlo primero; un consumidor de frontend no es detectable desde la base.
+> 0. **Frontend F3E-2** (PR #382, `9d4a3f2`): revertirlo primero (`git revert` del squash, sin tocar la
+>    base); un consumidor de frontend no es detectable desde la base. Con #382 desplegado, un rollback de
+>    `s7_95`, `s7_93` o `s7_92` ocultaría médicos del Home.
 > 0b. `docs/rollbacks/s7_96_rollback.sql` retira las 2 RPC; se niega si cambiaron su forma, cuerpo o ACL,
 >    o si algo depende de ellas. **Mientras `s7_96` esté aplicada, los rollbacks de `s7_92`, `s7_93` y
 >    `s7_95` detectan las RPC como consumidores y se niegan** (el de `s7_94`, no). Después, el ESTADO de
@@ -658,9 +697,11 @@
 > la bienvenida de ese médico queda muerta sin aviso. Pasó con la fixture del
 > E2E. **(b)** `no_slug`, `already_claimed` y el caso `directory_editor` **no
 > tienen cobertura conductual** — decisión del owner de no mutar producción solo
-> por QA. **(c)** El Preview de Vercel **no puede ejecutar E2E autenticados**:
-> tiene el CAPTCHA apagado y Supabase lo exige (`captcha_failed`), así que haría
-> falta tocar Turnstile y las variables del Preview.
+> por QA. **(c)** El Preview de Vercel **no podía ejecutar E2E autenticados**
+> (`captcha_failed`). ⚠️ **Corregido el 2026-09-17:** medido en el Preview de #382, el
+> Preview **sí tiene el CAPTCHA activo y la Site Key**; el login fallaba solo porque el
+> hostname no estaba autorizado en Turnstile. Ver la regla vigente del Preview en el
+> bloque de Turnstile.
 >
 > ⚠️ **TRES LECCIONES DE MÉTODO, registradas sin adornos:**
 >
@@ -1040,9 +1081,9 @@
 > y **no se toca** dentro de `PATIENT-CRM-P0`.
 >
 > **HEAD funcional canónico:
-> `ecd636694c7f7093a000bd9f823040aa7795ff04` — PR #372 / `s7_92`.** Promovido por
-> decisión del owner (2026-09-14): cambia comportamiento observable de backend en
-> las escrituras de `clinics`. · **PRs funcionales mergeados hasta #372** ·
+> `9d4a3f2c41ec3e4746ac352108d652869ce086bf` — PR #382 / F3E-2.** Promovido por
+> decisión del owner (2026-09-17): el Home filtra el directorio por país de contexto.
+> Frontend-only. · **PRs funcionales mergeados hasta #382** ·
 > `main == origin/main` · árbol limpio · **0 PRs abiertos**.
 >
 > ⚠️ **Las migraciones van por separado: 117 aplicadas** (hasta
@@ -1054,20 +1095,23 @@
 > retiro de la guarda F3A), `s7_89` (#368) y `s7_87` (#365). `s7_93` fue un backfill de
 > datos. `s7_88` es un **seed de datos** y `s7_90` una
 > **corrección visible de datos**: ninguno movió el HEAD funcional. **`s7_91` (#370)
-> lo movió** (redefine una función sin DDL de tablas) y **`s7_92` (#372) lo movió
-> otra vez** (trigger de sincronización en `clinics`).
+> lo movió** (redefine una función sin DDL de tablas), **`s7_92` (#372) lo movió
+> otra vez** (trigger de sincronización en `clinics`) y **#382 (F3E-2, sin migración)
+> lo movió después** (primer consumidor de frontend de `s7_96`).
 > Ver el bloque de baseline al principio del archivo.
 >
-> ⚠️ **`ecd6366` es el HEAD funcional confirmado, NO el tip eterno del
+> ⚠️ **`9d4a3f2` es el HEAD funcional confirmado, NO el tip eterno del
 > repositorio.** Los commits posteriores **exclusivamente documentales no
 > modifican este baseline funcional**. **Para el tip exacto vigente de `main`,
 > consultar Git: `git rev-parse HEAD`.**
 >
-> Ciclos anteriores, ya superados como HEAD: `6a0173f` (#370 / `s7_91`), `e8e8c03`
+> Ciclos anteriores, ya superados como HEAD: `ecd6366` (#372 / `s7_92`), `6a0173f` (#370 / `s7_91`), `e8e8c03`
 > (#359/#360/#361), `a0b974b` (#357), `0fc36b1` (#355), `55af306` (#353) y
 > `f7213d2` (#352). **No volver a citarlos como vigentes.**
 >
-> **Último cambio funcional:** #372 (`s7_92`: sincronización central legacy →
+> **Último cambio funcional:** #382 (F3E-2: el Home consume `directory_countries()`,
+> deriva el país de contexto con exactamente un país habilitado y filtra `doctors` por
+> `clinics.country_id`; sin SQL). Antes: #372 (`s7_92`: sincronización central legacy →
 > modelo territorial nuevo en las escrituras de `clinics`; resolver único, trigger
 > normal, `P0183` ante contradicción, guarda F3A retirada, sin backfill). Antes: #370
 > (`s7_91`: ubicación emparejada en `admin_approve_and_create_doctor`; municipio de
@@ -1238,9 +1282,13 @@
 > *Cancelada*; el horario se libera; el médico ve la tarjeta "Cancelaciones
 > recientes". **`NotificationBell` NO se modificó.**
 >
-> **🔐 Turnstile: ACTIVO en producción y configurado también en Preview**
-> (variables de Preview configuradas y hostname del Preview autorizado en
-> Cloudflare). La **Site Key es PÚBLICA** y la **Secret Key es SENSIBLE**:
+> **🔐 Turnstile: ACTIVO en producción y también en Preview.** Medido el 2026-09-17 en
+> el Preview de #382: el build de Preview tiene **`VITE_CAPTCHA_ENABLED` activo** y la
+> **Site Key disponible** (la misma del widget de producción). ⚠️ **Cada deployment de
+> Preview tiene un hostname propio**: si necesita Auth, ese hostname debe **autorizarse
+> temporalmente en el widget Turnstile existente** (sin autorizarlo, Turnstile da
+> `110200` y el login falla) y **retirarse al terminar el QA**. **No crear widgets
+> nuevos** ni cambiar Site Key o Secret Key. La **Site Key es PÚBLICA** y la **Secret Key es SENSIBLE**:
 > **ninguna se documenta, imprime ni guarda en el repo**. Consecuencia vigente: el
 > **cambio de teléfono sigue SUSPENDIDO** (`PHONE_CHANGE_SUSPENDED = CAPTCHA_ENABLED`,
 > porque `updateUser({phone})` no admite `captchaToken`).
@@ -1392,7 +1440,7 @@ Luego leé los documentos oficiales según el objetivo del día:
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
   implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A, F3B completa
-  (pasos 1, 2 y 3), F3C, F3D, F3E-0 (`s7_95`) y F3E-1 (`s7_96`) aplicadas; el frente no está cerrado (F3E-2 en adelante).**
+  (pasos 1, 2 y 3), F3C, F3D, F3E-0 (`s7_95`) y F3E-1 (`s7_96`) aplicadas y F3E-2 (#382, frontend) cerrada; el frente no está cerrado (F3E-3 en adelante).**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1583,8 +1631,8 @@ squash-merge, la rama puede borrarse.
   control A/B. ⚠️ **El `42P01` que mostró el editor fue post-COMMIT.** Por A/B
   quedó demostrado que el texto con forma de `CREATE TABLE` lo dispara incluso en
   un literal; la consulta interna de Studio no se capturó.
-  Reglas (3) y (4) del SQL Editor. **Cambio funcional de backend: es el HEAD
-  funcional vigente (`ecd6366`), por decisión del owner.** F3C no iniciada →
+  Reglas (3) y (4) del SQL Editor. **Cambio funcional de backend: fue el HEAD
+  funcional (`ecd6366`), por decisión del owner, hasta #382.** F3C no iniciada →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) ·
   [detalle](docs/HISTORIAL_FRENTES.md)
 
@@ -1644,7 +1692,7 @@ squash-merge, la rama puede borrarse.
   [detalle](docs/HISTORIAL_FRENTES.md)
 
 - **#380** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-1 = CLOSED / APPLIED / VERIFIED (MERGED como `b18bfbb`).
-  El FRENTE sigue EN CURSO (F3E-2/3 NOT STARTED).** `s7_96` (**migración 117**): `directory_countries()` y
+  El FRENTE sigue EN CURSO.** `s7_96` (**migración 117**): `directory_countries()` y
   `directory_territory_units(p_country_iso, p_parent_id)`, `SECURITY DEFINER`, EXECUTE solo `anon` y
   `authenticated`; tablas GEO sin grants de cliente; sin cambios de RLS, policies, roles ni datos.
   - **Pruebas previas:** preflight F3E-1A de producción; `check-s7_96` 126/126; arnés local (PG18) 86/86.
@@ -1653,6 +1701,19 @@ squash-merge, la rama puede borrarse.
   **Sin consumidor de frontend: no mueve el HEAD funcional** (confirmado por el owner).
   Rollback en orden obligatorio `frontend F3E-2 → s7_96 → s7_95 → s7_94 → s7_93 R2 → verificar → s7_92` →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [runbook](docs/OWNER_S7_96_APPLY.md)
+
+- **#382** 🚧 — **MULTICOUNTRY-GEO-P0 · F3E-2 = CLOSED (MERGED como `9d4a3f2`, nuevo HEAD funcional).
+  El FRENTE sigue EN CURSO (F3E-3 NOT STARTED; `/{iso2}` OPEN / NOT APPROVED).** Frontend-only: el Home
+  consume `directory_countries()` (cache 60 min), deriva el país de contexto **solo con exactamente 1 país
+  habilitado** (0 o más → fail closed) y filtra `doctors` server-side con `clinics.country_id` como
+  predicado, sin añadir la columna al payload. **0 SQL, migraciones, RLS, grants ni Auth.**
+  - **Resultado:** 46 publicados / 43 visibles, mismo conjunto y orden; +1 request GEO pequeño y cacheado;
+    0 N+1; 0 `directory_territory_units` en la carga inicial; 0 acceso directo a tablas GEO; sin cambios visuales.
+  - **Validación:** `check-f3e2-directory-country` 29/29 · `check-directory-booking-ready` 20/20 ·
+    `tsc -b` sin diagnósticos nuevos · Preview anónimo y producción PASS. Authenticated cubierto por `s7_96` y
+    sin branching por rol; hallazgo de pestaña oculta fuera de alcance y no concluyente.
+  Rollback: revertir el frontend (sin DB), primer paso de la cadena →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [detalle](docs/HISTORIAL_FRENTES.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**
@@ -1706,7 +1767,7 @@ squash-merge, la rama puede borrarse.
 
 - **`WELCOME-EMAIL-SIN-CORREO-P1` — deuda registrada en #357, NO abierta.** Si un lead llega **sin correo** y se aprueba **sin rellenar el override**, `doctor_affiliation_requests.email` queda NULL para siempre y **no existe ninguna vía en LucyAdmin para corregirlo**: el formulario de override solo existe en el momento de crear el médico, y la solicitud es un registro histórico. Ese médico **nunca** podrá recibir la bienvenida sin un `UPDATE` manual en SQL. No es un defecto de `s7_83` —el gate `no_email` hace exactamente lo que debe— sino una esquina áspera del flujo de aprobación. Ocurrió de verdad con la fixture del E2E. **No abrir sin instrucción.**
 - **Cobertura conductual pendiente de #357, NO abierta.** Los gates `no_slug` y `already_claimed`, y el caso de autorización `directory_editor`, **no se ejercitaron**: exigían mutar producción solo por QA y el owner decidió no hacerlo. El check estático los verifica en el `WHERE` del reclamo, pero **no hay prueba conductual**. No se dan por probados.
-- **El Preview de Vercel no puede ejecutar E2E autenticados.** Tiene `VITE_CAPTCHA_ENABLED` apagado y Supabase exige Turnstile: cualquier login ahí devuelve `captcha_failed`. Habilitarlo exigiría variables de Preview **y** autorizar el hostname en Cloudflare Turnstile — dos cambios de configuración. Es el motivo por el que el E2E de #357 se hizo tras el merge, en producción. **No cambiar sin instrucción.**
+- **Auth en el Preview de Vercel (corregido el 2026-09-17).** El Preview **sí tiene `VITE_CAPTCHA_ENABLED` activo y la Site Key disponible**; lo que impide el login es que **cada deployment de Preview tiene un hostname propio** que Turnstile no reconoce (`110200`). Para un QA autenticado, el owner autoriza **temporalmente ese hostname en el widget Turnstile existente** y lo retira al terminar. **No crear widgets nuevos, no cambiar Site Key ni Secret Key, no tocar Supabase ni las variables de Vercel, y no documentar claves.** Lo midió el QA de #382.
 
 **Frente diferido con precondiciones (fuera del backlog no bloqueante):**
 - **F1-c2 · DROP físico de `doctors.license_number`** (`docs/ANALISIS_CREDENCIALES_MEDICAS.md` §F1-c2) — irreversible. No abrir sin: sincronía fresca, respaldo, preflight `service_role` y autorización del owner. **F1-c1 (retiro lógico) ya está cerrado** en #295/#296 (`s7_63`/`s7_64`).
