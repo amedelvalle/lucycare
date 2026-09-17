@@ -41,8 +41,8 @@
 -- ── ROLLBACK Y CONSUMIDORES ──
 -- docs/rollbacks/s7_97_rollback.sql. El cuerpo nombra el catalogo y el cierre:
 -- mientras exista, los rollbacks de s7_92, s7_93, s7_94 y s7_95 la detectan como
--- consumidora y se niegan, y el de s7_96 se niega en su VERIFICA (medido en el
--- arnes). Orden OBLIGATORIO:
+-- consumidora y se niegan, y el de s7_96 se niega en su VERIFICA (arnes: medido
+-- para s7_94, s7_95 y s7_96). Orden OBLIGATORIO:
 --   revertir frontend F3E-3B -> s7_97 -> revertir frontend F3E-2 -> s7_96 -> s7_95 -> s7_94 -> s7_93 R2 -> verificar -> s7_92.
 -- Un consumidor de frontend NO es detectable desde la base: revertirlo primero.
 --
