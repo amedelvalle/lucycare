@@ -15,6 +15,7 @@ import {
   fetchSpecialties,
   fetchDepartments,
   fetchMunicipalities,
+  fetchDirectoryCountries,
 } from '../services/directory.service'
 import type { DirectoryFilters } from '../types/directory.types'
 
@@ -32,6 +33,10 @@ export function useDoctors(filters: DirectoryFilters) {
   return useQuery({
     queryKey: ['doctors', filters],
     queryFn: () => fetchDoctors(filters),
+    // Solo con país de contexto válido (F3E-2). Deshabilitada queda en
+    // `isPending`: el llamador no debe leer `isLoading` para decidir el
+    // skeleton, o mostraría «0 resultados» mientras llega el país.
+    enabled: filters.countryId != null,
     staleTime: 1000 * 60 * 2, // 2 min cache — los médicos no cambian cada segundo
     placeholderData: (previousData) => previousData, // Mantener datos previos mientras carga nuevos filtros
   })
@@ -59,6 +64,18 @@ export function useDoctorDetail(doctorId: string | undefined) {
 // ─────────────────────────────────────────────
 // CATÁLOGOS PARA FILTROS
 // ─────────────────────────────────────────────
+
+/**
+ * Países habilitados para el directorio (F3E-2). Un request pequeño por sesión:
+ * solo cambia cuando el owner habilita un país.
+ */
+export function useDirectoryCountries() {
+  return useQuery({
+    queryKey: ['directory-countries'],
+    queryFn: fetchDirectoryCountries,
+    staleTime: 1000 * 60 * 60, // 1 hora
+  })
+}
 
 /** Hook para las especialidades (dropdown del filtro) */
 export function useSpecialties() {

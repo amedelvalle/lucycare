@@ -21,6 +21,7 @@ import type {
   DoctorService,
   DoctorImage,
   DirectoryFilters,
+  DirectoryCountry,
   Specialty,
   Department,
   Municipality,
@@ -38,6 +39,13 @@ import type {
 export async function fetchDoctors(
   filters: DirectoryFilters
 ): Promise<DoctorCard[]> {
+  // Fail closed (F3E-2): sin país de contexto el directorio no se consulta.
+  // El hook ya no la habilita en ese caso; esto impide que otro llamador
+  // descargue médicos de todos los países.
+  if (filters.countryId == null) {
+    throw new Error('Directorio sin país de contexto')
+  }
+
   // Query base: doctors publicados con JOINs
   let query = supabase
     .from('doctors')
@@ -87,6 +95,10 @@ export async function fetchDoctors(
     // agenda en línea con Lucy. Decisión documentada en
     // docs/ANALISIS_DIRECTORIO_INFORMATIVO.md.
     .eq('is_published', true)
+    // País (F3E-2): filtro server-side sobre `clinics.country_id`. Con
+    // `clinics!inner` el filtro del embed recorta los médicos, y funciona como
+    // predicado sin seleccionar la columna: el payload no crece.
+    .eq('clinics.country_id', filters.countryId)
     // Orden: primero los que aceptan reserva en línea (booking_enabled),
     // después verificados, después por fecha.
     .order('booking_enabled', { ascending: false })
@@ -400,6 +412,67 @@ export async function fetchMunicipalities(
     departmentId: m.department_id,
     district: m.district,
   }))
+}
+
+/**
+ * Países habilitados para el directorio (`directory_countries()`, s7_96).
+ *
+ * La RPC devuelve una fila por (país, nivel); acá se agrupa por `iso_alpha2`
+ * para que las decisiones se tomen sobre países únicos. Un país sin niveles
+ * llega como una fila con `level` NULL y queda con `levels: []`.
+ *
+ * Lanza ante error o forma inesperada: el llamador trata eso como «sin país de
+ * contexto» (fail closed), nunca como directorio sin filtro.
+ */
+export async function fetchDirectoryCountries(): Promise<DirectoryCountry[]> {
+  // Firma declarada en el punto de llamada: `database.types.ts` no incluye esta
+  // RPC (deuda TYPES-RECONCILIATION-P0). `.bind(supabase)` es obligatorio: ver
+  // `fetchDoctorBookingReady` y `scripts/check-f3e2-directory-country.mjs`.
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
+    fn: 'directory_countries',
+  ) => Promise<{ data: unknown; error: { message: string } | null }>
+
+  const { data, error } = await rpc('directory_countries')
+  if (error) throw new Error(error.message)
+  if (!Array.isArray(data)) throw new Error('directory_countries: respuesta inválida')
+
+  const byIso = new Map<string, DirectoryCountry>()
+  for (const row of data as any[]) {
+    if (typeof row?.country_id !== 'number' || typeof row?.iso_alpha2 !== 'string') {
+      throw new Error('directory_countries: fila inválida')
+    }
+    let country = byIso.get(row.iso_alpha2)
+    if (!country) {
+      country = {
+        countryId: row.country_id,
+        iso: row.iso_alpha2,
+        name: row.country_name,
+        levels: [],
+      }
+      byIso.set(row.iso_alpha2, country)
+    } else if (country.countryId !== row.country_id) {
+      throw new Error('directory_countries: país inconsistente')
+    }
+    if (row.level != null) {
+      country.levels.push({ level: row.level, label: row.level_label })
+    }
+  }
+
+  const countries = [...byIso.values()]
+  countries.forEach((c) => c.levels.sort((a, b) => a.level - b.level))
+  return countries
+}
+
+/**
+ * País de contexto del directorio (F3E-2, decisión D1 del owner): solo existe
+ * si hay EXACTAMENTE un país habilitado. Con 0 o con más de 1 devuelve null y
+ * el directorio no se consulta — no se elige el primero ni se consultan todos.
+ * Sin selector ni precedencia URL/preferencia/GeoIP: eso es F3E-3.
+ */
+export function resolveDirectoryCountryContext(
+  countries: DirectoryCountry[],
+): DirectoryCountry | null {
+  return countries.length === 1 ? countries[0] : null
 }
 
 // ─────────────────────────────────────────────

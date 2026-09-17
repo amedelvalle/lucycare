@@ -8,7 +8,8 @@ import DoctorCard from './components/DoctorCard';
 import AffiliationRequestModal from './components/AffiliationRequestModal';
 import LoginModal from '../doctor-detail/components/LoginModal';
 import PatientAccountMenu from '../../components/PatientAccountMenu';
-import { useDoctors } from '../../hooks/useDirectory';
+import { useDoctors, useDirectoryCountries } from '../../hooks/useDirectory';
+import { resolveDirectoryCountryContext } from '../../services/directory.service';
 import { getCurrentAuthUser, signOut, onAuthStateChange } from '../../services/auth.service';
 import type { AuthUser } from '../../services/auth.service';
 import { DoctorGridSkeleton } from '../../components/skeletons/DirectorySkeletons';
@@ -41,14 +42,38 @@ export default function Home() {
   const isAuthenticated = !!currentUser;
 
   // ─── DATOS REALES desde Supabase ───
+  // País de contexto (F3E-2): exactamente un país habilitado → ese país.
+  // Con 0 o más de 1, o si la carga inicial falla, fail closed: el directorio no
+  // se consulta y se muestra el error normal. Si un refetch posterior falla,
+  // React Query conserva los países previos y se siguen usando.
+  const {
+    data: directoryCountries,
+    isPending: countriesPending,
+  } = useDirectoryCountries();
+  const directoryCountry = directoryCountries
+    ? resolveDirectoryCountryContext(directoryCountries)
+    : null;
+
   const filters: DirectoryFilters = {
     search: searchTerm,
     specialtyId: selectedSpecialty || null,
     departmentId: selectedDepartment || null,
     municipalityId: selectedMunicipality || null,
+    countryId: directoryCountry?.countryId ?? null,
   };
 
-  const { data: doctors = [], isLoading, error } = useDoctors(filters);
+  const {
+    data: doctors = [],
+    isPending: doctorsPending,
+    error: doctorsError,
+  } = useDoctors(filters);
+
+  // `isPending` y no `isLoading`: la query de médicos queda deshabilitada hasta
+  // tener país, y deshabilitada `isLoading` es false — se vería «0 resultados».
+  const isLoading = countriesPending || (!!directoryCountry && doctorsPending);
+  const error = !countriesPending && !directoryCountry
+    ? true // sin país de contexto válido (error de carga, 0 o >1 países)
+    : doctorsError;
 
   // Stats de calificación de todos los médicos (estrellas + ranking)
   const { data: ratingStats = {} } = useQuery({
