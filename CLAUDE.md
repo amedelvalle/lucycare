@@ -57,7 +57,8 @@
 > (2026-09-16; PR #377 MERGED, `main` = `bbfb834`) · **F3E-1 (`s7_96`, RPC de lectura del catálogo) =
 > CLOSED / APPLIED / VERIFIED** (2026-09-16; PR #380 MERGED, `main` = `b18bfbb`) · **F3E-2 (país de
 > contexto en el Home, frontend) = CLOSED** (2026-09-17; PR #382 MERGED, `main` = `9d4a3f2`). **El frente
-> completo NO está cerrado**: **F3E-3 en adelante** está **diseñado y NO iniciado**.
+> completo NO está cerrado**: **F3F (`s7_97`, alcance territorial) = PREPARADA · NOT APPLIED / DO NOT MERGE**
+> (PR #384) · **F3E-3B = NOT STARTED** · **F3E-3A = ON HOLD**.
 >
 > **Qué hizo `s7_95`:** (**migración 116**, F3E-0 / M0.5 aprobado por el owner) asignó
 > **solo `country_id = SV`** a **exactamente 36 clínicas**: las de los 36 médicos publicados
@@ -170,7 +171,40 @@
 >   segundo plano, las llamadas a Supabase se detuvieron. El escenario quedó contaminado (varias
 >   instancias, automatización, recarga). **No se investiga ni se abre frente sin instrucción.**
 >
-> **F3E-3 = NOT STARTED: no iniciarla sin instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
+> - ⚠️ **Omisión de validación de #382, corregida en PR #384:** `check-s7_89` no se ejecutó al validar F3E-2 y
+>   quedó en **189/190 en `main`** (su guarda «src/ no usa las columnas nuevas» detecta el país de contexto). Se
+>   reancló con una allowlist cerrada: los 4 archivos de F3E-2, solo tokens de país. **Regla: al cerrar un PR
+>   que consume el modelo territorial, correr TODOS los `check-s7_8*`/`check-s7_9*`.**
+>
+> 🧭 **F3E-3 PR-0 (diagnóstico de UX, 2026-09-17) — decisiones del owner:**
+> - **País (≥ 2 habilitados):** selección manual → preferencia local → GeoIP pasivo válido → si hay exactamente
+>   un país habilitado, ese → si hay ≥ 2 sin señal válida, selección explícita del usuario. Sin país arbitrario
+>   por defecto, sin GPS ni permisos del navegador; la selección manual siempre gana y puede persistirse.
+> - **UX territorial:** opción B — un solo control «Ubicación» (bottom sheet en móvil, popover en desktop),
+>   navegación progresiva, labels dinámicos, territorios bajo demanda, 0 catálogo global. **No implementada.**
+> - **Cobertura:** sin aviso global de médicos sin ubicación; «Ubicación» es secundario; con filtro territorial
+>   activo, copy discreto «Se muestran médicos con ubicación registrada en esta zona.»; sin números de
+>   cobertura; nunca inventar territorios para S2.
+> - **Backend:** STOP del diagnóstico confirmado — el filtro territorial multipaís no es posible con las
+>   superficies de `s7_96`; contrato **F3F-a** aprobado (F3F-b rechazado por ahora).
+> - **Orden:** F3F backend → F3E-3B (ubicación progresiva) → F3E-3A (país/precedencia/persistencia, **ON HOLD**
+>   hasta que un segundo país esté próximo a habilitarse).
+>
+> 🚧 **F3F (`s7_97`, migración 118) = PREPARADA · NOT APPLIED / DO NOT MERGE (PR #384, 2026-09-17).**
+> `public.directory_territory_scope(p_country_iso text, p_unit_id bigint) RETURNS TABLE (unit_id bigint)`: la
+> unidad y sus descendientes activos con cadena activa hasta la raíz, desde el cierre de `s7_94`, solo ids,
+> ordenados; ISO/país/unidad inválidos → vacío (**un scope vacío = cero coincidencias, no «sin filtro»**).
+> `plpgsql`, `STABLE`, `SECURITY DEFINER`, `search_path` fijo; EXECUTE solo `anon`/`authenticated`; 0 grants de
+> tabla, RLS, policies, roles, Auth ni datos.
+> - **Preflight F3F PRE-0 de producción (PG 17.6), Z = 0:** cierre 888 filas, 320 propias, 0 cruces; máximo SV
+>   37 ids; San Salvador 25 ids y 9 publicados (= legacy SS); S2 36 y 0 en cualquier scope; planes sin
+>   `Recursive Union`, `CTE Scan` ni Seq Scan del cierre. URL con el scope máximo: 795 caracteres (medido).
+> - **Validación:** `check-s7_97` 138/138; arnés PG18 83/83 (contrato por rol, fail-closed, planes, fixture
+>   de inactivos/HN, cadena de rollback real, 13 mutaciones ejecutadas, deriva). Runbook `docs/OWNER_S7_97_APPLY.md`.
+> - **Rollback previo:** con `s7_97` aplicada, el rollback de `s7_96` **se niega** en su VERIFICA (medido), igual
+>   que los de `s7_95` y `s7_94`. Ningún rollback histórico se modificó.
+>
+> **F3E-3B = NOT STARTED y F3E-3A = ON HOLD: no iniciarlas sin instrucción del owner. `/{iso2}` = OPEN / NOT APPROVED.**
 >
 > **Qué hizo `s7_94`:** (**migración 115**) creó `public.administrative_unit_closure`,
 > el cierre transitivo **derivado** del árbol, variante **N1** aprobada por el owner:
@@ -429,7 +463,7 @@
 > descartado, nunca aplicado, nunca mergeado, no canónico.** El único `s7_87`
 > válido es el aplicado y mergeado mediante **#365**.
 >
-> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = CLOSED / APPLIED / VERIFIED (PR #380 MERGED); F3E-2 = CLOSED (PR #382 MERGED); F3E-3 = NOT STARTED.**
+> **F3D = CLOSED / APPLIED / VERIFIED; F3E-0 (`s7_95`) = CLOSED / APPLIED / VERIFIED; F3E-1 (`s7_96`) = CLOSED / APPLIED / VERIFIED (PR #380 MERGED); F3E-2 = CLOSED (PR #382 MERGED); F3F (`s7_97`) = PREPARADA, NOT APPLIED (PR #384); F3E-3B = NOT STARTED; F3E-3A = ON HOLD.**
 > Las 59 clínicas en S0 siguen sin ubicación ni país; 24 están en S1; 36 clínicas tienen país SV
 > atestado sin territorio (S2). **El único lector de runtime autorizado es el de F3E-2**
 > (`directory_countries()` + filtro `clinics.country_id` en el Home). **No conectar otros lectores al
@@ -444,6 +478,10 @@
 >
 > ⛔ **Rollbacks, ORDEN OBLIGATORIO Y BLOQUEANTE (confirmado por el owner):**
 > **revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`**.
+> **Cuando `s7_97` (F3F) se aplique**, la cadena empieza antes: **revertir frontend F3E-3B → rollback de `s7_97` →**
+> y después la cadena de arriba. Con `s7_97` aplicada, los rollbacks reales de `s7_96`, `s7_95` y `s7_94` se
+> niegan (medido en el arnés), y el predicado de consumidores de los de `s7_93`/`s7_92` la incluye (verificado por
+> el POST). Mientras no se aplique, la cadena vigente no cambia.
 > 0. **Frontend F3E-2** (PR #382, `9d4a3f2`): revertirlo primero (`git revert` del squash, sin tocar la
 >    base); un consumidor de frontend no es detectable desde la base. Con #382 desplegado, un rollback de
 >    `s7_95`, `s7_93` o `s7_92` ocultaría médicos del Home.
@@ -1442,7 +1480,7 @@ Luego leé los documentos oficiales según el objetivo del día:
   rendimiento y UX, la independencia del gate nacional respecto de
   `doctor_booking_ready`, y la secuencia F1/F2/F3 con lo que está realmente
   implementado frente a lo solo diseñado. **Fundaciones 1, 2A, 3A, F3B completa
-  (pasos 1, 2 y 3), F3C, F3D, F3E-0 (`s7_95`) y F3E-1 (`s7_96`) aplicadas y F3E-2 (#382, frontend) cerrada; el frente no está cerrado (F3E-3 en adelante).**
+  (pasos 1, 2 y 3), F3C, F3D, F3E-0 (`s7_95`) y F3E-1 (`s7_96`) aplicadas y F3E-2 (#382, frontend) cerrada; F3F (`s7_97`) preparada sin aplicar; el frente no está cerrado.**
 - `docs/ANALISIS_ONBOARDING_READINESS.md` — **referencia vigente de
   `DOCTOR-ONBOARDING-READINESS-P0`**: los 8 estados y su precedencia, la
   separación entre onboarding / `booking_ready` / `is_operational` / publicación,
@@ -1718,6 +1756,16 @@ squash-merge, la rama puede borrarse.
     ni cambios de Auth/RLS/grants/policies. Hallazgo de pestaña oculta fuera de alcance y no concluyente.
   Rollback: revertir el frontend (sin DB), primer paso de la cadena →
   [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [detalle](docs/HISTORIAL_FRENTES.md)
+
+- **#384** 🚧 — **MULTICOUNTRY-GEO-P0 · F3F = PREPARADA · NOT APPLIED / DO NOT MERGE.** `s7_97` (**migración 118**):
+  `directory_territory_scope(p_country_iso, p_unit_id) RETURNS TABLE (unit_id bigint)`, la unidad y sus descendientes
+  activos (cadena activa hasta la raíz) desde el cierre de `s7_94`; vacío ante cualquier entrada inválida.
+  `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated`; 0 grants de tabla, RLS, policies, roles ni datos.
+  - **Pruebas:** preflight F3F PRE-0 de producción Z = 0; `check-s7_97` 138/138; arnés PG18 83/83 con la cadena de
+    rollback real (el rollback de `s7_96` se niega con `s7_97` aplicada).
+  - **Incluye** el reanclaje de `check-s7_89`, que fallaba en `main` desde #382 (omisión de validación de F3E-2).
+  Sin consumidor de frontend (F3E-3B NOT STARTED) →
+  [referencia](docs/ANALISIS_MULTICOUNTRY_GEO.md) · [runbook](docs/OWNER_S7_97_APPLY.md)
 
 **Secuencia prioritaria — TODA CERRADA. El piloto quedó en GO (2026-08-14):**
 0. ~~**RECOVERY-EMAIL-P0 · ADMIN-JUNIOR · TESTPHONE-CLEANUP-P0**~~ — **✅ CLOSED (2026-08-13).** Recovery real por email PASS · login email+contraseña PASS · redirect a `/admin/medicos` PASS · permisos `operations_admin` acotados PASS · `50377507479` fuera de Test Phones con login posterior PASS · Home anónimo sin `my_lucyadmin_access` PASS. **No reabrir Auth/recovery salvo incidente nuevo.**

@@ -241,8 +241,26 @@ const consumidoresApp = (archivos) => archivos
 /** Mismo criterio para el legacy: columnas o embeds de sus catálogos. */
 const RE_CONSUMO_LEGACY = /\bdepartment_id\b|\bmunicipality_id\b|\b(departments|municipalities)\s*[(!]|from\(\s*['"`](departments|municipalities)['"`]\s*\)|(?<!\.)\.(departments|municipalities)\b/;
 
-check('src/, middleware, og-meta y Edge Functions no usan las columnas nuevas',
-  consumidoresApp(superficieApp).join(', '), '');
+// ⚠️ Reanclado en F3F (omisión detectada de F3E-2, PR #382): el Home consume el país de contexto
+// (`directory_countries()` y el filtro `clinics.country_id`). Allowlist CERRADA: exactamente estos 4
+// archivos y SOLO con tokens de país (`country_id` / `countryId`). Un token territorial o de tabla
+// nueva en ellos, o cualquier otro archivo, sigue haciendo fallar el check.
+const CONSUMIDORES_PAIS_F3E2 = ['src/hooks/useDirectory.ts', 'src/pages/home/page.tsx',
+                                'src/services/directory.service.ts', 'src/types/directory.types.ts'];
+const RE_TERRITORIO_NUEVO = new RegExp([
+  String.raw`\bterritory_unit_id\b`, String.raw`\bterritoryUnitId\b`,
+  String.raw`\bfrom\(\s*['"\x60](administrative_units|administrative_unit_paths|country_levels|countries)['"\x60]\s*\)`,
+  String.raw`\b(administrative_units|administrative_unit_paths|country_levels)\b`,
+  String.raw`\bcountries\s*[(!]`, String.raw`(?<!\.)\.countries\b`,
+].join('|'));
+const rutaPosix = (p) => p.split(path.sep).join('/');
+const consumidorPaisF3E2 = ([p, c]) => CONSUMIDORES_PAIS_F3E2.includes(rutaPosix(p)) && !RE_TERRITORIO_NUEVO.test(c);
+check('src/, middleware, og-meta y Edge Functions no usan las columnas nuevas (salvo el país de contexto de F3E-2)',
+  consumidoresApp(superficieApp.filter((x) => !consumidorPaisF3E2(x))).join(', '), '');
+check('control: los 4 archivos de F3E-2 SÍ se detectan como consumidores (país) del modelo nuevo',
+  CONSUMIDORES_PAIS_F3E2.every((f) => consumidoresApp(superficieApp).map(rutaPosix).includes(f)), true);
+check('control: un token territorial en un archivo de F3E-2 SÍ rompe la allowlist',
+  consumidorPaisF3E2(['src/pages/home/page.tsx', 'const x = territory_unit_id;']), false);
 check('la superficie inspeccionada no está vacía (si lo estuviera, el cero no mediría nada)',
   superficieApp.length > 50, true);
 
@@ -312,12 +330,17 @@ const funcionesDelModeloNuevo = (mapa) => [...mapa]
 // clinics, por eso NO entran en la allowlist anterior). Allowlist cerrada: nombre Y archivo.
 const LECTORES_96 = ['directory_countries (s7_96_geo_foundation_3e1_directory_read_rpcs.sql)',
                      'directory_territory_units (s7_96_geo_foundation_3e1_directory_read_rpcs.sql)'];
-check('ninguna función SQL vigente consulta el modelo territorial nuevo (salvo el resolver de s7_92 y las RPC de s7_96)',
-  funcionesDelModeloNuevo(vigentes).filter((x) => !SYNC_92.includes(x) && !LECTORES_96.includes(x)).join(', '), '');
+// ⚠️ Reanclado en F3F: s7_97 añade la RPC de alcance territorial (lee countries, administrative_units y el
+// cierre; no usa columnas de clinics). Allowlist cerrada: nombre Y archivo.
+const LECTORES_97 = ['directory_territory_scope (s7_97_geo_f3f_directory_territory_scope.sql)'];
+check('ninguna función SQL vigente consulta el modelo territorial nuevo (salvo el resolver de s7_92 y las RPC de s7_96 y s7_97)',
+  funcionesDelModeloNuevo(vigentes).filter((x) => !SYNC_92.includes(x) && !LECTORES_96.includes(x) && !LECTORES_97.includes(x)).join(', '), '');
 check('control: el resolver de s7_92 SÍ se detecta como lector del modelo nuevo',
   funcionesDelModeloNuevo(vigentes).includes(SYNC_92[1]), true);
 check('control: las dos RPC de s7_96 SÍ se detectan como lectoras del modelo nuevo',
   LECTORES_96.every((x) => funcionesDelModeloNuevo(vigentes).includes(x)), true);
+check('control: la RPC de s7_97 SÍ se detecta como lectora del modelo nuevo',
+  LECTORES_97.every((x) => funcionesDelModeloNuevo(vigentes).includes(x)), true);
 check('se inspeccionaron las funciones vigentes (control: hay más de 100)', vigentes.size > 100, true);
 
 // Control positivo: el mismo método SÍ encuentra los 3 escritores legacy reales.

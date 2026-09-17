@@ -19,7 +19,8 @@
 > (`s7_96`, migración 117, 2026-09-16, PR #380 MERGED como `b18bfbb`: dos RPC públicas de lectura del catálogo,
 > §10.k). **F3E-2 = CLOSED** (PR #382 MERGED como `9d4a3f2`, 2026-09-17, frontend-only, **nuevo HEAD
 > funcional**: el Home consume `directory_countries()` y filtra el directorio por `clinics.country_id`,
-> §10.l). **F3E-3 está diseñada y NO iniciada; `/{iso2}` = OPEN / NOT APPROVED.** **El único lector
+> §10.l). **F3F (`s7_97`, alcance territorial) = PREPARADA · NOT APPLIED / DO NOT MERGE** (PR #384, §10.m).
+> **F3E-3B = NOT STARTED; F3E-3A = ON HOLD; `/{iso2}` = OPEN / NOT APPROVED.** **El único lector
 > de runtime es el de F3E-2** (`directory_countries()` + `clinics.country_id` en el Home); nada
 > consume todavía `directory_territory_units()`, el cierre ni `territory_unit_id`. El catálogo lo
 > leen además la sincronización de `s7_92` y las 2 RPC de `s7_96`. Escriben las columnas nuevas de
@@ -715,7 +716,10 @@ de admitir reservas.
 | **F3E-0** | M0.5: país SV atestado por el owner en 36 clínicas del lote `Importar_100`, sin territorio ni runtime nuevo | ✅ **CLOSED / APPLIED / VERIFIED** — PR #377 (MERGED, `bbfb834`), `s7_95` |
 | **F3E-1** | superficie backend de lectura: `directory_countries()` y `directory_territory_units()`, `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | ✅ **CLOSED / APPLIED / VERIFIED** — PR #380 (MERGED, `b18bfbb`), `s7_96` (§10.k) |
 | **F3E-2** | consumo en runtime: país de contexto derivado de `directory_countries()` y filtro server-side por `clinics.country_id` en el Home, sin UI visible | ✅ **CLOSED** — PR #382 (MERGED, `9d4a3f2`), frontend-only, sin migración (§10.l) |
-| **F3E-3–F3F** | UX y selector móvil, `/{iso2}` (OPEN / NOT APPROVED), endurecimiento | 📐 diseñadas, **NOT STARTED** |
+| **F3F** | superficie de alcance territorial: `directory_territory_scope()` (unidad + descendientes activos desde el cierre, solo ids), `SECURITY DEFINER`, EXECUTE solo `anon`/`authenticated` | 🚧 **PREPARADA · NOT APPLIED / DO NOT MERGE** — PR #384, `s7_97` (§10.m) |
+| **F3E-3B** | control «Ubicación» progresivo (bottom sheet/popover) que consumirá F3F | 📐 diseñada, **NOT STARTED** |
+| **F3E-3A** | país de contexto con ≥ 2 países: precedencia, persistencia y selector | 📐 diseñada, **ON HOLD** hasta que un segundo país esté próximo |
+| **`/{iso2}`** | routing por país | **OPEN / NOT APPROVED** |
 
 El cutover final y el retiro del legacy **no están planificados**. Los
 consumidores se cortarán uno por uno, y el retiro se decidirá solo después de
@@ -1432,7 +1436,61 @@ investiga ni se abre frente sin instrucción del owner.
 revertir frontend F3E-2 → `s7_96` → `s7_95` → `s7_94` → `s7_93` R2 → verificar → `s7_92`. Con #382
 desplegado, un rollback de `s7_95`, `s7_93` o `s7_92` ocultaría médicos del Home.
 
-**F3E-3 = NOT STARTED. `/{iso2}` = OPEN / NOT APPROVED.**
+**F3E-3 = NOT STARTED. `/{iso2}` = OPEN / NOT APPROVED.** (Situación al cierre de F3E-2; ver §10.m.)
+
+---
+
+## 10.m · F3E-3 PR-0 (decisiones) y F3F preparada (`s7_97`, NOT APPLIED)
+
+**F3E-3 PR-0 (diagnóstico read-only de UX, 2026-09-17).** Medido en producción:
+- en móvil (360–430 px) el buscador son 4 filas apiladas (311 px) y el header deja 17 px libres; los desplegables
+  territoriales abren fuera del viewport;
+- solo 9 de 43 médicos visibles tienen territorio (34 sin ubicación).
+
+**Decisiones del owner:**
+- **País con ≥ 2 habilitados:** manual → preferencia local → GeoIP pasivo válido → único país habilitado →
+  selección explícita. Sin país arbitrario por defecto, sin GPS ni permisos; la selección manual gana y puede
+  persistirse.
+- **UX:** opción B, un control «Ubicación» único (bottom sheet en móvil, popover en desktop), progresivo, con
+  labels dinámicos y territorios bajo demanda.
+- **Cobertura:** sin aviso global ni números; «Ubicación» secundario; con filtro activo, copy «Se muestran médicos
+  con ubicación registrada en esta zona.». Nunca inventar territorio para S2.
+- **STOP de backend confirmado:** el filtro por ancestro no es posible con `s7_96`; contrato **F3F-a** aprobado.
+- **Orden:** F3F → F3E-3B → F3E-3A (**ON HOLD**).
+
+**F3F · `s7_97` (migración 118) = PREPARADA · NOT APPLIED / DO NOT MERGE (PR #384).** Runbook:
+`docs/OWNER_S7_97_APPLY.md`.
+- **Contrato:** `directory_territory_scope(p_country_iso text, p_unit_id bigint) RETURNS TABLE (unit_id bigint)`.
+  - Devuelve la unidad y sus descendientes activos, con la cadena completa hasta la raíz activa, desde el cierre
+    (`ancestor_unit_id = p_unit_id`, fila propia incluida), solo ids y ordenados.
+  - ISO/país inválido o deshabilitado y unidad NULL, inexistente, inactiva o de otro país → vacío. **Vacío = cero
+    coincidencias**, no ausencia de filtro.
+- **Seguridad:** `plpgsql`, `STABLE`, `SECURITY DEFINER`, `search_path` fijo, calificada, sin SQL dinámico ni
+  `auth.uid()`; `REVOKE ALL` a los cuatro roles y `GRANT EXECUTE` solo a `anon`/`authenticated`. Sin grants de
+  tabla, RLS, policies, roles ni datos.
+- **Preflight F3F PRE-0 de producción (PG 17.6), Z = 0:**
+  - cierre 888 filas, 320 propias, 0 cruces de país;
+  - SV: máximo 37 ids (departamento grande), pequeño 12, municipio grande 21, hoja 1; San Salvador 25 ids y 9
+    publicados, igual que el filtro legacy SS;
+  - S2 = 36 y 0 dentro de cualquier scope; 46 publicados con país, 36 sin territorio;
+  - planes 0,091–0,480 ms, sin `Recursive Union`, sin `CTE Scan`, 0 Seq Scan del cierre;
+  - lectura directa GEO 42501 para `anon` y `authenticated`; DEFAULT PRIVILEGES con EXECUTE para `service_role`
+    (de ahí el REVOKE).
+- **Consumo previsto (F3E-3B):** RPC cacheada por unidad y `.in('clinics.territory_unit_id', ids)` sobre la query
+  actual. Medido por la API: el scope máximo de SV da una URL de 795 caracteres; `in.()` vacío responde 200 con 0 filas.
+- **Validación previa:** `check-s7_97` 138/138; arnés PG18 83/83 con los archivos reales sobre `s7_95` + `s7_96`
+  reales.
+  - Contrato por rol, fail-closed, planes genérico y personalizado.
+  - Fixture de inactivos (hoja, municipio intermedio, departamento), país deshabilitado y cruzado.
+  - Cadena de rollback real y 13 mutaciones ejecutadas del PASO 2.
+  - Deriva de catálogo, cierre, `s7_96`, lectores y grants.
+- **Interacción con rollbacks (medido):** con `s7_97` aplicada, el rollback real de `s7_96` se niega en su
+  VERIFICA (consumidores del modelo), y los de `s7_95` y `s7_94` también se niegan. Tras el rollback de `s7_97`, los
+  de `s7_96` y `s7_95` completan. Los verificadores de `s7_96` pasan a «APLICADA — con consumidores adicionales» y su
+  POST falla solo en las 2 filas de consumidores (esperado). Ningún artefacto histórico se modificó.
+- **Omisión de F3E-2 corregida en #384:** `check-s7_89` quedó en 189/190 en `main` desde #382 (detecta el país de
+  contexto en `src/`) porque no se ejecutó al validar ese PR. Reanclado con una allowlist cerrada: 4 archivos, solo
+  tokens de país.
 
 ---
 

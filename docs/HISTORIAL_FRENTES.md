@@ -2281,3 +2281,41 @@ recarga). No se investiga ni se abre frente sin instrucción.
 
 Revertir el frontend de #382 (sin DB), primer paso de la cadena: revertir frontend F3E-2 → rollback de `s7_96` →
 rollback de `s7_95` → rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`.
+
+## #384 · MULTICOUNTRY-GEO-P0 · F3F · RPC de alcance territorial (2026-09-17)
+
+> 🚧 **F3F = PREPARADA · NOT APPLIED / DO NOT MERGE.** Referencia canónica: `docs/ANALISIS_MULTICOUNTRY_GEO.md` §10.m.
+> Runbook: `docs/OWNER_S7_97_APPLY.md`. F3E-3B NOT STARTED; F3E-3A ON HOLD.
+
+**`s7_97` = migración 118, NOT APPLIED.** Crea solo
+`public.directory_territory_scope(p_country_iso text, p_unit_id bigint) RETURNS TABLE (unit_id bigint)`: la unidad y sus
+descendientes activos con cadena activa hasta la raíz, desde el cierre de `s7_94`, solo ids, ordenados; vacío ante
+cualquier entrada inválida. `plpgsql`, `STABLE`, `SECURITY DEFINER`, `search_path` fijo; `REVOKE ALL` a
+`PUBLIC`/`anon`/`authenticated`/`service_role` y `GRANT EXECUTE` a `anon`/`authenticated`. Sin grants de tabla, RLS,
+policies, roles ni datos.
+
+### Proceso
+- **F3E-3 PR-0 (read-only):** medición del layout móvil y desktop, capacidad real del backend y STOP del filtro
+  territorial; decisiones del owner (precedencia de país, UX B, copy de cobertura, contrato F3F-a, orden F3F → F3E-3B → F3E-3A).
+- **Preflight F3F PRE-0 de producción:** bloque read-only ejecutado por el owner, Z = 0 (cierre, cardinalidades,
+  fail-closed, planes PG 17.6, seguridad por rol, consumo y S2).
+- **Preparación:** migración, rollback, ESTADO, VERIFICACIÓN POST y runbook generados con PRE = GUARDA e instantánea
+  idéntica por construcción; md5 del cuerpo incrustado en todos los artefactos.
+
+### Validación
+- `check-s7_97` **138/138** con mutaciones de expectativa invertida; `check-s7_87`→`s7_96` PASS; `build` PASS.
+- **Arnés PG18 83/83** (archivos reales como mensaje único, base con `s7_95` y `s7_96` reales): contrato por rol
+  37 · 12 · 21 · 1 · 25, fail-closed, 42501 directo y de `service_role`, planes sin recursión ni Seq Scan del cierre,
+  fixture de inactivos/HN/país cruzado, 13 mutaciones ejecutadas, deriva, verificadores históricos de `s7_96`.
+- **Cadena de rollback real:** con `s7_97` aplicada, los rollbacks de `s7_96` (en su VERIFICA), `s7_95` y `s7_94` se
+  niegan; tras el rollback de `s7_97`, los de `s7_96` y `s7_95` completan.
+
+### Reanclajes
+- `check-s7_96`: el total de migraciones deja de fijarse en 117 (su posición sigue fijada).
+- `check-s7_89`: `directory_territory_scope` como lectora del modelo (allowlist cerrada) y **corrección de una
+  omisión de F3E-2**: el check daba 189/190 en `main` desde #382 porque no se ejecutó al validar ese PR. Allowlist
+  cerrada de los 4 archivos de F3E-2, solo tokens de país, con controles.
+
+### Rollback (cuando se aplique)
+revertir frontend F3E-3B → rollback de `s7_97` → revertir frontend F3E-2 → rollback de `s7_96` → rollback de `s7_95` →
+rollback de `s7_94` → `s7_93` R2 → verificar estado → rollback de `s7_92`. Los rollbacks históricos no se modifican.
