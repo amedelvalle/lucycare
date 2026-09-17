@@ -212,7 +212,8 @@ function ocur(s, needle) { return s.split(needle).length - 1; }
 console.log('0 · archivos, posición y artefactos históricos');
 const migs = fs.readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort();
 check('s7_96 es la migración 117 en orden', migs.indexOf(path.basename(P.mig)) + 1, 117);
-check('hay 117 migraciones', migs.length, 117);
+// ⚠️ Reanclado en F3F: s7_97 (migración 118) es posterior. Lo que se fija es la POSICIÓN de s7_96, no el total.
+check('hay al menos 117 migraciones (las posteriores no alteran s7_96)', migs.length >= 117, true);
 let rastreados = '';
 try { rastreados = execSync(`git ls-files -- ${[P.mig, P.rb, P.st, P.po, P.rbk, 'scripts/check-s7_96.mjs'].join(' ')}`, { encoding: 'utf8' }); } catch { rastreados = ''; }
 check('los 6 artefactos están rastreados por git (los .sql de docs requieren git add -f)', rastreados.trim().split('\n').filter(Boolean).length, 6);
